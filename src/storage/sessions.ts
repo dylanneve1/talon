@@ -675,10 +675,7 @@ export function getLastBotMessageId(chatId: string): number | undefined {
   return cache.get(chatId)?.lastBotMessageId;
 }
 
-export function resetSession(chatId: string): void {
-  const session = cache.get(chatId);
-  const turns = session?.turns ?? 0;
-  const name = session?.sessionName;
+function removeSessionRow(chatId: string): void {
   cache.delete(chatId);
   clearLiveTurn(chatId);
   try {
@@ -689,9 +686,53 @@ export function resetSession(chatId: string): void {
       `Session delete failed: ${err instanceof Error ? err.message : err}`,
     );
   }
+}
+
+/**
+ * Reset the chat's conversation state (backend session id, turns, usage)
+ * while carrying its metrics forward. Resets fire on /new, model switches
+ * and error recovery — none of which should erase the chat's accounting
+ * history (that's what makes per-session metrics survive anything short
+ * of deleting the chat). Use deleteSession() to drop the chat entirely.
+ */
+export function resetSession(chatId: string): void {
+  const session = cache.get(chatId);
+  const turns = session?.turns ?? 0;
+  const name = session?.sessionName;
+  const metrics = session?.metrics;
+  removeSessionRow(chatId);
+  const hasHistory =
+    metrics &&
+    (metrics.lifetime.counters.queries > 0 ||
+      metrics.lifetime.counters.toolCalls > 0);
+  if (hasHistory) {
+    const now = Date.now();
+    const fresh: SessionState = {
+      sessionId: undefined,
+      turns: 0,
+      lastActive: now,
+      createdAt: now,
+      usage: emptyUsage(),
+      metrics,
+    };
+    cache.set(chatId, fresh);
+    persist(chatId, fresh);
+  }
   log(
     "sessions",
     `[${chatId}] Reset${name ? ` "${name}"` : ""} (${turns} turns)`,
+  );
+}
+
+/** Drop the chat entirely — row, cache, live overlay and metrics. */
+export function deleteSession(chatId: string): void {
+  const session = cache.get(chatId);
+  const turns = session?.turns ?? 0;
+  const name = session?.sessionName;
+  removeSessionRow(chatId);
+  log(
+    "sessions",
+    `[${chatId}] Deleted${name ? ` "${name}"` : ""} (${turns} turns)`,
   );
 }
 

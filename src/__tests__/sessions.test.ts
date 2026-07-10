@@ -28,6 +28,8 @@ const {
   incrementTurns,
   recordUsage,
   resetSession,
+  deleteSession,
+  recordSessionMetrics,
   getSessionInfo,
   setSessionId,
   setLastBotMessageId,
@@ -193,6 +195,32 @@ describe("sessions", () => {
       const fresh = getSession(chatId);
       expect(fresh.turns).toBe(0);
       expect(fresh.sessionId).toBeUndefined();
+    });
+
+    it("carries metric history across the reset", () => {
+      const chatId = "test-reset-metrics";
+      setSessionId(chatId, "sid");
+      recordSessionMetrics(chatId, { backend: "claude", durationMs: 120 });
+
+      resetSession(chatId);
+
+      const fresh = getSession(chatId);
+      expect(fresh.sessionId).toBeUndefined();
+      expect(fresh.turns).toBe(0);
+      expect(fresh.usage.totalInputTokens).toBe(0);
+      expect(fresh.metrics.lifetime.counters.queries).toBe(1);
+    });
+  });
+
+  describe("deleteSession", () => {
+    it("drops the chat entirely, metrics included", () => {
+      const chatId = "test-delete-metrics";
+      recordSessionMetrics(chatId, { backend: "claude", durationMs: 120 });
+
+      deleteSession(chatId);
+
+      const fresh = getSession(chatId);
+      expect(fresh.metrics.lifetime.counters.queries).toBe(0);
     });
   });
 

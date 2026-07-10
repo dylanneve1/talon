@@ -15,7 +15,7 @@ import {
 import {
   getAllSessions,
   setSessionName,
-  resetSession,
+  deleteSession,
 } from "../../storage/sessions.js";
 import { getRecentHistory, clearHistory } from "../../storage/history.js";
 import { previewOf } from "./protocol.js";
@@ -125,7 +125,7 @@ export class NativeChats {
     if (!entry) return false;
     this.byId.delete(id);
     this.byNum.delete(entry.numericId);
-    resetSession(id);
+    deleteSession(id);
     clearHistory(id);
     return true;
   }

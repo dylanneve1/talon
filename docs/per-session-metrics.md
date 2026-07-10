@@ -15,7 +15,7 @@ store — module-level `Map`s of counters and histograms. Two consequences:
    zeroes `/metrics`.
 2. **They are fleet-wide, not per-chat.** Chat ids are deliberately never
    interpolated into metric keys (the store caps at 500 keys). So "how much
-   has *this* chat done" isn't answerable from the metrics store — only the
+   has _this_ chat done" isn't answerable from the metrics store — only the
    separate `SessionUsage` accounting (`src/storage/sessions.ts`) is per-chat,
    and it only tracks tokens/cost/response-time, not tool calls, api-call
    distributions, flow violations, etc.
@@ -59,10 +59,10 @@ A new per-session metrics block, persisted next to `SessionUsage`. Two grains:
 
 ```ts
 type CounterSet = {
-  queries: number;              // turns
+  queries: number; // turns
   turnsWithTools: number;
-  toolCalls: number;            // total across turns
-  apiCalls: number;             // total upstream round-trips
+  toolCalls: number; // total across turns
+  apiCalls: number; // total upstream round-trips
   turnsFailed: number;
   flowViolationsRetried: number;
   flowViolationsCapExhausted: number;
@@ -74,16 +74,16 @@ type CounterSet = {
 
 type LatencyAgg = {
   count: number;
-  sumMs: number;                // → avg = sumMs / count
-  minMs: number;                // fastest
-  maxMs: number;                // slowest
+  sumMs: number; // → avg = sumMs / count
+  minMs: number; // fastest
+  maxMs: number; // slowest
 };
 
 type DailyMetrics = CounterSet & { latency: LatencyAgg };
 
 type SessionMetrics = {
   lifetime: CounterSet & { latency: LatencyAgg };
-  buckets: Record<string, DailyMetrics>;   // keyed YYYY-MM-DD, bounded
+  buckets: Record<string, DailyMetrics>; // keyed YYYY-MM-DD, bounded
 };
 ```
 
@@ -97,8 +97,8 @@ type SessionMetrics = {
 
 ### 2. Persistence
 
-Follow the existing sessions layering (schema.sql → sql/*.sql →
-repositories/*-repo.ts → store). Two options, pick at implementation:
+Follow the existing sessions layering (schema.sql → sql/_.sql →
+repositories/_-repo.ts → store). Two options, pick at implementation:
 
 - **(preferred) A `metrics TEXT` column on the `sessions` row** — one JSON blob
   per chat, same write-through-cache + per-write-commit discipline as
@@ -139,10 +139,10 @@ ignorant of the persistence subsystem (DIP):
   builds the `TurnMetricSummary` from the observed turn. The richer per-turn
   signal (tool-call count, api-call count, flow violations) currently only
   exists in the backend's `StreamState`, not on `AgentResult`. Two sub-steps:
-    1. Surface tool/api counts on the `completed` event / `AgentResult` (or
-       tee the `AgentEvent` stream in the shuttle to count `tool_call`/`usage`
-       events) so the Weaver can see them without reaching into backends.
-    2. The collaborator maps that into `TurnMetricSummary`.
+  1. Surface tool/api counts on the `completed` event / `AgentResult` (or
+     tee the `AgentEvent` stream in the shuttle to count `tool_call`/`usage`
+     events) so the Weaver can see them without reaching into backends.
+  2. The collaborator maps that into `TurnMetricSummary`.
 - The composition root (`src/bootstrap.ts`, where `initDispatcher`/`WeaverDeps`
   is wired, ~line 363) wires `onTurnComplete` to a session-metrics writer.
 
@@ -164,7 +164,11 @@ type TurnMetricSummary = {
 New API on `src/storage/sessions.ts` (domain logic only, no SQL):
 
 ```ts
-export function recordSessionMetrics(chatId: string, turn: TurnMetricSummary, today: string): void
+export function recordSessionMetrics(
+  chatId: string,
+  turn: TurnMetricSummary,
+  today: string,
+): void;
 ```
 
 - Fold the turn into `lifetime` and into `buckets[today]` (create the day
@@ -188,7 +192,7 @@ needed. `/metrics` reads `buckets[today]` for "today", `lifetime` for all-time.
   `LatencyAgg`s (sum counts/sums, min of mins, max of maxes). Renders both
   "today" and "lifetime" columns.
 - Optionally enrich `ThreadSnapshot`/`SessionSummary` (`src/core/weaver/
-  thread*.ts`) with a per-session metrics summary so a single chat's numbers
+thread*.ts`) with a per-session metrics summary so a single chat's numbers
   show in `/status` — this is the "harvest from the loom" read seam.
 - The renderers (`diagnostics.ts`, discord `helpers.ts`) adapt to the new
   shape (avg/min/max instead of p50/p95/p99).
@@ -215,7 +219,12 @@ needed. `/metrics` reads `buckets[today]` for "today", `lifetime` for all-time.
 ## Migration / compatibility
 
 - `normaliseSession()` backfills an empty `SessionMetrics` for pre-existing
-  session rows (same pattern as the `SessionUsage` field backfills).
+  session rows (same pattern as the `SessionUsage` field backfills); persisted
+  blobs are validated/normalised once at hydration (`sessions-repo`).
+- **Reset vs delete:** conversation resets (`resetSession` — /new, model
+  switches, error recovery) carry the chat's metrics forward into the fresh
+  row; only `deleteSession` (chat deletion) drops them. Without this, an
+  error-recovery reset would erase the very failure counters that recorded it.
 - No data migration needed for the removed global store — it was never
   persisted, so there's nothing to migrate; fleet numbers simply start
   accumulating per-session from deploy.
@@ -233,7 +242,7 @@ needed. `/metrics` reads `buckets[today]` for "today", `lifetime` for all-time.
 ## Open questions — resolved at implementation
 
 1. Blob column vs dedicated table (see §2) — **blob column** (`sessions.metrics
-   TEXT`), reconciled on open for pre-existing databases.
+TEXT`), reconciled on open for pre-existing databases.
 2. Day-bucket retention — **fixed at 30 days**, evicted oldest-first inside
    `metricBucket()`; not configurable until someone needs it.
 3. Per-backend fleet dimension — **kept per-session** under
