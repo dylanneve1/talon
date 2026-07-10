@@ -31,6 +31,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Readable } from "node:stream";
+import { clampExecOutput } from "../../util/exec-output.js";
 import { dirs } from "../../util/paths.js";
 import { MeshRegistry } from "./registry.js";
 import { TransferStore } from "./transfers.js";
@@ -88,6 +89,13 @@ const STREAM_TRANSFER_TIMEOUT_MS = 60 * 60 * 1000;
 /** readFileBytes switches to the streaming path above this size. */
 const STREAM_READ_THRESHOLD_BYTES = 4 * 1024 * 1024;
 /**
+ * Hard ceiling on a chunked (command-channel) transfer. The chunked path
+ * assembles the whole file in daemon memory one mesh round trip at a time —
+ * past this size it's both a memory hazard and unusably slow, so fail with
+ * a pointer to the streaming path instead of grinding on.
+ */
+const MAX_CHUNKED_TRANSFER_BYTES = 64 * 1024 * 1024;
+/**
  * No policy size cap on transfers — a transfer is attempted whatever the
  * size and fails with a concrete error when a real limit bites (device read
  * error, stream timeout, disk). The streamed paths are disk-to-disk and
@@ -108,7 +116,10 @@ export class MeshService {
   private readonly transports = new Set<MeshTransport>();
   private readonly pendingCommands = new Map<
     string,
-    (result: DeviceCommandResult) => void
+    {
+      deviceId: string;
+      resolve: (result: DeviceCommandResult) => void;
+    }
   >();
   /**
    * Server-side receipt time (this process's clock) of the last fix per
@@ -203,11 +214,19 @@ export class MeshService {
    * A device answered a command (bridge route POST /devices/command-result).
    * Resolves the pending sendCommand; false when nothing was waiting (late
    * or unknown correlation id — harmless, just ignored).
+   *
+   * The result must come from the device the command was sent to: a reply
+   * whose deviceId names a DIFFERENT device is dropped (a confused or
+   * misbehaving companion must not be able to answer for its peers). A
+   * missing deviceId is tolerated for older app builds.
    */
   completeCommand(body: Record<string, unknown>): boolean {
     const commandId = typeof body.commandId === "string" ? body.commandId : "";
-    const resolve = this.pendingCommands.get(commandId);
-    if (!resolve) return false;
+    const pending = this.pendingCommands.get(commandId);
+    if (!pending) return false;
+    const from = typeof body.deviceId === "string" ? body.deviceId : "";
+    if (from && from !== pending.deviceId) return false;
+    const { resolve } = pending;
     this.pendingCommands.delete(commandId);
     resolve({
       commandId,
@@ -253,9 +272,12 @@ export class MeshService {
         });
       }, timeoutMs);
       timer.unref?.();
-      this.pendingCommands.set(command.id, (result) => {
-        clearTimeout(timer);
-        resolve(result);
+      this.pendingCommands.set(command.id, {
+        deviceId: device.id,
+        resolve: (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        },
       });
       for (const transport of this.transports) {
         try {
@@ -289,8 +311,9 @@ export class MeshService {
    */
   async locateDevice(query?: unknown): Promise<MeshToolResult> {
     await this.load();
-    const target = this.chooseDevice(query);
-    if (!target) return this.noSuchDevice(query);
+    const resolved = this.resolveDevice(query);
+    if ("error" in resolved) return { ok: false, text: resolved.error };
+    const target = resolved.target;
     const requestedAt = Date.now();
     // Only wait out the fresh-fix window when a transport can actually
     // deliver the locate AND the device is currently present — pinging an
@@ -334,8 +357,9 @@ export class MeshService {
     hours?: unknown,
   ): Promise<MeshToolResult> {
     await this.load();
-    const target = this.chooseDevice(query);
-    if (!target) return this.noSuchDevice(query);
+    const resolved = this.resolveDevice(query);
+    if ("error" in resolved) return { ok: false, text: resolved.error };
+    const target = resolved.target;
     const windowHours = clampHours(hours);
     const sinceTs = Date.now() - windowHours * 3_600_000;
     const fixes = this.registry.getHistory(target.id, sinceTs);
@@ -546,8 +570,10 @@ export class MeshService {
     const p = requirePath(path);
     if (!p) return { error: "A file path is required." };
     await this.load();
-    const target = this.chooseDevice(query);
-    if (target && this.canStream(target, "upload_file")) {
+    const resolved = this.resolveDevice(query);
+    if ("error" in resolved) return { error: resolved.error };
+    const target = resolved.target;
+    if (this.canStream(target, "upload_file")) {
       const size = await this.statSize(target.id, p);
       if (size !== undefined && size > STREAM_READ_THRESHOLD_BYTES) {
         const tmp = join(tmpdir(), `talon-pull-${randomUUID()}-${basename(p)}`);
@@ -565,7 +591,7 @@ export class MeshService {
         }
       }
     }
-    return this.pullBytes(query, p);
+    return this.pullBytes(target.id, p);
   }
 
   /** Size of a device path via the `stat` command, if the device can. */
@@ -607,8 +633,16 @@ export class MeshService {
   ): Promise<MeshToolResult> {
     const p = requirePath(path);
     if (!p) return { ok: false, text: "A file path is required." };
-    const text = typeof content === "string" ? content : "";
-    const written = await this.pushBytes(query, p, Buffer.from(text, "utf8"));
+    // A non-string body must fail, not silently truncate the target to an
+    // empty file (an empty string is a legitimate truncate-to-zero).
+    if (typeof content !== "string") {
+      return { ok: false, text: "File content must be a string." };
+    }
+    const written = await this.pushBytes(
+      query,
+      p,
+      Buffer.from(content, "utf8"),
+    );
     if ("error" in written) return { ok: false, text: written.error };
     return {
       ok: true,
@@ -627,8 +661,9 @@ export class MeshService {
     const remote = requirePath(remotePath);
     if (!remote) return { ok: false, text: "A remote file path is required." };
     await this.load();
-    const target = this.chooseDevice(query);
-    if (!target) return this.noSuchDevice(query);
+    const resolved = this.resolveDevice(query);
+    if ("error" in resolved) return { ok: false, text: resolved.error };
+    const target = resolved.target;
     const dest =
       typeof localPath === "string" && localPath.trim()
         ? resolve(dirs.workspace, localPath.trim())
@@ -672,8 +707,9 @@ export class MeshService {
         : "";
     if (!local) return { ok: false, text: "A local source path is required." };
     await this.load();
-    const target = this.chooseDevice(query);
-    if (!target) return this.noSuchDevice(query);
+    const resolved = this.resolveDevice(query);
+    if ("error" in resolved) return { ok: false, text: resolved.error };
+    const target = resolved.target;
     if (this.canStream(target, "download_file")) {
       const started = Date.now();
       const { token } = this.transfers.createPush(target.id, local);
@@ -725,6 +761,13 @@ export class MeshService {
   /**
    * Chunked read of a remote file into a Buffer. Loops `read_file` with
    * increasing offsets until the device reports EOF.
+   *
+   * End-of-file is the DEVICE's call (`eof: true`), never inferred from a
+   * short chunk: devices cap their chunk size (the companion serves at most
+   * 256KB per read regardless of the requested length), so a chunk shorter
+   * than the request is normal mid-file and treating it as EOF silently
+   * truncated every chunked read past the device's cap. A zero-length chunk
+   * without `eof` is a stuck transfer and fails loudly instead of looping.
    */
   private async pullBytes(
     query: unknown,
@@ -764,8 +807,17 @@ export class MeshService {
       const chunk = Buffer.from(b64, "base64");
       chunks.push(chunk);
       offset += chunk.length;
-      // EOF when the device says so, or when it returns a short/empty chunk.
-      if (result.data?.eof === true || chunk.length < FILE_CHUNK_BYTES) break;
+      if (result.data?.eof === true) break;
+      if (chunk.length === 0) {
+        return {
+          error: `${path} transfer stalled: the device returned an empty chunk without reporting end-of-file (after ${formatBytes(offset)}).`,
+        };
+      }
+      if (offset > MAX_CHUNKED_TRANSFER_BYTES) {
+        return {
+          error: `${path} exceeds the ${formatBytes(MAX_CHUNKED_TRANSFER_BYTES)} chunked-transfer limit (device never reported end-of-file after ${formatBytes(offset)}). Use device_pull_file with a streaming-capable companion build for large files.`,
+        };
+      }
     }
     try {
       return { data: Buffer.concat(chunks), deviceName };
@@ -853,8 +905,9 @@ export class MeshService {
     { target: DeviceInfo; result: DeviceCommandResult } | { error: string }
   > {
     await this.load();
-    const target = this.chooseDevice(query);
-    if (!target) return { error: this.noSuchDevice(query).text };
+    const resolved = this.resolveDevice(query);
+    if ("error" in resolved) return { error: resolved.error };
+    const target = resolved.target;
     // Devices advertise what they can do; an explicit list that lacks the
     // command is a clean "can't" — absent list means an older app build, so
     // attempt it and let the timeout speak.
@@ -878,17 +931,64 @@ export class MeshService {
     return { target, result };
   }
 
-  /** Resolve a device by exact id, name fragment, or default (most recently
-   *  seen mobile device, falling back to the most recent device overall). */
+  /** Resolve a device by exact id, exact name, or unique name fragment;
+   *  undefined when nothing (or more than one device) matches. */
   chooseDevice(query?: unknown): DeviceInfo | undefined {
+    const resolved = this.resolveDevice(query);
+    return "target" in resolved ? resolved.target : undefined;
+  }
+
+  /**
+   * Device resolution with a caller-facing error. Matching order: exact id,
+   * exact name (case-insensitive), then name fragment — with names and
+   * queries compared separator-insensitively ("pixel 10" finds
+   * "Google-Pixel10"). When several devices match, a sole ONLINE match wins
+   * (a stale duplicate registration must not shadow the live device);
+   * otherwise it's an explicit error, never a silent first pick — exec and
+   * file commands aimed at "pixel" must not land on whichever Pixel
+   * happened to register first. No query defaults to the most recently
+   * seen mobile device, then the most recent device overall.
+   */
+  resolveDevice(query?: unknown): { target: DeviceInfo } | { error: string } {
     const devices = this.registry.list().devices;
     if (typeof query === "string" && query.trim()) {
-      const q = query.trim().toLowerCase();
-      return devices.find(
-        (d) => d.id.toLowerCase() === q || d.name.toLowerCase().includes(q),
+      const raw = query.trim();
+      const q = raw.toLowerCase();
+      const byId = devices.find((d) => d.id.toLowerCase() === q);
+      if (byId) return { target: byId };
+      const fold = (s: string): string =>
+        s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const folded = fold(raw);
+      const pick = (
+        candidates: DeviceInfo[],
+      ): { target: DeviceInfo } | { error: string } | undefined => {
+        if (candidates.length === 1) return { target: candidates[0]! };
+        if (candidates.length > 1) {
+          const online = candidates.filter((d) => d.online);
+          if (online.length === 1) return { target: online[0]! };
+          return {
+            error: `"${raw}" matches ${candidates.length} devices: ${candidates
+              .map(
+                (d) =>
+                  `${d.name} [id: ${d.id}, ${d.online ? "online" : "offline"}]`,
+              )
+              .join(", ")}. Use the device id or full name.`,
+          };
+        }
+        return undefined;
+      };
+      return (
+        pick(devices.filter((d) => fold(d.name) === folded)) ??
+        (folded
+          ? pick(devices.filter((d) => fold(d.name).includes(folded)))
+          : undefined) ?? { error: this.noSuchDevice(query).text }
       );
     }
-    return devices.find((d) => MOBILE_PLATFORMS.has(d.platform)) ?? devices[0];
+    const fallback =
+      devices.find((d) => MOBILE_PLATFORMS.has(d.platform)) ?? devices[0];
+    return fallback
+      ? { target: fallback }
+      : { error: this.noSuchDevice(query).text };
   }
 
   // ── Formatting ─────────────────────────────────────────────────────────────
@@ -1123,9 +1223,13 @@ function formatExecResult(
   const via = typeof d.via === "string" && d.via ? ` via ${d.via}` : "";
   const parts = [`[${device.name}${via}] exit ${exit}`];
   if (stdout.trim())
-    parts.push(`--- stdout ---\n${stdout.replace(/\s+$/, "")}`);
+    parts.push(
+      `--- stdout ---\n${clampExecOutput(stdout.replace(/\s+$/, ""))}`,
+    );
   if (stderr.trim())
-    parts.push(`--- stderr ---\n${stderr.replace(/\s+$/, "")}`);
+    parts.push(
+      `--- stderr ---\n${clampExecOutput(stderr.replace(/\s+$/, ""))}`,
+    );
   if (!stdout.trim() && !stderr.trim()) parts.push("(no output)");
   return parts.join("\n");
 }

@@ -21,7 +21,7 @@ export const nativeTools: ToolDefinition[] = [
         .string()
         .optional()
         .describe(
-          "Device id or name fragment (see list_devices). Defaults to the most recent mobile device.",
+          "Device id, exact name, or unique name fragment (case/separator-insensitive; see list_devices). Ambiguous fragments error unless exactly one match is online — prefer the id when duplicates exist. Defaults to the most recent mobile device.",
         ),
     },
     execute: (params, bridge) => bridge("teleport", params),

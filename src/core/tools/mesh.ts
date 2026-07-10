@@ -12,7 +12,7 @@ const deviceParam = z
   .string()
   .optional()
   .describe(
-    "Device id or part of the device name (see list_devices). Defaults to the most recently seen mobile mesh device.",
+    "Device id, exact name, or unique name fragment (case/separator-insensitive; see list_devices). A fragment matching several devices errors unless exactly one is online — prefer the id when duplicates exist. Defaults to the most recently seen mobile mesh device.",
   );
 
 export const meshTools: ToolDefinition[] = [

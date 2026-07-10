@@ -48,6 +48,11 @@ class DeviceExec {
 
   static const int _maxChunkBytes = 256 * 1024;
   static const Duration _shizukuPermissionWait = Duration(seconds: 12);
+  /// Per-stream cap on exec output shipped back over the mesh. Head + tail
+  /// (not head-only): the daemon's teleport wrapper prints its cwd marker at
+  /// the very END of stdout, and losing it would break cwd tracking.
+  static const int _execOutputHeadBytes = 192 * 1024;
+  static const int _execOutputTailBytes = 64 * 1024;
 
   /// True when Shizuku is available AND has granted permission right now.
   Future<bool> shizukuReady() async {
@@ -190,8 +195,8 @@ class DeviceExec {
           return CommandOutcome(
             ok: (res['exitCode'] as num?)?.toInt() == 0,
             data: {
-              'stdout': res['stdout'] ?? '',
-              'stderr': res['stderr'] ?? '',
+              'stdout': _CappedOutput.clamp('${res['stdout'] ?? ''}'),
+              'stderr': _CappedOutput.clamp('${res['stderr'] ?? ''}'),
               'exitCode': (res['exitCode'] as num?)?.toInt() ?? -1,
               'via': 'shizuku',
             },
@@ -231,8 +236,13 @@ class DeviceExec {
         args,
         workingDirectory: (cwd != null && cwd.isNotEmpty) ? cwd : null,
       );
-      final outF = proc.stdout.transform(utf8.decoder).join();
-      final errF = proc.stderr.transform(utf8.decoder).join();
+      // Bounded collection: a chatty command must not balloon app memory or
+      // the mesh result payload — the stream keeps draining, extra bytes are
+      // counted and elided.
+      final out = _CappedOutput();
+      final err = _CappedOutput();
+      final outF = proc.stdout.transform(utf8.decoder).forEach(out.add);
+      final errF = proc.stderr.transform(utf8.decoder).forEach(err.add);
       var timedOut = false;
       final timer = Timer(budget, () {
         timedOut = true;
@@ -240,8 +250,10 @@ class DeviceExec {
       });
       final code = await proc.exitCode;
       timer.cancel();
-      final stdout = await outF;
-      final stderr = await errF;
+      await outF;
+      await errF;
+      final stdout = out.value();
+      final stderr = err.value();
       return CommandOutcome(
         ok: !timedOut && code == 0,
         data: {
@@ -448,4 +460,44 @@ class CommandOutcome {
       CommandOutcome(ok: false, message: message);
   factory CommandOutcome.okData(Map<String, dynamic> data) =>
       CommandOutcome(ok: true, data: data);
+}
+
+/// Bounded exec-output collector: keeps the head and a rolling tail, counts
+/// what it elides. The tail is load-bearing — the daemon's teleport wrapper
+/// emits its cwd marker as the LAST bytes of stdout.
+class _CappedOutput {
+  final StringBuffer _head = StringBuffer();
+  String _tail = '';
+  int _dropped = 0;
+
+  void add(String chunk) {
+    var rest = chunk;
+    final room = DeviceExec._execOutputHeadBytes - _head.length;
+    if (room > 0) {
+      if (rest.length <= room) {
+        _head.write(rest);
+        return;
+      }
+      _head.write(rest.substring(0, room));
+      rest = rest.substring(room);
+    }
+    _tail = _tail + rest;
+    if (_tail.length > DeviceExec._execOutputTailBytes) {
+      _dropped += _tail.length - DeviceExec._execOutputTailBytes;
+      _tail = _tail.substring(_tail.length - DeviceExec._execOutputTailBytes);
+    }
+  }
+
+  String value() {
+    if (_tail.isEmpty) return _head.toString();
+    final note = _dropped > 0 ? '\n…[$_dropped chars truncated]…\n' : '';
+    return '$_head$note$_tail';
+  }
+
+  /// One-shot clamp for output that already arrived as a single string
+  /// (the Shizuku channel hands the whole result over at once).
+  static String clamp(String s) {
+    final out = _CappedOutput()..add(s);
+    return out.value();
+  }
 }

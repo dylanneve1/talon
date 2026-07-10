@@ -89,6 +89,22 @@ void main() {
     expect(result.data!['privilegeWarning'], contains('Shizuku not ready'));
   });
 
+  test('caps runaway exec output but keeps the tail (cwd marker survives)',
+      () async {
+    // 400KB of noise then a trailing marker — like the teleport wrapper's
+    // cwd marker, which is always the LAST bytes of stdout. The cap must
+    // elide the middle, never the tail.
+    final r = await exec.exec(
+      "dd if=/dev/zero bs=1024 count=400 2>/dev/null | tr '\\0' x; "
+      'printf TALON_TAIL_MARKER',
+    );
+    expect(r.ok, isTrue);
+    final stdout = r.data!['stdout'] as String;
+    expect(stdout.length, lessThan(300 * 1024));
+    expect(stdout, contains('chars truncated'));
+    expect(stdout, endsWith('TALON_TAIL_MARKER'));
+  });
+
   test('desktop exec never consults Shizuku and stays unannotated', () async {
     const channel = MethodChannel('talon/shizuku-test-desktop');
     var channelCalls = 0;

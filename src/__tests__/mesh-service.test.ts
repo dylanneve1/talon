@@ -770,3 +770,192 @@ describe("MeshService exec + filesystem channel", () => {
     expect(res.text).toContain("appears offline");
   });
 });
+
+describe("MeshService hardening", () => {
+  /** Transport that answers read_file with device-capped chunks. */
+  function chunkedReader(
+    service: MeshService,
+    content: string,
+    deviceCap: number,
+  ): void {
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(() => {
+          const offset = Number(cmd.params.offset) || 0;
+          const want = Math.min(Number(cmd.params.len) || 0, deviceCap);
+          const slice = Buffer.from(content).subarray(offset, offset + want);
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: true,
+            data: {
+              base64: slice.toString("base64"),
+              eof: offset + slice.length >= content.length,
+            },
+          });
+        }),
+    });
+  }
+
+  it("reassembles a read whose device caps chunks below the requested size", async () => {
+    // The companion serves at most 256KB per read_file no matter what the
+    // daemon asks for. A short chunk mid-file must NOT be treated as EOF —
+    // that silently truncated every chunked read past the device's cap.
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["read_file"],
+    });
+    const content = "B".repeat(600 * 1024);
+    chunkedReader(service, content, 256 * 1024);
+
+    const res = await service.readFileBytes("phone", "/sdcard/big.txt");
+    expect("data" in res && res.data.length).toBe(content.length);
+  });
+
+  it("fails a stalled read (empty chunk without eof) instead of looping", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["read_file"],
+    });
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(() =>
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: true,
+            data: { base64: "", eof: false },
+          }),
+        ),
+    });
+
+    const res = await service.readFileBytes("phone", "/sdcard/stuck.txt");
+    expect("error" in res && res.error).toContain("stalled");
+  });
+
+  it("drops a command result claimed by the wrong device", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["exec"],
+    });
+    let forgedAccepted: boolean | undefined;
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(() => {
+          // An imposter answers first — must be ignored, so the command
+          // times out instead of resolving with the forged payload.
+          forgedAccepted = service.completeCommand({
+            commandId: cmd.id,
+            deviceId: "other-device",
+            ok: true,
+            data: { stdout: "forged", exitCode: 0 },
+          });
+        }),
+    });
+
+    const target = service.chooseDevice("phone")!;
+    const result = await service.sendCommand(target, "exec", {}, 150);
+    expect(forgedAccepted).toBe(false);
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("did not answer");
+  });
+
+  it("resolves device names separator-insensitively and prefers the online duplicate", async () => {
+    const service = await tempService();
+    // Stale registration from a reinstall — same phone, old id, offline.
+    await service.register(
+      {
+        id: "phone-old",
+        name: "Google Pixel 10",
+        platform: "android",
+        appVersion: "1.0.0",
+      },
+      Date.now() - 300_000,
+    );
+    await service.register({
+      id: "phone-new",
+      name: "Google Pixel 10",
+      platform: "android",
+      appVersion: "1.1.0",
+    });
+
+    // "Pixel 10" is a fragment of both entries; the online one must win.
+    const byFragment = service.resolveDevice("Pixel 10");
+    expect("target" in byFragment && byFragment.target.id).toBe("phone-new");
+    // Separator/case-insensitive: "pixel10" and "PIXEL-10" also land.
+    const folded = service.resolveDevice("pixel10");
+    expect("target" in folded && folded.target.id).toBe("phone-new");
+  });
+
+  it("errors on an ambiguous fragment when several matches are online", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "a",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+    });
+    await service.register({
+      id: "b",
+      name: "Pixel 9 Pro",
+      platform: "android",
+      appVersion: "1.0.0",
+    });
+
+    const res = service.resolveDevice("pixel");
+    expect("error" in res && res.error).toContain("matches 2 devices");
+    // Exact name still resolves cleanly.
+    const exact = service.resolveDevice("Pixel 9");
+    expect("target" in exact && exact.target.id).toBe("a");
+  });
+
+  it("clamps oversized exec output with an explicit truncation marker", async () => {
+    const service = await tempService({ commandTimeoutMs: 2_000 });
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["exec"],
+    });
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(() =>
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: true,
+            data: { stdout: "x".repeat(200_000), stderr: "", exitCode: 0 },
+          }),
+        ),
+    });
+
+    const res = await service.execOnDevice("phone", "yes | head -c 200000");
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain("chars truncated");
+    expect(res.text.length).toBeLessThan(40_000);
+  });
+
+  it("rejects non-string write content instead of truncating the target", async () => {
+    const service = await tempService();
+    const res = await service.writeFileToDevice("phone", "/sdcard/a.txt", 42);
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("must be a string");
+  });
+});
