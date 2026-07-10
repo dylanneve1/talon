@@ -161,19 +161,29 @@ class ShizukuBridge(channel: MethodChannel) : MethodChannel.MethodCallHandler {
         Thread {
             try {
                 val args = arrayOf("sh", "-c", cmd)
-                val newProcess = Shizuku::class.java.getDeclaredMethod(
-                    "newProcess",
-                    Array<String>::class.java,
-                    Array<String>::class.java,
-                    String::class.java,
-                )
+                // `Shizuku.newProcess` is a hidden, @Deprecated API (slated for
+                // removal in Shizuku API 14) whose exact declared signature has
+                // drifted across releases. Pinning one signature via
+                // getDeclaredMethod(name, String[], String[], String) throws
+                // NoSuchMethodException the moment the bundled Shizuku differs —
+                // and because exec swallows the throw into an app-UID fallback,
+                // that surfaces as "Shizuku is authorized but never actually
+                // used". Locate it by name/arity among the declared methods
+                // instead, so a param/return-type change no longer silently
+                // disables elevated exec.
+                val newProcess = Shizuku::class.java.declaredMethods
+                    .firstOrNull { m ->
+                        m.name == "newProcess" &&
+                            m.parameterTypes.size == 3 &&
+                            m.parameterTypes[0] == Array<String>::class.java
+                    }
+                    ?: throw NoSuchMethodException(
+                        "Shizuku.newProcess is unavailable in the bundled " +
+                            "Shizuku API — elevated exec needs the UserService " +
+                            "path (Shizuku.newProcess is removed as of API 14).",
+                    )
                 newProcess.isAccessible = true
-                val process = newProcess.invoke(
-                    null,
-                    args,
-                    null,
-                    cwd,
-                ) as Process
+                val process = newProcess.invoke(null, args, null, cwd) as Process
 
                 val out = StringBuilder()
                 val err = StringBuilder()
