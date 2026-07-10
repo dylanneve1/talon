@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.37.4](https://github.com/dylanneve1/talon/compare/v1.37.3...v1.37.4) (2026-07-10)
+
+
+### Bug Fixes
+
+* **companion:** wait on ShizukuRemoteProcess with waitFor(), not exitValue polling ([#498](https://github.com/dylanneve1/talon/issues/498)) ([c7bec03](https://github.com/dylanneve1/talon/commit/c7bec03d78228186f416c27cd21cacec010ad75b))
+
 ## [1.37.3](https://github.com/dylanneve1/talon/compare/v1.37.2...v1.37.3) (2026-07-10)
 
 
