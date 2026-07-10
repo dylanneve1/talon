@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.37.3](https://github.com/dylanneve1/talon/compare/v1.37.2...v1.37.3) (2026-07-10)
+
+
+### Bug Fixes
+
+* **companion:** keep Shizuku classes from R8 so reflective newProcess survives ([#496](https://github.com/dylanneve1/talon/issues/496)) ([cb297d8](https://github.com/dylanneve1/talon/commit/cb297d86646257d48671f0a73c062864f60cf522))
+
 ## [1.37.2](https://github.com/dylanneve1/talon/compare/v1.37.1...v1.37.2) (2026-07-10)
 
 
