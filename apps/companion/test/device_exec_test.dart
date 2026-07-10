@@ -89,6 +89,28 @@ void main() {
     expect(result.data!['privilegeWarning'], contains('Shizuku not ready'));
   });
 
+  test('desktop exec never consults Shizuku and stays unannotated', () async {
+    const channel = MethodChannel('talon/shizuku-test-desktop');
+    var channelCalls = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      channelCalls++;
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+
+    final desktop = DeviceExec(shizukuChannel: channel, isAndroid: () => false);
+    final result = await desktop.exec('echo desktop');
+
+    expect(channelCalls, 0);
+    expect(result.ok, isTrue);
+    expect(result.data!.containsKey('via'), isFalse);
+    expect(result.data!.containsKey('privilegeWarning'), isFalse);
+    expect(await desktop.privilegeStatus(), {'execPrivilege': 'user'});
+  });
+
   test('writes then reads a file in chunks (base64 roundtrip)', () async {
     final f = '${tmp.path}/note.txt';
     final content = 'A' * (300 * 1024); // > one 256KB chunk

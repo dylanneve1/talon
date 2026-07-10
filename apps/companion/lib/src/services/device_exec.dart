@@ -106,7 +106,9 @@ class DeviceExec {
   }
 
   Future<Map<String, String>> privilegeStatus() async {
-    if (!_isAndroid()) return const {'execPrivilege': 'app'};
+    // Desktop platforms run commands as the logged-in OS user; the
+    // shizuku/app distinction is Android-only.
+    if (!_isAndroid()) return const {'execPrivilege': 'user'};
     try {
       final status =
           await _shizuku.invokeMapMethod<String, dynamic>('getStatus');
@@ -250,7 +252,9 @@ class DeviceExec {
             if (timedOut) '[killed: timeout]',
           ].join('\n'),
           'exitCode': code,
-          'via': 'app',
+          // Only Android has a degraded app-UID mode worth flagging; desktop
+          // shells already run as the OS user.
+          if (_isAndroid()) 'via': 'app',
           if (privilegeWarning != null) 'privilegeWarning': privilegeWarning,
         },
         message: timedOut ? 'Command timed out.' : null,
