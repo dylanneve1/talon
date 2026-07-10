@@ -73,7 +73,9 @@ export function isAutoInjectTrusted(
 /**
  * Enforce the #373 trust policy on a retrieval result: drop every item that
  * is not explicitly auto-inject trusted. Adapters should call this as their
- * last step so the filter cannot be forgotten upstream of the prompt.
+ * last step, and the Weaver's `prefetchMemory` applies it again to whatever
+ * a retriever returns — a buggy adapter cannot leak low-trust items into
+ * the prompt.
  */
 export function filterAutoInjectable(
   memory: RetrievedMemory | undefined,

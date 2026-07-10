@@ -208,9 +208,12 @@ export const messagingHandlers: DiscordActionHandlers = {
 
   schedule_message: (body, chatId, { client, scheduledMessages }) => {
     const text = String(body.text ?? "");
+    // NaN (e.g. delay_seconds: "5m") must fall back to the default, not
+    // propagate: setTimeout(fn, NaN) fires immediately.
+    const requested = Number(body.delay_seconds ?? 60);
     const delaySec = Math.max(
       1,
-      Math.min(MAX_DELAY_SEC, Number(body.delay_seconds ?? 60)),
+      Math.min(MAX_DELAY_SEC, Number.isFinite(requested) ? requested : 60),
     );
     const entry: ScheduledMessage = {
       id: `sched_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,

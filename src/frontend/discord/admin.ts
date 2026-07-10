@@ -13,6 +13,7 @@ import type { TalonConfig } from "../../util/config.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { resetSession, getAllSessions } from "../../storage/sessions.js";
 import { clearHistory } from "../../storage/history.js";
+import { todayLogDate } from "../../storage/daily-log.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import {
   getAllCronJobs,
@@ -165,7 +166,7 @@ export async function handleAdminSubcommand(
     }
 
     case "daily": {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayLogDate();
       const logPath = `${dirs.logs}/${today}.md`;
       try {
         const content = readFileSync(logPath, "utf-8");

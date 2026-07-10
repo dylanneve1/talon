@@ -104,6 +104,14 @@ export function getLogsDir(): string {
   return LOGS_DIR;
 }
 
+/**
+ * Today's log-file date key. Readers must use this (not the UTC date from
+ * `toISOString`) or they look for the wrong file whenever local date ≠ UTC.
+ */
+export function todayLogDate(): string {
+  return localDateKey(new Date());
+}
+
 /** Matches YYYY-MM-DD.md filenames strictly. */
 const DAILY_FILE_RE = /^\d{4}-\d{2}-\d{2}\.md$/;
 

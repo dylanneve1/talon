@@ -13,7 +13,7 @@ import {
   effectiveSalience,
   reinforce,
 } from "../core/soul/salience.js";
-import type { EvidencePayload, Hash } from "../core/soul/types.js";
+import type { EvidencePayload } from "../core/soul/types.js";
 
 const HL = 1000; // 1s half-life for readable tests
 

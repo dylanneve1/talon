@@ -6,7 +6,7 @@
  * end-to-end without mocks between it and the rows.
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),

@@ -134,6 +134,25 @@ describe("telegram schedule_message", () => {
     expect(ctx.scheduledMessages.size).toBe(0);
   });
 
+  it("falls back to the default delay when delay_seconds is not a number", async () => {
+    const { store, telegram } = await freshImports();
+    const ctx = fakeCtx();
+
+    const res = (await telegram.messagingHandlers.schedule_message(
+      { text: "bad delay", delay_seconds: "5m" },
+      42,
+      ctx as never,
+    )) as { ok: boolean; delay_seconds: number };
+    expect(res.delay_seconds).toBe(60);
+
+    // NaN would make setTimeout fire immediately; the default must not.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ctx.bot.sent).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(ctx.bot.sent).toHaveLength(1);
+    expect(store.listScheduledForChat("telegram", "42")).toHaveLength(0);
+  });
+
   it("cancel_scheduled clears both the timer and the persisted entry", async () => {
     const { store, telegram } = await freshImports();
     const ctx = fakeCtx();

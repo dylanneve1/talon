@@ -99,6 +99,15 @@ describe("daily-log", () => {
       expect(content).toContain("Did some testing");
     });
 
+    it("todayLogDate names the exact file appendDailyLog writes", async () => {
+      const { appendDailyLog, getLogsDir, todayLogDate } =
+        await import("../storage/daily-log.js");
+
+      appendDailyLog("KeyTest", "reader/writer key agreement");
+
+      expect(readdirSync(getLogsDir())).toContain(`${todayLogDate()}.md`);
+    });
+
     it("uses .talon/workspace/logs/ directory", async () => {
       const { appendDailyLog, getLogsDir } =
         await import("../storage/daily-log.js");
