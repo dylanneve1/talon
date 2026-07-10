@@ -24,6 +24,11 @@ class Prefs {
 
   static Future<Prefs> load() async => Prefs(await SharedPreferences.getInstance());
 
+  /// Re-read the backing store from disk. SharedPreferences caches per
+  /// isolate, so the background mesh isolate must reload after the UI isolate
+  /// writes (mesh toggles, a new connection profile) to observe the change.
+  Future<void> reload() => _sp.reload();
+
   ConnectionConfig get connection {
     final raw = _sp.getString(_kConnection);
     if (raw == null) return ConnectionConfig.defaults();

@@ -6,7 +6,6 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:uuid/uuid.dart';
@@ -54,22 +53,6 @@ typedef MeshRingHandler = Future<void> Function(String? message);
 /// Extra device intelligence merged into the `status` command's payload
 /// (hardware model, OS, locale, timezone, network, …).
 typedef MeshSystemInfoProvider = Future<Map<String, String>> Function();
-
-@pragma('vm:entry-point')
-void startMeshForegroundCallback() {
-  FlutterForegroundTask.setTaskHandler(_MeshForegroundTaskHandler());
-}
-
-class _MeshForegroundTaskHandler extends TaskHandler {
-  @override
-  Future<void> onStart(DateTime timestamp, TaskStarter starter) async {}
-
-  @override
-  void onRepeatEvent(DateTime timestamp) {}
-
-  @override
-  Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {}
-}
 
 class MeshService {
   /// Base commands every build can execute, advertised at registration so the
@@ -126,7 +109,7 @@ class MeshService {
         _batteryProvider = batteryProvider ?? _defaultBattery,
         _nameProvider = nameProvider ?? _defaultName,
         _versionProvider = versionProvider ?? _defaultVersion,
-        _foregroundStarter = foregroundStarter ?? _startForeground,
+        _foregroundStarter = foregroundStarter ?? _noopForeground,
         _ringHandler = ringHandler ?? _defaultRing,
         _systemInfoProvider = systemInfoProvider ?? _defaultSystemInfo,
         _exec = deviceExec ?? DeviceExec();
@@ -551,40 +534,10 @@ class MeshService {
     return info;
   }
 
-  static Future<void> _startForeground() async {
-    if (kIsWeb || !Platform.isAndroid) return;
-    final notificationPermission =
-        await FlutterForegroundTask.checkNotificationPermission();
-    if (notificationPermission != NotificationPermission.granted) {
-      await FlutterForegroundTask.requestNotificationPermission();
-    }
-    if (!await FlutterForegroundTask.isIgnoringBatteryOptimizations) {
-      await FlutterForegroundTask.requestIgnoreBatteryOptimization();
-    }
-    FlutterForegroundTask.init(
-      androidNotificationOptions: AndroidNotificationOptions(
-        channelId: 'talon_mesh',
-        channelName: 'Talon mesh',
-        channelDescription: 'Keeps Talon mesh location available.',
-        channelImportance: NotificationChannelImportance.LOW,
-        priority: NotificationPriority.LOW,
-      ),
-      iosNotificationOptions: const IOSNotificationOptions(),
-      foregroundTaskOptions: ForegroundTaskOptions(
-        eventAction: ForegroundTaskEventAction.repeat(60000),
-        autoRunOnBoot: true,
-        autoRunOnMyPackageReplaced: true,
-        allowWakeLock: true,
-        allowWifiLock: true,
-      ),
-    );
-    if (!await FlutterForegroundTask.isRunningService) {
-      await FlutterForegroundTask.startService(
-        serviceTypes: const [ForegroundServiceTypes.location],
-        notificationTitle: 'Talon mesh active',
-        notificationText: 'Location sharing is available on demand.',
-        callback: startMeshForegroundCallback,
-      );
-    }
-  }
+  /// Default foreground starter: nothing. On Android the foreground service
+  /// is owned by MeshForegroundController (mesh_background.dart) — the mesh
+  /// loop runs INSIDE that service's isolate, so starting it from here would
+  /// be circular. Desktop platforms need no service at all. The injection
+  /// point stays for tests and future platforms.
+  static Future<void> _noopForeground() async {}
 }

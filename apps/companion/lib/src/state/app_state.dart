@@ -9,6 +9,7 @@ import '../services/bridge_client.dart';
 import '../services/daemon_supervisor.dart';
 import '../services/local_discovery.dart';
 import '../services/log.dart';
+import '../services/mesh_background.dart';
 import '../services/mesh_service.dart';
 import '../services/prefs.dart';
 
@@ -320,6 +321,9 @@ class AppState extends ChangeNotifier {
     config = next;
     _activeConfig = null;
     await prefs.setConnection(next);
+    // The background mesh isolate (Android) dials the bridge itself — hand it
+    // the new profile immediately, not only after this UI connect succeeds.
+    MeshForegroundController.notifyReconfigure();
     chats.clear();
     _messages.clear();
     _turns.clear();
@@ -645,27 +649,43 @@ class AppState extends ChangeNotifier {
 
   Future<void> setMeshSharing(bool on) async {
     await prefs.setMeshSharing(on);
-    _mesh?.reconfigure();
+    await _meshPrefsChanged();
     notifyListeners();
   }
 
   Future<void> setMeshPeriodic(bool on) async {
     await prefs.setMeshPeriodic(on);
-    _mesh?.reconfigure();
+    await _meshPrefsChanged();
     notifyListeners();
   }
 
   Future<void> setMeshIntervalSeconds(int seconds) async {
     await prefs.setMeshIntervalSeconds(seconds);
-    _mesh?.reconfigure();
+    await _meshPrefsChanged();
     notifyListeners();
   }
 
   Future<void> setMeshDeviceControl(bool on) async {
     await prefs.setMeshDeviceControl(on);
     // Re-register so the daemon sees the exec/fs capabilities appear/disappear.
-    _mesh?.reconfigure();
+    await _meshPrefsChanged();
     notifyListeners();
+  }
+
+  /// Propagate a mesh pref change to whichever isolate owns the mesh loop:
+  /// the Android foreground service (start/stop it to mirror the sharing
+  /// toggle, poke a reconfigure when it's already up) or the in-process
+  /// MeshService everywhere else.
+  Future<void> _meshPrefsChanged() async {
+    if (MeshForegroundController.isSupported) {
+      try {
+        await MeshForegroundController.syncFromPrefs(prefs);
+      } catch (e) {
+        AppLog.warn('app_state', 'mesh foreground sync failed', e);
+      }
+      return;
+    }
+    _mesh?.reconfigure();
   }
 
   Future<void> refreshMeshDevices() async {
@@ -749,6 +769,20 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _startMesh(BridgeClient client) async {
+    if (MeshForegroundController.isSupported) {
+      // Android: the mesh loop lives entirely in the foreground service's
+      // isolate (mesh_background.dart) so teleport/exec/locate survive this
+      // UI engine being backgrounded, swiped away, or killed. Running a
+      // second MeshService here would execute every command twice.
+      await _mesh?.stop();
+      _mesh = null;
+      try {
+        await MeshForegroundController.syncFromPrefs(prefs);
+      } catch (e) {
+        AppLog.warn('app_state', 'mesh foreground sync failed', e);
+      }
+      return;
+    }
     await _mesh?.stop();
     final mesh = MeshService(prefs, client);
     _mesh = mesh;

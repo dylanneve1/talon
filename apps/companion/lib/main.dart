@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
+import 'src/services/mesh_background.dart';
 import 'src/services/prefs.dart';
 import 'src/state/app_state.dart';
 import 'src/theme.dart';
@@ -7,6 +9,10 @@ import 'src/ui/root_view.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // UI ↔ foreground-service isolate messaging (mesh reconfigure pokes).
+  if (MeshForegroundController.isSupported) {
+    FlutterForegroundTask.initCommunicationPort();
+  }
   final prefs = await Prefs.load();
   TalonTheme.mode.value = switch (prefs.themeMode) {
     'light' => ThemeMode.light,
