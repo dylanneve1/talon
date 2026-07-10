@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.37.0](https://github.com/dylanneve1/talon/compare/v1.36.0...v1.37.0) (2026-07-10)
+
+
+### Features
+
+* **metrics:** per-session, persistent, daily-bucketed metrics ([#480](https://github.com/dylanneve1/talon/issues/480)) ([a27f61d](https://github.com/dylanneve1/talon/commit/a27f61d5ecd1ade4befcf2839917f67d2759ef47))
+
+
+### Bug Fixes
+
+* **mesh:** explicit Shizuku privilege + exec/transfer infrastructure hardening ([#490](https://github.com/dylanneve1/talon/issues/490)) ([09aea6b](https://github.com/dylanneve1/talon/commit/09aea6bdcc07b931df99c4d2d170f175ce485d16))
+
 ## [1.36.0](https://github.com/dylanneve1/talon/compare/v1.35.0...v1.36.0) (2026-07-09)
 
 
