@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.37.1](https://github.com/dylanneve1/talon/compare/v1.37.0...v1.37.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* **companion:** resolve Shizuku newProcess by name, not a pinned signature ([#492](https://github.com/dylanneve1/talon/issues/492)) ([5374b21](https://github.com/dylanneve1/talon/commit/5374b213fa1a7a780a72d887a22988a994222bab))
+
 ## [1.37.0](https://github.com/dylanneve1/talon/compare/v1.36.0...v1.37.0) (2026-07-10)
 
 
