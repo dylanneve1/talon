@@ -20,6 +20,7 @@ const SESSION_ID = "sess_abc";
 
 function baseContext(overrides: Record<string, unknown> = {}) {
   return {
+    chatId: "test-chat",
     sessionId: SESSION_ID,
     state: createStreamState(),
     seenToolCallIds: new Set<string>(),

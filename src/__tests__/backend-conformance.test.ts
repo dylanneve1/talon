@@ -153,12 +153,14 @@ describe("backend conformance — shared SSE event processor", () => {
 
     for (const event of events) {
       await processStreamEvent(event, {
+        chatId: "test-chat",
         sessionId,
         state: kiloState,
         seenToolCallIds: seenKilo,
         backendLabel: "Kilo",
       });
       await processStreamEvent(event, {
+        chatId: "test-chat",
         sessionId,
         state: opencodeState,
         seenToolCallIds: seenOpenCode,
@@ -199,12 +201,14 @@ describe("backend conformance — shared SSE event processor", () => {
     };
 
     const kiloOutcome = await processStreamEvent(event, {
+      chatId: "test-chat",
       sessionId: ourSession,
       state: kiloState,
       seenToolCallIds: new Set(),
       backendLabel: "Kilo",
     });
     const opencodeOutcome = await processStreamEvent(event, {
+      chatId: "test-chat",
       sessionId: ourSession,
       state: opencodeState,
       seenToolCallIds: new Set(),
@@ -249,12 +253,14 @@ describe("backend conformance — shared SSE event processor", () => {
 
     for (const event of events) {
       await processStreamEvent(event, {
+        chatId: "test-chat",
         sessionId,
         state: kiloState,
         seenToolCallIds: new Set(),
         backendLabel: "Kilo",
       });
       await processStreamEvent(event, {
+        chatId: "test-chat",
         sessionId,
         state: opencodeState,
         seenToolCallIds: new Set(),
