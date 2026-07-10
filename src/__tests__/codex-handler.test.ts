@@ -852,7 +852,8 @@ describe("codex / handleMessage — error paths", () => {
       },
     });
 
-    expect(delivered[0]).toContain("no reply");
+    // Empty turn → nothing delivered (no "(no reply …)" slop).
+    expect(delivered).toHaveLength(0);
   });
 });
 
@@ -1506,9 +1507,9 @@ describe("codex / handleMessage — agent_message edge cases", () => {
       },
     });
 
-    // Empty agent_message → no response text → empty-turn notice via shared.
+    // Empty agent_message → no response text → empty turn stays silent.
     expect(result.text).toBe("");
-    expect(delivered[0]).toContain("no reply");
+    expect(delivered).toHaveLength(0);
   });
 
   it("ignores agent_message items with whitespace-only text", async () => {
@@ -1543,7 +1544,7 @@ describe("codex / handleMessage — agent_message edge cases", () => {
     });
 
     expect(result.text).toBe("");
-    expect(delivered[0]).toContain("no reply");
+    expect(delivered).toHaveLength(0);
   });
 });
 

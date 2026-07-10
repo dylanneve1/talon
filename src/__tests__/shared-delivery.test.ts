@@ -97,7 +97,7 @@ describe("shared / routeDelivery", () => {
     expect(onTextBlock).toHaveBeenCalledWith("Hello! Here is your reply.");
   });
 
-  it("route=empty for a turn that produced no text, no tools, no delivery", async () => {
+  it("route=empty stays SILENT for a turn that produced no text, no tools, no delivery", async () => {
     const state = makeState();
     const onTextBlock = vi.fn().mockResolvedValue(undefined);
 
@@ -111,36 +111,25 @@ describe("shared / routeDelivery", () => {
 
     expect(decision.route).toBe("empty");
     expect(decision.chars).toBe(0);
-    expect(onTextBlock).toHaveBeenCalledTimes(1);
-    expect(onTextBlock.mock.calls[0][0]).toContain("no reply");
+    // A turn with nothing to say sends nothing — no "(no reply …)" slop.
+    expect(onTextBlock).not.toHaveBeenCalled();
   });
 
-  it("route=empty distinguishes tool-call-loop from no-output", async () => {
-    const stateA = makeState({ toolCalls: 0 });
-    const onTextBlockA = vi.fn().mockResolvedValue(undefined);
-    await routeDelivery({
-      backendLabel: "Kilo",
-      chatId: "chat-1",
-      state: stateA,
-      responseText: "",
-      onTextBlock: onTextBlockA,
-    });
-    expect(onTextBlockA.mock.calls[0][0]).toBe(
-      "(no reply — model returned no output)",
-    );
-
-    const stateB = makeState({ toolCalls: 3 });
-    const onTextBlockB = vi.fn().mockResolvedValue(undefined);
-    await routeDelivery({
-      backendLabel: "Kilo",
-      chatId: "chat-1",
-      state: stateB,
-      responseText: "",
-      onTextBlock: onTextBlockB,
-    });
-    expect(onTextBlockB.mock.calls[0][0]).toBe(
-      "(no reply — model called tools but didn't produce output text)",
-    );
+  it("route=empty sends nothing whether or not tools ran", async () => {
+    for (const toolCalls of [0, 3]) {
+      const state = makeState({ toolCalls });
+      const onTextBlock = vi.fn().mockResolvedValue(undefined);
+      const decision = await routeDelivery({
+        backendLabel: "Kilo",
+        chatId: "chat-1",
+        state,
+        responseText: "",
+        onTextBlock,
+      });
+      expect(decision.route).toBe("empty");
+      expect(decision.chars).toBe(0);
+      expect(onTextBlock).not.toHaveBeenCalled();
+    }
   });
 
   it("route=tool with 0 chars for a terminated silent turn", async () => {
