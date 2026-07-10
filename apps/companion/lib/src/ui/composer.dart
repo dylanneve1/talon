@@ -12,7 +12,9 @@ typedef UploadResult = ({String imagePath, String path});
 /// content up to a cap, then scrolls. Supports attaching a single image, which
 /// is uploaded on send and passed through to the model.
 class Composer extends StatefulWidget {
-  final Future<void> Function(
+  /// Sends the message; resolves false when the daemon rejected it (dead
+  /// bridge, network error) so the draft can be handed back to the user.
+  final Future<bool> Function(
     String text, {
     String? imagePath,
     String? attachmentPath,
@@ -140,11 +142,20 @@ class _ComposerState extends State<Composer> {
       imagePath = up.imagePath;
       attachmentPath = up.path;
     }
-    await widget.onSend(
+    final ok = await widget.onSend(
       text,
       imagePath: imagePath,
       attachmentPath: attachmentPath,
     );
+    if (!ok && mounted) {
+      // Send failed (a system note in the chat explains why). Hand the text
+      // back so the message isn't silently thrown away — unless the user
+      // already started typing a new one.
+      if (_controller.text.trim().isEmpty && text.isNotEmpty) {
+        _controller.text = text;
+      }
+      _recomputeCanSend();
+    }
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {

@@ -480,16 +480,18 @@ class AppState extends ChangeNotifier {
     await _command(chatId, 'Delete', client.deleteChat(chatId));
   }
 
-  Future<void> sendMessage(
+  /// Returns whether the daemon accepted the message — false lets the
+  /// composer hand the draft back instead of silently losing it.
+  Future<bool> sendMessage(
     String text, {
     String? imagePath,
     String? attachmentPath,
   }) async {
     final chatId = selectedChatId;
     final client = _client;
-    if (chatId == null || client == null) return;
+    if (chatId == null || client == null) return false;
     // Text may be empty when an image is attached.
-    if (text.trim().isEmpty && attachmentPath == null) return;
+    if (text.trim().isEmpty && attachmentPath == null) return false;
     // Always hand it to the daemon: if a turn is already running for this chat
     // the daemon parks it as the queued follow-up (synced to every client) and
     // auto-sends it at turn end, rather than interrupting. So the app doesn't
@@ -501,8 +503,10 @@ class AppState extends ChangeNotifier {
         imagePath: imagePath,
         attachmentPath: attachmentPath,
       );
+      return true;
     } catch (e) {
       _appendSystem(chatId, 'Failed to send: $e');
+      return false;
     }
   }
 
@@ -1109,9 +1113,22 @@ class AppState extends ChangeNotifier {
       // fetch is in flight, and a blind assignment would drop it (it isn't in
       // the server snapshot yet). History is authoritative for order; append
       // any newer live messages not already present, deduped by id.
+      //
+      // System notices need one extra rule. They're client/broadcast-only
+      // ("Switched to codex — starting a fresh conversation.", send failures)
+      // and never appear in server history, so a plain id-dedupe keeps them
+      // forever — and this append re-pinned them BELOW the fresh history on
+      // every reconnect, resurrecting a days-old "backend switched" notice at
+      // the bottom of the chat each time the app was reopened. Keep a system
+      // notice only while it's genuinely the newest thing in the conversation;
+      // once real history has moved past it, it has expired.
       final histIds = hist.map((m) => m.id).toSet();
-      final extras = (_messages[chatId] ?? const <ClientMessage>[])
-          .where((m) => !histIds.contains(m.id));
+      final newestTs = hist.isEmpty ? 0 : hist.last.ts;
+      final extras = (_messages[chatId] ?? const <ClientMessage>[]).where(
+        (m) =>
+            !histIds.contains(m.id) &&
+            (m.role != Role.system || m.ts >= newestTs),
+      );
       _messages[chatId] = [...hist, ...extras];
       _loadedHistory.add(chatId);
     } catch (_) {
@@ -1197,15 +1214,25 @@ class AppState extends ChangeNotifier {
   }
 
   void _appendSystem(String chatId, String text) {
-    _messages.putIfAbsent(chatId, () => []).add(
-          ClientMessage(
-            id: 'sys-${DateTime.now().microsecondsSinceEpoch}',
-            chatId: chatId,
-            role: Role.system,
-            text: text,
-            ts: DateTime.now().millisecondsSinceEpoch,
-          ),
-        );
+    final list = _messages.putIfAbsent(chatId, () => []);
+    // A repeating failure (rate limit, dead bridge, session cap) fires the
+    // same error event over and over; stacking identical notices buries the
+    // conversation. Collapse into the existing row instead of appending.
+    if (list.isNotEmpty &&
+        list.last.role == Role.system &&
+        list.last.text == text) {
+      notifyListeners();
+      return;
+    }
+    list.add(
+      ClientMessage(
+        id: 'sys-${DateTime.now().microsecondsSinceEpoch}',
+        chatId: chatId,
+        role: Role.system,
+        text: text,
+        ts: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
     // Callers outside the event loop (send/upload/command failures) rely on
     // this notify — without it the note only appears on the next repaint.
     notifyListeners();

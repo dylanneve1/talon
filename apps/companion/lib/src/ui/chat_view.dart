@@ -208,8 +208,23 @@ class _ChatViewState extends State<ChatView> {
       );
     }
 
+    // Interleave day markers: a quiet centered "Today / Yesterday / 4 July"
+    // pill wherever the calendar day changes, so scrollback has temporal
+    // landmarks instead of one undifferentiated stream.
+    final rows = <Object>[];
+    DateTime? day;
+    for (final m in msgs) {
+      final t = m.time.toLocal();
+      final d = DateTime(t.year, t.month, t.day);
+      if (day == null || d != day) {
+        rows.add(d);
+        day = d;
+      }
+      rows.add(m);
+    }
+
     final topLoader = widget.state.isLoadingOlder(chatId);
-    final itemCount = (topLoader ? 1 : 0) + msgs.length + (showActivity ? 1 : 0);
+    final itemCount = (topLoader ? 1 : 0) + rows.length + (showActivity ? 1 : 0);
     return Stack(
       children: [
         Align(
@@ -234,8 +249,10 @@ class _ChatViewState extends State<ChatView> {
                   );
                 }
                 final mi = i - (topLoader ? 1 : 0);
-                if (mi < msgs.length) {
-                  final m = msgs[mi];
+                if (mi < rows.length) {
+                  final row = rows[mi];
+                  if (row is DateTime) return _DayDivider(day: row);
+                  final m = row as ClientMessage;
                   return MessageBubble(
                     message: m,
                     botName: widget.state.status.botName,
@@ -278,6 +295,66 @@ class _ChatViewState extends State<ChatView> {
 
 /// Round "back to the newest message" button shown once the user scrolls up
 /// into history.
+/// Centered day marker between messages from different calendar days.
+class _DayDivider extends StatelessWidget {
+  final DateTime day;
+  const _DayDivider({required this.day});
+
+  static const _months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  String get _label {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final days = today.difference(day).inDays;
+    if (days <= 0) return 'Today';
+    if (days == 1) return 'Yesterday';
+    final base = '${day.day} ${_months[day.month - 1]}';
+    return day.year == now.year ? base : '$base ${day.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: TalonSpace.sm),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: TalonSpace.md,
+            vertical: TalonSpace.xs,
+          ),
+          decoration: BoxDecoration(
+            color: TalonColors.glassFill,
+            borderRadius: TalonRadius.rPill,
+            border: Border.all(color: TalonColors.glassStroke),
+          ),
+          child: Text(
+            _label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
+              color: TalonColors.textDim,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _JumpToLatest extends StatelessWidget {
   final VoidCallback onTap;
   const _JumpToLatest({required this.onTap});

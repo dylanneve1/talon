@@ -130,10 +130,17 @@ class MeshService {
     if (!prefs.meshSharing) return;
     await _foregroundStarter();
     await register();
-    _events = client.events.listen((event) {
-      if (event['kind'] == 'locate') unawaited(_handleLocate(event));
-      if (event['kind'] == 'device_command') unawaited(_handleCommand(event));
-    });
+    _events = client.events.listen(
+      (event) {
+        if (event['kind'] == 'locate') unawaited(_handleLocate(event));
+        if (event['kind'] == 'device_command') unawaited(_handleCommand(event));
+      },
+      // SSE drops surface as stream errors. Reconnection belongs to the
+      // connection's owner (AppState / MeshBackgroundRunner); without this
+      // handler every drop became an unhandled zone error in this
+      // subscription.
+      onError: (Object e) => AppLog.debug('mesh', 'event stream error', e),
+    );
     _heartbeat = Timer.periodic(const Duration(seconds: 60), (_) {
       if (prefs.meshSharing) unawaited(register());
     });
