@@ -829,8 +829,7 @@ export class MeshService {
       return {
         ok: false,
         text:
-          dispatched.result.message ??
-          `${target.name} refused the install.`,
+          dispatched.result.message ?? `${target.name} refused the install.`,
       };
     }
     return {
