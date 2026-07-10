@@ -33,6 +33,12 @@ class DeviceExec {
   final bool Function() _isAndroid;
   Future<bool>? _pendingShizukuPermission;
 
+  /// Last Shizuku state string reported by the native bridge ("ready",
+  /// "permission-needed", "not-running", "unavailable", …). Captured on every
+  /// readiness probe so an app-UID fallback can say *why* Shizuku wasn't used,
+  /// in the command result that travels back over the mesh — no adb needed.
+  String? _lastShizukuState;
+
   /// Commands this executor can answer — merged into the device's advertised
   /// mesh capabilities so the daemon gates cleanly.
   static const List<String> capabilities = [
@@ -60,8 +66,14 @@ class DeviceExec {
     try {
       final status =
           await _shizuku.invokeMapMethod<String, dynamic>('getStatus');
-      return status?['ready'] == true;
-    } catch (_) {
+      final state = status?['state'];
+      if (state is String) _lastShizukuState = state;
+      final ready = status?['ready'] == true;
+      AppLog.info('shizuku', 'getStatus ready=$ready state=$_lastShizukuState');
+      return ready;
+    } catch (e) {
+      _lastShizukuState = 'error: $e';
+      AppLog.warn('shizuku', 'getStatus failed', e);
       return false;
     }
   }
@@ -217,7 +229,8 @@ class DeviceExec {
       cwd: cwd,
       budget: budget,
       privilegeWarning: _isAndroid()
-          ? 'Shizuku not ready or permission not granted; ran as app UID.'
+          ? 'Shizuku not used (state=${_lastShizukuState ?? 'unknown'}); '
+              'ran as app UID.'
           : null,
     );
   }

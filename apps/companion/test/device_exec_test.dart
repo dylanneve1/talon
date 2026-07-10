@@ -86,7 +86,10 @@ void main() {
 
     expect(result.ok, isTrue);
     expect(result.data!['via'], 'app');
-    expect(result.data!['privilegeWarning'], contains('Shizuku not ready'));
+    // The fallback warning surfaces the actual Shizuku state (why it wasn't
+    // used) so a remote caller can diagnose without adb.
+    expect(result.data!['privilegeWarning'], contains('state=not-running'));
+    expect(result.data!['privilegeWarning'], contains('app UID'));
   });
 
   test('caps runaway exec output but keeps the tail (cwd marker survives)',
