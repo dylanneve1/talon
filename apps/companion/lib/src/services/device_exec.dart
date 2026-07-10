@@ -50,6 +50,10 @@ class DeviceExec {
     'delete',
     'mkdir',
     'move',
+    // Silent self-update: install a pushed APK via Shizuku. Advertised
+    // everywhere device control is on; answers with a clear "only on
+    // Android / needs Shizuku" when it can't actually run.
+    'install_apk',
   ];
 
   static const int _maxChunkBytes = 256 * 1024;
@@ -176,6 +180,12 @@ class DeviceExec {
         return mkdir(_str(params['path']) ?? '');
       case 'move':
         return move(_str(params['from']) ?? '', _str(params['to']) ?? '');
+      case 'install_apk':
+        return installApk(
+          _str(params['path']) ?? '',
+          sha256: _str(params['sha256']),
+          delayMs: _int(params['delayMs']),
+        );
       default:
         return null;
     }
@@ -288,6 +298,108 @@ class DeviceExec {
       return CommandOutcome.fail('Failed to run command: $e');
     }
   }
+
+  // ── self-update ─────────────────────────────────────────────────────────--
+
+  /// Install a (already-pushed) APK to silently update the companion itself —
+  /// the device half of Talon's remote self-update.
+  ///
+  /// The connection-survival trick: this is paired with the mesh foreground
+  /// service's `autoRunOnMyPackageReplaced` flag. `pm install -r` kills the
+  /// app to replace it, then Android broadcasts MY_PACKAGE_REPLACED and the
+  /// service (hence the whole mesh loop) auto-restarts and reconnects — so a
+  /// remote update drops the link only for the couple of seconds the process
+  /// is being swapped, with no manual reopen.
+  ///
+  /// Two things make it robust:
+  ///   1. It requires Shizuku (shell/ADB UID). The app UID cannot install a
+  ///      package without a user tapping through PackageInstaller, which a
+  ///      headless mesh command can't do.
+  ///   2. The actual `pm install` runs DETACHED (setsid) after a short delay,
+  ///      so this command can post its "staged" ack over the mesh BEFORE pm
+  ///      tears the app down, and the install still completes even though the
+  ///      app process dies mid-way (its parent is the Shizuku server, not us).
+  ///
+  /// `pm install -r` also refuses a differently-signed APK, so a wrong or
+  /// tampered file can't hijack the app — it just fails the reinstall.
+  Future<CommandOutcome> installApk(
+    String path, {
+    String? sha256,
+    int? delayMs,
+  }) async {
+    if (!_isAndroid()) {
+      return CommandOutcome.fail('install_apk is only supported on Android.');
+    }
+    if (path.isEmpty) return CommandOutcome.fail('No APK path given.');
+    final file = File(path);
+    if (!await file.exists()) {
+      return CommandOutcome.fail('No such APK on device: $path');
+    }
+    if (!await ensureShizukuReady()) {
+      return CommandOutcome.fail(
+        'Silent install needs Shizuku (state=${_lastShizukuState ?? 'unavailable'}). '
+        'Install Shizuku, grant Talon permission, and retry.',
+      );
+    }
+    // Integrity gate: verify the pushed bytes match what the daemon sent
+    // BEFORE handing the file to pm — a truncated transfer must never be
+    // installed. Uses the elevated shell's sha256sum rather than pulling in a
+    // Dart crypto dependency.
+    if (sha256 != null && sha256.isNotEmpty) {
+      try {
+        final check = await _shizukuExec('sha256sum ${_shQuote(path)}', 30000);
+        final line = '${check?['stdout'] ?? ''}'.trim();
+        final digest = line.isEmpty ? '' : line.split(RegExp(r'\s+')).first;
+        if (digest.isEmpty) {
+          return CommandOutcome.fail('Could not hash the APK for verification.');
+        }
+        if (digest.toLowerCase() != sha256.toLowerCase()) {
+          return CommandOutcome.fail(
+            'APK integrity check failed: expected $sha256, got $digest. '
+            'Aborting install.',
+          );
+        }
+      } catch (e) {
+        return CommandOutcome.fail('APK verification failed: $e');
+      }
+    }
+    final delay = (delayMs ?? 3000).clamp(0, 30000);
+    final sleepSecs = (delay / 1000).ceil();
+    final logPath = '${file.parent.path}/talon-install.log';
+    // Detached worker: sleep (let the ack flush), then reinstall keeping data
+    // (-r) allowing same-or-newer versions (-d), logging the outcome.
+    final worker = 'sleep $sleepSecs; '
+        'pm install -r -d ${_shQuote(path)} > ${_shQuote(logPath)} 2>&1; '
+        'echo "exit=\$?" >> ${_shQuote(logPath)}';
+    try {
+      await _shizukuExec(
+        'setsid sh -c ${_shQuote(worker)} >/dev/null 2>&1 &',
+        5000,
+      );
+    } catch (e) {
+      return CommandOutcome.fail('Failed to stage the install: $e');
+    }
+    return CommandOutcome(
+      ok: true,
+      message: 'Update staged — installing in ${sleepSecs}s, then the app '
+          'restarts and the mesh reconnects automatically.',
+      data: {
+        'staged': true,
+        'delayMs': delay,
+        'log': logPath,
+        'via': 'shizuku',
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>?> _shizukuExec(String cmd, int timeoutMs) =>
+      _shizuku.invokeMapMethod<String, dynamic>('exec', {
+        'cmd': cmd,
+        'timeoutMs': timeoutMs,
+      });
+
+  /// POSIX single-quote a string for safe interpolation into a shell command.
+  static String _shQuote(String s) => "'${s.replaceAll("'", "'\\''")}'";
 
   // ── filesystem ────────────────────────────────────────────────────────────
 
