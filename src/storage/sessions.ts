@@ -380,7 +380,14 @@ function normaliseGrain(raw: unknown): MetricsGrain {
   return grain;
 }
 
-function normaliseMetrics(metrics: unknown): SessionMetrics {
+/**
+ * Coerce an untrusted/persisted metrics blob into a well-formed
+ * SessionMetrics: missing fields backfilled, non-finite numbers dropped,
+ * JSON's `minMs: null` (Infinity doesn't survive JSON.stringify) restored
+ * to the domain sentinel. Runs once at the load boundary (sessions-repo);
+ * in-memory metrics stay well-formed by construction after that.
+ */
+export function normaliseMetrics(metrics: unknown): SessionMetrics {
   const raw = metrics as Partial<SessionMetrics> | undefined;
   const result: SessionMetrics = {
     lifetime: normaliseGrain(raw?.lifetime),
@@ -437,7 +444,9 @@ function metricBucket(metrics: SessionMetrics, day: string): MetricsGrain {
  */
 function normaliseSession(session: SessionState): SessionState {
   if (!session.usage) session.usage = emptyUsage();
-  session.metrics = normaliseMetrics(session.metrics);
+  // Metrics blobs are normalised once when rows are hydrated
+  // (sessions-repo parseMetrics); here only backfill pre-metrics records.
+  if (!session.metrics) session.metrics = emptyMetrics();
   if (!session.createdAt) session.createdAt = session.lastActive;
   if (session.usage.totalResponseMs === undefined)
     session.usage.totalResponseMs = 0;

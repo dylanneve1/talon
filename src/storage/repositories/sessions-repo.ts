@@ -16,6 +16,7 @@ import { getDatabase, inTransaction } from "../db.js";
 import { sessionsSql } from "../sql/statements.generated.js";
 import {
   emptyMetrics,
+  normaliseMetrics,
   type SessionMetrics,
   type SessionState,
 } from "../sessions.js";
@@ -47,7 +48,9 @@ type Row = {
 function parseMetrics(raw: string | null): SessionMetrics {
   if (!raw) return emptyMetrics();
   try {
-    return JSON.parse(raw) as SessionMetrics;
+    // Normalise at the load boundary: backfills partial blobs and restores
+    // the Infinity minMs sentinel that JSON round-trips as null.
+    return normaliseMetrics(JSON.parse(raw));
   } catch {
     return emptyMetrics();
   }
