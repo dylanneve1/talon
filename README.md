@@ -184,7 +184,22 @@ GitHub API access via the official GitHub MCP server. Gives the agent access to 
 
 The token is optional --- defaults to the output of `gh auth token` if the GitHub CLI is authenticated.
 
-### MemPalace
+### Long-term Memory
+
+Talon supports two long-term memory backends, selected via the unified `memory` section:
+
+```json
+{
+  "memory": {
+    "enabled": true,
+    "backend": "mempalace"
+  }
+}
+```
+
+Set `"backend"` to `"mempalace"` (local, vector search + knowledge graph) or `"mem0"` ([mem0](https://github.com/mem0ai/mem0) hosted platform or self-hosted server). Backend-specific settings go in a matching `memory.mempalace` / `memory.mem0` sub-object. The legacy top-level `mempalace` section is still honored when `memory` is absent.
+
+#### MemPalace backend
 
 Structured long-term memory with vector search. The agent can store, search, and retrieve memories semantically. Integrates with Dream mode for automatic memory consolidation and personal diary entries.
 
@@ -199,15 +214,39 @@ python -m venv ~/.talon/mempalace-venv
 
 ```json
 {
-  "mempalace": {
+  "memory": {
     "enabled": true,
-    "palacePath": "~/.talon/workspace/palace",
-    "pythonPath": "~/.talon/mempalace-venv/bin/python"
+    "backend": "mempalace",
+    "mempalace": {
+      "palacePath": "~/.talon/workspace/palace",
+      "pythonPath": "~/.talon/mempalace-venv/bin/python"
+    }
   }
 }
 ```
 
 Both paths are optional --- defaults to `~/.talon/workspace/palace/` and the venv Python respectively.
+
+#### mem0 backend
+
+Long-term memory via [mem0](https://mem0.ai) --- mem0 extracts durable facts from what the agent stores and retrieves them by semantic search. Works against the hosted platform (API key) or a self-hosted mem0 server.
+
+**Requirements:** None --- the `mem0ai` SDK is bundled with Talon.
+
+```json
+{
+  "memory": {
+    "enabled": true,
+    "backend": "mem0",
+    "mem0": {
+      "apiKey": "m0-...",
+      "userId": "talon"
+    }
+  }
+}
+```
+
+`apiKey` defaults to the `MEM0_API_KEY` env var. For a self-hosted server set `"host"` instead --- the key is then optional. `userId` is the entity id memories are filed under (default `"talon"`).
 
 ### Playwright
 
@@ -320,7 +359,8 @@ Config file: `~/.talon/config.json`
 | `allowedUsers`             | ---          | Whitelist of Telegram user IDs                                                                                          |
 | `apiId` / `apiHash`        | ---          | Telegram API credentials for full message history                                                                       |
 | `github`                   | ---          | GitHub plugin config (see above)                                                                                        |
-| `mempalace`                | ---          | MemPalace plugin config (see above)                                                                                     |
+| `memory`                   | ---          | Long-term memory backend selection: `mempalace` or `mem0` (see above)                                                   |
+| `mempalace`                | ---          | Legacy MemPalace plugin config (prefer `memory`)                                                                        |
 | `playwright`               | ---          | Playwright plugin config (see above)                                                                                    |
 
 ---

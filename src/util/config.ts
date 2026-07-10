@@ -195,6 +195,32 @@ const playwrightConfigSchema = z.object({
   endpointFile: z.string().optional(),
 });
 
+/** MemPalace backend settings, shared by `memory.mempalace` and the legacy top-level `mempalace` section. */
+const mempalaceSettingsSchema = z.object({
+  /** Palace directory path (default: ~/.talon/workspace/palace/) */
+  palacePath: z.string().min(1).optional(),
+  /** Python binary path (default: ~/.talon/mempalace-venv/bin/python) */
+  pythonPath: z.string().min(1).optional(),
+  /**
+   * BCP 47 language codes for entity detection (mempalace >= 3.3).
+   * Supported: en, es, fr, de, ja, ko, zh-CN, zh-TW, pt-br, ru, it, hi, id.
+   * Sets MEMPALACE_ENTITY_LANGUAGES for the MCP server.
+   */
+  entityLanguages: z.array(z.string().min(2)).nonempty().optional(),
+  /** Enable mempalace diagnostic diaries (sets MEMPAL_VERBOSE=1). */
+  verbose: z.boolean().optional(),
+});
+
+/** mem0 backend settings, shared by `memory.mem0` and the top-level `mem0` section. */
+const mem0SettingsSchema = z.object({
+  /** Platform API key (default: MEM0_API_KEY env var). */
+  apiKey: z.string().min(1).optional(),
+  /** Self-hosted mem0 server URL; when set, apiKey may be omitted. */
+  host: z.string().min(1).optional(),
+  /** Entity id memories are filed under (default "talon"). */
+  userId: z.string().min(1).optional(),
+});
+
 /**
  * Memory pre-retrieval (Phase B) — automatic per-turn palace retrieval.
  * Ships INERT: the flag gates wiring a real retriever into the dispatcher.
@@ -383,23 +409,28 @@ const configSchema = z.object({
     })
     .optional(),
 
-  // MemPalace — structured long-term memory with vector search
-  mempalace: z
+  // Long-term memory — unified backend selection. Preferred over the
+  // legacy top-level "mempalace"/"mem0" sections; when enabled it wins
+  // over them (loadConfig mirrors it onto the section the loaders read).
+  memory: z
     .object({
       enabled: z.boolean().default(false),
-      /** Palace directory path (default: ~/.talon/workspace/palace/) */
-      palacePath: z.string().min(1).optional(),
-      /** Python binary path (default: ~/.talon/mempalace-venv/bin/python) */
-      pythonPath: z.string().min(1).optional(),
-      /**
-       * BCP 47 language codes for entity detection (mempalace >= 3.3).
-       * Supported: en, es, fr, de, ja, ko, zh-CN, zh-TW, pt-br, ru, it, hi, id.
-       * Sets MEMPALACE_ENTITY_LANGUAGES for the MCP server.
-       */
-      entityLanguages: z.array(z.string().min(2)).nonempty().optional(),
-      /** Enable mempalace diagnostic diaries (sets MEMPAL_VERBOSE=1). */
-      verbose: z.boolean().optional(),
+      backend: z.enum(["mempalace", "mem0"]).default("mempalace"),
+      mempalace: mempalaceSettingsSchema.optional(),
+      mem0: mem0SettingsSchema.optional(),
     })
+    .optional(),
+
+  // MemPalace — structured long-term memory with vector search
+  // (legacy section; prefer "memory": { "backend": "mempalace", ... })
+  mempalace: mempalaceSettingsSchema
+    .extend({ enabled: z.boolean().default(false) })
+    .optional(),
+
+  // mem0 — long-term memory layer, hosted platform or self-hosted
+  // (legacy-style section; prefer "memory": { "backend": "mem0", ... })
+  mem0: mem0SettingsSchema
+    .extend({ enabled: z.boolean().default(false) })
     .optional(),
 
   // Playwright — headless browser automation via MCP
@@ -576,6 +607,25 @@ export function loadConfig(): TalonConfig {
   }
 
   const parsed = configSchema.parse(fileConfig);
+
+  // Unified memory section: mirror the selected backend onto the per-plugin
+  // section the loaders consume (builtins.ts reads config.mempalace /
+  // config.mem0). The memory section wins over a legacy section when both
+  // are present; the unselected backend is disabled so exactly one memory
+  // plugin loads.
+  if (parsed.memory?.enabled) {
+    if (parsed.memory.backend === "mempalace") {
+      parsed.mempalace = {
+        ...parsed.mempalace,
+        ...parsed.memory.mempalace,
+        enabled: true,
+      };
+      if (parsed.mem0) parsed.mem0.enabled = false;
+    } else {
+      parsed.mem0 = { ...parsed.mem0, ...parsed.memory.mem0, enabled: true };
+      if (parsed.mempalace) parsed.mempalace.enabled = false;
+    }
+  }
 
   // Apply timezone globally before building the system prompt
   setTimezone(parsed.timezone);

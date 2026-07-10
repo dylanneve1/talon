@@ -54,6 +54,7 @@ export type LogComponent =
   | "access"
   | "github"
   | "mempalace"
+  | "mem0"
   | "playwright"
   | "soul"
   | "stickers"

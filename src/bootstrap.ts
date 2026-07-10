@@ -135,11 +135,12 @@ export async function bootstrap(
 ): Promise<BootstrapResult> {
   const config = loadConfig();
 
-  // Load plugins (external tool packages + built-in GitHub, MemPalace, Playwright)
+  // Load plugins (external tool packages + built-in GitHub, MemPalace, mem0, Playwright)
   const hasPlugins =
     config.plugins.length > 0 ||
     config.github?.enabled === true ||
     config.mempalace?.enabled === true ||
+    config.mem0?.enabled === true ||
     config.playwright?.enabled === true;
   if (hasPlugins) {
     const { loadPlugins, loadBuiltinPlugins, getPluginPromptAdditions } =
@@ -153,7 +154,7 @@ export async function bootstrap(
       await loadPlugins(config.plugins, frontends);
     }
 
-    // Built-in plugins (GitHub, MemPalace, Playwright) — shared with hot-reload
+    // Built-in plugins (GitHub, MemPalace, mem0, Playwright) — shared with hot-reload
     await loadBuiltinPlugins(config);
 
     rebuildSystemPrompt(config, getPluginPromptAdditions());

@@ -410,6 +410,92 @@ describe("config", () => {
       const { loadConfig } = await import("../util/config.js");
       expect(() => loadConfig()).toThrow();
     });
+
+    it("memory.backend=mempalace mirrors settings onto config.mempalace", async () => {
+      mockFs({
+        frontend: "terminal",
+        memory: {
+          enabled: true,
+          backend: "mempalace",
+          mempalace: { palacePath: "/data/palace" },
+        },
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.mempalace).toEqual({
+        enabled: true,
+        palacePath: "/data/palace",
+      });
+      expect(config.mem0?.enabled).not.toBe(true);
+    });
+
+    it("memory.backend=mem0 mirrors settings onto config.mem0", async () => {
+      mockFs({
+        frontend: "terminal",
+        memory: {
+          enabled: true,
+          backend: "mem0",
+          mem0: { apiKey: "m0-test", userId: "dylan" },
+        },
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.mem0).toEqual({
+        enabled: true,
+        apiKey: "m0-test",
+        userId: "dylan",
+      });
+      expect(config.mempalace?.enabled).not.toBe(true);
+    });
+
+    it("memory section wins over a legacy mempalace section", async () => {
+      mockFs({
+        frontend: "terminal",
+        mempalace: { enabled: true, palacePath: "/old/palace" },
+        memory: { enabled: true, backend: "mem0", mem0: { apiKey: "m0-x" } },
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.mem0?.enabled).toBe(true);
+      expect(config.mempalace?.enabled).toBe(false);
+    });
+
+    it("legacy mempalace section still works when memory is absent", async () => {
+      mockFs({
+        frontend: "terminal",
+        mempalace: { enabled: true, palacePath: "/old/palace" },
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.mempalace?.enabled).toBe(true);
+      expect(config.mempalace?.palacePath).toBe("/old/palace");
+    });
+
+    it("memory.enabled=false leaves both backends untouched", async () => {
+      mockFs({
+        frontend: "terminal",
+        memory: { enabled: false, backend: "mem0", mem0: { apiKey: "m0-x" } },
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.mem0?.enabled).not.toBe(true);
+      expect(config.mempalace?.enabled).not.toBe(true);
+    });
+
+    it("rejects an unknown memory backend", async () => {
+      mockFs({
+        frontend: "terminal",
+        memory: { enabled: true, backend: "postgres" },
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      expect(() => loadConfig()).toThrow();
+    });
   });
 
   describe("system prompt", () => {

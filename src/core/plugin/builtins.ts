@@ -1,5 +1,5 @@
 /**
- * Built-in plugin loading (GitHub / MemPalace / Playwright) + the hot-reload
+ * Built-in plugin loading (GitHub / MemPalace / mem0 / Playwright) + the hot-reload
  * path that re-reads config, tears down, and re-loads everything.
  */
 
@@ -13,7 +13,7 @@ import {
 } from "./loader.js";
 
 /**
- * Load built-in plugins (GitHub, MemPalace, Playwright) based on config flags.
+ * Load built-in plugins (GitHub, MemPalace, mem0, Playwright) based on config flags.
  * Shared by both bootstrap and hot-reload to avoid duplication.
  */
 export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
@@ -71,6 +71,34 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
       logError(
         "plugin",
         `MemPalace init: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  const mem0 = config.mem0;
+  if (mem0?.enabled) {
+    try {
+      const { createMem0Plugin } = await import("../../plugins/mem0/index.js");
+      const m0 = createMem0Plugin({
+        apiKey: mem0.apiKey,
+        host: mem0.host,
+        userId: mem0.userId,
+      });
+      const m0Config = mem0 as unknown as Record<string, unknown>;
+      const loaded = registerPlugin(m0, m0Config);
+      if (loaded) {
+        await initPluginWithTimeout(
+          loaded.plugin,
+          loaded.config,
+          15_000,
+          "mem0 init",
+          "mem0 init",
+        );
+      }
+    } catch (err) {
+      logError(
+        "plugin",
+        `mem0 init: ${err instanceof Error ? err.message : err}`,
       );
     }
   }
