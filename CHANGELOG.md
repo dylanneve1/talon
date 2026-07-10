@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.38.1](https://github.com/dylanneve1/talon/compare/v1.38.0...v1.38.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* **delivery:** empty turns stay silent instead of posting a '(no reply)' notice ([#507](https://github.com/dylanneve1/talon/issues/507)) ([f43c784](https://github.com/dylanneve1/talon/commit/f43c7843dfa2acce6e038db211a8c8df2659e516))
+
 ## [1.38.0](https://github.com/dylanneve1/talon/compare/v1.37.4...v1.38.0) (2026-07-10)
 
 
