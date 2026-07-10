@@ -9,7 +9,7 @@ import type { Gateway } from "../../../core/engine/gateway.js";
 import { respawnSelf } from "../../../util/respawn.js";
 import { forceDream } from "../../../core/background/dream.js";
 import { formatDuration, renderMetricsMessages } from "../helpers.js";
-import { getMetrics } from "../../../util/metrics.js";
+import { getMetrics, getTodayMetrics } from "../../../util/metrics.js";
 import { handleAdminSubcommand } from "../admin.js";
 import { isAdmin } from "../handlers/index.js";
 import { suppressMentions, DISCORD_MAX_TEXT } from "../formatting.js";
@@ -35,7 +35,14 @@ export async function handleMetrics(
   }
   // Ephemeral — admin counters (token usage, latencies, errors) shouldn't leak
   // into a public channel where non-admins can read them.
-  const messages = renderMetricsMessages(getMetrics());
+  const messages = [
+    ...renderMetricsMessages(getMetrics()),
+    ...renderMetricsMessages(
+      getTodayMetrics(),
+      undefined,
+      "📊 Metrics — today (UTC)",
+    ),
+  ];
   for (const m of messages) {
     await reply(i, m, true);
   }

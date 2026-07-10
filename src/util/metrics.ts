@@ -5,6 +5,8 @@
 import {
   getAllSessions,
   resetAllSessionMetrics,
+  todayUtc,
+  type MetricsGrain,
   type MetricsLatencyAgg,
 } from "../storage/sessions.js";
 
@@ -58,18 +60,17 @@ function snapshotAgg(agg: MetricsLatencyAgg) {
   };
 }
 
-export function getMetrics(): MetricsSnapshot {
-  const counters: Record<string, number> = {};
+function buildSnapshot(
+  grains: MetricsGrain[],
+  counters: Record<string, number>,
+): MetricsSnapshot {
   const responseLatency = emptyAgg();
   const toolCallsPerTurn = emptyAgg();
   const apiCallsPerTurn = emptyAgg();
   const cacheHitPercent = emptyAgg();
   const backendLatency = new Map<string, MetricsLatencyAgg>();
 
-  for (const [key, value] of legacyCounters) addCounter(counters, key, value);
-
-  for (const { info } of getAllSessions()) {
-    const grain = info.metrics.lifetime;
+  for (const grain of grains) {
     const c = grain.counters;
     addCounter(counters, "queries_total", c.queries);
     addCounter(counters, "turns_with_tools_total", c.turnsWithTools);
@@ -137,6 +138,28 @@ export function getMetrics(): MetricsSnapshot {
   }
 
   return { counters, histograms };
+}
+
+/** Lifetime fleet snapshot: all sessions' cumulative metrics plus the
+ * in-process legacy counters. */
+export function getMetrics(): MetricsSnapshot {
+  const counters: Record<string, number> = {};
+  for (const [key, value] of legacyCounters) addCounter(counters, key, value);
+  return buildSnapshot(
+    getAllSessions().map(({ info }) => info.metrics.lifetime),
+    counters,
+  );
+}
+
+/** Today's (UTC) fleet snapshot, aggregated from the sessions' daily
+ * rollup buckets. Legacy counters are process-lifetime, not daily, so
+ * they are excluded here. */
+export function getTodayMetrics(): MetricsSnapshot {
+  const day = todayUtc();
+  return buildSnapshot(
+    getAllSessions().flatMap(({ info }) => info.metrics.buckets[day] ?? []),
+    {},
+  );
 }
 
 export function resetMetrics(): void {

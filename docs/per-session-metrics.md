@@ -117,6 +117,15 @@ session" intent); migrate to a table only if query needs demand it.
 
 ### 3. Collection — a Weaver collaborator + injected hook
 
+> **As built:** collection landed via §6's option (b) instead — the existing
+> `backend/shared/metrics.ts` entry points (`recordTurnMetrics`,
+> `recordToolCall`, `recordFlowViolation`, `recordFailedTurnAccounting`) became
+> thin shims over the session store, each threading `chatId`. Every backend
+> already calls them on both success and failure paths, so no new Weaver
+> collaborator, `WeaverDeps` hook, or bootstrap wiring was needed. The
+> collaborator route below is retained as the design alternative if collection
+> ever needs to move out of the backends.
+
 Mirror the existing `onTurnStart` idiom (`WeaverDeps`), keeping the Weaver
 ignorant of the persistence subsystem (DIP):
 
@@ -221,10 +230,14 @@ needed. `/metrics` reads `buckets[today]` for "today", `lifetime` for all-time.
 - Discord: validate via CI (`gh pr checks`) per repo convention — no local
   Discord toolchain.
 
-## Open questions (resolve at implementation)
+## Open questions — resolved at implementation
 
-1. Blob column vs dedicated table (see §2) — start with blob.
-2. Day-bucket retention count (default 30) and whether it's configurable.
-3. Whether to keep any per-backend fleet dimension, and where (see §6).
-4. Timezone for the day boundary (local vs UTC) — pick UTC for determinism
-   unless a user-facing "today" should be local.
+1. Blob column vs dedicated table (see §2) — **blob column** (`sessions.metrics
+   TEXT`), reconciled on open for pre-existing databases.
+2. Day-bucket retention — **fixed at 30 days**, evicted oldest-first inside
+   `metricBucket()`; not configurable until someone needs it.
+3. Per-backend fleet dimension — **kept per-session** under
+   `MetricsGrain.backend`, aggregated across sessions by `getMetrics()` /
+   `getTodayMetrics()` at read time.
+4. Day boundary timezone — **UTC** (`todayUtc()`), for determinism; `/metrics`
+   labels the today section "today (UTC)".

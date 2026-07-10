@@ -23,7 +23,7 @@ import {
 } from "../helpers/index.js";
 import { collectDoctorReport } from "../../../core/doctor.js";
 import { handleAdminCommand } from "../admin.js";
-import { getMetrics } from "../../../util/metrics.js";
+import { getMetrics, getTodayMetrics } from "../../../util/metrics.js";
 import { isAuthorizedAdmin, type RegisterDeps } from "./state.js";
 import { telegramCommandMenu } from "./definitions.js";
 
@@ -44,7 +44,15 @@ export function registerAdminCommands(
       await ctx.reply("Not authorized.");
       return;
     }
-    for (const message of renderMetricsMessages(getMetrics())) {
+    const messages = [
+      ...renderMetricsMessages(getMetrics()),
+      ...renderMetricsMessages(
+        getTodayMetrics(),
+        undefined,
+        "📊 Metrics — today (UTC)",
+      ),
+    ];
+    for (const message of messages) {
       await ctx.reply(message, { parse_mode: "HTML" });
     }
   });

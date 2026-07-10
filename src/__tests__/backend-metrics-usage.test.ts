@@ -10,7 +10,12 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { recordTurnMetrics } from "../backend/shared/metrics.js";
-import { getMetrics, resetMetrics } from "../util/metrics.js";
+import {
+  getMetrics,
+  getTodayMetrics,
+  incrementCounter,
+  resetMetrics,
+} from "../util/metrics.js";
 
 beforeEach(() => resetMetrics());
 afterEach(() => resetMetrics());
@@ -89,5 +94,24 @@ describe("recordTurnMetrics usage piping", () => {
     const { counters } = getMetrics();
     expect(counters["tokens.input_total"]).toBeUndefined();
     expect(counters["queries_total"]).toBe(1);
+  });
+
+  it("surfaces the turn in today's bucket, without legacy counters", () => {
+    incrementCounter("legacy.process_counter", 3);
+    recordTurnMetrics({ chatId: "test", backend: "claude", durationMs: 250 });
+
+    const today = getTodayMetrics();
+    expect(today.counters["queries_total"]).toBe(1);
+    expect(today.counters["backend.claude.queries"]).toBe(1);
+    expect(today.histograms["response_latency_ms"]).toMatchObject({
+      count: 1,
+      avg: 250,
+      min: 250,
+      max: 250,
+    });
+    // Legacy in-process counters are lifetime-only.
+    expect(today.counters["legacy.process_counter"]).toBeUndefined();
+    // …but still visible in the lifetime snapshot.
+    expect(getMetrics().counters["legacy.process_counter"]).toBe(3);
   });
 });

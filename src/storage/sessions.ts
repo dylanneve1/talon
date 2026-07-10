@@ -415,7 +415,8 @@ function addCounters(
   }
 }
 
-function todayUtc(now = Date.now()): string {
+/** UTC day key (`YYYY-MM-DD`) used for daily metric buckets. */
+export function todayUtc(now = Date.now()): string {
   return new Date(now).toISOString().slice(0, 10);
 }
 

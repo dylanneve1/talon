@@ -50,9 +50,10 @@ function truncateMetricLabel(label: string, max = 60): string {
 export function renderMetricsMessages(
   metrics: MetricsSnapshot,
   maxLen = DEFAULT_METRICS_MESSAGE_MAX,
+  title = "📊 Metrics",
 ): string[] {
-  const firstHeader = "**📊 Metrics**";
-  const continuationHeader = "**📊 Metrics (cont.)**";
+  const firstHeader = `**${title}**`;
+  const continuationHeader = `**${title} (cont.)**`;
   const sections: string[][] = [];
 
   // Histograms come in two flavours: durations (keys ending in `_ms`,
