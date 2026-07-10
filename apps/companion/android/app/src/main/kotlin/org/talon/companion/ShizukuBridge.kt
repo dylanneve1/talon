@@ -30,7 +30,7 @@ class ShizukuBridge(channel: MethodChannel) : MethodChannel.MethodCallHandler {
         private const val REQUEST_CODE = 4021
     }
 
-    private var pendingPermission: MethodChannel.Result? = null
+    private val pendingPermissions = mutableListOf<MethodChannel.Result>()
 
     /**
      * MethodChannel.Result is @UiThread-only — replying from a worker thread
@@ -51,8 +51,9 @@ class ShizukuBridge(channel: MethodChannel) : MethodChannel.MethodCallHandler {
         Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
             if (requestCode == REQUEST_CODE) {
                 val granted = grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED
-                pendingPermission?.let { replySuccess(it, granted) }
-                pendingPermission = null
+                val pending = pendingPermissions.toList()
+                pendingPermissions.clear()
+                pending.forEach { replySuccess(it, granted && isReady()) }
             }
         }
 
@@ -67,8 +68,9 @@ class ShizukuBridge(channel: MethodChannel) : MethodChannel.MethodCallHandler {
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
-            "isReady" -> result.success(isReady())
+            "getStatus" -> result.success(status())
             "requestPermission" -> requestPermission(result)
+            "cancelPermissionRequest" -> cancelPermissionRequest(result)
             "exec" -> exec(call, result)
             else -> result.notImplemented()
         }
@@ -92,6 +94,22 @@ class ShizukuBridge(channel: MethodChannel) : MethodChannel.MethodCallHandler {
 
     private fun isReady(): Boolean = binderAlive() && hasPermission()
 
+    private fun status(): Map<String, Any> {
+        val binderAlive = binderAlive()
+        val granted = binderAlive && hasPermission()
+        val state = try {
+            when {
+                !binderAlive -> "not-running"
+                granted -> "ready"
+                Shizuku.shouldShowRequestPermissionRationale() -> "permission-denied"
+                else -> "permission-needed"
+            }
+        } catch (_: Throwable) {
+            "unavailable"
+        }
+        return mapOf("ready" to granted, "state" to state)
+    }
+
     private fun requestPermission(result: MethodChannel.Result) {
         try {
             if (!binderAlive()) {
@@ -106,14 +124,30 @@ class ShizukuBridge(channel: MethodChannel) : MethodChannel.MethodCallHandler {
                 result.success(false)
                 return
             }
-            // A second in-flight request replaces the first; answer the old
-            // one instead of leaving its Dart await hanging forever.
-            pendingPermission?.let { replySuccess(it, false) }
-            pendingPermission = result
+            // Several mesh requests can land together. Keep every caller
+            // attached to the same Android permission prompt.
+            if (pendingPermissions.isNotEmpty()) {
+                pendingPermissions.add(result)
+                return
+            }
+            pendingPermissions.add(result)
             Shizuku.requestPermission(REQUEST_CODE)
         } catch (_: Throwable) {
-            result.success(false)
+            val pending = pendingPermissions.toList()
+            pendingPermissions.clear()
+            if (pending.isEmpty()) {
+                result.success(false)
+            } else {
+                pending.forEach { replySuccess(it, false) }
+            }
         }
+    }
+
+    private fun cancelPermissionRequest(result: MethodChannel.Result) {
+        val pending = pendingPermissions.toList()
+        pendingPermissions.clear()
+        pending.forEach { replySuccess(it, false) }
+        result.success(null)
     }
 
     private fun exec(call: MethodCall, result: MethodChannel.Result) {

@@ -540,7 +540,12 @@ describe("MeshService exec + filesystem channel", () => {
             commandId: cmd.id,
             deviceId: cmd.deviceId,
             ok: true,
-            data: { stdout: "hello world\n", stderr: "", exitCode: 0 },
+            data: {
+              stdout: "hello world\n",
+              stderr: "",
+              exitCode: 0,
+              via: "shizuku",
+            },
           });
         }),
     });
@@ -551,7 +556,7 @@ describe("MeshService exec + filesystem channel", () => {
       "/sdcard",
     );
     expect(res.ok).toBe(true);
-    expect(res.text).toContain("exit 0");
+    expect(res.text).toContain("[Pixel 9 via shizuku] exit 0");
     expect(res.text).toContain("hello world");
     expect(seen[0]).toMatchObject({ cmd: "echo hello world", cwd: "/sdcard" });
   });

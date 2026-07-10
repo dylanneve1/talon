@@ -284,7 +284,9 @@ class MeshService {
           }
           final downToken = params['token'];
           final downPath = params['path'];
-          if (downToken is! String || downToken.isEmpty || downPath is! String) {
+          if (downToken is! String ||
+              downToken.isEmpty ||
+              downPath is! String) {
             message = 'download_file needs token and path.';
             break;
           }
@@ -353,6 +355,12 @@ class MeshService {
     } catch (_) {
       extras = const {};
     }
+    Map<String, String> privilege;
+    try {
+      privilege = await _exec.privilegeStatus();
+    } catch (_) {
+      privilege = const {};
+    }
     return {
       'name': await _nameProvider(),
       'platform': _platform,
@@ -361,10 +369,10 @@ class MeshService {
       if (battery.charging != null)
         'charging': battery.charging! ? 'yes' : 'no',
       ...extras,
+      ...privilege,
       'meshSharing': prefs.meshSharing ? 'on' : 'off',
-      'periodicReporting': prefs.meshPeriodic
-          ? 'every ${prefs.meshIntervalSeconds}s'
-          : 'off',
+      'periodicReporting':
+          prefs.meshPeriodic ? 'every ${prefs.meshIntervalSeconds}s' : 'off',
     };
   }
 
@@ -510,7 +518,8 @@ class MeshService {
       if (!kIsWeb && Platform.isAndroid) {
         final d = await device.androidInfo;
         info['hardware'] = '${d.manufacturer} ${d.model}';
-        info['osDetail'] = 'Android ${d.version.release} (SDK ${d.version.sdkInt})';
+        info['osDetail'] =
+            'Android ${d.version.release} (SDK ${d.version.sdkInt})';
       } else if (!kIsWeb && Platform.isIOS) {
         final d = await device.iosInfo;
         info['hardware'] = d.utsname.machine;

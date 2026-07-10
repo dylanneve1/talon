@@ -243,6 +243,7 @@ describe("native tools — teleport routing", () => {
                 "Downloads\nPictures\n__TALON_CWD__/sdcard/Download__TALON_CWD_END__",
               stderr: "",
               exitCode: 0,
+              via: "shizuku",
             },
           });
         }),
@@ -260,6 +261,7 @@ describe("native tools — teleport routing", () => {
       1,
     );
     expect(res.ok).toBe(true);
+    expect(res.text).toContain("[Pixel 9 via shizuku] exit 0");
     expect(res.text).toContain("Downloads");
     // The cwd marker must be stripped from what the model sees.
     expect(res.text).not.toContain("__TALON_CWD__");

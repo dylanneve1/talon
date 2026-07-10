@@ -1120,7 +1120,8 @@ function formatExecResult(
   const exit = typeof d.exitCode === "number" ? d.exitCode : "?";
   const stdout = typeof d.stdout === "string" ? d.stdout : "";
   const stderr = typeof d.stderr === "string" ? d.stderr : "";
-  const parts = [`[${device.name}] exit ${exit}`];
+  const via = typeof d.via === "string" && d.via ? ` via ${d.via}` : "";
+  const parts = [`[${device.name}${via}] exit ${exit}`];
   if (stdout.trim())
     parts.push(`--- stdout ---\n${stdout.replace(/\s+$/, "")}`);
   if (stderr.trim())

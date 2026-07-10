@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:talon_companion/src/services/device_exec.dart';
 
@@ -30,14 +31,72 @@ void main() {
     expect(r.data!['exitCode'], 7);
   });
 
+  test('uses Shizuku only after the permission callback verifies readiness',
+      () async {
+    const channel = MethodChannel('talon/shizuku-test-ready');
+    var ready = false;
+    var permissionRequests = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      switch (call.method) {
+        case 'getStatus':
+          return {
+            'ready': ready,
+            'state': ready ? 'ready' : 'permission-needed'
+          };
+        case 'requestPermission':
+          permissionRequests++;
+          ready = true;
+          return true;
+        case 'exec':
+          return {'stdout': 'shell', 'stderr': '', 'exitCode': 0};
+      }
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+
+    final elevated = DeviceExec(shizukuChannel: channel, isAndroid: () => true);
+    final result = await elevated.exec('id');
+
+    expect(permissionRequests, 1);
+    expect(result.ok, isTrue);
+    expect(result.data!['via'], 'shizuku');
+    expect(result.data!['stdout'], 'shell');
+  });
+
+  test('marks app-UID results as limited when Shizuku is unavailable',
+      () async {
+    const channel = MethodChannel('talon/shizuku-test-unavailable');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'getStatus') {
+        return {'ready': false, 'state': 'not-running'};
+      }
+      if (call.method == 'requestPermission') return false;
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+
+    final limited = DeviceExec(shizukuChannel: channel, isAndroid: () => true);
+    final result = await limited.exec('printf app');
+
+    expect(result.ok, isTrue);
+    expect(result.data!['via'], 'app');
+    expect(result.data!['privilegeWarning'], contains('Shizuku not ready'));
+  });
+
   test('writes then reads a file in chunks (base64 roundtrip)', () async {
     final f = '${tmp.path}/note.txt';
     final content = 'A' * (300 * 1024); // > one 256KB chunk
     // First chunk truncates, second appends.
     final first = utf8.encode(content.substring(0, 256 * 1024));
     final second = utf8.encode(content.substring(256 * 1024));
-    final w1 = await exec.writeFile(f, base64Encode(first),
-        offset: 0, truncate: true);
+    final w1 =
+        await exec.writeFile(f, base64Encode(first), offset: 0, truncate: true);
     expect(w1.ok, isTrue);
     final w2 = await exec.writeFile(f, base64Encode(second),
         offset: first.length, truncate: false);
@@ -82,8 +141,7 @@ void main() {
     await Directory('${tmp.path}/sub').create();
     final ls = await exec.listDir(tmp.path);
     expect(ls.ok, isTrue);
-    final names =
-        (ls.data!['entries'] as List).map((e) => e['name']).toList();
+    final names = (ls.data!['entries'] as List).map((e) => e['name']).toList();
     expect(names, containsAll(['a.txt', 'sub']));
 
     final st = await exec.statPath('${tmp.path}/a.txt');

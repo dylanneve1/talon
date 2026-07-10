@@ -208,6 +208,7 @@ async function bashTeleported(
   const data = result.data ?? {};
   let stdout = typeof data.stdout === "string" ? data.stdout : "";
   const stderr = typeof data.stderr === "string" ? data.stderr : "";
+  const via = typeof data.via === "string" && data.via ? ` via ${data.via}` : "";
   const exitCode =
     typeof data.exitCode === "number" ? data.exitCode : undefined;
   // Recover + strip the trailing cwd marker.
@@ -228,7 +229,12 @@ async function bashTeleported(
   }
   return {
     ok: exitCode === 0,
-    text: renderExec(target.name, `exit ${exitCode ?? "?"}`, stdout, stderr),
+    text: renderExec(
+      `${target.name}${via}`,
+      `exit ${exitCode ?? "?"}`,
+      stdout,
+      stderr,
+    ),
   };
 }
 

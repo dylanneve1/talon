@@ -23,10 +23,15 @@ import 'log.dart';
 ///     system without root. Falls back to app-UID whenever Shizuku is absent
 ///     or denied.
 class DeviceExec {
-  DeviceExec({MethodChannel? shizukuChannel})
-      : _shizuku = shizukuChannel ?? const MethodChannel('talon/shizuku');
+  DeviceExec({
+    MethodChannel? shizukuChannel,
+    bool Function()? isAndroid,
+  })  : _shizuku = shizukuChannel ?? const MethodChannel('talon/shizuku'),
+        _isAndroid = isAndroid ?? (() => !kIsWeb && Platform.isAndroid);
 
   final MethodChannel _shizuku;
+  final bool Function() _isAndroid;
+  Future<bool>? _pendingShizukuPermission;
 
   /// Commands this executor can answer — merged into the device's advertised
   /// mesh capabilities so the daemon gates cleanly.
@@ -42,26 +47,77 @@ class DeviceExec {
   ];
 
   static const int _maxChunkBytes = 256 * 1024;
+  static const Duration _shizukuPermissionWait = Duration(seconds: 12);
 
   /// True when Shizuku is available AND has granted permission right now.
   Future<bool> shizukuReady() async {
-    if (kIsWeb || !Platform.isAndroid) return false;
+    if (!_isAndroid()) return false;
     try {
-      final ok = await _shizuku.invokeMethod<bool>('isReady');
-      return ok ?? false;
+      final status =
+          await _shizuku.invokeMapMethod<String, dynamic>('getStatus');
+      return status?['ready'] == true;
     } catch (_) {
       return false;
     }
   }
 
-  /// Ask Shizuku for permission (no-op / false when unavailable).
+  /// Ask Shizuku for permission once. Concurrent commands share a single
+  /// system prompt instead of replacing one another's result callback.
   Future<bool> requestShizuku() async {
-    if (kIsWeb || !Platform.isAndroid) return false;
+    if (!_isAndroid()) return false;
+    return _pendingShizukuPermission ??= _requestShizuku().whenComplete(() {
+      _pendingShizukuPermission = null;
+    });
+  }
+
+  Future<bool> _requestShizuku() async {
     try {
-      final ok = await _shizuku.invokeMethod<bool>('requestPermission');
-      return ok ?? false;
+      final granted = await _shizuku
+          .invokeMethod<bool>('requestPermission')
+          .timeout(_shizukuPermissionWait);
+      // The permission callback is advisory; re-check the binder before
+      // claiming elevated execution is actually available.
+      return granted == true && await shizukuReady();
+    } on TimeoutException {
+      // Dart has stopped waiting, so release the Android-side MethodChannel
+      // result too. A late approval still applies to the next command.
+      unawaited(_cancelShizukuPermissionRequest());
+      return false;
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<void> _cancelShizukuPermissionRequest() async {
+    try {
+      await _shizuku.invokeMethod<void>('cancelPermissionRequest');
+    } catch (_) {
+      // The bridge may have gone away with the activity; the next status check
+      // will report it as unavailable.
+    }
+  }
+
+  /// Prefer elevated Android execution, but never hang the command forever
+  /// waiting for a permission dialog that may be ignored.
+  Future<bool> ensureShizukuReady() async {
+    if (await shizukuReady()) return true;
+    if (!_isAndroid()) return false;
+    return requestShizuku();
+  }
+
+  Future<Map<String, String>> privilegeStatus() async {
+    if (!_isAndroid()) return const {'execPrivilege': 'app'};
+    try {
+      final status =
+          await _shizuku.invokeMapMethod<String, dynamic>('getStatus');
+      final ready = status?['ready'] == true;
+      final state = status?['state'];
+      return {
+        'execPrivilege': ready ? 'shizuku' : 'app',
+        'shizuku': state is String ? state : 'unavailable',
+      };
+    } catch (_) {
+      return const {'execPrivilege': 'app', 'shizuku': 'unavailable'};
     }
   }
 
@@ -116,9 +172,12 @@ class DeviceExec {
     if (cmd.trim().isEmpty) {
       return CommandOutcome.fail('No command given.');
     }
-    final budget = Duration(milliseconds: (timeoutMs ?? 60000).clamp(1000, 300000));
-    // Prefer Shizuku (shell UID) when it's ready, else run as the app user.
-    if (await shizukuReady()) {
+    final budget =
+        Duration(milliseconds: (timeoutMs ?? 60000).clamp(1000, 300000));
+    // Prefer Shizuku (shell UID). If it is installed but permission has not
+    // been granted yet, ask once; otherwise a remote filesystem command can
+    // silently run as the app UID and return a misleading scoped-storage view.
+    if (await ensureShizukuReady()) {
       try {
         final res = await _shizuku.invokeMapMethod<String, dynamic>('exec', {
           'cmd': cmd,
@@ -138,15 +197,29 @@ class DeviceExec {
         }
       } catch (e) {
         AppLog.warn('exec', 'shizuku exec failed, falling back', e);
+        return _execAppUid(
+          cmd,
+          cwd: cwd,
+          budget: budget,
+          privilegeWarning: 'Shizuku exec failed ($e); ran as app UID.',
+        );
       }
     }
-    return _execAppUid(cmd, cwd: cwd, budget: budget);
+    return _execAppUid(
+      cmd,
+      cwd: cwd,
+      budget: budget,
+      privilegeWarning: _isAndroid()
+          ? 'Shizuku not ready or permission not granted; ran as app UID.'
+          : null,
+    );
   }
 
   Future<CommandOutcome> _execAppUid(
     String cmd, {
     String? cwd,
     required Duration budget,
+    String? privilegeWarning,
   }) async {
     final shell = Platform.isWindows ? 'cmd' : 'sh';
     final args = Platform.isWindows ? ['/c', cmd] : ['-c', cmd];
@@ -171,9 +244,14 @@ class DeviceExec {
         ok: !timedOut && code == 0,
         data: {
           'stdout': stdout,
-          'stderr': timedOut ? '$stderr\n[killed: timeout]' : stderr,
+          'stderr': [
+            if (privilegeWarning != null) privilegeWarning,
+            if (stderr.isNotEmpty) stderr,
+            if (timedOut) '[killed: timeout]',
+          ].join('\n'),
           'exitCode': code,
           'via': 'app',
+          if (privilegeWarning != null) 'privilegeWarning': privilegeWarning,
         },
         message: timedOut ? 'Command timed out.' : null,
       );
@@ -184,9 +262,8 @@ class DeviceExec {
 
   // ── filesystem ────────────────────────────────────────────────────────────
 
-  Future<CommandOutcome> readFile(
-    String path,
-    {required int offset, required int len}) async {
+  Future<CommandOutcome> readFile(String path,
+      {required int offset, required int len}) async {
     if (path.isEmpty) return CommandOutcome.fail('No path.');
     try {
       final file = File(path);
@@ -273,7 +350,8 @@ class DeviceExec {
           'mtime': stat.modified.millisecondsSinceEpoch,
         });
       }
-      entries.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+      entries
+          .sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
       return CommandOutcome.okData({'entries': entries});
     } catch (e) {
       return CommandOutcome.fail('list_dir failed: $e');
@@ -326,7 +404,9 @@ class DeviceExec {
   }
 
   Future<CommandOutcome> move(String from, String to) async {
-    if (from.isEmpty || to.isEmpty) return CommandOutcome.fail('from/to required.');
+    if (from.isEmpty || to.isEmpty) {
+      return CommandOutcome.fail('from/to required.');
+    }
     try {
       final type = await FileSystemEntity.type(from);
       if (type == FileSystemEntityType.directory) {
@@ -348,7 +428,8 @@ class DeviceExec {
   }
 
   static String? _str(dynamic v) => v is String && v.isNotEmpty ? v : null;
-  static int? _int(dynamic v) => v is num ? v.toInt() : (v is String ? int.tryParse(v) : null);
+  static int? _int(dynamic v) =>
+      v is num ? v.toInt() : (v is String ? int.tryParse(v) : null);
 }
 
 /// Structured result of an on-device command.
