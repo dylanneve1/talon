@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.37.2](https://github.com/dylanneve1/talon/compare/v1.37.1...v1.37.2) (2026-07-10)
+
+
+### Bug Fixes
+
+* **companion:** wait for the Shizuku binder + log every decision ([#494](https://github.com/dylanneve1/talon/issues/494)) ([2fc1e84](https://github.com/dylanneve1/talon/commit/2fc1e8459b2152f27ebfe88fd4475ab89a0eea66))
+
 ## [1.37.1](https://github.com/dylanneve1/talon/compare/v1.37.0...v1.37.1) (2026-07-10)
 
 
