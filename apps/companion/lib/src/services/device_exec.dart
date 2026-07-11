@@ -13,8 +13,9 @@ import 'log.dart';
 /// and returns a structured payload.
 ///
 /// Two privilege tiers:
-///   - app-UID (default): commands run as the app's own user via `sh -c`,
-///     and file IO uses dart:io. This can reach shared storage (Downloads,
+///   - app-UID (default): commands run as the app's own user via the
+///     platform shell (see [DeviceExec.shellInvocation]), and file IO uses
+///     dart:io. This can reach shared storage (Downloads,
 ///     DCIM, …) when the app holds All-files access (MANAGE_EXTERNAL_STORAGE),
 ///     but not other apps' private data.
 ///   - Shizuku (optional, Android): when Shizuku is installed, running, and
@@ -55,6 +56,32 @@ class DeviceExec {
     // Android / needs Shizuku" when it can't actually run.
     'install_apk',
   ];
+
+  /// The shell invocation (executable + args) used for app-UID exec on [os]
+  /// (a `Platform.operatingSystem` value; defaults to the current platform).
+  ///
+  /// Desktop commands should behave like the user's real terminal, not a
+  /// stripped launchd/service environment:
+  ///   - Windows: `cmd /c` — matches a stock Command Prompt.
+  ///   - macOS: `/bin/zsh -l -c` — a login shell, so `~/.zprofile` runs and
+  ///     the user's PATH additions (Homebrew, user bins, toolchains) are
+  ///     visible, matching what the same command does in Terminal.app. A bare
+  ///     `sh -c` here inherits launchd's minimal PATH and "command not found"s
+  ///     anything user-installed.
+  ///   - everywhere else (Android, Linux): `sh -c` — the portable baseline
+  ///     (Android has no zsh/bash).
+  @visibleForTesting
+  static List<String> shellInvocation(String cmd, {String? os}) {
+    final platform = os ?? Platform.operatingSystem;
+    switch (platform) {
+      case 'windows':
+        return ['cmd', '/c', cmd];
+      case 'macos':
+        return ['/bin/zsh', '-l', '-c', cmd];
+      default:
+        return ['sh', '-c', cmd];
+    }
+  }
 
   static const int _maxChunkBytes = 256 * 1024;
   static const Duration _shizukuPermissionWait = Duration(seconds: 12);
@@ -251,12 +278,11 @@ class DeviceExec {
     required Duration budget,
     String? privilegeWarning,
   }) async {
-    final shell = Platform.isWindows ? 'cmd' : 'sh';
-    final args = Platform.isWindows ? ['/c', cmd] : ['-c', cmd];
+    final invocation = shellInvocation(cmd);
     try {
       final proc = await Process.start(
-        shell,
-        args,
+        invocation.first,
+        invocation.sublist(1),
         workingDirectory: (cwd != null && cwd.isNotEmpty) ? cwd : null,
       );
       // Bounded collection: a chatty command must not balloon app memory or

@@ -31,6 +31,26 @@ void main() {
     expect(r.data!['exitCode'], 7);
   });
 
+  test('shell invocation matches the platform terminal', () {
+    expect(
+      DeviceExec.shellInvocation('echo x', os: 'windows'),
+      ['cmd', '/c', 'echo x'],
+    );
+    // macOS is a *login* zsh so the user's real PATH (Homebrew etc.) applies.
+    expect(
+      DeviceExec.shellInvocation('echo x', os: 'macos'),
+      ['/bin/zsh', '-l', '-c', 'echo x'],
+    );
+    expect(
+      DeviceExec.shellInvocation('echo x', os: 'linux'),
+      ['sh', '-c', 'echo x'],
+    );
+    expect(
+      DeviceExec.shellInvocation('echo x', os: 'android'),
+      ['sh', '-c', 'echo x'],
+    );
+  });
+
   test('uses Shizuku only after the permission callback verifies readiness',
       () async {
     const channel = MethodChannel('talon/shizuku-test-ready');
