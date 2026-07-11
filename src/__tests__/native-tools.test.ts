@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, afterEach, beforeAll } from "vitest";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -96,6 +96,60 @@ describe("native tools — local execution", () => {
     expect(res.ok).toBe(false);
     expect(res.text).toContain("exit 3");
   });
+
+  it("keeps partial output and hints at background mode on timeout", async () => {
+    const res = await nativeHandlers.native_bash(
+      {
+        action: "native_bash",
+        command: "echo streaming-head; sleep 30",
+        timeout_sec: 1,
+      },
+      1,
+    );
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("timed out after 1s");
+    expect(res.text).toContain("streaming-head"); // partial output survives
+    expect(res.text).toContain("background:true"); // self-correction hint
+  }, 15_000);
+
+  it("launches a background command and returns pid + log path", async () => {
+    const res = await nativeHandlers.native_bash(
+      {
+        action: "native_bash",
+        command: "echo bg-line-1; sleep 5; echo bg-line-2",
+        background: true,
+      },
+      1,
+    );
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain("Started in background");
+    expect(res.text).toMatch(/pid \d+/);
+    const logPath = (res.text ?? "").match(/→ (\S+\.log)/)?.[1];
+    expect(logPath).toBeTruthy();
+    const logged = await readFile(logPath as string, "utf8");
+    expect(logged).toContain("bg-line-1"); // early output already captured
+    // Clean up the straggler so the suite doesn't leak a sleeper.
+    const pid = Number((res.text ?? "").match(/pid (\d+)/)?.[1]);
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {
+      /* already gone */
+    }
+  }, 15_000);
+
+  it("surfaces a fast-failing background command as a normal error", async () => {
+    const res = await nativeHandlers.native_bash(
+      {
+        action: "native_bash",
+        command: "echo doomed; exit 7",
+        background: true,
+      },
+      1,
+    );
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("exit 7");
+    expect(res.text).toContain("doomed");
+  }, 15_000);
 
   it("writes, reads (numbered), and edits a file locally", async () => {
     const f = join(workdir, "roundtrip.txt");

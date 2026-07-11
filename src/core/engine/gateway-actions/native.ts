@@ -16,6 +16,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { closeSync, openSync } from "node:fs";
 import {
   glob as fsGlob,
   mkdir,
@@ -23,6 +24,7 @@ import {
   stat as fsStat,
   writeFile,
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { getMeshService } from "../../mesh/index.js";
 import {
@@ -50,6 +52,18 @@ function rgBin(): string {
 }
 const DEFAULT_EXEC_TIMEOUT_MS = 60_000;
 const MAX_EXEC_TIMEOUT_MS = 300_000;
+/** Grace between SIGTERM and SIGKILL on timeout, so pipelines can flush. */
+const KILL_GRACE_MS = 2_000;
+/** How long a background launch waits to catch fast failures. */
+const BACKGROUND_SETTLE_MS = 1_200;
+/** Where background job output lands (one log file per job). */
+const BACKGROUND_LOG_DIR = join(tmpdir(), "talon-bash");
+/** Appended to a timed-out bash result so the model self-corrects. */
+const TIMEOUT_HINT =
+  "(Streaming/never-ending commands — adb logcat, tail -f, dev servers, watchers — " +
+  "will always hit this wall. Re-run with background:true to launch it detached with " +
+  "output captured to a log file, or bound the command itself: `adb logcat -d`, " +
+  "`timeout 30 …`, `head -n 200`.)";
 const MAX_READ_LINES = 2_000;
 /** Caps for the pure-JS glob/search fallbacks (rg unavailable). */
 const MAX_JS_RESULTS = 2_000;
@@ -63,7 +77,7 @@ export const nativeHandlers: SharedActionHandlers = {
   teleport: (body, chatId) => teleport(chatId, body.device),
   teleport_back: (_body, chatId) => teleportBack(chatId),
   native_bash: (body, chatId) =>
-    bash(chatId, body.command, body.cwd, body.timeout_sec),
+    bash(chatId, body.command, body.cwd, body.timeout_sec, body.background),
   native_read: (body, chatId) =>
     read(chatId, body.path, body.offset, body.limit),
   native_write: (body, chatId) => write(chatId, body.path, body.content),
@@ -122,13 +136,123 @@ async function bash(
   command: unknown,
   cwd: unknown,
   timeoutSec: unknown,
+  background?: unknown,
 ): Promise<Result> {
   const cmd = typeof command === "string" ? command : "";
   if (!cmd.trim()) return { ok: false, text: "No command given." };
   const timeoutMs = clampTimeout(timeoutSec);
   const active = await getTeleport(chatId);
+  if (background === true) {
+    if (active) {
+      return {
+        ok: false,
+        text:
+          "background:true runs on the daemon host only. On a teleported device, " +
+          "background it in-shell instead: `cmd > /tmp/out.log 2>&1 &`, then poll " +
+          "the log with read.",
+      };
+    }
+    return bashBackground(cmd, typeof cwd === "string" ? cwd : undefined);
+  }
   if (active) return bashTeleported(chatId, active.deviceId, cmd, timeoutMs);
   return bashLocal(cmd, typeof cwd === "string" ? cwd : undefined, timeoutMs);
+}
+
+/**
+ * Launch a command detached from the request cycle: its own process group,
+ * stdout+stderr appended to a per-job log file, tool returns immediately.
+ * This is the sanctioned path for streaming/long-running commands (adb
+ * logcat, dev servers, watchers) that would otherwise burn the whole
+ * foreground timeout and come back "killed".
+ *
+ * A short settle window catches fast failures (typo'd binary, instant
+ * non-zero exit) so those still surface as a normal error instead of a
+ * "started" message pointing at a log with one line in it.
+ */
+async function bashBackground(
+  cmd: string,
+  cwd: string | undefined,
+): Promise<Result> {
+  try {
+    await mkdir(BACKGROUND_LOG_DIR, { recursive: true });
+  } catch (err) {
+    return {
+      ok: false,
+      text: `Cannot create log dir ${BACKGROUND_LOG_DIR}: ${(err as Error).message}`,
+    };
+  }
+  const slug =
+    cmd
+      .replace(/[^a-zA-Z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40) || "job";
+  const logPath = join(BACKGROUND_LOG_DIR, `${Date.now()}-${slug}.log`);
+  let fd: number;
+  try {
+    fd = openSync(logPath, "a");
+  } catch (err) {
+    return {
+      ok: false,
+      text: `Cannot open log file ${logPath}: ${(err as Error).message}`,
+    };
+  }
+  const detached = process.platform !== "win32";
+  const child = spawn("bash", ["-c", cmd], {
+    ...(cwd ? { cwd } : {}),
+    env: process.env,
+    detached,
+    stdio: ["ignore", fd, fd],
+  });
+  return new Promise((resolvePromise) => {
+    let settled = false;
+    const done = (r: Result) => {
+      if (settled) return;
+      settled = true;
+      try {
+        closeSync(fd);
+      } catch {
+        // parent's dup only; the child keeps its own copy either way
+      }
+      resolvePromise(r);
+    };
+    child.on("error", (err) =>
+      done({ ok: false, text: `Failed to start: ${err.message}` }),
+    );
+    // Fast failure inside the settle window → report it like a normal run.
+    child.on("close", (code) => {
+      void (async () => {
+        let logged = "";
+        try {
+          logged = await readFile(logPath, "utf8");
+        } catch {
+          // log unreadable — report the exit alone
+        }
+        done({
+          ok: (code ?? 0) === 0,
+          text:
+            `Background command exited almost immediately (exit ${code ?? 0}).\n` +
+            renderExec("local", `exit ${code ?? 0}`, logged, "") +
+            `\nFull log: ${logPath}`,
+        });
+      })();
+    });
+    setTimeout(() => {
+      if (settled) return;
+      child.unref();
+      done({
+        ok: true,
+        text: [
+          `🚀 Started in background [local] — pid ${child.pid}.`,
+          `Output (stdout+stderr) → ${logPath}`,
+          `Follow it with read/bash (e.g. \`tail -n 50 ${logPath}\`).`,
+          detached
+            ? `Stop it with \`kill -- -${child.pid}\` (whole process group).`
+            : `Stop it with \`kill ${child.pid}\`.`,
+          `Unsupervised: it keeps running until it exits or is killed — it even survives a Talon restart.`,
+        ].join("\n"),
+      });
+    }, BACKGROUND_SETTLE_MS);
+  });
 }
 
 function bashLocal(
@@ -148,32 +272,47 @@ function bashLocal(
     const stdout = createOutputCapture();
     const stderr = createOutputCapture();
     let killed = false;
-    const timer = setTimeout(() => {
-      killed = true;
+    // Timeout escalation: SIGTERM the whole process group first (lets
+    // pipelines flush + children clean up), SIGKILL any survivors after a
+    // short grace. Straight-to-SIGKILL used to eat buffered output.
+    const killTree = (signal: NodeJS.Signals) => {
       if (detached && child.pid) {
         try {
-          process.kill(-child.pid, "SIGKILL");
+          process.kill(-child.pid, signal);
           return;
         } catch {
           // group already gone — fall through to the direct kill
         }
       }
-      child.kill("SIGKILL");
+      try {
+        child.kill(signal);
+      } catch {
+        // already dead
+      }
+    };
+    let killTimer: NodeJS.Timeout | undefined;
+    const timer = setTimeout(() => {
+      killed = true;
+      killTree("SIGTERM");
+      killTimer = setTimeout(() => killTree("SIGKILL"), KILL_GRACE_MS);
     }, timeoutMs);
     child.stdout.on("data", stdout.push);
     child.stderr.on("data", stderr.push);
     child.on("error", (err) => {
       clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       resolvePromise({ ok: false, text: `Failed to run: ${err.message}` });
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       const exit = killed
-        ? `killed (timeout ${timeoutMs / 1000}s)`
+        ? `⏱️ timed out after ${timeoutMs / 1000}s — killed; partial output kept below`
         : `exit ${code ?? 0}`;
+      const body = renderExec("local", exit, stdout.value(), stderr.value());
       resolvePromise({
         ok: !killed && (code ?? 0) === 0,
-        text: renderExec("local", exit, stdout.value(), stderr.value()),
+        text: killed ? `${body}\n${TIMEOUT_HINT}` : body,
       });
     });
   });

@@ -38,7 +38,8 @@ export const nativeTools: ToolDefinition[] = [
   {
     name: "bash",
     description:
-      "Run a shell command. Runs on the daemon host, or ON the active teleport device if one is engaged. On a teleported device, `cd` persists across calls (a real working-directory session).",
+      "Run a shell command. Runs on the daemon host, or ON the active teleport device if one is engaged. On a teleported device, `cd` persists across calls (a real working-directory session). " +
+      "Foreground runs are killed at timeout_sec — for streaming/never-ending commands (adb logcat, tail -f, dev servers, watchers) set background:true instead: the command is launched detached in its own process group with stdout+stderr captured to a log file, and the tool returns immediately with the pid + log path so you can poll the log and kill it when done.",
     schema: {
       command: z.string().describe("The shell command to run."),
       cwd: z
@@ -51,7 +52,13 @@ export const nativeTools: ToolDefinition[] = [
         .number()
         .optional()
         .describe(
-          "Max seconds before the command is killed (default 60, max 300).",
+          "Max seconds before a foreground command is killed (default 60, max 300). Ignored with background:true.",
+        ),
+      background: z
+        .boolean()
+        .optional()
+        .describe(
+          "Launch detached and return immediately with pid + log file path (local runs only). Use for streaming or long-running commands that would otherwise time out.",
         ),
     },
     execute: (params, bridge) => bridge("native_bash", params),
