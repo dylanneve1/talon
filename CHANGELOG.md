@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.2](https://github.com/dylanneve1/talon/compare/v1.42.1...v1.42.2) (2026-07-11)
+
+
+### Bug Fixes
+
+* **watchdog:** idle is not a fault — warn only when work is actually stuck ([#526](https://github.com/dylanneve1/talon/issues/526)) ([c0807dd](https://github.com/dylanneve1/talon/commit/c0807ddf0152c647bb48245199323c1d03cba43f))
+
 ## [1.42.1](https://github.com/dylanneve1/talon/compare/v1.42.0...v1.42.1) (2026-07-11)
 
 
