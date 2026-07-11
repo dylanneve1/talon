@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.41.0](https://github.com/dylanneve1/talon/compare/v1.40.2...v1.41.0) (2026-07-11)
+
+
+### Features
+
+* **mesh:** device registry hygiene — dedupe stale installs, remove_device tool, macOS app polish ([#518](https://github.com/dylanneve1/talon/issues/518)) ([dcff33d](https://github.com/dylanneve1/talon/commit/dcff33d407b5c2f0ed161b3716ee66df57ad6207))
+
+
+### Bug Fixes
+
+* **companion:** backgrounded children no longer pin device exec open ([#519](https://github.com/dylanneve1/talon/issues/519)) ([f871272](https://github.com/dylanneve1/talon/commit/f8712727d57c4f1c79a3f61de5f8690d6acfb24c))
+
 ## [1.40.2](https://github.com/dylanneve1/talon/compare/v1.40.1...v1.40.2) (2026-07-11)
 
 
