@@ -4,9 +4,17 @@
  */
 
 import type { Bot } from "grammy";
-import { markdownToTelegramHtml } from "../formatting.js";
-import { logWarn } from "../../../util/log.js";
+import { markdownToTelegramHtml, splitMessage } from "../formatting.js";
+import { log, logWarn } from "../../../util/log.js";
 import { TELEGRAM_MAX_TEXT } from "./types.js";
+
+/**
+ * Split target for over-long sends. Under the hard 4096 cap so the
+ * HTML conversion (entity escaping, tags) has headroom — if a converted
+ * chunk still overflows, the plain-text fallback in `sendOne` delivers
+ * the raw chunk, which is guaranteed under the cap.
+ */
+const TELEGRAM_SPLIT_TARGET = TELEGRAM_MAX_TEXT - 200;
 
 export function replyParams(
   body: Record<string, unknown>,
@@ -27,17 +35,50 @@ export function toPositiveId(v: unknown): number | undefined {
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
+/**
+ * Send text to a chat, auto-splitting anything over Telegram's 4096-char
+ * limit into sequential messages (fence-aware — a ``` block is never
+ * stranded open). Only the first chunk carries the reply threading; the
+ * returned id is the first chunk's, the natural anchor for later
+ * react/reply/pin. Overflow used to throw here, burning a model
+ * round-trip on "Message too long" every time a reply ran hot.
+ */
 export async function sendText(
   bot: Bot,
   chatId: number,
   text: string,
   replyTo?: number,
 ): Promise<number> {
-  if (text.length > TELEGRAM_MAX_TEXT) {
-    throw new Error(
-      `Message too long (${text.length} chars, max ${TELEGRAM_MAX_TEXT}).`,
-    );
+  if (text.length <= TELEGRAM_MAX_TEXT) {
+    return sendOne(bot, chatId, text, replyTo);
   }
+  const chunks = splitMessage(text, TELEGRAM_SPLIT_TARGET);
+  log(
+    "bot",
+    `sendText splitting ${text.length} chars into ${chunks.length} messages (chat=${chatId})`,
+  );
+  let firstId: number | undefined;
+  for (const chunk of chunks) {
+    const id = await sendOne(
+      bot,
+      chatId,
+      chunk,
+      firstId === undefined ? replyTo : undefined,
+    );
+    firstId ??= id;
+  }
+  // splitMessage never returns an empty array for the non-empty input that
+  // got us past the length gate, so firstId is set.
+  return firstId as number;
+}
+
+/** Send one ≤4096-char message: HTML first, plain-text fallback. */
+async function sendOne(
+  bot: Bot,
+  chatId: number,
+  text: string,
+  replyTo?: number,
+): Promise<number> {
   const html = markdownToTelegramHtml(text);
   try {
     const sent = await bot.api.sendMessage(chatId, html, {
