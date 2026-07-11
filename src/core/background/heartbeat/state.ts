@@ -71,6 +71,10 @@ export const hb: {
   intervalMinutesRef: number;
   config: HeartbeatConfig | null;
   logFileSequence: number;
+  /** Consecutive failed runs — drives the failure backoff curve. */
+  consecutiveFailures: number;
+  /** Epoch ms before which auto runs are suppressed after a failure. */
+  backoffUntil: number;
 } = {
   running: false,
   currentRunPromise: null,
@@ -79,6 +83,8 @@ export const hb: {
   intervalMinutesRef: 60,
   config: null,
   logFileSequence: 0,
+  consecutiveFailures: 0,
+  backoffUntil: 0,
 };
 
 // ── State-file I/O ───────────────────────────────────────────────────────────
