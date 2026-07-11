@@ -329,11 +329,13 @@ class MeshForegroundController {
 
   static bool get isSupported => !kIsWeb && Platform.isAndroid;
 
-  /// macOS: there is no separate background *service*, but the app itself is
-  /// resident — closing the window hides it to the menu bar (see
-  /// macos/Runner) and the UI-isolate MeshService keeps running. Health is
-  /// therefore evaluated against the in-app mesh, not reported "unavailable".
-  static bool get isResidentDesktop => !kIsWeb && Platform.isMacOS;
+  /// macOS/Windows: there is no separate background *service*, but the app
+  /// itself is resident — closing the window hides it to the menu bar
+  /// (macos/Runner) or system tray (WindowsTray) and the UI-isolate
+  /// MeshService keeps running. Health is therefore evaluated against the
+  /// in-app mesh, not reported "unavailable".
+  static bool get isResidentDesktop =>
+      !kIsWeb && (Platform.isMacOS || Platform.isWindows);
 
   /// Mirror the mesh-sharing pref: service running iff sharing is on. When
   /// already running, forwards a reconfigure poke instead so the runner picks

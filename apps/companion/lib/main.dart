@@ -3,6 +3,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import 'src/services/mesh_background.dart';
 import 'src/services/prefs.dart';
+import 'src/services/windows_tray.dart';
 import 'src/state/app_state.dart';
 import 'src/theme.dart';
 import 'src/ui/root_view.dart';
@@ -13,6 +14,9 @@ Future<void> main() async {
   if (MeshForegroundController.isSupported) {
     FlutterForegroundTask.initCommunicationPort();
   }
+  // Windows: tray residency — close hides to the system tray, mesh keeps
+  // running (macOS gets the same from native code in macos/Runner).
+  await WindowsTray.instance.init();
   final prefs = await Prefs.load();
   TalonTheme.mode.value = switch (prefs.themeMode) {
     'light' => ThemeMode.light,
