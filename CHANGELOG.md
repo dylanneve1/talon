@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.40.2](https://github.com/dylanneve1/talon/compare/v1.40.1...v1.40.2) (2026-07-11)
+
+
+### Bug Fixes
+
+* **dream:** failure backoff for memory consolidation, shared with heartbeat ([#516](https://github.com/dylanneve1/talon/issues/516)) ([e419ccd](https://github.com/dylanneve1/talon/commit/e419ccda10e11102ea113486c7cf096934f687ca))
+
 ## [1.40.1](https://github.com/dylanneve1/talon/compare/v1.40.0...v1.40.1) (2026-07-11)
 
 
