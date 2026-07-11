@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.40.0](https://github.com/dylanneve1/talon/compare/v1.39.0...v1.40.0) (2026-07-11)
+
+
+### Features
+
+* **memory:** mem0 backend, unified memory config + bug squash ([#500](https://github.com/dylanneve1/talon/issues/500)) ([0db7653](https://github.com/dylanneve1/talon/commit/0db7653ec0162f0abd2b675d4925a8bef1c44649))
+
+
+### Bug Fixes
+
+* **companion:** bounce stale Android mesh service ([#510](https://github.com/dylanneve1/talon/issues/510)) ([9354df0](https://github.com/dylanneve1/talon/commit/9354df00851351bb84b8afff823b16654454d347))
+
 ## [1.39.0](https://github.com/dylanneve1/talon/compare/v1.38.1...v1.39.0) (2026-07-10)
 
 
