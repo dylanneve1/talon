@@ -126,16 +126,24 @@ describe("native tools — local execution", () => {
     expect(res.text).toMatch(/pid \d+/);
     const logPath = (res.text ?? "").match(/→ (\S+\.log)/)?.[1];
     expect(logPath).toBeTruthy();
-    const logged = await readFile(logPath as string, "utf8");
-    expect(logged).toContain("bg-line-1"); // early output already captured
+    // Output lands asynchronously (Git Bash on the Windows runners can take
+    // a beat to start) — poll rather than read once.
+    let logged = "";
+    for (let i = 0; i < 40 && !logged.includes("bg-line-1"); i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      logged = await readFile(logPath as string, "utf8").catch(() => "");
+    }
+    expect(logged).toContain("bg-line-1");
     // Clean up the straggler so the suite doesn't leak a sleeper.
     const pid = Number((res.text ?? "").match(/pid (\d+)/)?.[1]);
-    try {
-      process.kill(-pid, "SIGKILL");
-    } catch {
-      /* already gone */
+    for (const target of [-pid, pid]) {
+      try {
+        process.kill(target, "SIGKILL");
+      } catch {
+        /* already gone / no process groups on this platform */
+      }
     }
-  }, 15_000);
+  }, 20_000);
 
   it("surfaces a fast-failing background command as a normal error", async () => {
     const res = await nativeHandlers.native_bash(

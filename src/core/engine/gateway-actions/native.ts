@@ -290,29 +290,58 @@ function bashLocal(
         // already dead
       }
     };
+    let settled = false;
     let killTimer: NodeJS.Timeout | undefined;
+    let forceTimer: NodeJS.Timeout | undefined;
+    const finish = (r: Result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+      if (forceTimer) clearTimeout(forceTimer);
+      resolvePromise(r);
+    };
+    const timedOutResult = () => {
+      const body = renderExec(
+        "local",
+        `⏱️ timed out after ${timeoutMs / 1000}s — killed; partial output kept below`,
+        stdout.value(),
+        stderr.value(),
+      );
+      return { ok: false, text: `${body}\n${TIMEOUT_HINT}` };
+    };
     const timer = setTimeout(() => {
       killed = true;
       killTree("SIGTERM");
       killTimer = setTimeout(() => killTree("SIGKILL"), KILL_GRACE_MS);
+      // `close` waits for the stdio pipes to drain — a surviving grandchild
+      // that inherited stdout (Windows has no process groups; a detached
+      // POSIX grandchild can escape the group kill) would otherwise hold
+      // this promise open long past the timeout. Force-resolve with the
+      // partial output once the escalation window has passed.
+      forceTimer = setTimeout(
+        () => finish(timedOutResult()),
+        KILL_GRACE_MS + 1_000,
+      );
     }, timeoutMs);
     child.stdout.on("data", stdout.push);
     child.stderr.on("data", stderr.push);
     child.on("error", (err) => {
-      clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      resolvePromise({ ok: false, text: `Failed to run: ${err.message}` });
+      finish({ ok: false, text: `Failed to run: ${err.message}` });
     });
     child.on("close", (code) => {
-      clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      const exit = killed
-        ? `⏱️ timed out after ${timeoutMs / 1000}s — killed; partial output kept below`
-        : `exit ${code ?? 0}`;
-      const body = renderExec("local", exit, stdout.value(), stderr.value());
-      resolvePromise({
-        ok: !killed && (code ?? 0) === 0,
-        text: killed ? `${body}\n${TIMEOUT_HINT}` : body,
+      if (killed) {
+        finish(timedOutResult());
+        return;
+      }
+      finish({
+        ok: (code ?? 0) === 0,
+        text: renderExec(
+          "local",
+          `exit ${code ?? 0}`,
+          stdout.value(),
+          stderr.value(),
+        ),
       });
     });
   });
