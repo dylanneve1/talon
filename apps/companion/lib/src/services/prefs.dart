@@ -17,12 +17,15 @@ class Prefs {
   static const _kMeshPeriodic = 'mesh.periodic.v1';
   static const _kMeshInterval = 'mesh.intervalSeconds.v1';
   static const _kMeshDeviceControl = 'mesh.deviceControl.v1';
+  static const _kMeshBgAliveAt = 'mesh.bg.alive_at.v1';
+  static const _kMeshBgStartedAt = 'mesh.bg.started_at.v1';
 
   final SharedPreferences _sp;
   late final Map<String, int> _lastRead = _decodeLastRead();
   Prefs(this._sp);
 
-  static Future<Prefs> load() async => Prefs(await SharedPreferences.getInstance());
+  static Future<Prefs> load() async =>
+      Prefs(await SharedPreferences.getInstance());
 
   /// Re-read the backing store from disk. SharedPreferences caches per
   /// isolate, so the background mesh isolate must reload after the UI isolate
@@ -34,7 +37,8 @@ class Prefs {
     if (raw == null) return ConnectionConfig.defaults();
     try {
       return ConnectionConfig.fromJson(
-          (jsonDecode(raw) as Map).cast<String, dynamic>());
+        (jsonDecode(raw) as Map).cast<String, dynamic>(),
+      );
     } catch (_) {
       return ConnectionConfig.defaults();
     }
@@ -76,14 +80,23 @@ class Prefs {
   Future<void> setMeshDeviceControl(bool v) =>
       _sp.setBool(_kMeshDeviceControl, v);
 
+  int? get meshBgAliveAt => _sp.getInt(_kMeshBgAliveAt);
+  Future<void> setMeshBgAliveAt(int epochMs) =>
+      _sp.setInt(_kMeshBgAliveAt, epochMs);
+
+  int? get meshBgStartedAt => _sp.getInt(_kMeshBgStartedAt);
+  Future<void> setMeshBgStartedAt(int epochMs) =>
+      _sp.setInt(_kMeshBgStartedAt, epochMs);
+
   // ── Read markers ──────────────────────────────────────────────────────────
 
   Map<String, int> _decodeLastRead() {
     try {
       final raw = _sp.getString(_kLastRead);
       if (raw == null) return {};
-      return (jsonDecode(raw) as Map)
-          .map((k, v) => MapEntry(k.toString(), v is num ? v.toInt() : 0));
+      return (jsonDecode(raw) as Map).map(
+        (k, v) => MapEntry(k.toString(), v is num ? v.toInt() : 0),
+      );
     } catch (_) {
       return {};
     }

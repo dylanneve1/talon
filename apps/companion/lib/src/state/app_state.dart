@@ -1,7 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart'
-    show ChangeNotifier, defaultTargetPlatform, TargetPlatform, visibleForTesting;
+    show
+        ChangeNotifier,
+        defaultTargetPlatform,
+        TargetPlatform,
+        visibleForTesting;
 
 import '../models/bridge_models.dart';
 import '../models/connection.dart';
@@ -49,8 +53,8 @@ class AppState extends ChangeNotifier {
   ConnectionConfig config;
 
   AppState(this.prefs, {bool? narrowLayout})
-      : _narrowLayout = narrowLayout ?? _defaultNarrow,
-        config = prefs.connection {
+    : _narrowLayout = narrowLayout ?? _defaultNarrow,
+      config = prefs.connection {
     _hydrateFromSnapshot();
   }
 
@@ -155,6 +159,14 @@ class AppState extends ChangeNotifier {
   ConfigSnapshot? appConfig;
   List<DeviceInfo> meshDevices = [];
   List<DeviceLocation> meshLocations = [];
+  MeshForegroundHealth meshBackgroundHealth = evaluateMeshForegroundHealth(
+    supported: MeshForegroundController.isSupported,
+    sharingEnabled: false,
+    serviceRunning: false,
+    nowMs: DateTime.now().millisecondsSinceEpoch,
+    aliveAtMs: null,
+    startedAtMs: null,
+  );
 
   List<ClientMessage> messagesFor(String chatId) =>
       _messages[chatId] ?? const [];
@@ -245,9 +257,7 @@ class AppState extends ChangeNotifier {
       }
       AppLog.info('app_state', 'health ${h == null ? 'failed' : 'ok'}');
       if (h == null) {
-        throw BridgeException(
-          'No Talon bridge at ${cfg.host}:${cfg.port}',
-        );
+        throw BridgeException('No Talon bridge at ${cfg.host}:${cfg.port}');
       }
 
       _sub = client.events.listen(
@@ -348,8 +358,7 @@ class AppState extends ChangeNotifier {
   /// A chat is unread when it saw activity newer than the user's last look
   /// and it isn't the one currently on screen.
   bool hasUnread(ClientChat chat) =>
-      chat.id != selectedChatId &&
-      chat.lastActive > prefs.lastReadOf(chat.id);
+      chat.id != selectedChatId && chat.lastActive > prefs.lastReadOf(chat.id);
 
   void markRead(String chatId) {
     final chat = _chatById(chatId);
@@ -383,7 +392,8 @@ class AppState extends ChangeNotifier {
     _loadingOlder.add(chatId);
     notifyListeners();
     try {
-      final page = await _client?.history(
+      final page =
+          await _client?.history(
             chatId,
             before: oldest,
             limit: _historyPageSize,
@@ -683,9 +693,18 @@ class AppState extends ChangeNotifier {
   Future<void> _meshPrefsChanged() async {
     if (MeshForegroundController.isSupported) {
       try {
-        await MeshForegroundController.syncFromPrefs(prefs);
+        final foregroundOk = await MeshForegroundController.syncFromPrefs(
+          prefs,
+        );
+        await _refreshMeshBackgroundHealth();
+        if (!foregroundOk && prefs.meshSharing && _client != null) {
+          await _startUiMeshFallback(_client!);
+        }
       } catch (e) {
         AppLog.warn('app_state', 'mesh foreground sync failed', e);
+        if (prefs.meshSharing && _client != null) {
+          await _startUiMeshFallback(_client!);
+        }
       }
       return;
     }
@@ -781,9 +800,18 @@ class AppState extends ChangeNotifier {
       await _mesh?.stop();
       _mesh = null;
       try {
-        await MeshForegroundController.syncFromPrefs(prefs);
+        final foregroundOk = await MeshForegroundController.syncFromPrefs(
+          prefs,
+        );
+        await _refreshMeshBackgroundHealth();
+        if (!foregroundOk && prefs.meshSharing) {
+          await _startUiMeshFallback(client);
+        }
       } catch (e) {
         AppLog.warn('app_state', 'mesh foreground sync failed', e);
+        if (prefs.meshSharing) {
+          await _startUiMeshFallback(client);
+        }
       }
       return;
     }
@@ -795,6 +823,27 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       AppLog.warn('app_state', 'mesh start failed', e);
     }
+  }
+
+  Future<void> _startUiMeshFallback(BridgeClient client) async {
+    AppLog.warn('app_state', 'starting UI-isolate mesh fallback');
+    await _mesh?.stop();
+    final mesh = MeshService(prefs, client);
+    _mesh = mesh;
+    try {
+      await mesh.start();
+    } catch (e) {
+      AppLog.warn('app_state', 'UI mesh fallback start failed', e);
+    }
+  }
+
+  Future<void> refreshMeshBackgroundHealth() => _refreshMeshBackgroundHealth();
+
+  Future<void> _refreshMeshBackgroundHealth() async {
+    meshBackgroundHealth = await MeshForegroundController.healthFromPrefs(
+      prefs,
+    );
+    notifyListeners();
   }
 
   // ── Event handling ───────────────────────────────────────────────────────--
@@ -1103,7 +1152,7 @@ class AppState extends ChangeNotifier {
     try {
       final hist =
           await _client?.history(chatId, limit: _historyInitialSize) ??
-              const <ClientMessage>[];
+          const <ClientMessage>[];
       if (hist.length < _historyInitialSize) {
         _historyExhausted.add(chatId);
       } else {
@@ -1157,8 +1206,7 @@ class AppState extends ChangeNotifier {
   /// empty conversation and fetch history for a dead id), and with nothing
   /// selected we default to the most recent chat.
   void _reconcileSelection() {
-    if (selectedChatId != null &&
-        !chats.any((c) => c.id == selectedChatId)) {
+    if (selectedChatId != null && !chats.any((c) => c.id == selectedChatId)) {
       selectedChatId = null;
     }
     // Auto-selecting is a two-pane (desktop) convenience only. In the narrow
@@ -1255,10 +1303,12 @@ class AppState extends ChangeNotifier {
     try {
       final rawChats = snap['chats'];
       if (rawChats is List) {
-        chats.addAll(rawChats
-            .map(_map)
-            .whereType<Map<String, dynamic>>()
-            .map(ClientChat.fromJson));
+        chats.addAll(
+          rawChats
+              .map(_map)
+              .whereType<Map<String, dynamic>>()
+              .map(ClientChat.fromJson),
+        );
       }
       final rawMessages = snap['messages'];
       if (rawMessages is Map) {

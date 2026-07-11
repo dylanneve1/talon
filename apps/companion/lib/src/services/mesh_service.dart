@@ -49,6 +49,7 @@ typedef MeshNameProvider = Future<String> Function();
 typedef MeshVersionProvider = Future<String> Function();
 typedef ForegroundStarter = Future<void> Function();
 typedef MeshRingHandler = Future<void> Function(String? message);
+typedef MeshRegisteredCallback = Future<void> Function();
 
 /// Extra device intelligence merged into the `status` command's payload
 /// (hardware model, OS, locale, timezone, network, …).
@@ -73,10 +74,10 @@ class MeshService {
   /// Advertised capabilities for the current prefs — adds the exec/fs surface
   /// (DeviceExec) and streamed transfers when device control is enabled.
   static List<String> capabilitiesFor(Prefs prefs) => [
-        ...capabilities,
-        if (prefs.meshDeviceControl) ...DeviceExec.capabilities,
-        if (prefs.meshDeviceControl) ...transferCapabilities,
-      ];
+    ...capabilities,
+    if (prefs.meshDeviceControl) ...DeviceExec.capabilities,
+    if (prefs.meshDeviceControl) ...transferCapabilities,
+  ];
 
   final Prefs prefs;
   final BridgeClient client;
@@ -88,6 +89,7 @@ class MeshService {
   final ForegroundStarter _foregroundStarter;
   final MeshRingHandler _ringHandler;
   final MeshSystemInfoProvider _systemInfoProvider;
+  final MeshRegisteredCallback? _onRegistered;
 
   StreamSubscription<Map<String, dynamic>>? _events;
   Timer? _heartbeat;
@@ -105,14 +107,16 @@ class MeshService {
     MeshRingHandler? ringHandler,
     MeshSystemInfoProvider? systemInfoProvider,
     DeviceExec? deviceExec,
-  })  : _locationProvider = locationProvider ?? _defaultLocation,
-        _batteryProvider = batteryProvider ?? _defaultBattery,
-        _nameProvider = nameProvider ?? _defaultName,
-        _versionProvider = versionProvider ?? _defaultVersion,
-        _foregroundStarter = foregroundStarter ?? _noopForeground,
-        _ringHandler = ringHandler ?? _defaultRing,
-        _systemInfoProvider = systemInfoProvider ?? _defaultSystemInfo,
-        _exec = deviceExec ?? DeviceExec();
+    MeshRegisteredCallback? onRegistered,
+  }) : _locationProvider = locationProvider ?? _defaultLocation,
+       _batteryProvider = batteryProvider ?? _defaultBattery,
+       _nameProvider = nameProvider ?? _defaultName,
+       _versionProvider = versionProvider ?? _defaultVersion,
+       _foregroundStarter = foregroundStarter ?? _noopForeground,
+       _ringHandler = ringHandler ?? _defaultRing,
+       _systemInfoProvider = systemInfoProvider ?? _defaultSystemInfo,
+       _onRegistered = onRegistered,
+       _exec = deviceExec ?? DeviceExec();
 
   bool get running => _running;
 
@@ -129,7 +133,11 @@ class MeshService {
     _running = true;
     if (!prefs.meshSharing) return;
     await _foregroundStarter();
-    await register();
+    try {
+      await register();
+    } catch (e) {
+      AppLog.warn('mesh', 'initial mesh registration failed', e);
+    }
     _events = client.events.listen(
       (event) {
         if (event['kind'] == 'locate') unawaited(_handleLocate(event));
@@ -176,6 +184,7 @@ class MeshService {
       if (battery.charging != null) 'charging': battery.charging,
       'capabilities': capabilitiesFor(prefs),
     });
+    await _onRegistered?.call();
   }
 
   Future<void> sendOneFix() async {
@@ -361,8 +370,9 @@ class MeshService {
       ...extras,
       ...privilege,
       'meshSharing': prefs.meshSharing ? 'on' : 'off',
-      'periodicReporting':
-          prefs.meshPeriodic ? 'every ${prefs.meshIntervalSeconds}s' : 'off',
+      'periodicReporting': prefs.meshPeriodic
+          ? 'every ${prefs.meshIntervalSeconds}s'
+          : 'off',
     };
   }
 

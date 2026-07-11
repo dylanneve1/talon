@@ -85,6 +85,7 @@ class MeshBackgroundRunner {
   bool _connected = false;
   bool _disposed = false;
   int _backoffMs = _initialBackoffMs;
+  int? _lastRegisteredAtMs;
 
   static const int _initialBackoffMs = 2000;
   static const int _maxBackoffMs = 60000;
@@ -94,7 +95,7 @@ class MeshBackgroundRunner {
     _prefs = prefs;
     final client = BridgeClient(prefs.connection);
     _client = client;
-    _mesh = MeshService(prefs, client);
+    _mesh = MeshService(prefs, client, onRegistered: _stampAlive);
     // BridgeClient surfaces stream drops as errors on [events]; the mesh's
     // own subscription only consumes data events, so watch errors here.
     _drops = client.events.listen(
@@ -132,7 +133,7 @@ class MeshBackgroundRunner {
       await client.connect();
       _connected = true;
       _backoffMs = _initialBackoffMs;
-      await _mesh?.register();
+      await _registerHealthy();
       AppLog.info('mesh_bg', 'bridge connected, mesh registered');
     } catch (e) {
       AppLog.warn('mesh_bg', 'bridge connect failed', e);
@@ -153,12 +154,47 @@ class MeshBackgroundRunner {
     _retry = Timer(Duration(milliseconds: delay), () => unawaited(_connect()));
   }
 
-  /// 60s watchdog (the foreground task's repeat event): if the stream is
-  /// down and no retry is in flight, reconnect now. Cheap no-op when healthy.
+  Future<void> _registerHealthy() async {
+    await _mesh?.register();
+    _lastRegisteredAtMs = DateTime.now().millisecondsSinceEpoch;
+    await _stampAlive();
+  }
+
+  Future<void> _stampAlive() async {
+    final prefs = _prefs;
+    if (prefs == null || !prefs.meshSharing) return;
+    await prefs.setMeshBgAliveAt(DateTime.now().millisecondsSinceEpoch);
+  }
+
+  /// 60s watchdog (the foreground task's repeat event): keep registration
+  /// fresh and reconnect with backoff when either SSE or registration stalls.
   void watchdog() {
-    if (_disposed || _connected || _connecting) return;
+    if (_disposed || _connecting) return;
+    if (_connected) {
+      unawaited(_watchdogRegister());
+      return;
+    }
     _retry?.cancel();
     unawaited(_connect());
+  }
+
+  Future<void> _watchdogRegister() async {
+    try {
+      await _registerHealthy();
+    } catch (e) {
+      AppLog.warn('mesh_bg', 'watchdog registration failed', e);
+      _connected = false;
+      _scheduleReconnect();
+      return;
+    }
+    final last = _lastRegisteredAtMs;
+    if (last == null) return;
+    final ageMs = DateTime.now().millisecondsSinceEpoch - last;
+    if (ageMs > MeshForegroundController.staleAliveAfter.inMilliseconds) {
+      AppLog.warn('mesh_bg', 'registration watchdog stale (${ageMs}ms)');
+      _connected = false;
+      _scheduleReconnect();
+    }
   }
 
   /// The UI isolate changed mesh prefs or the connection profile. Re-read
@@ -187,6 +223,100 @@ class MeshBackgroundRunner {
   }
 }
 
+enum MeshForegroundHealthKind { off, unsupported, starting, healthy, stale }
+
+class MeshForegroundHealth {
+  final MeshForegroundHealthKind kind;
+  final int? aliveAgeMs;
+  final int? startedAgeMs;
+
+  const MeshForegroundHealth({
+    required this.kind,
+    this.aliveAgeMs,
+    this.startedAgeMs,
+  });
+
+  bool get shouldBounce => kind == MeshForegroundHealthKind.stale;
+
+  String get label {
+    switch (kind) {
+      case MeshForegroundHealthKind.off:
+        return 'background mesh off';
+      case MeshForegroundHealthKind.unsupported:
+        return 'background service unavailable';
+      case MeshForegroundHealthKind.starting:
+        return 'background mesh starting';
+      case MeshForegroundHealthKind.healthy:
+        final age = aliveAgeMs;
+        return age == null
+            ? 'background mesh healthy'
+            : 'background mesh healthy, last alive ${_formatAge(age)} ago';
+      case MeshForegroundHealthKind.stale:
+        final age = aliveAgeMs;
+        return age == null
+            ? 'background mesh stale - restarting'
+            : 'background mesh stale - last alive ${_formatAge(age)} ago';
+    }
+  }
+
+  static String _formatAge(int ageMs) {
+    final seconds = (ageMs / 1000).round();
+    if (seconds < 60) return '${seconds}s';
+    final minutes = (seconds / 60).round();
+    if (minutes < 60) return '${minutes}m';
+    return '${(minutes / 60).round()}h';
+  }
+}
+
+MeshForegroundHealth evaluateMeshForegroundHealth({
+  required bool supported,
+  required bool sharingEnabled,
+  required bool serviceRunning,
+  required int nowMs,
+  required int? aliveAtMs,
+  required int? startedAtMs,
+  Duration staleAfter = MeshForegroundController.staleAliveAfter,
+  Duration startGrace = MeshForegroundController.startGrace,
+}) {
+  if (!supported) {
+    return const MeshForegroundHealth(
+      kind: MeshForegroundHealthKind.unsupported,
+    );
+  }
+  if (!sharingEnabled || !serviceRunning) {
+    return const MeshForegroundHealth(kind: MeshForegroundHealthKind.off);
+  }
+  final startedAge = startedAtMs == null ? null : nowMs - startedAtMs;
+  if (startedAge != null &&
+      startedAge >= 0 &&
+      startedAge < startGrace.inMilliseconds) {
+    return MeshForegroundHealth(
+      kind: MeshForegroundHealthKind.starting,
+      aliveAgeMs: aliveAtMs == null ? null : nowMs - aliveAtMs,
+      startedAgeMs: startedAge,
+    );
+  }
+  if (aliveAtMs == null) {
+    return MeshForegroundHealth(
+      kind: MeshForegroundHealthKind.stale,
+      startedAgeMs: startedAge,
+    );
+  }
+  final aliveAge = nowMs - aliveAtMs;
+  if (aliveAge < 0 || aliveAge <= staleAfter.inMilliseconds) {
+    return MeshForegroundHealth(
+      kind: MeshForegroundHealthKind.healthy,
+      aliveAgeMs: aliveAge.clamp(0, staleAfter.inMilliseconds),
+      startedAgeMs: startedAge,
+    );
+  }
+  return MeshForegroundHealth(
+    kind: MeshForegroundHealthKind.stale,
+    aliveAgeMs: aliveAge,
+    startedAgeMs: startedAge,
+  );
+}
+
 /// UI-isolate façade for the Android foreground mesh service. All methods are
 /// safe no-ops off Android.
 class MeshForegroundController {
@@ -194,26 +324,43 @@ class MeshForegroundController {
 
   /// Data message poking the task isolate to reload prefs and reconnect.
   static const String msgReconfigure = 'mesh.reconfigure.v1';
+  static const Duration staleAliveAfter = Duration(seconds: 90);
+  static const Duration startGrace = Duration(seconds: 20);
 
   static bool get isSupported => !kIsWeb && Platform.isAndroid;
 
   /// Mirror the mesh-sharing pref: service running iff sharing is on. When
   /// already running, forwards a reconfigure poke instead so the runner picks
   /// up pref/connection changes without a service bounce.
-  static Future<void> syncFromPrefs(Prefs prefs) async {
-    if (!isSupported) return;
+  static Future<bool> syncFromPrefs(Prefs prefs) async {
+    if (!isSupported) return false;
+    await prefs.reload();
     if (!prefs.meshSharing) {
       await stop();
-      return;
+      return false;
     }
     if (await FlutterForegroundTask.isRunningService) {
+      final health = evaluateMeshForegroundHealth(
+        supported: true,
+        sharingEnabled: prefs.meshSharing,
+        serviceRunning: true,
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+        aliveAtMs: prefs.meshBgAliveAt,
+        startedAtMs: prefs.meshBgStartedAt,
+      );
+      if (health.shouldBounce) {
+        AppLog.warn('mesh_bg', '${health.label}; bouncing service');
+        final stopped = await _stopRunning();
+        if (!stopped) return false;
+        return _start();
+      }
       notifyReconfigure();
-      return;
+      return true;
     }
-    await _start();
+    return _start();
   }
 
-  static Future<void> _start() async {
+  static Future<bool> _start() async {
     final notificationPermission =
         await FlutterForegroundTask.checkNotificationPermission();
     if (notificationPermission != NotificationPermission.granted) {
@@ -246,7 +393,9 @@ class MeshForegroundController {
         allowWifiLock: true,
       ),
     );
-    await FlutterForegroundTask.startService(
+    final prefs = await Prefs.load();
+    await prefs.setMeshBgStartedAt(DateTime.now().millisecondsSinceEpoch);
+    final result = await FlutterForegroundTask.startService(
       // dataSync: the long-lived SSE stream + exec/file-transfer traffic.
       // location: on-demand locate fixes while backgrounded.
       serviceTypes: const [
@@ -257,13 +406,55 @@ class MeshForegroundController {
       notificationText: 'Connected for locate, teleport, and file transfer.',
       callback: startMeshForegroundCallback,
     );
+    switch (result) {
+      case ServiceRequestSuccess():
+        return true;
+      case ServiceRequestFailure(:final error):
+        AppLog.warn('mesh_bg', 'foreground service start failed', error);
+        return false;
+    }
   }
 
-  static Future<void> stop() async {
-    if (!isSupported) return;
+  static Future<bool> stop() async {
+    if (!isSupported) return false;
     if (await FlutterForegroundTask.isRunningService) {
-      await FlutterForegroundTask.stopService();
+      return _stopRunning();
     }
+    return true;
+  }
+
+  static Future<bool> _stopRunning() async {
+    final result = await FlutterForegroundTask.stopService();
+    switch (result) {
+      case ServiceRequestSuccess():
+        return true;
+      case ServiceRequestFailure(:final error):
+        AppLog.warn('mesh_bg', 'foreground service stop failed', error);
+        return false;
+    }
+  }
+
+  static Future<MeshForegroundHealth> healthFromPrefs(Prefs prefs) async {
+    if (!isSupported) {
+      return evaluateMeshForegroundHealth(
+        supported: false,
+        sharingEnabled: prefs.meshSharing,
+        serviceRunning: false,
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+        aliveAtMs: null,
+        startedAtMs: null,
+      );
+    }
+    await prefs.reload();
+    final running = await FlutterForegroundTask.isRunningService;
+    return evaluateMeshForegroundHealth(
+      supported: true,
+      sharingEnabled: prefs.meshSharing,
+      serviceRunning: running,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+      aliveAtMs: prefs.meshBgAliveAt,
+      startedAtMs: prefs.meshBgStartedAt,
+    );
   }
 
   /// Fire-and-forget poke; the runner re-reads prefs and reconnects. Silently

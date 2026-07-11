@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/bridge_models.dart';
 import '../services/log.dart';
+import '../services/mesh_background.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'connect_screen.dart';
@@ -57,6 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final c = await widget.state.loadConfig();
       await widget.state.refreshMeshDevices();
+      await widget.state.refreshMeshBackgroundHealth();
       if (!mounted) return;
       setState(() {
         _cfg = c;
@@ -84,15 +86,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _runControl(String action) async {
     final result = await widget.state.daemonControl(action);
-    _toast(result.message.isEmpty
-        ? (result.ok ? 'Done' : 'Failed')
-        : result.message);
+    _toast(
+      result.message.isEmpty ? (result.ok ? 'Done' : 'Failed') : result.message,
+    );
   }
 
   Future<void> _confirmRestart() async {
@@ -231,14 +234,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.lightbulb_outline,
-                            size: 16, color: TalonColors.accent),
+                        Icon(
+                          Icons.lightbulb_outline,
+                          size: 16,
+                          color: TalonColors.accent,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             AppLog.diagnose(_error!)!,
                             style: TextStyle(
-                                fontSize: 12.5, color: TalonColors.textDim),
+                              fontSize: 12.5,
+                              color: TalonColors.textDim,
+                            ),
                           ),
                         ),
                       ],
@@ -256,7 +264,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                              content: Text('Diagnostics copied to clipboard')),
+                            content: Text('Diagnostics copied to clipboard'),
+                          ),
                         );
                       }
                     },
@@ -273,16 +282,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               children: [
                 _ModelRow(
-                    state: widget.state,
-                    cfg: cfg,
-                    onPick: (id) => _apply({'model': id})),
+                  state: widget.state,
+                  cfg: cfg,
+                  onPick: (id) => _apply({'model': id}),
+                ),
                 const SizedBox(height: 14),
-                _textRow('Display name', _name,
-                    onSubmit: (v) => _apply({'botDisplayName': v})),
+                _textRow(
+                  'Display name',
+                  _name,
+                  onSubmit: (v) => _apply({'botDisplayName': v}),
+                ),
                 const SizedBox(height: 14),
-                _textRow('Timezone', _tz,
-                    hint: 'e.g. Europe/London',
-                    onSubmit: (v) => _apply({'timezone': v})),
+                _textRow(
+                  'Timezone',
+                  _tz,
+                  hint: 'e.g. Europe/London',
+                  onSubmit: (v) => _apply({'timezone': v}),
+                ),
               ],
             ),
           ),
@@ -362,6 +378,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             prefs.meshSharing,
             (v) => widget.state.setMeshSharing(v),
           ),
+          const SizedBox(height: 10),
+          _check(
+            _meshBackgroundHealth(widget.state.meshBackgroundHealth.kind),
+            'Background',
+            widget.state.meshBackgroundHealth.label,
+          ),
           const Divider(height: 22),
           _switchRow(
             'Periodic reporting',
@@ -415,11 +437,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  _Health _meshBackgroundHealth(MeshForegroundHealthKind kind) {
+    switch (kind) {
+      case MeshForegroundHealthKind.healthy:
+        return _Health.ok;
+      case MeshForegroundHealthKind.starting:
+      case MeshForegroundHealthKind.off:
+      case MeshForegroundHealthKind.unsupported:
+        return _Health.warn;
+      case MeshForegroundHealthKind.stale:
+        return _Health.bad;
+    }
+  }
+
   Widget _meshDeviceRow(DeviceInfo device, DeviceLocation? loc) {
     final battery = device.battery == null
         ? ''
         : ' · ${device.battery}%${device.charging == true ? ' charging' : ''}';
-    final last = _fmtAge(DateTime.now().millisecondsSinceEpoch - device.lastSeen);
+    final last = _fmtAge(
+      DateTime.now().millisecondsSinceEpoch - device.lastSeen,
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
@@ -435,9 +472,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(device.name,
-                    style: const TextStyle(
-                        fontSize: 13.5, fontWeight: FontWeight.w600)),
+                Text(
+                  device.name,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 Text(
                   '${device.platform} · $last$battery',
                   style: TextStyle(fontSize: 12, color: TalonColors.textFaint),
@@ -445,8 +486,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (device.appVersion.isNotEmpty)
                   Text(
                     'v${device.appVersion}',
-                    style:
-                        TextStyle(fontSize: 11, color: TalonColors.textFaint),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: TalonColors.textFaint,
+                    ),
                   ),
               ],
             ),
@@ -499,9 +542,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     : TalonColors.glassStroke,
               ),
               labelStyle: TextStyle(
-                color: current == mode
-                    ? TalonColors.text
-                    : TalonColors.textDim,
+                color: current == mode ? TalonColors.text : TalonColors.textDim,
                 fontSize: 13,
               ),
               onSelected: (_) {
@@ -556,8 +597,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'Bridge protocol',
             connected
                 ? (protoOk
-                    ? 'v${s.status.protocol} — matched'
-                    : 'app v$kBridgeProtocolVersion · daemon v${s.status.protocol} — mismatch')
+                      ? 'v${s.status.protocol} — matched'
+                      : 'app v$kBridgeProtocolVersion · daemon v${s.status.protocol} — mismatch')
                 : 'Unknown until connected',
           ),
           _check(
@@ -616,7 +657,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ..writeln('connection: ${s.conn.name}')
       ..writeln('endpoint: ${s.activeConfig.baseUrl}')
       ..writeln(
-          'protocol: app v$kBridgeProtocolVersion / daemon v${s.status.protocol}')
+        'protocol: app v$kBridgeProtocolVersion / daemon v${s.status.protocol}',
+      )
       ..writeln('backend: ${s.status.backend}')
       ..writeln('model: ${s.status.model}')
       ..writeln('bot: ${s.status.botName}');
@@ -657,8 +699,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _infoRow('Active chats', '${s.status.activeChats}'),
           if (cfg != null) _infoRow('Uptime', _fmtUptime(cfg.uptimeMs)),
           if (s.status.startedAt.isNotEmpty)
-            _infoRow('Started',
-                s.status.startedAt.replaceFirst('T', ' ').split('.').first),
+            _infoRow(
+              'Started',
+              s.status.startedAt.replaceFirst('T', ' ').split('.').first,
+            ),
         ],
       ),
     );
@@ -680,15 +724,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(width: 10),
           SizedBox(
             width: 118,
-            child: Text(label,
-                style: const TextStyle(
-                    fontSize: 13.5, fontWeight: FontWeight.w600)),
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
           Expanded(
             child: Text(
               detail,
-              style:
-                  TextStyle(fontSize: 12.5, color: TalonColors.textDim),
+              style: TextStyle(fontSize: 12.5, color: TalonColors.textDim),
             ),
           ),
         ],
@@ -697,25 +744,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _infoRow(String label, String value) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 128,
-              child: Text(label,
-                  style: TextStyle(
-                      fontSize: 13, color: TalonColors.textDim)),
-            ),
-            Expanded(
-              child: SelectableText(
-                value.isEmpty ? '—' : value,
-                style: const TextStyle(fontSize: 13.5),
-              ),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 5),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 128,
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 13, color: TalonColors.textDim),
+          ),
         ),
-      );
+        Expanded(
+          child: SelectableText(
+            value.isEmpty ? '—' : value,
+            style: const TextStyle(fontSize: 13.5),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _statusCard(ConfigSnapshot? cfg) {
     final s = widget.state;
@@ -740,8 +788,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(width: 8),
               Text(
                 connected ? 'Connected' : 'Disconnected',
-                style:
-                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
               ),
               const Spacer(),
               if (s.config.canManageDaemon)
@@ -749,8 +799,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onPressed: () async {
                     final r = await s.restartDaemon();
                     if (mounted && !r.ok && r.detail != null) {
-                      ScaffoldMessenger.of(context)
-                          .showSnackBar(SnackBar(content: Text(r.detail!)));
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(r.detail!)));
                     }
                   },
                   icon: const Icon(Icons.restart_alt, size: 18),
@@ -788,8 +839,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           Row(
             children: [
-              Icon(Icons.lan_outlined,
-                  size: 18, color: TalonColors.textDim),
+              Icon(Icons.lan_outlined, size: 18, color: TalonColors.textDim),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(where, style: const TextStyle(fontSize: 14)),
@@ -813,21 +863,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // ── Row builders ──────────────────────────────────────────────────────────
 
   Widget _stat(String label, String value) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label.toUpperCase(),
-              style: TextStyle(
-                  fontSize: 10,
-                  color: TalonColors.textFaint,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.8)),
-          const SizedBox(height: 2),
-          Text(value, style: const TextStyle(fontSize: 14)),
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label.toUpperCase(),
+        style: TextStyle(
+          fontSize: 10,
+          color: TalonColors.textFaint,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.8,
+        ),
+      ),
+      const SizedBox(height: 2),
+      Text(value, style: const TextStyle(fontSize: 14)),
+    ],
+  );
 
-  Widget _textRow(String label, TextEditingController c,
-      {String? hint, required ValueChanged<String> onSubmit}) {
+  Widget _textRow(
+    String label,
+    TextEditingController c, {
+    String? hint,
+    required ValueChanged<String> onSubmit,
+  }) {
     return Row(
       children: [
         SizedBox(
@@ -858,7 +915,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _switchRow(
-      String title, String subtitle, bool value, ValueChanged<bool> onChanged) {
+    String title,
+    String subtitle,
+    bool value,
+    ValueChanged<bool> onChanged,
+  ) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -867,12 +928,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600)),
-                Text(subtitle,
-                    style: TextStyle(
-                        fontSize: 12, color: TalonColors.textFaint)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(fontSize: 12, color: TalonColors.textFaint),
+                ),
               ],
             ),
           ),
@@ -884,25 +950,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // override here -- the previous override set the thumb to the
           // same accent color as the selected track, making the switch
           // look like one solid pill with no visible thumb.
-          Switch(
-            value: value,
-            onChanged: onChanged,
-          ),
+          Switch(value: value, onChanged: onChanged),
         ],
       ),
     );
   }
 
-  Widget _intervalRow(String label, String current, int value,
-      {required int min, required ValueChanged<int> onChange}) {
+  Widget _intervalRow(
+    String label,
+    String current,
+    int value, {
+    required int min,
+    required ValueChanged<int> onChange,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(top: 8, left: 6),
       child: Row(
         children: [
           Expanded(
-            child: Text(label,
-                style:
-                    TextStyle(fontSize: 13, color: TalonColors.textDim)),
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 13, color: TalonColors.textDim),
+            ),
           ),
           IconButton(
             iconSize: 18,
@@ -958,27 +1027,29 @@ class _SettingsSkeleton extends StatelessWidget {
         ),
       );
       if (reduceMotion) return box;
-      return box.animate(onPlay: (c) => c.repeat()).shimmer(
+      return box
+          .animate(onPlay: (c) => c.repeat())
+          .shimmer(
             duration: 1200.ms,
             color: Colors.white.withValues(alpha: 0.08),
           );
     }
 
     Widget card(int rows) => Glass(
-          radius: TalonRadius.md,
-          padding: const EdgeInsets.all(TalonSpace.lg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              bar(120, 12),
-              const SizedBox(height: TalonSpace.lg),
-              for (var i = 0; i < rows; i++) ...[
-                if (i > 0) const SizedBox(height: TalonSpace.md),
-                bar(double.infinity, 16),
-              ],
-            ],
-          ),
-        );
+      radius: TalonRadius.md,
+      padding: const EdgeInsets.all(TalonSpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          bar(120, 12),
+          const SizedBox(height: TalonSpace.lg),
+          for (var i = 0; i < rows; i++) ...[
+            if (i > 0) const SizedBox(height: TalonSpace.md),
+            bar(double.infinity, 16),
+          ],
+        ],
+      ),
+    );
 
     return Column(
       children: [
@@ -1005,12 +1076,15 @@ class _Section extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title.toUpperCase(),
-              style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.1,
-                  color: TalonColors.textFaint)),
+          Text(
+            title.toUpperCase(),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.1,
+              color: TalonColors.textFaint,
+            ),
+          ),
           const SizedBox(height: 14),
           child,
         ],
@@ -1054,12 +1128,20 @@ class _ControlButton extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label,
-                      style: const TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w600)),
-                  Text(subtitle,
-                      style: TextStyle(
-                          fontSize: 12, color: TalonColors.textFaint)),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: TalonColors.textFaint,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1070,8 +1152,7 @@ class _ControlButton extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             else
-              Icon(Icons.chevron_right,
-                  size: 18, color: TalonColors.textFaint),
+              Icon(Icons.chevron_right, size: 18, color: TalonColors.textFaint),
           ],
         ),
       ),
@@ -1083,8 +1164,11 @@ class _ModelRow extends StatelessWidget {
   final AppState state;
   final ConfigSnapshot cfg;
   final ValueChanged<String> onPick;
-  const _ModelRow(
-      {required this.state, required this.cfg, required this.onPick});
+  const _ModelRow({
+    required this.state,
+    required this.cfg,
+    required this.onPick,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1114,8 +1198,11 @@ class _ModelRow extends StatelessWidget {
                       style: const TextStyle(fontSize: 14),
                     ),
                   ),
-                  Icon(Icons.unfold_more,
-                      size: 16, color: TalonColors.textFaint),
+                  Icon(
+                    Icons.unfold_more,
+                    size: 16,
+                    color: TalonColors.textFaint,
+                  ),
                 ],
               ),
             ),
@@ -1142,8 +1229,10 @@ class _ModelRow extends StatelessWidget {
             for (final m in state.models)
               ListTile(
                 title: Text(m.displayName),
-                subtitle: Text(m.provider,
-                    style: TextStyle(color: TalonColors.textFaint)),
+                subtitle: Text(
+                  m.provider,
+                  style: TextStyle(color: TalonColors.textFaint),
+                ),
                 trailing: m.id == cfg.model
                     ? Icon(Icons.check, color: TalonColors.accent)
                     : null,
