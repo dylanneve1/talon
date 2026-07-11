@@ -91,8 +91,46 @@ export class MeshRegistry {
       now,
     );
     this.devices.set(device.id, device);
+    // Stale-duplicate eviction. A reinstall (or an old app build) carries its
+    // own persisted device id, so the same physical machine re-registers
+    // under a fresh identity and the old entry lingers forever as an offline
+    // ghost. Same name + platform under a different id, currently OFFLINE →
+    // superseded install, drop it. An online doppelganger is kept: two live
+    // devices can legitimately share a name.
+    let evicted = false;
+    for (const [id, d] of this.devices) {
+      if (id === device.id) continue;
+      if (d.name !== device.name || d.platform !== device.platform) continue;
+      if (toDeviceInfo(d, now, PRESENCE_TIMEOUT_MS).online) continue;
+      this.devices.delete(id);
+      this.locations.delete(id);
+      this.history.delete(id);
+      evicted = true;
+    }
     await this.persistDevices();
+    if (evicted) {
+      await this.persistLocations();
+      await this.persistHistory();
+    }
     return device;
+  }
+
+  /**
+   * Drop a device (and its location + history) from the registry. Returns
+   * the removed device, or undefined when the id is unknown. Note a still-
+   * connected companion re-registers on its next heartbeat — removal is for
+   * stale entries.
+   */
+  async removeDevice(deviceId: string): Promise<DeviceInfo | undefined> {
+    const device = this.devices.get(deviceId);
+    if (!device) return undefined;
+    this.devices.delete(deviceId);
+    const hadLocation = this.locations.delete(deviceId);
+    const hadHistory = this.history.delete(deviceId);
+    await this.persistDevices();
+    if (hadLocation) await this.persistLocations();
+    if (hadHistory) await this.persistHistory();
+    return toDeviceInfo(device, device.lastSeen);
   }
 
   async storeLocation(

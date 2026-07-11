@@ -61,6 +61,20 @@ export const meshTools: ToolDefinition[] = [
     tag: "mesh",
   },
   {
+    name: "remove_device",
+    description:
+      "Remove a stale device from the mesh registry (with its stored location and history). Use for superseded installs and old duplicates — e.g. a reinstalled companion that re-registered under a new id, leaving the old entry as an offline ghost. Requires an explicit device id or name (no default target). Removing a still-connected device is pointless: it re-registers on its next heartbeat within ~60s.",
+    schema: {
+      device: z
+        .string()
+        .describe(
+          "Device id, exact name, or unique name fragment of the entry to remove (see list_devices). Prefer the id when duplicates share a name.",
+        ),
+    },
+    execute: (params, bridge) => bridge("remove_device", params),
+    tag: "mesh",
+  },
+  {
     name: "get_device_status",
     description:
       "Get live status straight from a Talon companion device: battery and charging state, platform/OS details, app version, and mesh sharing settings.",

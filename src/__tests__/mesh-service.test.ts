@@ -68,6 +68,7 @@ describe("mesh tool availability", () => {
         "device_pull_file",
         "device_push_file",
         "update_device",
+        "remove_device",
       ]) {
         expect(names).toContain(tool);
       }
@@ -1076,5 +1077,110 @@ describe("MeshService hardening", () => {
     const res = await service.writeFileToDevice("phone", "/sdcard/a.txt", 42);
     expect(res.ok).toBe(false);
     expect(res.text).toContain("must be a string");
+  });
+});
+
+describe("MeshService registry hygiene", () => {
+  const mac = (id: string): Record<string, unknown> => ({
+    id,
+    name: "Dylan's MacBook Pro",
+    platform: "macos",
+    appVersion: "1.0.0",
+  });
+
+  it("evicts an offline same-name duplicate when a fresh install registers", async () => {
+    const service = await tempService();
+    await service.storeLocation({
+      deviceId: "mac-old",
+      lat: 53.1,
+      lon: -6.2,
+      ts: Date.now() - 10 * 60_000,
+    });
+    // Old install last beat 10 minutes ago — well past the presence timeout.
+    // (Registered after the location: storeLocation counts as a heartbeat
+    // and would otherwise refresh lastSeen to now.)
+    await service.register(mac("mac-old"), Date.now() - 10 * 60_000);
+    await service.register(mac("mac-new"));
+
+    const { devices } = await service.list();
+    expect(devices.map((d) => d.id)).toEqual(["mac-new"]);
+    // The ghost's location went with it.
+    expect(await service.getLocation("mac-old")).toBeUndefined();
+  });
+
+  it("keeps an ONLINE same-name doppelganger (two live devices may share a name)", async () => {
+    const service = await tempService();
+    await service.register(mac("mac-a"));
+    await service.register(mac("mac-b"));
+
+    const { devices } = await service.list();
+    expect(devices.map((d) => d.id).sort()).toEqual(["mac-a", "mac-b"]);
+  });
+
+  it("keeps an offline same-name device on a DIFFERENT platform", async () => {
+    const service = await tempService();
+    await service.register(
+      { ...mac("named-phone"), platform: "android" },
+      Date.now() - 10 * 60_000,
+    );
+    await service.register(mac("mac-new"));
+
+    const { devices } = await service.list();
+    expect(devices.map((d) => d.id).sort()).toEqual(["mac-new", "named-phone"]);
+  });
+
+  it("remove_device drops a stale entry with its location", async () => {
+    const service = await tempService();
+    setMeshService(service);
+    await service.storeLocation({
+      deviceId: "mac-old",
+      lat: 53.1,
+      lon: -6.2,
+      ts: Date.now() - 10 * 60_000,
+    });
+    // Registered after the location — see the eviction test for why.
+    await service.register(mac("mac-old"), Date.now() - 10 * 60_000);
+
+    const res = await meshHandlers.remove_device(
+      { action: "remove_device", device: "mac-old" },
+      1,
+    );
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain("Removed Dylan's MacBook Pro [id: mac-old]");
+    // Offline removal carries no re-register warning.
+    expect(res.text).not.toContain("re-registers");
+
+    const { devices } = await service.list();
+    expect(devices).toEqual([]);
+    expect(await service.getLocation("mac-old")).toBeUndefined();
+  });
+
+  it("remove_device warns when the target is still online", async () => {
+    const service = await tempService();
+    await service.register(mac("mac-live"));
+    const res = await service.removeDevice("mac-live");
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain("re-registers within ~60s");
+  });
+
+  it("remove_device refuses to run without an explicit target", async () => {
+    const service = await tempService();
+    await service.register(mac("mac-old"));
+    for (const query of [undefined, "", "   "]) {
+      const res = await service.removeDevice(query);
+      expect(res.ok).toBe(false);
+      expect(res.text).toContain("explicit device id or name");
+    }
+    // Nothing was removed.
+    const { devices } = await service.list();
+    expect(devices).toHaveLength(1);
+  });
+
+  it("remove_device surfaces an unknown device as a clean error", async () => {
+    const service = await tempService();
+    await service.register(mac("mac-old"));
+    const res = await service.removeDevice("no-such-thing");
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain('No mesh device matches "no-such-thing"');
   });
 });

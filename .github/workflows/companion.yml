@@ -191,7 +191,17 @@ jobs:
           DEST="$GITHUB_WORKSPACE/apps/companion/dist"
           case "${{ matrix.platform }}" in
             windows) ( cd build/windows/x64/runner/Release && 7z a "$DEST/talon-companion-windows.zip" ./* ) ;;
-            macos)   ( cd build/macos/Build/Products/Release && zip -r -y "$DEST/talon-companion-macos.zip" talon_companion.app ) ;;
+            macos)
+              # Ship a drag-to-Applications DMG (the standard macOS install
+              # UX) instead of a bare zip: the volume contains Talon.app and
+              # an /Applications symlink side by side.
+              STAGE=$(mktemp -d)
+              cp -R "build/macos/Build/Products/Release/Talon.app" "$STAGE/"
+              ln -s /Applications "$STAGE/Applications"
+              hdiutil create -volname "Talon" -srcfolder "$STAGE" -ov -format UDZO \
+                "$DEST/talon-companion-macos.dmg"
+              rm -rf "$STAGE"
+              ;;
             linux)   ( cd build/linux/x64/release/bundle && tar czf "$DEST/talon-companion-linux.tar.gz" . ) ;;
             android) cp build/app/outputs/flutter-apk/app-release.apk "$DEST/talon-companion-android.apk" ;;
           esac

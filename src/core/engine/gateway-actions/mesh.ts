@@ -18,6 +18,9 @@ export const meshHandlers: SharedActionHandlers = {
   get_device_history: (body) =>
     getMeshService().deviceHistory(body.device, body.hours),
   ring_device: (body) => getMeshService().ringDevice(body.device, body.message),
+  // Registry hygiene: drop a stale/superseded device entry. Requires an
+  // explicit target — a destructive action must never default-pick a device.
+  remove_device: (body) => getMeshService().removeDevice(body.device),
   get_device_status: (body) => getMeshService().getDeviceStatus(body.device),
   // Exec + filesystem surface — the substrate teleport routes through.
   device_exec: (body) =>

@@ -340,6 +340,36 @@ export class MeshService {
     return { ok: true, text: this.locationSummary(target, loc) };
   }
 
+  /**
+   * `remove_device`: drop a stale device from the mesh registry (with its
+   * location + history). Destructive, so it requires an explicit target —
+   * no "default to the most recent device" like the read tools.
+   */
+  async removeDevice(query?: unknown): Promise<MeshToolResult> {
+    await this.load();
+    if (typeof query !== "string" || !query.trim()) {
+      return {
+        ok: false,
+        text: "remove_device needs an explicit device id or name — there is no default target for a destructive operation. See list_devices.",
+      };
+    }
+    const resolved = this.resolveDevice(query);
+    if ("error" in resolved) return { ok: false, text: resolved.error };
+    const target = resolved.target;
+    const removed = await this.registry.removeDevice(target.id);
+    if (!removed) {
+      return { ok: false, text: this.noSuchDevice(query).text };
+    }
+    return {
+      ok: true,
+      text:
+        `Removed ${removed.name} [id: ${removed.id}] (${removed.platform}, last seen ${age(Date.now() - removed.lastSeen)}) from the mesh registry.` +
+        (target.online
+          ? " Note: it was still online — a connected companion re-registers within ~60s, so quit the app first if it keeps coming back."
+          : ""),
+    };
+  }
+
   /** `ring_device`: make the device sound/vibrate so it can be found. */
   ringDevice(query?: unknown, message?: unknown): Promise<MeshToolResult> {
     return this.commandTool(query, "ring", {
