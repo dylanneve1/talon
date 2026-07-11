@@ -178,6 +178,20 @@ async function bashBackground(
   cmd: string,
   cwd: string | undefined,
 ): Promise<Result> {
+  // The background contract is POSIX-shaped end to end: detached process
+  // group, `kill -- -pid` to stop, survives daemon restarts. Windows has
+  // none of those (and the CI legs showed the detached writer's output not
+  // reaching the log) — refuse loudly with the native alternative instead
+  // of pretending.
+  if (process.platform === "win32") {
+    return {
+      ok: false,
+      text:
+        "background:true needs POSIX process groups and isn't supported on a Windows " +
+        "daemon host. Run it foreground with a bound command (`timeout 30 …`, `head -n 200`) " +
+        "or start it yourself: `powershell Start-Process -WindowStyle Hidden` with output redirected to a file.",
+    };
+  }
   try {
     await mkdir(BACKGROUND_LOG_DIR, { recursive: true });
   } catch (err) {
@@ -201,11 +215,12 @@ async function bashBackground(
       text: `Cannot open log file ${logPath}: ${(err as Error).message}`,
     };
   }
-  const detached = process.platform !== "win32";
+  // Always detached: the win32 guard above returned already, so this only
+  // runs on POSIX where the job gets its own process group.
   const child = spawn("bash", ["-c", cmd], {
     ...(cwd ? { cwd } : {}),
     env: process.env,
-    detached,
+    detached: true,
     stdio: ["ignore", fd, fd],
   });
   return new Promise((resolvePromise) => {
@@ -250,9 +265,7 @@ async function bashBackground(
           `🚀 Started in background [local] — pid ${child.pid}.`,
           `Output (stdout+stderr) → ${logPath}`,
           `Follow it with read/bash (e.g. \`tail -n 50 ${logPath}\`).`,
-          detached
-            ? `Stop it with \`kill -- -${child.pid}\` (whole process group).`
-            : `Stop it with \`kill ${child.pid}\`.`,
+          `Stop it with \`kill -- -${child.pid}\` (whole process group).`,
           `Unsupervised: it keeps running until it exits or is killed — it even survives a Talon restart.`,
         ].join("\n"),
       });
