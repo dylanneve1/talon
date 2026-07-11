@@ -720,77 +720,11 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
 // to re-fire the same failing heartbeat 60×/hour (observed live: a
 // session-limit night logged hundreds of identical failures a minute apart).
 
-const { parseSessionLimitResetMs, failureBackoffUntil } =
-  await import("../core/background/heartbeat/scheduler.js");
+// Pure-helper coverage (parseSessionLimitResetMs, failureBackoffUntil,
+// FailureBackoff) lives in failure-backoff.test.ts — the module is shared
+// with dream. Here: the heartbeat scheduler's behavioral integration.
+
 const { hb } = await import("../core/background/heartbeat/state.js");
-
-describe("parseSessionLimitResetMs", () => {
-  const NOW = Date.UTC(2026, 0, 1, 0, 0, 0); // 2026-01-01T00:00:00Z
-
-  it("parses an am time with minutes", () => {
-    expect(
-      parseSessionLimitResetMs(
-        "You've hit your session limit · resets 12:20am (UTC)",
-        NOW,
-      ),
-    ).toBe(Date.UTC(2026, 0, 1, 0, 20, 0));
-  });
-
-  it("parses a bare pm hour", () => {
-    expect(parseSessionLimitResetMs("resets 3pm (UTC)", NOW)).toBe(
-      Date.UTC(2026, 0, 1, 15, 0, 0),
-    );
-  });
-
-  it("rolls to the next day when the time already passed", () => {
-    const now = Date.UTC(2026, 0, 1, 18, 0, 0);
-    expect(parseSessionLimitResetMs("resets 12:20am (UTC)", now)).toBe(
-      Date.UTC(2026, 0, 2, 0, 20, 0),
-    );
-  });
-
-  it("handles 12pm as noon", () => {
-    expect(parseSessionLimitResetMs("resets 12pm (UTC)", NOW)).toBe(
-      Date.UTC(2026, 0, 1, 12, 0, 0),
-    );
-  });
-
-  it("returns null when no reset time is present", () => {
-    expect(parseSessionLimitResetMs("something went wrong", NOW)).toBeNull();
-    expect(parseSessionLimitResetMs("resets soon", NOW)).toBeNull();
-  });
-
-  it("rejects out-of-range fields", () => {
-    expect(parseSessionLimitResetMs("resets 13pm (UTC)", NOW)).toBeNull();
-    expect(parseSessionLimitResetMs("resets 3:75pm (UTC)", NOW)).toBeNull();
-  });
-});
-
-describe("failureBackoffUntil", () => {
-  const NOW = Date.UTC(2026, 0, 1, 0, 0, 0);
-
-  it("waits for a stated session-limit reset (+buffer) instead of guessing", () => {
-    const err = new Error(
-      "Claude Code returned an error result: You've hit your session limit · resets 12:20am (UTC)",
-    );
-    expect(failureBackoffUntil(err, 1, NOW)).toBe(
-      Date.UTC(2026, 0, 1, 0, 22, 0), // 12:20am + 2min buffer
-    );
-  });
-
-  it("doubles from 5min and caps at 60min for generic failures", () => {
-    const err = new Error("backend exploded");
-    expect(failureBackoffUntil(err, 1, NOW)).toBe(NOW + 5 * 60 * 1000);
-    expect(failureBackoffUntil(err, 2, NOW)).toBe(NOW + 10 * 60 * 1000);
-    expect(failureBackoffUntil(err, 3, NOW)).toBe(NOW + 20 * 60 * 1000);
-    expect(failureBackoffUntil(err, 10, NOW)).toBe(NOW + 60 * 60 * 1000);
-  });
-
-  it("falls back to exponential when a limit error has no parsable time", () => {
-    const err = new Error("You've hit your session limit · resets later");
-    expect(failureBackoffUntil(err, 1, NOW)).toBe(NOW + 5 * 60 * 1000);
-  });
-});
 
 describe("heartbeat failure backoff (behavioral)", () => {
   beforeEach(() => {
@@ -802,14 +736,12 @@ describe("heartbeat failure backoff (behavioral)", () => {
     readFileSyncMock.mockReset();
     runOneShotAgentMock.mockReset();
     clearState();
-    hb.consecutiveFailures = 0;
-    hb.backoffUntil = 0;
+    hb.failureBackoff.succeed();
   });
 
   afterEach(() => {
     stopHeartbeatTimer();
-    hb.consecutiveFailures = 0;
-    hb.backoffUntil = 0;
+    hb.failureBackoff.succeed();
     vi.useRealTimers();
   });
 
@@ -880,7 +812,7 @@ describe("heartbeat failure backoff (behavioral)", () => {
     await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 100); // fail #1
     await vi.advanceTimersByTimeAsync(6 * 60 * 1000); // retry succeeds
     expect(runOneShotAgentMock).toHaveBeenCalledTimes(2);
-    expect(hb.consecutiveFailures).toBe(0);
-    expect(hb.backoffUntil).toBe(0);
+    expect(hb.failureBackoff.failures).toBe(0);
+    expect(hb.failureBackoff.active()).toBe(false);
   });
 });

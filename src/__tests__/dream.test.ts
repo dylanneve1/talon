@@ -98,13 +98,14 @@ function makeMockBackend(): Backend {
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 
-const { initDream, maybeStartDream, forceDream } =
+const { initDream, maybeStartDream, forceDream, dreamFailureBackoff } =
   await import("../core/background/dream.js");
 
 beforeEach(() => {
   runOneShotAgentMock.mockReset();
   runOneShotAgentMock.mockImplementation(async () => {});
   clearState();
+  dreamFailureBackoff.succeed(); // module-level state — reset between tests
 });
 
 describe("initDream", () => {
@@ -378,5 +379,47 @@ describe("maybeStartDream swallows errors", () => {
     expect(() => maybeStartDream()).not.toThrow();
     // Give the catch a tick to swallow.
     await new Promise((r) => setTimeout(r, 10));
+  });
+});
+
+// ── Failure backoff ────────────────────────────────────────────────────────
+//
+// A failed dream keeps the old last_run, and maybeStartDream runs on every
+// invocation — without a backoff a broken backend gets re-fired on every
+// message (observed live: a model outage produced 403 identical
+// consolidation failures).
+
+describe("dream failure backoff", () => {
+  beforeEach(() => {
+    initDream({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
+    existsSyncMock.mockReturnValue(false);
+    readFileSyncMock.mockReturnValue("dream prompt template");
+    // Overdue: last run 13 hours ago (interval is 12h).
+    seedState({ last_run: Date.now() - 13 * 60 * 60 * 1000, status: "idle" });
+  });
+
+  it("arms after a failed run and suppresses the next auto fire", async () => {
+    runOneShotAgentMock.mockRejectedValue(new Error("backend exploded"));
+    await expect(forceDream()).rejects.toThrow("backend exploded");
+    expect(dreamFailureBackoff.active()).toBe(true);
+
+    runOneShotAgentMock.mockClear();
+    maybeStartDream(); // still overdue, but inside the backoff window
+    await new Promise((r) => setTimeout(r, 10));
+    expect(runOneShotAgentMock).not.toHaveBeenCalled();
+  });
+
+  it("lets forceDream bypass the window and clears it on success", async () => {
+    runOneShotAgentMock.mockRejectedValueOnce(new Error("blip"));
+    await expect(forceDream()).rejects.toThrow("blip");
+    expect(dreamFailureBackoff.active()).toBe(true);
+
+    // forced runs ignore the window; a success clears it.
+    await expect(forceDream()).resolves.toBeUndefined();
+    expect(dreamFailureBackoff.active()).toBe(false);
+    expect(dreamFailureBackoff.failures).toBe(0);
   });
 });

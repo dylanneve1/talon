@@ -10,6 +10,7 @@ import { files as pathFiles } from "../../../util/paths.js";
 import { kvGet, kvSet } from "../../../storage/kv.js";
 import { importLegacyJson } from "../../../storage/legacy-import.js";
 import type { Backend } from "../../agent-runtime/capabilities.js";
+import { FailureBackoff } from "../failure-backoff.js";
 
 export type HeartbeatState = {
   /** Unix millisecond timestamp of the last successfully completed heartbeat run. */
@@ -71,10 +72,8 @@ export const hb: {
   intervalMinutesRef: number;
   config: HeartbeatConfig | null;
   logFileSequence: number;
-  /** Consecutive failed runs — drives the failure backoff curve. */
-  consecutiveFailures: number;
-  /** Epoch ms before which auto runs are suppressed after a failure. */
-  backoffUntil: number;
+  /** Suppresses auto runs after failures (see failure-backoff.ts). */
+  failureBackoff: FailureBackoff;
 } = {
   running: false,
   currentRunPromise: null,
@@ -83,8 +82,7 @@ export const hb: {
   intervalMinutesRef: 60,
   config: null,
   logFileSequence: 0,
-  consecutiveFailures: 0,
-  backoffUntil: 0,
+  failureBackoff: new FailureBackoff(),
 };
 
 // ── State-file I/O ───────────────────────────────────────────────────────────

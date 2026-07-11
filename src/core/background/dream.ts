@@ -22,6 +22,7 @@ import { getDefaultModel } from "../models/catalog.js";
 import type { OneShotAgentParams } from "../types.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
 import { getSoul } from "../soul/service.js";
+import { FailureBackoff } from "./failure-backoff.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +54,13 @@ const DREAM_LOGS_DIR = resolve(dirs.logs, "dreams");
 // ── State ────────────────────────────────────────────────────────────────────
 
 let dreaming = false; // in-process guard (one dream at a time)
+/**
+ * A failed dream does not advance last_run, and maybeStartDream runs on
+ * every invocation — without a backoff a broken backend gets re-fired on
+ * every message (observed live: a model outage produced 403 identical
+ * consolidation failures). Exported for tests.
+ */
+export const dreamFailureBackoff = new FailureBackoff();
 let configRef: {
   model?: string;
   dreamModel?: string;
@@ -101,6 +109,9 @@ export function initDream(cfg: {
 export function maybeStartDream(): void {
   if (dreaming) return;
   if (configRef?.enabled === false) return;
+  // Inside a failure backoff window — stay quiet instead of re-firing the
+  // same error on every invocation. (Logged once, when the window was set.)
+  if (dreamFailureBackoff.active()) return;
 
   const state = readDreamState();
   const now = Date.now();
@@ -134,6 +145,7 @@ async function executeDream(trigger: "auto" | "forced"): Promise<void> {
   try {
     const dreamLogPath = await runDreamAgent(state?.last_run ?? 0);
     writeDreamState({ last_run: Date.now(), status: "idle" });
+    dreamFailureBackoff.succeed();
     log(
       "dream",
       `Memory consolidation complete (${trigger}), log: ${dreamLogPath}`,
@@ -145,6 +157,14 @@ async function executeDream(trigger: "auto" | "forced"): Promise<void> {
   } catch (err) {
     logError("dream", `Memory consolidation failed (${trigger})`, err);
     writeDreamState({ last_run: state?.last_run ?? 0, status: "idle" });
+    // A failed dream keeps the old last_run, so it would re-fire on the very
+    // next invocation — back off instead (forceDream bypasses the window).
+    const until = dreamFailureBackoff.fail(err);
+    logWarn(
+      "dream",
+      `Backing off until ${new Date(until).toISOString()} ` +
+        `after ${dreamFailureBackoff.failures} consecutive failure(s)`,
+    );
     if (trigger === "forced") throw err;
   } finally {
     dreaming = false;
