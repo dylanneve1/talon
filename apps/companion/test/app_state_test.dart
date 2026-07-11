@@ -303,6 +303,56 @@ void main() {
       expect(note.text, contains('Rename failed'));
     });
 
+    test('updateConfig failure returns null and keeps the last snapshot',
+        () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge));
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+
+      final before = await state.loadConfig();
+      expect(before, isNotNull);
+      expect(before!.pulse, isFalse);
+
+      // A failing POST /config must surface as null (the settings screen
+      // reverts its optimistic toggle + toasts), never mutate the cached
+      // snapshot, and never throw out of a UI callback.
+      bridge.configPostStatus = 500;
+      final r = await state.updateConfig({'pulse': true});
+      expect(r, isNull);
+      expect(state.appConfig?.pulse, isFalse);
+
+      bridge.configPostStatus = 200;
+      final r2 = await state.updateConfig({'pulse': true});
+      expect(r2?.pulse, isTrue);
+      expect(state.appConfig?.pulse, isTrue);
+    });
+
+    test('mesh pref setters notify immediately (no waiting on the sync)',
+        () async {
+      // No bridge on purpose: the pref write + first notifyListeners must
+      // not depend on any network/mesh round-trip. The toggle repaint rides
+      // that FIRST notify — firing it only after the mesh isolate sync
+      // (seconds on Android) left switches reading as stuck.
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await Prefs.load();
+      final state = AppState(prefs, narrowLayout: false);
+      addTearDown(state.dispose);
+
+      var notified = 0;
+      state.addListener(() => notified++);
+      await state.setMeshSharing(true);
+      expect(state.prefs.meshSharing, isTrue);
+      expect(notified, greaterThanOrEqualTo(1));
+
+      await state.setMeshPeriodic(true);
+      expect(state.prefs.meshPeriodic, isTrue);
+      await state.setMeshDeviceControl(true);
+      expect(state.prefs.meshDeviceControl, isTrue);
+    });
+
     test('missing backend/effort endpoints degrade gracefully', () async {
       final bridge = await MockBridge.start();
       addTearDown(bridge.close);
@@ -321,8 +371,7 @@ void main() {
       expect(r.error, isNotNull);
     });
 
-    test('loadOlderMessages pages scrollback and reports exhaustion',
-        () async {
+    test('loadOlderMessages pages scrollback and reports exhaustion', () async {
       final bridge = await MockBridge.start();
       addTearDown(bridge.close);
       // 250 messages: initial load caps at 200, one older page remains.
@@ -656,19 +705,19 @@ void main() {
       await _waitFor(() => state.conn == ConnState.connected);
       await _waitFor(() => state.messagesFor('c1').isNotEmpty);
 
-      await bridge.emit(
-          {'kind': 'error', 'chatId': 'c1', 'message': 'Rate limited'});
-      await bridge.emit(
-          {'kind': 'error', 'chatId': 'c1', 'message': 'Rate limited'});
-      await bridge.emit(
-          {'kind': 'error', 'chatId': 'c1', 'message': 'Rate limited'});
-      await _waitFor(() =>
-          state.messagesFor('c1').any((m) => m.text == 'Rate limited'));
+      await bridge
+          .emit({'kind': 'error', 'chatId': 'c1', 'message': 'Rate limited'});
+      await bridge
+          .emit({'kind': 'error', 'chatId': 'c1', 'message': 'Rate limited'});
+      await bridge
+          .emit({'kind': 'error', 'chatId': 'c1', 'message': 'Rate limited'});
+      await _waitFor(
+          () => state.messagesFor('c1').any((m) => m.text == 'Rate limited'));
       // A different notice still appends normally.
-      await bridge.emit(
-          {'kind': 'error', 'chatId': 'c1', 'message': 'Stream closed'});
-      await _waitFor(() =>
-          state.messagesFor('c1').any((m) => m.text == 'Stream closed'));
+      await bridge
+          .emit({'kind': 'error', 'chatId': 'c1', 'message': 'Stream closed'});
+      await _waitFor(
+          () => state.messagesFor('c1').any((m) => m.text == 'Stream closed'));
 
       final notices =
           state.messagesFor('c1').where((m) => m.text == 'Rate limited');

@@ -34,20 +34,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _restarting = false;
   bool _dreaming = false;
 
+  /// Optimistic overrides for in-flight `_apply` config updates, keyed by
+  /// config field. A toggle flips the moment it's tapped; the entry is
+  /// dropped when the daemon confirms (snapshot replaces it) or reverted
+  /// with a toast if the round-trip fails. Without this the Switch only
+  /// moved after the HTTP call — up to the 12s client timeout of nothing.
+  final Map<String, Object?> _pending = {};
+
   final _name = TextEditingController();
   final _tz = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+    // Rebuild on AppState changes: the mesh toggles / device list live in
+    // AppState + prefs, and mutate via notifyListeners — without this
+    // subscription the switches only repainted on a manual refresh.
+    widget.state.addListener(_onAppState);
     _load();
   }
 
   @override
   void dispose() {
+    widget.state.removeListener(_onAppState);
     _name.dispose();
     _tz.dispose();
     super.dispose();
+  }
+
+  void _onAppState() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _load() async {
@@ -80,8 +96,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _apply(Map<String, dynamic> update) async {
+    // Optimistic: reflect the change immediately, then reconcile with the
+    // daemon's confirmed snapshot (or revert + toast on failure).
+    setState(() => _pending.addAll(update));
     final c = await widget.state.updateConfig(update);
-    if (mounted && c != null) setState(() => _cfg = c);
+    if (!mounted) return;
+    setState(() {
+      update.keys.forEach(_pending.remove);
+      if (c != null) _cfg = c;
+    });
+    if (c == null) {
+      _toast('Update failed — check the connection and try again');
+    }
+  }
+
+  /// Read a config value with any in-flight optimistic override applied.
+  T _eff<T>(String key, T base) {
+    final v = _pending[key];
+    return v is T ? v : base;
   }
 
   void _toast(String message) {
@@ -310,14 +342,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _switchRow(
                   'Pulse',
                   'Proactive check-ins when something matters',
-                  cfg.pulse,
+                  _eff('pulse', cfg.pulse),
                   (v) => _apply({'pulse': v}),
                 ),
-                if (cfg.pulse)
+                if (_eff('pulse', cfg.pulse))
                   _intervalRow(
                     'Pulse interval',
-                    '${(cfg.pulseIntervalMs / 60000).round()} min',
-                    (cfg.pulseIntervalMs / 60000).round(),
+                    '${(_eff('pulseIntervalMs', cfg.pulseIntervalMs) / 60000).round()} min',
+                    (_eff('pulseIntervalMs', cfg.pulseIntervalMs) / 60000)
+                        .round(),
                     min: 1,
                     onChange: (m) => _apply({'pulseIntervalMs': m * 60000}),
                   ),
@@ -325,14 +358,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _switchRow(
                   'Heartbeat',
                   'Periodic goal advancement',
-                  cfg.heartbeat,
+                  _eff('heartbeat', cfg.heartbeat),
                   (v) => _apply({'heartbeat': v}),
                 ),
-                if (cfg.heartbeat)
+                if (_eff('heartbeat', cfg.heartbeat))
                   _intervalRow(
                     'Heartbeat interval',
-                    '${cfg.heartbeatIntervalMinutes} min',
-                    cfg.heartbeatIntervalMinutes,
+                    '${_eff('heartbeatIntervalMinutes', cfg.heartbeatIntervalMinutes)} min',
+                    _eff(
+                      'heartbeatIntervalMinutes',
+                      cfg.heartbeatIntervalMinutes,
+                    ),
                     min: 5,
                     onChange: (m) => _apply({'heartbeatIntervalMinutes': m}),
                   ),
@@ -340,7 +376,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _switchRow(
                   'Dream',
                   'Memory consolidation + diary',
-                  cfg.dream,
+                  _eff('dream', cfg.dream),
                   (v) => _apply({'dream': v}),
                 ),
               ],
@@ -389,7 +425,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'Periodic reporting',
             'Send a live location fix on an interval',
             prefs.meshPeriodic,
-            prefs.meshSharing ? (v) => widget.state.setMeshPeriodic(v) : (_) {},
+            // null = properly disabled (greyed out) while sharing is off —
+            // an enabled-looking switch that swallows taps reads as stuck.
+            prefs.meshSharing ? (v) => widget.state.setMeshPeriodic(v) : null,
           ),
           if (prefs.meshSharing && prefs.meshPeriodic)
             _intervalRow(
@@ -407,7 +445,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             prefs.meshDeviceControl,
             prefs.meshSharing
                 ? (v) => widget.state.setMeshDeviceControl(v)
-                : (_) {},
+                : null,
           ),
           const Divider(height: 22),
           Row(
@@ -597,8 +635,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'Bridge protocol',
             connected
                 ? (protoOk
-                      ? 'v${s.status.protocol} — matched'
-                      : 'app v$kBridgeProtocolVersion · daemon v${s.status.protocol} — mismatch')
+                    ? 'v${s.status.protocol} — matched'
+                    : 'app v$kBridgeProtocolVersion · daemon v${s.status.protocol} — mismatch')
                 : 'Unknown until connected',
           ),
           _check(
@@ -744,26 +782,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _infoRow(String label, String value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 5),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 128,
-          child: Text(
-            label,
-            style: TextStyle(fontSize: 13, color: TalonColors.textDim),
-          ),
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 128,
+              child: Text(
+                label,
+                style: TextStyle(fontSize: 13, color: TalonColors.textDim),
+              ),
+            ),
+            Expanded(
+              child: SelectableText(
+                value.isEmpty ? '—' : value,
+                style: const TextStyle(fontSize: 13.5),
+              ),
+            ),
+          ],
         ),
-        Expanded(
-          child: SelectableText(
-            value.isEmpty ? '—' : value,
-            style: const TextStyle(fontSize: 13.5),
-          ),
-        ),
-      ],
-    ),
-  );
+      );
 
   Widget _statusCard(ConfigSnapshot? cfg) {
     final s = widget.state;
@@ -863,21 +901,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // ── Row builders ──────────────────────────────────────────────────────────
 
   Widget _stat(String label, String value) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        label.toUpperCase(),
-        style: TextStyle(
-          fontSize: 10,
-          color: TalonColors.textFaint,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.8,
-        ),
-      ),
-      const SizedBox(height: 2),
-      Text(value, style: const TextStyle(fontSize: 14)),
-    ],
-  );
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              fontSize: 10,
+              color: TalonColors.textFaint,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(value, style: const TextStyle(fontSize: 14)),
+        ],
+      );
 
   Widget _textRow(
     String label,
@@ -918,7 +956,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String title,
     String subtitle,
     bool value,
-    ValueChanged<bool> onChanged,
+    ValueChanged<bool>? onChanged,
   ) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -1027,29 +1065,27 @@ class _SettingsSkeleton extends StatelessWidget {
         ),
       );
       if (reduceMotion) return box;
-      return box
-          .animate(onPlay: (c) => c.repeat())
-          .shimmer(
+      return box.animate(onPlay: (c) => c.repeat()).shimmer(
             duration: 1200.ms,
             color: Colors.white.withValues(alpha: 0.08),
           );
     }
 
     Widget card(int rows) => Glass(
-      radius: TalonRadius.md,
-      padding: const EdgeInsets.all(TalonSpace.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          bar(120, 12),
-          const SizedBox(height: TalonSpace.lg),
-          for (var i = 0; i < rows; i++) ...[
-            if (i > 0) const SizedBox(height: TalonSpace.md),
-            bar(double.infinity, 16),
-          ],
-        ],
-      ),
-    );
+          radius: TalonRadius.md,
+          padding: const EdgeInsets.all(TalonSpace.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              bar(120, 12),
+              const SizedBox(height: TalonSpace.lg),
+              for (var i = 0; i < rows; i++) ...[
+                if (i > 0) const SizedBox(height: TalonSpace.md),
+                bar(double.infinity, 16),
+              ],
+            ],
+          ),
+        );
 
     return Column(
       children: [

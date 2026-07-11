@@ -53,8 +53,8 @@ class AppState extends ChangeNotifier {
   ConnectionConfig config;
 
   AppState(this.prefs, {bool? narrowLayout})
-    : _narrowLayout = narrowLayout ?? _defaultNarrow,
-      config = prefs.connection {
+      : _narrowLayout = narrowLayout ?? _defaultNarrow,
+        config = prefs.connection {
     _hydrateFromSnapshot();
   }
 
@@ -392,8 +392,7 @@ class AppState extends ChangeNotifier {
     _loadingOlder.add(chatId);
     notifyListeners();
     try {
-      final page =
-          await _client?.history(
+      final page = await _client?.history(
             chatId,
             before: oldest,
             limit: _historyPageSize,
@@ -661,26 +660,36 @@ class AppState extends ChangeNotifier {
     await _command(chatId, 'Pulse toggle', client.setPulse(chatId, on));
   }
 
+  // Mesh pref setters notify TWICE: once right after the (local, fast) pref
+  // write so the toggle flips instantly, and again after `_meshPrefsChanged`
+  // — which can spend seconds syncing the Android foreground service — so
+  // the derived background-health row settles too. Notifying only at the
+  // end left the switch visually stuck for the whole sync.
+
   Future<void> setMeshSharing(bool on) async {
     await prefs.setMeshSharing(on);
+    notifyListeners();
     await _meshPrefsChanged();
     notifyListeners();
   }
 
   Future<void> setMeshPeriodic(bool on) async {
     await prefs.setMeshPeriodic(on);
+    notifyListeners();
     await _meshPrefsChanged();
     notifyListeners();
   }
 
   Future<void> setMeshIntervalSeconds(int seconds) async {
     await prefs.setMeshIntervalSeconds(seconds);
+    notifyListeners();
     await _meshPrefsChanged();
     notifyListeners();
   }
 
   Future<void> setMeshDeviceControl(bool on) async {
     await prefs.setMeshDeviceControl(on);
+    notifyListeners();
     // Re-register so the daemon sees the exec/fs capabilities appear/disappear.
     await _meshPrefsChanged();
     notifyListeners();
@@ -1150,8 +1159,7 @@ class AppState extends ChangeNotifier {
     _loadingHistory.add(chatId);
     notifyListeners();
     try {
-      final hist =
-          await _client?.history(chatId, limit: _historyInitialSize) ??
+      final hist = await _client?.history(chatId, limit: _historyInitialSize) ??
           const <ClientMessage>[];
       if (hist.length < _historyInitialSize) {
         _historyExhausted.add(chatId);

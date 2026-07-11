@@ -58,9 +58,14 @@ class MockBridge {
   };
   String activeModel = 'm1';
   String activeEffort = 'adaptive';
+
+  /// Status code POST /config answers with — set non-200 to inject a
+  /// config-update failure.
+  int configPostStatus = 200;
   final List<Map<String, dynamic>> devices = [];
   final List<Map<String, dynamic>> locations = [];
   final List<Map<String, dynamic>> commandResults = [];
+
   /// Streamed-transfer state: tokens accepted for upload, captured upload
   /// bodies (keyed by token), and bodies to serve for download tokens.
   final Set<String> uploadTokens = {};
@@ -240,8 +245,7 @@ class MockBridge {
       final t = req.uri.queryParameters['transfer'] ?? '';
       if (req.method == 'POST') {
         if (!uploadTokens.contains(t)) {
-          return _json(
-              req.response, 409, {'ok': false, 'error': 'bad token'});
+          return _json(req.response, 409, {'ok': false, 'error': 'bad token'});
         }
         uploadTokens.remove(t);
         final chunks = <int>[];
@@ -254,8 +258,7 @@ class MockBridge {
       if (req.method == 'GET') {
         final body = downloadFiles[t];
         if (body == null) {
-          return _json(
-              req.response, 404, {'ok': false, 'error': 'bad token'});
+          return _json(req.response, 404, {'ok': false, 'error': 'bad token'});
         }
         downloadFiles.remove(t);
         final res = req.response;
@@ -271,6 +274,9 @@ class MockBridge {
       return _json(req.response, 200, config);
     }
     if (req.method == 'POST' && path == '/config') {
+      if (configPostStatus != 200) {
+        return _json(req.response, configPostStatus, {'error': 'injected'});
+      }
       config = {...config, ...await _readJson(req)};
       return _json(req.response, 200, config);
     }
