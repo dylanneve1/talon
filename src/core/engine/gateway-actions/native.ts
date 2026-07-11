@@ -64,6 +64,11 @@ const TIMEOUT_HINT =
   "will always hit this wall. Re-run with background:true to launch it detached with " +
   "output captured to a log file, or bound the command itself: `adb logcat -d`, " +
   "`timeout 30 …`, `head -n 200`.)";
+/** Same self-correction hint, phrased for a teleported (on-device) run. */
+const TELEPORT_TIMEOUT_HINT =
+  "(Streaming/never-ending commands can't ride a teleported foreground call — " +
+  "background it in-shell instead: `cmd > /tmp/out.log 2>&1 &`, then poll the log " +
+  "with read, or bound the command itself: `logcat -d`, `timeout 30 …`, `head -n 200`.)";
 const MAX_READ_LINES = 2_000;
 /** Caps for the pure-JS glob/search fallbacks (rg unavailable). */
 const MAX_JS_RESULTS = 2_000;
@@ -393,14 +398,19 @@ async function bashTeleported(
       text: result.message ?? `${target.name} could not run the command.`,
     };
   }
+  // The device marks a command it had to kill at its own exec budget with
+  // this stderr marker (see the companion's device_exec) — surface the same
+  // self-correction hint the local timeout path gets.
+  const timedOutOnDevice = stderr.includes("[killed: timeout]");
+  const body = renderExec(
+    `${target.name}${via}`,
+    `exit ${exitCode ?? "?"}`,
+    stdout,
+    stderr,
+  );
   return {
     ok: exitCode === 0,
-    text: renderExec(
-      `${target.name}${via}`,
-      `exit ${exitCode ?? "?"}`,
-      stdout,
-      stderr,
-    ),
+    text: timedOutOnDevice ? `${body}\n${TELEPORT_TIMEOUT_HINT}` : body,
   };
 }
 
@@ -498,7 +508,12 @@ async function edit(
   }
 
   const count = from ? content.split(from).length - 1 : 0;
-  if (count === 0) return { ok: false, text: `old_string not found in ${p}.` };
+  if (count === 0) {
+    return {
+      ok: false,
+      text: `old_string not found in ${p}.${nearMissHint(content, from)}`,
+    };
+  }
   if (count > 1 && replaceAll !== true) {
     return {
       ok: false,
@@ -702,6 +717,28 @@ async function searchJs(
     }
   }
   return lines;
+}
+
+/**
+ * When an edit's old_string doesn't match verbatim, the cause is almost
+ * always invisible: indentation, tabs vs spaces, or a trailing space. Point
+ * at the closest-looking line so the model re-reads that region instead of
+ * blindly retrying the same string.
+ */
+function nearMissHint(content: string, from: string): string {
+  const probe =
+    from
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.length >= 8) ?? from.trim();
+  if (!probe) return "";
+  const lines = content.split("\n");
+  const idx = lines.findIndex((l) => l.trim().includes(probe));
+  if (idx === -1) return "";
+  return (
+    `\nLine ${idx + 1} looks close — whitespace/indentation must match the file byte-for-byte. ` +
+    `Re-read that region before retrying:\n${String(idx + 1).padStart(6)}\t${lines[idx]}`
+  );
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────

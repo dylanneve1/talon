@@ -97,6 +97,32 @@ describe("native tools — local execution", () => {
     expect(res.text).toContain("exit 3");
   });
 
+  it("points at the near-miss line when an edit's old_string doesn't match", async () => {
+    const f = join(workdir, "near-miss.ts");
+    await nativeHandlers.native_write(
+      {
+        action: "native_write",
+        path: f,
+        content: "function x() {\n\treturn compute(a, b) + 1;\n}\n",
+      },
+      1,
+    );
+    // Same code, but space-indented — the classic invisible mismatch.
+    const res = await nativeHandlers.native_edit(
+      {
+        action: "native_edit",
+        path: f,
+        old_string: "  return compute(a, b) + 1;",
+        new_string: "  return compute(a, b) + 2;",
+      },
+      1,
+    );
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("not found");
+    expect(res.text).toContain("Line 2 looks close");
+    expect(res.text).toContain("return compute(a, b) + 1;");
+  });
+
   it("keeps partial output and hints at background mode on timeout", async () => {
     const res = await nativeHandlers.native_bash(
       {
@@ -335,6 +361,43 @@ describe("native tools — teleport routing", () => {
       1,
     );
     expect(sentCmds[1]).toContain("cd '/sdcard/Download'");
+  });
+
+  it("appends the in-shell background hint when the device killed the command", async () => {
+    const service = freshMesh();
+    setMeshService(service);
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["exec"],
+    });
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(() => {
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: false,
+            data: {
+              stdout: "some log lines",
+              stderr: "[killed: timeout]",
+              exitCode: -9,
+            },
+          });
+        }),
+    });
+
+    await nativeHandlers.teleport({ action: "teleport", device: "phone" }, 1);
+    const res = await nativeHandlers.native_bash(
+      { action: "native_bash", command: "logcat" },
+      1,
+    );
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("some log lines"); // partial output survives
+    expect(res.text).toContain("> /tmp/out.log 2>&1 &"); // self-correction hint
   });
 
   it("scopes teleport routing to the current chat", async () => {
