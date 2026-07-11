@@ -12,10 +12,10 @@ Design notes — learned the hard way:
     in black in light mode with no halo; the first dark-navy design made
     them unreadable. Light field + dark painted text matches how iTerm2/
     VLC/Arc-style DMGs handle it.
-  - Drop-zone rings under both icon slots. macOS Tahoe 26.1 has a Finder
-    bug where the /Applications symlink icon renders blank in DMGs from
-    any tool (create-dmg#202, DropDMG forum reports; partially fixed in
-    26.2). The rings keep the layout legible even when the icon vanishes.
+  - No decoration under the icon slots (a drop-zone-ring variant was
+    rejected in review) — just the arrow between them. Note the blank
+    /Applications icon some machines show is a macOS Tahoe 26.1 Finder
+    bug (create-dmg#202), not something the art can fix.
 
 Icon slots are pinned by create-dmg at (180, 195) and (480, 195), 128px.
 Accent stays the app icon's periwinkle (#6F7FFF family).
@@ -42,8 +42,6 @@ APP_X, APPS_X, ICON_Y = 180, 480, 195
 LIGHT_TOP = (247, 248, 252)
 LIGHT_BOTTOM = (232, 234, 242)
 ACCENT = (111, 127, 255)
-RING = (183, 191, 235)
-RING_FILL = (240, 242, 250)
 TEXT_PRIMARY = (23, 26, 44)
 TEXT_MUTED = (99, 105, 133)
 TEXT_FAINT = (139, 145, 170)
@@ -103,20 +101,7 @@ def render() -> Image.Image:
         TEXT_MUTED,
     )
 
-    # Drop-zone rings under both icon slots: keep the layout readable even
-    # when Finder's Tahoe bug blanks the Applications symlink icon.
-    ring_r = 76 * SCALE
-    lw = 2 * SCALE
-    for cx in (APP_X * SCALE, APPS_X * SCALE):
-        cy = ICON_Y * SCALE
-        d.ellipse(
-            [cx - ring_r, cy - ring_r, cx + ring_r, cy + ring_r],
-            fill=RING_FILL,
-            outline=RING,
-            width=lw,
-        )
-
-    # Drag arrow between the two rings.
+    # Drag arrow between the two icon slots.
     y = ICON_Y * SCALE
     x0 = (APP_X + 88) * SCALE
     x1 = (APPS_X - 88) * SCALE
