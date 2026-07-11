@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.39.0](https://github.com/dylanneve1/talon/compare/v1.38.1...v1.39.0) (2026-07-10)
+
+
+### Features
+
+* **mesh:** remote self-update for the Android companion (update_device) ([#506](https://github.com/dylanneve1/talon/issues/506)) ([1786675](https://github.com/dylanneve1/talon/commit/178667592fbde17faa3b33af013d378dc83bba4e))
+
+## [1.38.1](https://github.com/dylanneve1/talon/compare/v1.38.0...v1.38.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* **delivery:** empty turns stay silent instead of posting a '(no reply)' notice ([#507](https://github.com/dylanneve1/talon/issues/507)) ([f43c784](https://github.com/dylanneve1/talon/commit/f43c7843dfa2acce6e038db211a8c8df2659e516))
+
+## [1.38.0](https://github.com/dylanneve1/talon/compare/v1.37.4...v1.38.0) (2026-07-10)
+
+
+### Features
+
+* **companion:** run the mesh loop inside the Android foreground service ([#503](https://github.com/dylanneve1/talon/issues/503)) ([792bc4c](https://github.com/dylanneve1/talon/commit/792bc4c821024e3fa6f34af7145efb2a53f52c1a))
+
+
+### Bug Fixes
+
+* **companion:** stop resurrecting stale backend-switch notices + chat UX polish ([#505](https://github.com/dylanneve1/talon/issues/505)) ([4397cf3](https://github.com/dylanneve1/talon/commit/4397cf334fa1bf157f9e6105ae26a53ece7a4469))
+
 ## [1.37.4](https://github.com/dylanneve1/talon/compare/v1.37.3...v1.37.4) (2026-07-10)
 
 

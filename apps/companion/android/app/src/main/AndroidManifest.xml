@@ -14,6 +14,10 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <!-- The mesh foreground service now OWNS the bridge connection (SSE) and
+         answers exec/file-transfer commands — that's dataSync work, declared
+         as such for Android 14+'s typed-foreground-service enforcement. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
@@ -32,9 +36,12 @@
     <!-- Opt in to Android 13+ predictive back so the system back gesture
          animates properly and Flutter's PopScope (chat → chat list) can
          participate instead of the gesture killing the activity. -->
+    <!-- Custom Application: hooks the foreground-task engine's creation to
+         register the talon/shizuku channel there too (see TalonApplication) —
+         backgrounded/boot-restarted exec keeps Shizuku elevation. -->
     <application android:usesCleartextTraffic="true"
         android:label="Talon"
-        android:name="${applicationName}"
+        android:name=".TalonApplication"
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true">
         <activity
@@ -64,9 +71,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- stopWithTask=false: swiping the app from recents must NOT stop the
+             mesh — the service keeps running (and the plugin's onTaskRemoved
+             restart alarm re-arms it if the OS kills the process anyway). -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
-            android:foregroundServiceType="location"
+            android:foregroundServiceType="dataSync|location"
+            android:stopWithTask="false"
             android:exported="false" />
         <!-- Shizuku binder provider — required for the Shizuku client to bind.
              Harmless when the Shizuku app is not installed. -->

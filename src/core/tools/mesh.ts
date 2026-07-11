@@ -150,4 +150,25 @@ export const meshTools: ToolDefinition[] = [
     execute: (params, bridge) => bridge("device_push_file", params),
     tag: "mesh",
   },
+  {
+    name: "update_device",
+    description:
+      "Remotely update a Talon companion (Android): stream a new APK from the daemon to the device and silently reinstall it via Shizuku, keeping app data. The companion's mesh runs in a foreground service that auto-restarts after the package is replaced, so the connection returns on its own within seconds — no manual reopen. The APK is hashed and the device verifies it before installing (a truncated push is refused; a differently-signed APK is refused by Android). Requires the device to have device control on and Shizuku granted. Confirm success with get_device_status afterwards (appVersion should change).",
+    schema: {
+      device: deviceParam,
+      apk_path: z
+        .string()
+        .describe(
+          "Path to the new APK, relative to the workspace (or absolute).",
+        ),
+      remote_path: z
+        .string()
+        .optional()
+        .describe(
+          "Where to stage the APK on the device (default /sdcard/Download/talon-companion-update.apk).",
+        ),
+    },
+    execute: (params, bridge) => bridge("update_device", params),
+    tag: "mesh",
+  },
 ];

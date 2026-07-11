@@ -442,6 +442,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   '${device.platform} · $last$battery',
                   style: TextStyle(fontSize: 12, color: TalonColors.textFaint),
                 ),
+                if (device.appVersion.isNotEmpty)
+                  Text(
+                    'v${device.appVersion}',
+                    style:
+                        TextStyle(fontSize: 11, color: TalonColors.textFaint),
+                  ),
               ],
             ),
           ),

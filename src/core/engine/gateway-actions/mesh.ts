@@ -46,4 +46,12 @@ export const meshHandlers: SharedActionHandlers = {
       body.local_path,
       body.remote_path,
     ),
+  // Remote self-update: push a new APK and silently (re)install it, keeping
+  // the mesh connection across the app restart.
+  update_device: (body) =>
+    getMeshService().updateDeviceApp(
+      body.device,
+      body.apk_path,
+      body.remote_path,
+    ),
 };

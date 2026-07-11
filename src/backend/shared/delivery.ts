@@ -182,30 +182,26 @@ export async function routeDelivery(
     return { route: "text-part", chars: responseText.length };
   }
 
-  // Route 4 — empty turn. Surface a concise notice.
+  // Route 4 — empty turn. The model produced no text (and didn't end_turn):
+  // a genuine empty completion, or a tool-only loop that delivered nothing.
+  // Stay SILENT — a "(no reply — model returned no output)" placeholder in
+  // the chat is slop; a turn with nothing to say should say nothing, exactly
+  // like an explicit silent `end_turn()` (Route 5). We still count and log it
+  // for observability so systemic empties remain diagnosable from the logs.
   if (
     !state.turnTerminated &&
     !responseText &&
     state.deliveredTextNorms.length === 0
   ) {
     incrementCounter("scratchpad.empty_turn");
-    if (onTextBlock) {
-      try {
-        await onTextBlock(
-          state.toolCalls > 0
-            ? "(no reply — model called tools but didn't produce output text)"
-            : "(no reply — model returned no output)",
-        );
-      } catch (err) {
-        logWarn(
-          "agent",
-          `[${chatId}] onTextBlock (empty-turn error) failed: ${errMsg(err)}`,
-        );
-        if (propagateDeliveryFailure) {
-          throw new TextBlockDeliveryError("empty", 0, err);
-        }
-      }
-    }
+    logWarn(
+      "agent",
+      `[${chatId}] empty turn — no output delivered${
+        state.toolCalls > 0
+          ? ` (model ran ${state.toolCalls} tool call(s) but produced no text)`
+          : " (model returned no output)"
+      }; sending nothing.`,
+    );
     return { route: "empty", chars: 0 };
   }
 

@@ -67,6 +67,7 @@ describe("mesh tool availability", () => {
         "device_write_file",
         "device_pull_file",
         "device_push_file",
+        "update_device",
       ]) {
         expect(names).toContain(tool);
       }
@@ -719,6 +720,124 @@ describe("MeshService exec + filesystem channel", () => {
     expect(res.ok).toBe(true);
     expect(res.text).toContain("streamed");
     expect(downloaded?.equals(payload)).toBe(true);
+  });
+
+  it("update_device pushes the APK then installs it with a matching digest", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["download_file", "install_apk"],
+    });
+    const dir = await mkdtemp(join(tmpdir(), "talon-update-"));
+    const apk = join(dir, "app.apk");
+    const payload = Buffer.alloc(400 * 1024, 7);
+    await fsWriteFile(apk, payload);
+    const { createHash } = await import("node:crypto");
+    const expectedSha = createHash("sha256").update(payload).digest("hex");
+
+    let installParams: Record<string, unknown> | undefined;
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(async () => {
+          if (cmd.name === "download_file") {
+            const file = await service.openFileDownload(
+              String(cmd.params.token),
+            );
+            const bytes = await fsReadFile(file!.path);
+            service.completeCommand({
+              commandId: cmd.id,
+              deviceId: cmd.deviceId,
+              ok: true,
+              data: { bytesWritten: bytes.length },
+            });
+          } else if (cmd.name === "install_apk") {
+            installParams = cmd.params;
+            service.completeCommand({
+              commandId: cmd.id,
+              deviceId: cmd.deviceId,
+              ok: true,
+              message: "Update staged.",
+              data: { staged: true },
+            });
+          }
+        }),
+    });
+
+    const res = await service.updateDeviceApp("phone", apk);
+    expect(res.ok).toBe(true);
+    // The digest computed here must be exactly what the device is asked to
+    // verify — that's the anti-truncation guarantee.
+    expect(installParams?.sha256).toBe(expectedSha);
+    expect(installParams?.path).toBe(
+      "/sdcard/Download/talon-companion-update.apk",
+    );
+    expect(res.text).toContain("staged the update");
+  });
+
+  it("update_device refuses a device without the install_apk capability", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["download_file"], // no install_apk
+    });
+    const dir = await mkdtemp(join(tmpdir(), "talon-update-nocap-"));
+    const apk = join(dir, "app.apk");
+    await fsWriteFile(apk, Buffer.alloc(1024, 1));
+
+    const res = await service.updateDeviceApp("phone", apk);
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("can't self-update");
+  });
+
+  it("update_device surfaces a device-side install refusal", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["download_file", "install_apk"],
+    });
+    const dir = await mkdtemp(join(tmpdir(), "talon-update-refuse-"));
+    const apk = join(dir, "app.apk");
+    await fsWriteFile(apk, Buffer.alloc(2048, 5));
+
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(async () => {
+          if (cmd.name === "download_file") {
+            const file = await service.openFileDownload(
+              String(cmd.params.token),
+            );
+            const bytes = await fsReadFile(file!.path);
+            service.completeCommand({
+              commandId: cmd.id,
+              deviceId: cmd.deviceId,
+              ok: true,
+              data: { bytesWritten: bytes.length },
+            });
+          } else if (cmd.name === "install_apk") {
+            service.completeCommand({
+              commandId: cmd.id,
+              deviceId: cmd.deviceId,
+              ok: false,
+              message: "Silent install needs Shizuku.",
+            });
+          }
+        }),
+    });
+
+    const res = await service.updateDeviceApp("phone", apk);
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("Shizuku");
   });
 
   it("streamed pull fails loudly when the device claims success without uploading", async () => {

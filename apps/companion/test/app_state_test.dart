@@ -567,6 +567,135 @@ void main() {
       expect(state.selectedChatId, 'c1');
     });
   });
+
+  group('system notices', () {
+    test('stale backend-switch notice does not resurrect on history reload',
+        () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge));
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+      await _waitFor(() => bridge.streamCount == 1);
+      await _waitFor(() => state.messagesFor('c1').isNotEmpty);
+
+      // The daemon broadcasts backend-switch notices transiently — they are
+      // never persisted into server history.
+      await bridge.emit({
+        'kind': 'message',
+        'chatId': 'c1',
+        'message': {
+          'id': 'sys-1',
+          'chatId': 'c1',
+          'role': 'system',
+          'text': 'Switched to codex — starting a fresh conversation.',
+          'ts': 20,
+        },
+      });
+      await _waitFor(() => state.messagesFor('c1').length == 2);
+
+      // The conversation moves on: a newer real message lands in history.
+      bridge.messages['c1']!.add({
+        'id': '30',
+        'chatId': 'c1',
+        'role': 'assistant',
+        'text': 'Later reply',
+        'ts': 30,
+      });
+
+      // Reconnect (app reopened / network blip) → history reloads. The stale
+      // notice must NOT be re-pinned below the fresh history.
+      await state.start();
+      await _waitFor(() => state.messagesFor('c1').any((m) => m.id == '30'));
+      final ids = state.messagesFor('c1').map((m) => m.id).toList();
+      expect(ids, isNot(contains('sys-1')));
+      expect(ids.last, '30');
+    });
+
+    test('a notice newer than all history survives a reload', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge));
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+      await _waitFor(() => bridge.streamCount == 1);
+      await _waitFor(() => state.messagesFor('c1').isNotEmpty);
+
+      // Notice arrives AFTER the newest history message — it's live context
+      // and must stay through a reconnect's history reload.
+      await bridge.emit({
+        'kind': 'message',
+        'chatId': 'c1',
+        'message': {
+          'id': 'sys-2',
+          'chatId': 'c1',
+          'role': 'system',
+          'text': 'Switched to codex — starting a fresh conversation.',
+          'ts': 99,
+        },
+      });
+      await _waitFor(() => state.messagesFor('c1').length == 2);
+
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+      // The post-reconnect history reload must keep the live notice.
+      await _waitFor(
+        () => state.messagesFor('c1').any((m) => m.id == 'sys-2'),
+      );
+      expect(state.messagesFor('c1').last.id, 'sys-2');
+    });
+
+    test('consecutive identical notices collapse into one row', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge));
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+      await _waitFor(() => state.messagesFor('c1').isNotEmpty);
+
+      await bridge.emit(
+          {'kind': 'error', 'chatId': 'c1', 'message': 'Rate limited'});
+      await bridge.emit(
+          {'kind': 'error', 'chatId': 'c1', 'message': 'Rate limited'});
+      await bridge.emit(
+          {'kind': 'error', 'chatId': 'c1', 'message': 'Rate limited'});
+      await _waitFor(() =>
+          state.messagesFor('c1').any((m) => m.text == 'Rate limited'));
+      // A different notice still appends normally.
+      await bridge.emit(
+          {'kind': 'error', 'chatId': 'c1', 'message': 'Stream closed'});
+      await _waitFor(() =>
+          state.messagesFor('c1').any((m) => m.text == 'Stream closed'));
+
+      final notices =
+          state.messagesFor('c1').where((m) => m.text == 'Rate limited');
+      expect(notices.length, 1);
+    });
+  });
+
+  group('send failure', () {
+    test('sendMessage reports failure so the composer can restore the draft',
+        () async {
+      final bridge = await MockBridge.start();
+      final state = await stateFor(configFor(bridge));
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+
+      expect(await state.sendMessage('hello there'), isTrue);
+
+      // Bridge dies → the send must fail loudly, not vanish.
+      await bridge.close();
+      expect(await state.sendMessage('goodbye?'), isFalse);
+      expect(
+        state.messagesFor('c1').any((m) => m.text.startsWith('Failed to send')),
+        isTrue,
+      );
+    });
+  });
 }
 
 Future<void> _waitFor(

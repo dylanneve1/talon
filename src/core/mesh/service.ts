@@ -27,7 +27,9 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Readable } from "node:stream";
@@ -759,6 +761,87 @@ export class MeshService {
   }
 
   /**
+   * `update_device`: remote self-update for the companion. Streams a new APK
+   * to the device, then tells it to silently install (via Shizuku) and
+   * restart. The mesh foreground service's autoRunOnMyPackageReplaced brings
+   * the connection back on its own — the link drops only for the seconds the
+   * process is swapped, no manual reopen.
+   *
+   * The APK is hashed here and the digest travels with the install command;
+   * the device re-hashes the pushed file and refuses to install on a
+   * mismatch, so a truncated transfer can never be installed.
+   */
+  async updateDeviceApp(
+    query: unknown,
+    localApkPath: unknown,
+    remotePath?: unknown,
+  ): Promise<MeshToolResult> {
+    const local =
+      typeof localApkPath === "string" && localApkPath.trim()
+        ? resolve(dirs.workspace, localApkPath.trim())
+        : "";
+    if (!local) return { ok: false, text: "A local APK path is required." };
+    await this.load();
+    const resolved = this.resolveDevice(query);
+    if ("error" in resolved) return { ok: false, text: resolved.error };
+    const target = resolved.target;
+    if (target.capabilities && !target.capabilities.includes("install_apk")) {
+      return {
+        ok: false,
+        text: `${target.name} can't self-update — it needs a companion build with the install_apk capability and Shizuku enabled (device control on).`,
+      };
+    }
+
+    let sha256: string;
+    let size: number;
+    try {
+      ({ sha256, size } = await hashFile(local));
+    } catch (err) {
+      return {
+        ok: false,
+        text: `Cannot read APK ${local}: ${(err as Error).message}`,
+      };
+    }
+    if (size === 0) {
+      return { ok: false, text: `APK ${local} is empty.` };
+    }
+
+    const remote =
+      typeof remotePath === "string" && remotePath.trim()
+        ? remotePath.trim()
+        : "/sdcard/Download/talon-companion-update.apk";
+
+    // 1. Stream the APK to the device.
+    const push = await this.pushFileToDevice(target.id, local, remote);
+    if (!push.ok) {
+      return { ok: false, text: `Update aborted — push failed: ${push.text}` };
+    }
+
+    // 2. Trigger the silent install (device verifies the digest first).
+    const dispatched = await this.dispatchCommand(
+      target.id,
+      "install_apk",
+      { path: remote, sha256 },
+      this.commandTimeoutMs,
+    );
+    if ("error" in dispatched) return { ok: false, text: dispatched.error };
+    if (!dispatched.result.ok) {
+      return {
+        ok: false,
+        text:
+          dispatched.result.message ?? `${target.name} refused the install.`,
+      };
+    }
+    return {
+      ok: true,
+      text:
+        `Pushed ${formatBytes(size)} and staged the update on ${target.name}. ` +
+        `${dispatched.result.message ?? "Installing now."} ` +
+        `Confirm with get_device_status once it reconnects (appVersion should change).`,
+    };
+  }
+
+  /**
    * Chunked read of a remote file into a Buffer. Loops `read_file` with
    * increasing offsets until the device reports EOF.
    *
@@ -1244,6 +1327,22 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Stream a file through SHA-256 without loading it into memory (APKs are big
+ *  and Buffer has a hard ceiling). Returns the hex digest and byte size. */
+async function hashFile(
+  path: string,
+): Promise<{ sha256: string; size: number }> {
+  const { size } = await stat(path);
+  const hash = createHash("sha256");
+  await new Promise<void>((resolve, reject) => {
+    createReadStream(path)
+      .on("data", (chunk) => hash.update(chunk))
+      .on("end", () => resolve())
+      .on("error", reject);
+  });
+  return { sha256: hash.digest("hex"), size };
 }
 
 // ── Process-wide instance ─────────────────────────────────────────────────────

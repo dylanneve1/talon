@@ -44,6 +44,39 @@ Wiring (already in this repo):
 To enable at runtime: install Shizuku, start its service, then let Talon
 request permission (first elevated command triggers the grant dialog).
 
+## 3. Remote self-update (`update_device`)
+
+Shizuku's shell UID also lets the companion **silently update itself** over the
+mesh, without a manual reopen or losing the connection for more than a couple
+of seconds.
+
+The `update_device` tool:
+
+1. Hashes the new APK on the daemon (streamed SHA-256) and **streams it** to
+   the device (default `/sdcard/Download/talon-companion-update.apk`).
+2. Sends `install_apk` with that digest. The device **re-hashes** the pushed
+   file and refuses to install on a mismatch — a truncated transfer can never
+   be installed. (`pm install -r` also refuses a differently-signed APK, so a
+   wrong file can't hijack the app.)
+3. The device runs `pm install -r -d` (keep data, allow same-or-newer)
+   **detached** via `setsid` after a short delay, so the "staged" ack flushes
+   over the mesh *before* `pm` tears the app down, and the install finishes
+   even as the app process dies (its parent is the Shizuku server, not the app).
+
+**Why the connection survives:** the mesh runs inside a foreground service with
+`autoRunOnMyPackageReplaced = true` (see `mesh_background.dart`). When
+`pm install -r` replaces the package, Android broadcasts `MY_PACKAGE_REPLACED`
+and the service — hence the whole mesh loop — auto-restarts and reconnects. The
+link drops only for the seconds the process is being swapped.
+
+Requirements: **device control on** + **Shizuku granted** (silent install needs
+shell UID; the app UID can't install a package without a user tapping through
+PackageInstaller). Without Shizuku, `install_apk` returns a clear "needs
+Shizuku" message and nothing is installed.
+
+Confirm success with `get_device_status` after it reconnects — `appVersion`
+should reflect the new build.
+
 ### Build note
 
 The Dart layer + tests are verified locally (`flutter analyze` + `flutter

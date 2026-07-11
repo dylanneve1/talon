@@ -198,4 +198,110 @@ void main() {
     final unknown = await exec.handle('teleport_home', {});
     expect(unknown, isNull);
   });
+
+  group('install_apk', () {
+    test('is refused on non-Android platforms', () async {
+      final desktop = DeviceExec(isAndroid: () => false);
+      final r = await desktop.installApk('${tmp.path}/app.apk');
+      expect(r.ok, isFalse);
+      expect(r.message, contains('only supported on Android'));
+    });
+
+    test('fails clearly when Shizuku is unavailable', () async {
+      const channel = MethodChannel('talon/shizuku-install-noshizuku');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'getStatus') {
+          return {'ready': false, 'state': 'not-running'};
+        }
+        if (call.method == 'requestPermission') return false;
+        return null;
+      });
+      addTearDown(() => TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null));
+
+      final apk = File('${tmp.path}/app.apk')..writeAsStringSync('fake-apk');
+      final dev = DeviceExec(shizukuChannel: channel, isAndroid: () => true);
+      final r = await dev.installApk(apk.path);
+      expect(r.ok, isFalse);
+      expect(r.message, contains('Shizuku'));
+    });
+
+    test('aborts on a sha256 mismatch before touching pm', () async {
+      const channel = MethodChannel('talon/shizuku-install-badhash');
+      final execCmds = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'getStatus') {
+          return {'ready': true, 'state': 'ready'};
+        }
+        if (call.method == 'exec') {
+          final cmd = (call.arguments as Map)['cmd'] as String;
+          execCmds.add(cmd);
+          // sha256sum returns a digest that won't match the expected one.
+          return {
+            'stdout': 'deadbeef  ${tmp.path}/app.apk',
+            'stderr': '',
+            'exitCode': 0,
+          };
+        }
+        return null;
+      });
+      addTearDown(() => TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null));
+
+      final apk = File('${tmp.path}/app.apk')..writeAsStringSync('fake-apk');
+      final dev = DeviceExec(shizukuChannel: channel, isAndroid: () => true);
+      final r = await dev.installApk(apk.path, sha256: 'cafebabe');
+      expect(r.ok, isFalse);
+      expect(r.message, contains('integrity check failed'));
+      // Only the hash check ran — pm install must NOT have been staged.
+      expect(execCmds.any((c) => c.contains('pm install')), isFalse);
+    });
+
+    test('stages a detached pm install when hash matches', () async {
+      const channel = MethodChannel('talon/shizuku-install-ok');
+      final execCmds = <String>[];
+      final apk = File('${tmp.path}/app.apk')..writeAsStringSync('fake-apk');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'getStatus') {
+          return {'ready': true, 'state': 'ready'};
+        }
+        if (call.method == 'exec') {
+          final cmd = (call.arguments as Map)['cmd'] as String;
+          execCmds.add(cmd);
+          if (cmd.startsWith('sha256sum')) {
+            return {'stdout': 'abc123  ${apk.path}', 'stderr': '', 'exitCode': 0};
+          }
+          return {'stdout': '', 'stderr': '', 'exitCode': 0};
+        }
+        return null;
+      });
+      addTearDown(() => TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null));
+
+      final dev = DeviceExec(shizukuChannel: channel, isAndroid: () => true);
+      final r = await dev.installApk(apk.path, sha256: 'ABC123', delayMs: 1000);
+      expect(r.ok, isTrue);
+      expect(r.data!['staged'], isTrue);
+      expect(r.data!['via'], 'shizuku');
+      // The install is detached (setsid + background) so the ack flushes and
+      // the install survives the app being replaced.
+      final install =
+          execCmds.firstWhere((c) => c.contains('pm install'), orElse: () => '');
+      expect(install, contains('setsid'));
+      expect(install, contains('pm install -r -d'));
+    });
+
+    test('routes through handle() by name', () async {
+      final desktop = DeviceExec(isAndroid: () => false);
+      final r = await desktop.handle('install_apk', {'path': '/x/app.apk'});
+      expect(r, isNotNull);
+      expect(r!.ok, isFalse); // non-Android → refused, but dispatched
+    });
+  });
 }
