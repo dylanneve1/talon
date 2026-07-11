@@ -6,10 +6,19 @@ companion workflow opens the DMG at) plus a @2x variant for Retina. CI folds
 the pair into a multi-resolution TIFF with `tiffutil -cathidpicheck` and hands
 it to create-dmg (see .github/workflows/companion.yml, macos package step).
 
-The art matches the app icon: deep navy field (#101220 family) with the
-periwinkle accent (#788AFF). It draws the drag-to-Applications arrow between
-the two icon slots create-dmg pins at (180, 195) and (480, 195), a short
-instruction line, and a footnote about opening an unsigned build.
+Design notes — learned the hard way:
+
+  - LIGHT background. Finder draws icon labels ("Talon", "Applications")
+    in black in light mode with no halo; the first dark-navy design made
+    them unreadable. Light field + dark painted text matches how iTerm2/
+    VLC/Arc-style DMGs handle it.
+  - Drop-zone rings under both icon slots. macOS Tahoe 26.1 has a Finder
+    bug where the /Applications symlink icon renders blank in DMGs from
+    any tool (create-dmg#202, DropDMG forum reports; partially fixed in
+    26.2). The rings keep the layout legible even when the icon vanishes.
+
+Icon slots are pinned by create-dmg at (180, 195) and (480, 195), 128px.
+Accent stays the app icon's periwinkle (#6F7FFF family).
 
 Pure Pillow — regenerate with:
 
@@ -30,12 +39,14 @@ SCALE = 2  # render at 2x, downscale for 1x
 # Icon slots (centers, 1x coords — must match --icon/--app-drop-link).
 APP_X, APPS_X, ICON_Y = 180, 480, 195
 
-NAVY_TOP = (23, 26, 44)
-NAVY_BOTTOM = (12, 14, 24)
-ACCENT = (120, 135, 255)
-TEXT_PRIMARY = (235, 238, 250)
-TEXT_MUTED = (150, 156, 185)
-TEXT_FAINT = (108, 114, 142)
+LIGHT_TOP = (247, 248, 252)
+LIGHT_BOTTOM = (232, 234, 242)
+ACCENT = (111, 127, 255)
+RING = (183, 191, 235)
+RING_FILL = (240, 242, 250)
+TEXT_PRIMARY = (23, 26, 44)
+TEXT_MUTED = (99, 105, 133)
+TEXT_FAINT = (139, 145, 170)
 
 
 def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
@@ -62,14 +73,15 @@ def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
 
 def render() -> Image.Image:
     w, h = W * SCALE, H * SCALE
-    im = Image.new("RGB", (w, h), NAVY_BOTTOM)
+    im = Image.new("RGB", (w, h), LIGHT_BOTTOM)
     d = ImageDraw.Draw(im)
 
     # Vertical gradient wash.
     for y in range(h):
         t = y / h
         row = tuple(
-            round(NAVY_TOP[i] + (NAVY_BOTTOM[i] - NAVY_TOP[i]) * t) for i in range(3)
+            round(LIGHT_TOP[i] + (LIGHT_BOTTOM[i] - LIGHT_TOP[i]) * t)
+            for i in range(3)
         )
         d.line([(0, y), (w, y)], fill=row)
 
@@ -82,22 +94,35 @@ def render() -> Image.Image:
             fill=fill,
         )
 
-    # Header.
-    center_text(64 * SCALE, "Talon", font(30 * SCALE, bold=True), TEXT_PRIMARY)
+    # Header — dark text on the light field.
+    center_text(58 * SCALE, "Talon", font(30 * SCALE, bold=True), TEXT_PRIMARY)
     center_text(
-        96 * SCALE,
+        92 * SCALE,
         "Drag the app into Applications to install",
         font(14 * SCALE),
         TEXT_MUTED,
     )
 
-    # Drag arrow between the two icon slots.
+    # Drop-zone rings under both icon slots: keep the layout readable even
+    # when Finder's Tahoe bug blanks the Applications symlink icon.
+    ring_r = 76 * SCALE
+    lw = 2 * SCALE
+    for cx in (APP_X * SCALE, APPS_X * SCALE):
+        cy = ICON_Y * SCALE
+        d.ellipse(
+            [cx - ring_r, cy - ring_r, cx + ring_r, cy + ring_r],
+            fill=RING_FILL,
+            outline=RING,
+            width=lw,
+        )
+
+    # Drag arrow between the two rings.
     y = ICON_Y * SCALE
-    x0 = (APP_X + 85) * SCALE
-    x1 = (APPS_X - 85) * SCALE
-    lw = 5 * SCALE
-    head = 16 * SCALE
-    d.line([(x0, y), (x1 - head, y)], fill=ACCENT, width=lw)
+    x0 = (APP_X + 88) * SCALE
+    x1 = (APPS_X - 88) * SCALE
+    alw = 5 * SCALE
+    head = 15 * SCALE
+    d.line([(x0, y), (x1 - head, y)], fill=ACCENT, width=alw)
     d.polygon(
         [(x1, y), (x1 - head, y - head * 0.62), (x1 - head, y + head * 0.62)],
         fill=ACCENT,
@@ -105,7 +130,7 @@ def render() -> Image.Image:
 
     # Footnote for the unsigned build.
     center_text(
-        352 * SCALE,
+        356 * SCALE,
         "Unsigned build — on first launch, right-click Talon and choose Open",
         font(11 * SCALE),
         TEXT_FAINT,
