@@ -11,6 +11,7 @@ vi.mock("../storage/daily-log.js", () => ({
 }));
 vi.mock("../util/watchdog.js", () => ({
   recordMessageProcessed: vi.fn(),
+  recordMessageReceived: vi.fn(),
   recordError: vi.fn(),
 }));
 vi.mock("../util/log.js", () => ({

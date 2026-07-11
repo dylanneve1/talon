@@ -70,6 +70,7 @@ vi.mock("../storage/sessions.js", () => ({
 
 vi.mock("../util/watchdog.js", () => ({
   recordMessageProcessed: vi.fn(),
+  recordMessageReceived: vi.fn(),
   recordError: vi.fn(),
   getHealthStatus: vi.fn(() => ({
     healthy: true,

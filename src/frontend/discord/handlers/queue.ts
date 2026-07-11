@@ -5,7 +5,11 @@
  */
 
 import { classify, friendlyMessage } from "../../../core/errors.js";
-import { recordMessageProcessed, recordError } from "../../../util/watchdog.js";
+import {
+  recordMessageProcessed,
+  recordMessageReceived,
+  recordError,
+} from "../../../util/watchdog.js";
 import { appendDailyLog } from "../../../storage/daily-log.js";
 import { log, logError } from "../../../util/log.js";
 import { processAndReply } from "./delivery.js";
@@ -24,6 +28,9 @@ export function enqueueMessage(
   numericChatId: number,
   msg: QueuedMessage,
 ): void {
+  // Tell the watchdog work has arrived — stuck detection compares this
+  // against processing completions (idle chats must never look wedged).
+  recordMessageReceived();
   const existing = messageQueues.get(chatId);
   if (existing) {
     if (existing.messages.length >= MAX_QUEUED_PER_CHAT) return;

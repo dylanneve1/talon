@@ -12,6 +12,8 @@ vi.mock("../util/log.js", () => ({
 
 const {
   recordMessageProcessed,
+  recordMessageReceived,
+  resetWatchdogActivityForTests,
   getTotalMessagesProcessed,
   recordError,
   getRecentErrors,
@@ -256,27 +258,88 @@ describe("watchdog", () => {
       }
     });
 
-    it("watchdog interval logs warning on inactivity", async () => {
+    it("stays quiet when the bot is merely idle (no incoming work)", async () => {
       const logModule = await import("../util/log.js");
       const { logWarn } = vi.mocked(logModule);
       vi.useFakeTimers();
       try {
-        // Record a message first so totalMessagesProcessed > 0
-        recordMessageProcessed();
+        // Last activity was a completed message; nothing arrives after it.
+        resetWatchdogActivityForTests();
+        startWatchdog();
+        logWarn.mockClear();
 
+        // A whole quiet evening: no traffic, no warnings. The old watchdog
+        // warned every single minute here.
+        vi.advanceTimersByTime(3 * 60 * 60_000);
+
+        expect(logWarn).not.toHaveBeenCalledWith(
+          "watchdog",
+          expect.stringContaining("unprocessed"),
+        );
+        stopWatchdog();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("warns (with backoff) when received work is not being processed", async () => {
+      const logModule = await import("../util/log.js");
+      const { logWarn } = vi.mocked(logModule);
+      vi.useFakeTimers();
+      try {
+        resetWatchdogActivityForTests();
         startWatchdog();
 
-        // Advance past the inactivity threshold (10 minutes = 600_000ms)
-        // Need to advance enough for both: setting lastProcessedAt to be old + triggering the interval
+        // Work arrives (strictly after the last completion)… and nothing
+        // ever finishes after it.
+        vi.advanceTimersByTime(1_000);
+        recordMessageReceived();
+        logWarn.mockClear();
         vi.advanceTimersByTime(11 * 60_000);
 
-        // logWarn should have been called with an inactivity message
-        expect(logWarn).toHaveBeenCalledWith(
-          "watchdog",
-          expect.stringContaining("No messages processed"),
-        );
+        const stuckWarns = () =>
+          logWarn.mock.calls.filter(
+            (c) => c[0] === "watchdog" && String(c[1]).includes("unprocessed"),
+          ).length;
+        expect(stuckWarns()).toBe(1);
+
+        // Next minute: still stuck, but backoff suppresses the repeat.
+        vi.advanceTimersByTime(60_000);
+        expect(stuckWarns()).toBe(1);
+
+        // Once the backoff window passes, it reminds again.
+        vi.advanceTimersByTime(10 * 60_000);
+        expect(stuckWarns()).toBe(2);
+
+        // Processing resumes → stuck state clears, no further warnings.
+        recordMessageProcessed();
+        logWarn.mockClear();
+        vi.advanceTimersByTime(30 * 60_000);
+        expect(stuckWarns()).toBe(0);
 
         stopWatchdog();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("health reflects stuck work, not idleness", () => {
+      vi.useFakeTimers();
+      try {
+        resetWatchdogActivityForTests();
+        // Idle for an hour: still healthy.
+        vi.advanceTimersByTime(60 * 60_000);
+        expect(getHealthStatus().healthy).toBe(true);
+
+        // Work arrives and goes unprocessed for 31 minutes: unhealthy.
+        vi.advanceTimersByTime(1_000);
+        recordMessageReceived();
+        vi.advanceTimersByTime(31 * 60_000);
+        expect(getHealthStatus().healthy).toBe(false);
+
+        // Processing catches up: healthy again.
+        recordMessageProcessed();
+        expect(getHealthStatus().healthy).toBe(true);
       } finally {
         vi.useRealTimers();
       }
