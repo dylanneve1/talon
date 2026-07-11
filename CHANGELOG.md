@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.44.0](https://github.com/dylanneve1/talon/compare/v1.43.0...v1.44.0) (2026-07-11)
+
+
+### Features
+
+* **companion:** Windows system tray residency — close hides, mesh stays alive ([#531](https://github.com/dylanneve1/talon/issues/531)) ([75fcf51](https://github.com/dylanneve1/talon/commit/75fcf512ea08db6ad636cf7a346fdd1d7b3951f2))
+
 ## [1.43.0](https://github.com/dylanneve1/talon/compare/v1.42.2...v1.43.0) (2026-07-11)
 
 
