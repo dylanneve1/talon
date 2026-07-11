@@ -31,6 +31,22 @@ void main() {
     expect(r.data!['exitCode'], 7);
   });
 
+  test('a backgrounded child does not pin the exec open (pipe-drain grace)',
+      () async {
+    // The shell exits immediately; the orphaned `sleep` inherits stdout and
+    // holds the pipe open for 30s. Before the drain grace, this call hung
+    // until the mesh transport gave up — persistent streams (adb logcat &)
+    // were impossible to launch.
+    final sw = Stopwatch()..start();
+    final r = await exec.exec('sleep 30 > /dev/null 2>&1 & echo bg-started');
+    sw.stop();
+    expect(r.ok, isTrue);
+    expect(r.data!['stdout'], contains('bg-started'));
+    expect(r.data!['exitCode'], 0);
+    // Well under the old hang (bounded by exit + the 2s drain grace).
+    expect(sw.elapsed, lessThan(const Duration(seconds: 10)));
+  });
+
   test('shell invocation matches the platform terminal', () {
     expect(
       DeviceExec.shellInvocation('echo x', os: 'windows'),

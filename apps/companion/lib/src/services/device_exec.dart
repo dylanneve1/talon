@@ -85,6 +85,11 @@ class DeviceExec {
 
   static const int _maxChunkBytes = 256 * 1024;
   static const Duration _shizukuPermissionWait = Duration(seconds: 12);
+
+  /// How long to wait for stdout/stderr to close after the shell itself has
+  /// exited. A backgrounded child holding the inherited pipes must not pin
+  /// the exec call open past this.
+  static const Duration _pipeDrainGrace = Duration(seconds: 2);
   /// Per-stream cap on exec output shipped back over the mesh. Head + tail
   /// (not head-only): the daemon's teleport wrapper prints its cwd marker at
   /// the very END of stdout, and losing it would break cwd tracking.
@@ -299,8 +304,15 @@ class DeviceExec {
       });
       final code = await proc.exitCode;
       timer.cancel();
-      await outF;
-      await errF;
+      // The shell has exited, but a backgrounded child (`long-running &`)
+      // inherits the stdout/stderr pipes and can hold them open long after —
+      // awaiting pipe closure unconditionally here used to hang the whole
+      // exec (and thus the mesh call) until the transport gave up. Give
+      // lingering writers a short grace to flush, then answer with whatever
+      // arrived: redirect-to-file is the supported channel for persistent
+      // streams (`cmd > /tmp/log 2>&1 &`, then read the file).
+      await Future.wait([outF, errF])
+          .timeout(_pipeDrainGrace, onTimeout: () => const []);
       final stdout = out.value();
       final stderr = err.value();
       return CommandOutcome(

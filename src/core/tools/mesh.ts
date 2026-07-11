@@ -71,7 +71,7 @@ export const meshTools: ToolDefinition[] = [
   {
     name: "device_exec",
     description:
-      "Run a shell command ON a Talon companion device (e.g. the phone) and return its stdout/stderr/exit code. The device executes it in its own sandbox (Android: app UID, or elevated via Shizuku if available). Use for on-device tasks like tidying a folder. Prefer `teleport` for a sustained session.",
+      "Run a shell command ON a Talon companion device (e.g. the phone) and return its stdout/stderr/exit code. The device executes it in its own sandbox (Android: app UID, or elevated via Shizuku if available). Use for on-device tasks like tidying a folder. Prefer `teleport` for a sustained session. For persistent streams (log tailing, watchers), background with output redirected to a file — `cmd > /tmp/out.log 2>&1 &` returns immediately; poll the file with device_read_file.",
     schema: {
       device: deviceParam,
       cmd: z.string().describe("The shell command to run on the device."),
