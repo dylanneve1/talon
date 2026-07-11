@@ -23,7 +23,11 @@ export interface HandleEventContext {
   seenToolCallIds: Set<string>;
   codexToolMetrics: { count: number };
   onTextBlock?: (text: string) => Promise<void>;
-  onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
+  onToolUse?: (
+    toolName: string,
+    input: Record<string, unknown>,
+    meta?: { failed?: boolean },
+  ) => void;
   chatId: string;
 }
 
@@ -148,7 +152,7 @@ function handleMcpToolCall(
     // flip) that assume a successful call.
     if (ctx.onToolUse) {
       try {
-        ctx.onToolUse(toolName, input);
+        ctx.onToolUse(toolName, input, { failed: true });
       } catch {
         /* non-fatal */
       }

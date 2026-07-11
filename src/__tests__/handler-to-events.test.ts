@@ -174,6 +174,46 @@ describe("handlerToEvents — minimum-fidelity envelope", () => {
     expect(tools[0].id).toMatch(/^send_message-\d+-[a-z0-9]+$/);
   });
 
+  it("pairs every tool_call with an immediate tool_result (same id)", async () => {
+    // Callback backends report a tool only at terminal status — the
+    // wrapper resolves it right away so tool spinners never dangle.
+    const events = await drain(
+      handlerToEvents(async (legacy: QueryParams) => {
+        legacy.onToolUse?.("read_file", { path: "x" });
+        legacy.onToolUse?.("web_search", { q: "y" }, { failed: true });
+        return {
+          text: "",
+          durationMs: 1,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        };
+      }, baseParams()),
+    );
+
+    const calls = events.filter((e) => e.type === "tool_call");
+    const results = events.filter((e) => e.type === "tool_result");
+    expect(calls).toHaveLength(2);
+    expect(results).toHaveLength(2);
+    for (let i = 0; i < calls.length; i++) {
+      const call = calls[i];
+      const result = results[i];
+      if (call?.type !== "tool_call" || result?.type !== "tool_result")
+        throw new Error("expected paired tool events");
+      expect(result.id).toBe(call.id);
+      expect(result.name).toBe(call.name);
+      // The result must directly follow its call in the stream.
+      expect(events.indexOf(result)).toBe(events.indexOf(call) + 1);
+    }
+    const failed = results[1];
+    if (failed?.type !== "tool_result") throw new Error("expected result");
+    expect(failed.error).toBeTruthy();
+    const succeeded = results[0];
+    if (succeeded?.type !== "tool_result") throw new Error("expected result");
+    expect(succeeded.error).toBeUndefined();
+  });
+
   it("classifies a rejected query as an error event and terminates", async () => {
     const events = await drain(
       handlerToEvents(async () => {
@@ -210,6 +250,7 @@ describe("handlerToEvents — minimum-fidelity envelope", () => {
       "run_started",
       "text_delta",
       "tool_call",
+      "tool_result",
       "text_delta",
       "usage",
       "completed",

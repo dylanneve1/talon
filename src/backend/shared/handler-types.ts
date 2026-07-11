@@ -43,7 +43,17 @@ export type QueryParams = {
   retrievedMemory?: RetrievedMemory;
   onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
   onTextBlock?: (text: string) => Promise<void>;
-  onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
+  /**
+   * Callback backends report a tool call as one already-resolved unit —
+   * their SDKs surface it at (or after) terminal status, with no separate
+   * start/finish pair. `meta.failed` marks a call whose terminal status was
+   * an error, so consumers can render it as failed rather than successful.
+   */
+  onToolUse?: (
+    toolName: string,
+    input: Record<string, unknown>,
+    meta?: { failed?: boolean },
+  ) => void;
 };
 
 /** Result of a backend AI query. */

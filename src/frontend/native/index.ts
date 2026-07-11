@@ -539,9 +539,11 @@ export function createNativeFrontend(
     const turnTools = new Map<string, LiveToolEntry>();
     liveTurns.set(entry.id, turnTools);
     // Safety net: any tool the backend announced but never resolved
-    // (text-mode backends don't emit tool_result; crashes can eat one)
-    // gets a synthetic result at turn end — a spinner the app opened
-    // on phase:"call" must always see a phase:"result".
+    // (a crash can eat a tool_result; callback backends historically
+    // never emitted one — handler-to-events now pairs each tool_call
+    // with an immediate synthetic result) gets a synthetic result at
+    // turn end — a spinner the app opened on phase:"call" must always
+    // see a phase:"result".
     const flushOpenTools = () => {
       for (const [id, live] of turnTools) {
         if (live.done) continue;

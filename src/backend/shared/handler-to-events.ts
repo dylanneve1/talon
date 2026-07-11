@@ -104,14 +104,23 @@ export async function* handlerToEvents(
       // deltas restart from empty.
       lastAccumulated = "";
     },
-    onToolUse: (toolName, input) => {
+    onToolUse: (toolName, input, meta) => {
+      const id = `${toolName}-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      emit({ type: "tool_call", id, name: toolName, input });
+      // Callback backends (Codex, OpenCode, Kilo, OpenAI Agents) surface a
+      // tool call only at terminal status — by the time onToolUse fires,
+      // the tool has already finished. Emit the matching `tool_result`
+      // immediately so consumers see the same call→result contract the
+      // Claude SDK backend emits. Without it, tool spinners opened on
+      // `tool_call` hang until the end-of-turn flush — on a long Codex
+      // grind that reads as "running forever" in the companion app.
       emit({
-        type: "tool_call",
-        id: `${toolName}-${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2, 8)}`,
+        type: "tool_result",
+        id,
         name: toolName,
-        input,
+        ...(meta?.failed ? { error: "tool call failed" } : {}),
       });
     },
   };
