@@ -58,20 +58,23 @@ class AppDelegate: FlutterAppDelegate {
       withLength: NSStatusItem.squareLength
     )
     if let button = item.button {
-      let symbol =
-        NSImage(
-          systemSymbolName: "point.3.connected.trianglepath.dotted",
-          accessibilityDescription: "Talon"
-        )
-        ?? NSImage(
-          systemSymbolName: "antenna.radiowaves.left.and.right",
-          accessibilityDescription: "Talon"
-        )
+      var symbol: NSImage?
+      if #available(macOS 11.0, *) {
+        symbol =
+          NSImage(
+            systemSymbolName: "point.3.connected.trianglepath.dotted",
+            accessibilityDescription: "Talon"
+          )
+          ?? NSImage(
+            systemSymbolName: "antenna.radiowaves.left.and.right",
+            accessibilityDescription: "Talon"
+          )
+      }
       if let symbol = symbol {
         symbol.isTemplate = true
         button.image = symbol
       } else {
-        // Ancient macOS without SF Symbols: fall back to the app icon.
+        // Pre-SF-Symbols macOS: fall back to the app icon.
         let icon = NSApp.applicationIconImage.copy() as! NSImage
         icon.size = NSSize(width: 18, height: 18)
         button.image = icon
