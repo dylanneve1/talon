@@ -13,6 +13,7 @@ import '../services/bridge_client.dart';
 import '../services/daemon_supervisor.dart';
 import '../services/local_discovery.dart';
 import '../services/log.dart';
+import '../services/menu_bar.dart';
 import '../services/mesh_background.dart';
 import '../services/mesh_service.dart';
 import '../services/prefs.dart';
@@ -160,7 +161,9 @@ class AppState extends ChangeNotifier {
   List<DeviceInfo> meshDevices = [];
   List<DeviceLocation> meshLocations = [];
   MeshForegroundHealth meshBackgroundHealth = evaluateMeshForegroundHealth(
-    supported: MeshForegroundController.isSupported,
+    supported:
+        MeshForegroundController.isSupported ||
+        MeshForegroundController.isResidentDesktop,
     sharingEnabled: false,
     serviceRunning: false,
     nowMs: DateTime.now().millisecondsSinceEpoch,
@@ -718,6 +721,9 @@ class AppState extends ChangeNotifier {
       return;
     }
     _mesh?.reconfigure();
+    if (MeshForegroundController.isResidentDesktop) {
+      await _refreshMeshBackgroundHealth();
+    }
   }
 
   Future<void> refreshMeshDevices() async {
@@ -825,13 +831,29 @@ class AppState extends ChangeNotifier {
       return;
     }
     await _mesh?.stop();
-    final mesh = MeshService(prefs, client);
+    final resident = MeshForegroundController.isResidentDesktop;
+    if (resident && prefs.meshSharing) {
+      await prefs.setMeshBgStartedAt(DateTime.now().millisecondsSinceEpoch);
+    }
+    final mesh = MeshService(
+      prefs,
+      client,
+      // macOS stays resident in the menu bar, so this in-app mesh IS the
+      // background mesh — stamp registrations so health reads healthy/stale.
+      onRegistered: resident ? _stampResidentMeshAlive : null,
+    );
     _mesh = mesh;
     try {
       await mesh.start();
     } catch (e) {
       AppLog.warn('app_state', 'mesh start failed', e);
     }
+    if (resident) await _refreshMeshBackgroundHealth();
+  }
+
+  Future<void> _stampResidentMeshAlive() async {
+    if (!prefs.meshSharing) return;
+    await prefs.setMeshBgAliveAt(DateTime.now().millisecondsSinceEpoch);
   }
 
   Future<void> _startUiMeshFallback(BridgeClient client) async {
@@ -851,8 +873,31 @@ class AppState extends ChangeNotifier {
   Future<void> _refreshMeshBackgroundHealth() async {
     meshBackgroundHealth = await MeshForegroundController.healthFromPrefs(
       prefs,
+      residentMeshRunning: _mesh != null,
     );
+    _updateMenuBar();
     notifyListeners();
+  }
+
+  /// Short live status for the macOS menu bar item (no-op elsewhere).
+  void _updateMenuBar() {
+    if (!MenuBarStatus.isSupported) return;
+    final connLabel = switch (conn) {
+      ConnState.connected => 'Connected',
+      ConnState.connecting => 'Connecting…',
+      ConnState.error => 'Disconnected',
+      ConnState.idle => 'Not connected',
+    };
+    final meshLabel = !prefs.meshSharing
+        ? 'mesh off'
+        : switch (meshBackgroundHealth.kind) {
+            MeshForegroundHealthKind.healthy => 'mesh active',
+            MeshForegroundHealthKind.starting => 'mesh starting',
+            MeshForegroundHealthKind.stale => 'mesh stale',
+            MeshForegroundHealthKind.off => 'mesh off',
+            MeshForegroundHealthKind.unsupported => 'mesh in-app',
+          };
+    unawaited(MenuBarStatus.set('$connLabel · $meshLabel'));
   }
 
   // ── Event handling ───────────────────────────────────────────────────────--
@@ -1297,6 +1342,7 @@ class AppState extends ChangeNotifier {
   void _setConn(ConnState s, String? err) {
     conn = s;
     connError = err;
+    _updateMenuBar();
     notifyListeners();
   }
 
