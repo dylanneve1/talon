@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.43.0](https://github.com/dylanneve1/talon/compare/v1.42.2...v1.43.0) (2026-07-11)
+
+
+### Features
+
+* **companion:** macOS menu bar residency — mesh survives window close ([#528](https://github.com/dylanneve1/talon/issues/528)) ([2f5c6c0](https://github.com/dylanneve1/talon/commit/2f5c6c02f1918e7f97e38ea8692f10476fa62ae6))
+
+
+### Bug Fixes
+
+* **watchdog:** idle is not a fault — warn only when work is actually stuck ([#529](https://github.com/dylanneve1/talon/issues/529)) ([eabdc9e](https://github.com/dylanneve1/talon/commit/eabdc9e45dd67f8e83049979d4f69bcf3ecc6868))
+
 ## [1.42.2](https://github.com/dylanneve1/talon/compare/v1.42.1...v1.42.2) (2026-07-11)
 
 
