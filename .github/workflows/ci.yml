@@ -12,6 +12,31 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # ── PR title must be a conventional commit ────────────────────
+  # Squash merges use the PR title as the commit subject, and
+  # release-please only counts typed commits (feat/fix/…) towards a
+  # release. A typeless title merges fine but silently produces NO
+  # release — exactly what happened with #521 ("macOS DMG install
+  # UX + …"). Gate it here so the mistake can't reach main.
+  pr-title:
+    name: PR Title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Validate conventional-commit title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          regex='^(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\([^)]+\))?!?: .+'
+          if [[ "$TITLE" =~ $regex ]]; then
+            echo "PR title OK: $TITLE"
+          else
+            echo "::error::PR title is not a conventional commit: '$TITLE'"
+            echo "::error::Squash merges use the PR title as the commit subject; release-please needs a type (feat:/fix:/chore:/…) or the merge produces no release."
+            exit 1
+          fi
+
   # ── Lint, format, and type-check ──────────────────────────────
   quality:
     name: Code Quality
@@ -783,6 +808,7 @@ jobs:
     name: CI Status
     if: always()
     needs:
+      - pr-title
       - quality
       - test
       - functional-cross-platform

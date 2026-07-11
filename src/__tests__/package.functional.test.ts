@@ -154,9 +154,22 @@ describe("package functional smoke tests", () => {
       const tarball = packInto(packDir);
 
       writeFileSync(join(installDir, "package.json"), "{}\n");
+      // --prefer-offline: the job's earlier `npm ci` warmed the runner's
+      // npm cache with this exact dependency tree — skip the per-package
+      // registry staleness checks that pushed Windows installs past even
+      // the 15-minute ceiling (run 29149502496 ETIMEDOUT at 900s after
+      // three successive timeout bumps; stop the arms race at the cause).
       expectExitOk(
         runNpm(
-          ["install", "--ignore-scripts", "--no-audit", "--no-fund", tarball],
+          [
+            "install",
+            "--ignore-scripts",
+            "--no-audit",
+            "--no-fund",
+            "--prefer-offline",
+            "--no-progress",
+            tarball,
+          ],
           {
             cwd: installDir,
             timeoutMs: FUNCTIONAL_TIMEOUT_MS,
