@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.40.1](https://github.com/dylanneve1/talon/compare/v1.40.0...v1.40.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* **companion:** re-stage APK into /data/local/tmp before pm install ([#513](https://github.com/dylanneve1/talon/issues/513)) ([78d5b65](https://github.com/dylanneve1/talon/commit/78d5b650f86c1487899f8102a600c313c5f8133b))
+* **companion:** run macOS exec through a zsh login shell ([#512](https://github.com/dylanneve1/talon/issues/512)) ([dd16600](https://github.com/dylanneve1/talon/commit/dd1660003f87c628969299fe589b972848ac1fd8))
+* **heartbeat:** back off after failures instead of retrying every minute ([#514](https://github.com/dylanneve1/talon/issues/514)) ([6a06c25](https://github.com/dylanneve1/talon/commit/6a06c2583f59a50053b946f58c3adeac853128dd))
+
 ## [1.40.0](https://github.com/dylanneve1/talon/compare/v1.39.0...v1.40.0) (2026-07-11)
 
 
