@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.45.0](https://github.com/dylanneve1/talon/compare/v1.44.0...v1.45.0) (2026-07-11)
+
+
+### Features
+
+* **companion:** desktop start-at-login toggle ([#533](https://github.com/dylanneve1/talon/issues/533)) ([142d444](https://github.com/dylanneve1/talon/commit/142d44478417b44f8a26bbe2db19d82e8c508d46))
+
 ## [1.44.0](https://github.com/dylanneve1/talon/compare/v1.43.0...v1.44.0) (2026-07-11)
 
 
