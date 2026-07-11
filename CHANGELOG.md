@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.0](https://github.com/dylanneve1/talon/compare/v1.41.0...v1.42.0) (2026-07-11)
+
+
+### Features
+
+* **ci:** conventional PR-title gate + faster Windows functional installs ([#522](https://github.com/dylanneve1/talon/issues/522)) ([d65b619](https://github.com/dylanneve1/talon/commit/d65b6193d46697c91fa0961ab3927896d977a75f))
+
 ## [1.41.0](https://github.com/dylanneve1/talon/compare/v1.40.2...v1.41.0) (2026-07-11)
 
 
