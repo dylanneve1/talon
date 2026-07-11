@@ -25,6 +25,20 @@ that speaks the protocol works.
 - Remote bridge profiles for phones or other machines
 - Modern dark, glassy theme
 
+## Installing (macOS)
+
+Grab `talon-companion-macos.dmg` from the latest release, open it, and drag
+**Talon** onto the **Applications** link.
+
+The build is ad-hoc signed but **not notarized** (that requires a paid Apple
+Developer account), so Gatekeeper warns on first launch. Either:
+
+- **right-click Talon.app → Open → Open** (only needed once), or
+- clear the quarantine flag: `xattr -dr com.apple.quarantine /Applications/Talon.app`
+
+The DMG art (`assets/dmg/`, rendered by `scripts/render-dmg-background.py`)
+and the volume icon are wired up in `.github/workflows/companion.yml`.
+
 ## Running it
 
 Requires the [Flutter SDK](https://docs.flutter.dev/get-started/install)
