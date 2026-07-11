@@ -5,12 +5,15 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dirname, "../..");
-// 8 minutes — Windows runners regularly take 4+ minutes for `npm install`
+// 15 minutes — Windows runners regularly take 4+ minutes for `npm install`
 // on the published tarball (cold cache + Windows fs latency); 240s was at
 // the cliff (multiple 256–258s runs killing it). Bumped from 240k after
 // repeated Windows-only flakes on PR #208 (runs 26037452792, 26038493696,
-// 26038706000).
-const FUNCTIONAL_TIMEOUT_MS = 480_000;
+// 26038706000). Bumped again from 480k on PR #500: the mem0ai dependency
+// (which vendors its own openai SDK copy) pushed Windows installs past
+// 480s on four consecutive runs (e.g. run 29102329726). The Functional CI
+// job allows 25 minutes, so 15 here still leaves headroom.
+const FUNCTIONAL_TIMEOUT_MS = 900_000;
 const NPM_CLI = process.env.npm_execpath;
 
 type RunResult = {
