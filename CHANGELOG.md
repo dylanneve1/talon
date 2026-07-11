@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.1](https://github.com/dylanneve1/talon/compare/v1.42.0...v1.42.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* **companion:** light DMG background — legible labels + Tahoe icon-bug fallback ([#524](https://github.com/dylanneve1/talon/issues/524)) ([afda0a3](https://github.com/dylanneve1/talon/commit/afda0a3245355893c74a71dab7241e44ac6e068c))
+
 ## [1.42.0](https://github.com/dylanneve1/talon/compare/v1.41.0...v1.42.0) (2026-07-11)
 
 
