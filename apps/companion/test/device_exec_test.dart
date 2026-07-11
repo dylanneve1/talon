@@ -239,9 +239,12 @@ void main() {
         if (call.method == 'exec') {
           final cmd = (call.arguments as Map)['cmd'] as String;
           execCmds.add(cmd);
-          // sha256sum returns a digest that won't match the expected one.
+          if (cmd.startsWith('test -f')) {
+            return {'stdout': 'ok', 'stderr': '', 'exitCode': 0};
+          }
+          // cp succeeds; sha256sum returns a digest that won't match.
           return {
-            'stdout': 'deadbeef  ${tmp.path}/app.apk',
+            'stdout': 'deadbeef  /data/local/tmp/talon-companion-update.apk',
             'stderr': '',
             'exitCode': 0,
           };
@@ -273,8 +276,15 @@ void main() {
         if (call.method == 'exec') {
           final cmd = (call.arguments as Map)['cmd'] as String;
           execCmds.add(cmd);
+          if (cmd.startsWith('test -f')) {
+            return {'stdout': 'ok', 'stderr': '', 'exitCode': 0};
+          }
           if (cmd.startsWith('sha256sum')) {
-            return {'stdout': 'abc123  ${apk.path}', 'stderr': '', 'exitCode': 0};
+            return {
+              'stdout': 'abc123  /data/local/tmp/talon-companion-update.apk',
+              'stderr': '',
+              'exitCode': 0,
+            };
           }
           return {'stdout': '', 'stderr': '', 'exitCode': 0};
         }
@@ -289,12 +299,65 @@ void main() {
       expect(r.ok, isTrue);
       expect(r.data!['staged'], isTrue);
       expect(r.data!['via'], 'shizuku');
+      expect(
+          r.data!['stagedPath'], '/data/local/tmp/talon-companion-update.apk');
+      // pm cannot read app-FUSE paths (/sdcard), so the APK must be re-staged
+      // into /data/local/tmp and hashed THERE (the file pm actually reads).
+      expect(
+        execCmds.any((c) =>
+            c.startsWith('cp -f') &&
+            c.contains('/data/local/tmp/talon-companion-update.apk')),
+        isTrue,
+      );
+      expect(
+        execCmds.any((c) =>
+            c.startsWith('sha256sum') && c.contains('/data/local/tmp/')),
+        isTrue,
+      );
       // The install is detached (setsid + background) so the ack flushes and
       // the install survives the app being replaced.
       final install =
           execCmds.firstWhere((c) => c.contains('pm install'), orElse: () => '');
       expect(install, contains('setsid'));
       expect(install, contains('pm install -r -d'));
+      expect(install, contains('/data/local/tmp/talon-companion-update.apk'));
+      // The staged copy is cleaned up after the install…
+      expect(install, contains('rm -f'));
+    });
+
+    test('skips the copy when the APK is already in /data/local/tmp',
+        () async {
+      const channel = MethodChannel('talon/shizuku-install-tmp');
+      final execCmds = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'getStatus') {
+          return {'ready': true, 'state': 'ready'};
+        }
+        if (call.method == 'exec') {
+          final cmd = (call.arguments as Map)['cmd'] as String;
+          execCmds.add(cmd);
+          if (cmd.startsWith('test -f')) {
+            return {'stdout': 'ok', 'stderr': '', 'exitCode': 0};
+          }
+          return {'stdout': '', 'stderr': '', 'exitCode': 0};
+        }
+        return null;
+      });
+      addTearDown(() => TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null));
+
+      final dev = DeviceExec(shizukuChannel: channel, isAndroid: () => true);
+      final r = await dev.installApk('/data/local/tmp/talon.apk');
+      expect(r.ok, isTrue);
+      expect(r.data!['stagedPath'], '/data/local/tmp/talon.apk');
+      expect(execCmds.any((c) => c.startsWith('cp -f')), isFalse);
+      final install =
+          execCmds.firstWhere((c) => c.contains('pm install'), orElse: () => '');
+      expect(install, contains('/data/local/tmp/talon.apk'));
+      // …but a pre-existing original is never deleted (retry without re-push).
+      expect(install.contains('rm -f'), isFalse);
     });
 
     test('routes through handle() by name', () async {
