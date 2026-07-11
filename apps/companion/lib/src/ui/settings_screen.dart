@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/bridge_models.dart';
+import '../services/autostart.dart';
 import '../services/log.dart';
 import '../services/mesh_background.dart';
 import '../state/app_state.dart';
@@ -34,6 +35,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _restarting = false;
   bool _dreaming = false;
 
+  /// Desktop start-at-login state (null = unknown/loading). Read from the OS
+  /// on open, reconciled after every flip (the OS is the source of truth).
+  bool? _autostart;
+  bool _autostartBusy = false;
+
   /// Optimistic overrides for in-flight `_apply` config updates, keyed by
   /// config field. A toggle flips the moment it's tapped; the entry is
   /// dropped when the daemon confirms (snapshot replaces it) or reverted
@@ -52,6 +58,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // subscription the switches only repainted on a manual refresh.
     widget.state.addListener(_onAppState);
     _load();
+    if (Autostart.isSupported) {
+      Autostart.isEnabled().then((v) {
+        if (mounted) setState(() => _autostart = v);
+      });
+    }
+  }
+
+  Future<void> _setAutostart(bool v) async {
+    if (_autostartBusy) return;
+    setState(() {
+      _autostartBusy = true;
+      _autostart = v; // optimistic; reconciled below
+    });
+    final actual = await Autostart.setEnabled(v);
+    if (!mounted) return;
+    setState(() {
+      _autostart = actual;
+      _autostartBusy = false;
+    });
+    if (actual != v) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            v
+                ? 'Could not enable start at login (check System Settings → Login Items)'
+                : 'Could not disable start at login',
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -420,6 +456,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'Background',
             widget.state.meshBackgroundHealth.label,
           ),
+          if (Autostart.isSupported) ...[
+            const Divider(height: 22),
+            _switchRow(
+              'Start at login',
+              'Launch Talon when you sign in, so the mesh is online from boot',
+              _autostart ?? false,
+              (_autostart == null || _autostartBusy) ? null : _setAutostart,
+            ),
+          ],
           const Divider(height: 22),
           _switchRow(
             'Periodic reporting',

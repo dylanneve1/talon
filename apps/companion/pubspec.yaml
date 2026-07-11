@@ -48,6 +48,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   tray_manager: ^0.5.3
   window_manager: ^0.5.2
+  launch_at_startup: ^0.5.1
 
 # file_picker resolves flutter_plugin_android_lifecycle to 2.0.35, whose Android
 # library requires compiling against API 36 while file_picker itself compiles
