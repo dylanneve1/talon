@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.46.1](https://github.com/dylanneve1/talon/compare/v1.46.0...v1.46.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* **codex:** live tool lifecycle — real durations instead of 0ms ([#536](https://github.com/dylanneve1/talon/issues/536)) ([c9e0398](https://github.com/dylanneve1/talon/commit/c9e03985ee0ccd3a52e29a35937d92af4f07bcc4))
+
 ## [1.46.0](https://github.com/dylanneve1/talon/compare/v1.45.0...v1.46.0) (2026-07-12)
 
 
