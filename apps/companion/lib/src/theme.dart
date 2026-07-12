@@ -321,6 +321,7 @@ class TalonType {
   TalonType._();
 
   static TextStyle get display => TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 22,
         height: 1.2,
         fontWeight: FontWeight.w700,
@@ -329,6 +330,7 @@ class TalonType {
       );
 
   static TextStyle get title => TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 16,
         height: 1.3,
         fontWeight: FontWeight.w700,
@@ -337,6 +339,7 @@ class TalonType {
       );
 
   static TextStyle get subtitle => TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 14,
         height: 1.3,
         fontWeight: FontWeight.w600,
@@ -344,18 +347,21 @@ class TalonType {
       );
 
   static TextStyle get body => TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 14,
         height: 1.5,
         color: TalonColors.text,
       );
 
   static TextStyle get label => TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 13,
         height: 1.3,
         color: TalonColors.textDim,
       );
 
   static TextStyle get caption => TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 12,
         height: 1.4,
         color: TalonColors.textFaint,
@@ -363,6 +369,7 @@ class TalonType {
 
   /// All-caps section eyebrow (sidebar groups, settings section headers).
   static TextStyle get eyebrow => TextStyle(
+        fontFamily: _fontFamily,
         fontSize: 11,
         height: 1.2,
         fontWeight: FontWeight.w700,
@@ -468,8 +475,15 @@ ThemeData buildTalonTheme() {
           fontFamily: _fontFamily,
         )
         .copyWith(
+          // NOTE: copyWith REPLACES these styles wholesale (it does not merge
+          // with the apply() above), so they must carry the font family
+          // themselves — TalonType styles do. A bare TextStyle here silently
+          // drops the family for everything that inherits bodyMedium.
           bodyMedium: TalonType.body,
-          titleMedium: const TextStyle(fontWeight: FontWeight.w600),
+          titleMedium: const TextStyle(
+            fontFamily: _fontFamily,
+            fontWeight: FontWeight.w600,
+          ),
         ),
     splashFactory: InkSparkle.splashFactory,
     // Pushed routes (Settings, Connect) use transparent AppBars over the
