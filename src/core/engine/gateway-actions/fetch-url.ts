@@ -3,6 +3,7 @@
  * binary content (validated by magic bytes) into the uploads workspace.
  */
 
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { dirs } from "../../../util/paths.js";
@@ -39,7 +40,11 @@ async function readBodyLimited(
 
       totalBytes += value.byteLength;
       if (totalBytes > maxBytes) {
-        await reader.cancel("response exceeds download limit");
+        try {
+          await reader.cancel("response exceeds download limit");
+        } catch {
+          // Cancellation is cleanup only; preserve the useful size error.
+        }
         throw new ResponseTooLargeError();
       }
       chunks.push(
@@ -51,6 +56,49 @@ async function readBodyLimited(
   }
 
   return Buffer.concat(chunks, totalBytes);
+}
+
+type KnownBinaryExtension = "jpg" | "png" | "gif" | "webp" | "pdf" | "zip";
+
+function detectBinaryExtension(buffer: Buffer): KnownBinaryExtension | null {
+  const magic = buffer.subarray(0, 16);
+  if (magic[0] === 0xff && magic[1] === 0xd8) return "jpg";
+  if (
+    magic[0] === 0x89 &&
+    magic[1] === 0x50 &&
+    magic[2] === 0x4e &&
+    magic[3] === 0x47
+  )
+    return "png";
+  if (magic[0] === 0x47 && magic[1] === 0x49 && magic[2] === 0x46) return "gif";
+  if (
+    magic[0] === 0x52 &&
+    magic[1] === 0x49 &&
+    magic[2] === 0x46 &&
+    magic[3] === 0x46 &&
+    magic[8] === 0x57 &&
+    magic[9] === 0x45 &&
+    magic[10] === 0x42 &&
+    magic[11] === 0x50
+  )
+    return "webp";
+  if (magic.subarray(0, 5).toString("ascii") === "%PDF-") return "pdf";
+  if (
+    magic[0] === 0x50 &&
+    magic[1] === 0x4b &&
+    ((magic[2] === 0x03 && magic[3] === 0x04) ||
+      (magic[2] === 0x05 && magic[3] === 0x06) ||
+      (magic[2] === 0x07 && magic[3] === 0x08))
+  )
+    return "zip";
+  return null;
+}
+
+function expectedBinaryKind(mimeType: string): "image" | "pdf" | "zip" | null {
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.includes("pdf")) return "pdf";
+  if (mimeType.includes("zip")) return "zip";
+  return null;
 }
 
 export const fetchUrlHandlers: SharedActionHandlers = {
@@ -102,54 +150,40 @@ export const fetchUrlHandlers: SharedActionHandlers = {
         if (buffer.length === 0)
           return { ok: false, error: "Empty response (0 bytes)" };
 
-        // Validate magic bytes — prevent saving HTML error pages as images
-        // (servers can return error pages with image content-type headers)
-        const magic = buffer.subarray(0, 16);
-        const isRealImage =
-          (magic[0] === 0xff && magic[1] === 0xd8) || // JPEG
-          (magic[0] === 0x89 &&
-            magic[1] === 0x50 &&
-            magic[2] === 0x4e &&
-            magic[3] === 0x47) || // PNG
-          (magic[0] === 0x47 && magic[1] === 0x49 && magic[2] === 0x46) || // GIF
-          (magic[0] === 0x52 &&
-            magic[1] === 0x49 &&
-            magic[2] === 0x46 &&
-            magic[3] === 0x46 &&
-            magic[8] === 0x57 &&
-            magic[9] === 0x45 &&
-            magic[10] === 0x42 &&
-            magic[11] === 0x50); // WebP
+        const detectedExt = detectBinaryExtension(buffer);
+        const advertisedKind = expectedBinaryKind(mimeType);
+        const isImage = ["jpg", "png", "gif", "webp"].includes(
+          detectedExt ?? "",
+        );
+        const contentMatchesHeader =
+          !advertisedKind ||
+          (advertisedKind === "image"
+            ? isImage
+            : detectedExt === advertisedKind);
 
-        // If content-type says image but bytes say otherwise, treat as text
-        if (ct.startsWith("image/") && !isRealImage) {
+        // Do not save an error page or arbitrary bytes under a trusted-looking
+        // image/PDF/ZIP extension merely because the server advertised one.
+        if (!contentMatchesHeader) {
           const text = extractText(buffer.toString("utf-8"), 500);
           return {
             ok: false,
-            error: `Server returned an error page instead of an image. Content: ${text}`,
+            error: `Server returned invalid ${advertisedKind} content.${text ? ` Content: ${text}` : ""}`,
           };
         }
 
-        const ext = isRealImage
-          ? magic[0] === 0xff
-            ? "jpg"
-            : magic[0] === 0x89
-              ? "png"
-              : magic[0] === 0x47
-                ? "gif"
-                : "webp"
-          : ct.includes("pdf")
-            ? "pdf"
-            : ct.includes("zip")
-              ? "zip"
-              : "bin";
+        const ext = detectedExt ?? "bin";
         const uploadsDir = dirs.uploads;
         if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
-        const filePath = resolve(uploadsDir, `${Date.now()}-fetched.${ext}`);
+        const filePath = resolve(
+          uploadsDir,
+          `${Date.now()}-${randomUUID().slice(0, 8)}-fetched.${ext}`,
+        );
         writeFileSync(filePath, buffer);
-        const typeLabel = isRealImage
+        const typeLabel = isImage
           ? "image"
-          : (ct.split("/")[1]?.split(";")[0] ?? "file");
+          : detectedExt === "pdf" || detectedExt === "zip"
+            ? detectedExt
+            : (ct.split("/")[1]?.split(";")[0] ?? "file");
         return {
           ok: true,
           text: `Downloaded ${typeLabel} (${(buffer.length / 1024).toFixed(0)}KB) to: ${filePath}\nRead it with the Read tool or send it with send(type="file", file_path="${filePath}").`,

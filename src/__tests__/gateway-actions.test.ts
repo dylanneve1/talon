@@ -153,6 +153,17 @@ function imageBuffer(
   return buf;
 }
 
+function documentBuffer(type: "pdf" | "zip", size = 1024): ArrayBuffer {
+  const buf = new ArrayBuffer(Math.max(size, 16));
+  const view = new Uint8Array(buf);
+  view.set(
+    type === "pdf"
+      ? new TextEncoder().encode("%PDF-1.7")
+      : [0x50, 0x4b, 0x03, 0x04],
+  );
+  return buf;
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe("gateway shared actions", () => {
@@ -626,7 +637,7 @@ describe("gateway shared actions", () => {
     });
 
     it("downloads PDF file", async () => {
-      const buffer = new ArrayBuffer(4096);
+      const buffer = documentBuffer("pdf", 4096);
       const mockFetch = vi.fn().mockResolvedValueOnce(
         mockResponse({
           ok: true,
@@ -647,7 +658,7 @@ describe("gateway shared actions", () => {
     });
 
     it("downloads ZIP file", async () => {
-      const buffer = new ArrayBuffer(8192);
+      const buffer = documentBuffer("zip", 8192);
       const mockFetch = vi.fn().mockResolvedValueOnce(
         mockResponse({
           ok: true,
@@ -710,7 +721,7 @@ describe("gateway shared actions", () => {
     });
 
     it("does not create uploads directory when it exists", async () => {
-      const buffer = new ArrayBuffer(256);
+      const buffer = imageBuffer("png", 256);
       const mockFetch = vi.fn().mockResolvedValueOnce(
         mockResponse({
           ok: true,
@@ -812,8 +823,56 @@ describe("gateway shared actions", () => {
       );
 
       expect(result?.ok).toBe(false);
-      expect(result?.error).toContain("error page instead of an image");
+      expect(result?.error).toContain("invalid image content");
       expect(mockWriteFileSync).not.toHaveBeenCalled();
+    });
+
+    it("rejects HTML error page disguised as a PDF", async () => {
+      const htmlError = new TextEncoder().encode(
+        "<!DOCTYPE html><html><body>Access denied</body></html>",
+      );
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValueOnce(
+          mockResponse({
+            ok: true,
+            contentType: "application/pdf",
+            arrayBuffer: htmlError.buffer,
+          }),
+        ),
+      );
+
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/report.pdf" },
+        123,
+      );
+
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toContain("invalid pdf content");
+      expect(result?.error).toContain("Access denied");
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
+    });
+
+    it("detects PDF magic bytes when the server uses a generic content type", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValueOnce(
+          mockResponse({
+            ok: true,
+            contentType: "application/octet-stream",
+            arrayBuffer: documentBuffer("pdf"),
+          }),
+        ),
+      );
+
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/download" },
+        123,
+      );
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain("Downloaded pdf");
+      expect(result?.text).toContain(".pdf");
     });
 
     it("rejects empty response", async () => {
@@ -860,7 +919,7 @@ describe("gateway shared actions", () => {
     });
 
     it("labels non-image binary as content subtype", async () => {
-      const buffer = new ArrayBuffer(512);
+      const buffer = documentBuffer("pdf", 512);
       const mockFetch = vi.fn().mockResolvedValueOnce(
         mockResponse({
           ok: true,
