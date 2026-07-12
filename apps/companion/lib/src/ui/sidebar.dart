@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../models/bridge_models.dart';
@@ -27,6 +30,46 @@ class Sidebar extends StatefulWidget {
 
 class _SidebarState extends State<Sidebar> {
   String _query = '';
+
+  /// Daemon-side full-text hits for [_query] — the same `GET /search` the
+  /// desktop quick switcher uses, so message search isn't keyboard-only.
+  List<SearchHit> _hits = const [];
+  bool _searching = false;
+  Timer? _debounce;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  bool get _isTouch =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  void _onQuery(String v) {
+    setState(() => _query = v);
+    _debounce?.cancel();
+    final q = v.trim();
+    if (q.length < 2) {
+      setState(() {
+        _hits = const [];
+        _searching = false;
+      });
+      return;
+    }
+    setState(() => _searching = true);
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      final hits = await widget.state.searchMessages(q);
+      // A slower response for an older query must not clobber the newer one.
+      if (mounted && q == _query.trim()) {
+        setState(() {
+          _hits = hits;
+          _searching = false;
+        });
+      }
+    });
+  }
 
   /// Chat ids we've already shown, so the entrance cascade plays once per tile
   /// and never re-fires on the frequent rebuilds driven by live streaming.
@@ -60,7 +103,7 @@ class _SidebarState extends State<Sidebar> {
               const SizedBox(height: TalonSpace.md),
               _NewChatButton(onTap: widget.state.newChat),
               const SizedBox(height: TalonSpace.sm),
-              _SearchBox(onChanged: (v) => setState(() => _query = v)),
+              _SearchBox(onChanged: _onQuery),
               const SizedBox(height: TalonSpace.sm),
               Expanded(child: _groupedList(context)),
               const Divider(height: TalonSpace.md),
@@ -94,7 +137,8 @@ class _SidebarState extends State<Sidebar> {
           c.preview.toLowerCase().contains(q);
     }).toList();
 
-    if (chats.isEmpty) {
+    final searchingMessages = _query.trim().length >= 2;
+    if (chats.isEmpty && !(searchingMessages && (_searching || _hits.isNotEmpty))) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(TalonSpace.lg),
@@ -134,27 +178,87 @@ class _SidebarState extends State<Sidebar> {
               final delay = isFresh
                   ? TalonMotion.stagger * (freshOrdinal++).clamp(0, 12)
                   : Duration.zero;
+              Widget tile = _ChatTile(
+                chat: chat,
+                selected: chat.id == widget.state.selectedChatId,
+                unread: widget.state.hasUnread(chat),
+                onTap: () =>
+                    (widget.onSelect ?? widget.state.selectChat)(chat.id),
+                // Touch path to every chat action (rename/pulse/export/
+                // reset/delete) — the hover-only delete affordance doesn't
+                // exist on a phone.
+                onLongPress: () =>
+                    showChatActionsSheet(context, widget.state, chat),
+                onDelete: () =>
+                    confirmDeleteChat(context, widget.state, chat),
+              );
+              // Mobile: swipe a tile left to delete (with the usual confirm).
+              // confirmDismiss always resolves false — deletion happens via
+              // AppState and the rebuild removes the tile, which sidesteps
+              // Dismissible's "must be gone once dismissed" contract when a
+              // slow round-trip would otherwise leave it in the tree.
+              if (_isTouch) {
+                tile = Dismissible(
+                  key: ValueKey('swipe-${chat.id}'),
+                  direction: DismissDirection.endToStart,
+                  confirmDismiss: (_) async {
+                    Haptics.medium();
+                    await confirmDeleteChat(context, widget.state, chat);
+                    return false;
+                  },
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: TalonSpace.lg),
+                    decoration: BoxDecoration(
+                      borderRadius: TalonRadius.rSm,
+                      color: TalonColors.bad.withValues(alpha: 0.18),
+                    ),
+                    child: Icon(Icons.delete_outline,
+                        size: 18, color: TalonColors.bad),
+                  ),
+                  child: tile,
+                );
+              }
               return EntranceFx(
                 key: ValueKey('tile-${chat.id}'),
                 enabled: isFresh && !reduceMotion,
                 from: const Offset(-0.12, 0),
                 delay: delay,
-                child: _ChatTile(
-                  chat: chat,
-                  selected: chat.id == widget.state.selectedChatId,
-                  unread: widget.state.hasUnread(chat),
-                  onTap: () =>
-                      (widget.onSelect ?? widget.state.selectChat)(chat.id),
-                  // Touch path to every chat action (rename/pulse/export/
-                  // reset/delete) — the hover-only delete affordance doesn't
-                  // exist on a phone.
-                  onLongPress: () =>
-                      showChatActionsSheet(context, widget.state, chat),
-                  onDelete: () =>
-                      confirmDeleteChat(context, widget.state, chat),
-                ),
+                child: tile,
               );
             }),
+        ],
+        // Full-text hits from the daemon, below the title matches — brings
+        // the desktop quick switcher's message search to every layout.
+        if (searchingMessages) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+                TalonSpace.sm, TalonSpace.md, TalonSpace.sm, 6),
+            child: Row(
+              children: [
+                Text('MESSAGES', style: TalonType.eyebrow),
+                const SizedBox(width: TalonSpace.sm),
+                if (_searching)
+                  const SizedBox(
+                    width: 10,
+                    height: 10,
+                    child: CircularProgressIndicator(strokeWidth: 1.6),
+                  ),
+              ],
+            ),
+          ),
+          if (!_searching && _hits.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: TalonSpace.sm, vertical: TalonSpace.xs),
+              child: Text('No message matches.', style: TalonType.caption),
+            ),
+          for (final hit in _hits.take(12))
+            _HitTile(
+              hit: hit,
+              onTap: () =>
+                  (widget.onSelect ?? widget.state.selectChat)(hit.chatId),
+            ),
         ],
       ],
     );
@@ -438,21 +542,111 @@ class _NewChatButtonState extends State<_NewChatButton> {
   }
 }
 
-class _SearchBox extends StatelessWidget {
+/// A full-text search hit: chat title + a one-line snippet of the matching
+/// message. Tapping opens the chat.
+class _HitTile extends StatelessWidget {
+  final SearchHit hit;
+  final VoidCallback onTap;
+  const _HitTile({required this.hit, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: TalonRadius.rSm,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+            horizontal: TalonSpace.sm, vertical: 7),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: Icon(Icons.manage_search,
+                  size: 15, color: TalonColors.textFaint),
+            ),
+            const SizedBox(width: TalonSpace.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    hit.chatTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: TalonColors.textDim,
+                    ),
+                  ),
+                  Text(
+                    hit.message.text.replaceAll('\n', ' '),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.35,
+                      color: TalonColors.textFaint,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchBox extends StatefulWidget {
   final ValueChanged<String> onChanged;
   const _SearchBox({required this.onChanged});
 
   @override
+  State<_SearchBox> createState() => _SearchBoxState();
+}
+
+class _SearchBoxState extends State<_SearchBox> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _clear() {
+    _controller.clear();
+    widget.onChanged('');
+    setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     return TextField(
-      onChanged: onChanged,
+      controller: _controller,
+      onChanged: (v) {
+        widget.onChanged(v);
+        setState(() {}); // keep the clear affordance in sync
+      },
       style: const TextStyle(fontSize: 13.5),
       decoration: InputDecoration(
         isDense: true,
         prefixIcon: const Icon(Icons.search, size: 17),
         prefixIconConstraints:
             const BoxConstraints(minWidth: 36, minHeight: 36),
-        hintText: 'Search chats',
+        suffixIcon: _controller.text.isEmpty
+            ? null
+            : IconButton(
+                onPressed: _clear,
+                icon: const Icon(Icons.close, size: 15),
+                tooltip: 'Clear',
+              ),
+        suffixIconConstraints:
+            const BoxConstraints(minWidth: 36, minHeight: 36),
+        hintText: 'Search chats & messages',
         hintStyle: TextStyle(color: TalonColors.textFaint, fontSize: 13),
         filled: true,
         fillColor: TalonColors.void0.withValues(alpha: 0.5),
