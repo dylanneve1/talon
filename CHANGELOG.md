@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.47.0](https://github.com/dylanneve1/talon/compare/v1.46.1...v1.47.0) (2026-07-12)
+
+
+### Features
+
+* **companion:** UI overhaul — bundled type, gradient identity, depth & motion polish ([#539](https://github.com/dylanneve1/talon/issues/539)) ([eab644a](https://github.com/dylanneve1/talon/commit/eab644a2c413bdfa69f2fadc9d73e531afaef8e8))
+
 ## [1.46.1](https://github.com/dylanneve1/talon/compare/v1.46.0...v1.46.1) (2026-07-12)
 
 
