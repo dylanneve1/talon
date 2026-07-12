@@ -62,6 +62,34 @@ class TalonPalette {
         end: Alignment.bottomRight,
         colors: [accent, accent2],
       );
+
+  /// A copy of this palette wearing a different accent triple. Everything
+  /// else (canvas, glass, text, status) is untouched — the accent is the one
+  /// deliberately personalizable stroke in the system.
+  TalonPalette copyWithAccent({
+    required Color accent,
+    required Color accent2,
+    required Color accentDeep,
+  }) =>
+      TalonPalette(
+        brightness: brightness,
+        void0: void0,
+        void1: void1,
+        surface: surface,
+        surfaceHi: surfaceHi,
+        glassFill: glassFill,
+        glassStroke: glassStroke,
+        accent: accent,
+        accent2: accent2,
+        accentDeep: accentDeep,
+        text: text,
+        textDim: textDim,
+        textFaint: textFaint,
+        ok: ok,
+        warn: warn,
+        bad: bad,
+        backdrop: backdrop,
+      );
 }
 
 const TalonPalette kTalonDark = TalonPalette(
@@ -115,33 +143,96 @@ const TalonPalette kTalonLight = TalonPalette(
   ),
 );
 
-/// Global theme selection: a persisted [mode] (auto/light/dark) resolved
-/// against the platform brightness into the active [palette]. [revision]
-/// bumps whenever the palette actually changes, so pushed routes (Settings,
-/// Connect) can subscribe and repaint in place — the root app rebuilds via
-/// its own listener in main.dart.
+/// Named accent seeds offered in Settings → Appearance, plus the derivation
+/// that turns any single seed color into a full accent triple for either
+/// brightness. `null` seed = the handcrafted Talon indigo/cyan pair.
+class TalonAccents {
+  TalonAccents._();
+
+  /// Preset seeds. The derivation below adapts each one per brightness, so a
+  /// single color works on both the near-black and paper-white canvases.
+  static const List<(String, Color)> presets = [
+    ('Cyan', Color(0xFF38C8F0)),
+    ('Emerald', Color(0xFF3ED598)),
+    ('Amber', Color(0xFFF5A524)),
+    ('Rose', Color(0xFFFF5C8A)),
+    ('Violet', Color(0xFFA78BFA)),
+    ('Flame', Color(0xFFFF7A59)),
+    ('Graphite', Color(0xFF9BA3B5)),
+  ];
+
+  /// Derive accent / accent2 / accentDeep from [seed] for [base]'s
+  /// brightness and return the re-accented palette. Lightness is clamped so
+  /// pastel seeds stay readable on white and dark seeds stay visible on
+  /// near-black; the gradient partner is the same seed rotated ~40° of hue.
+  static TalonPalette derive(TalonPalette base, Color seed) {
+    final dark = base.brightness == Brightness.dark;
+    final hsl = HSLColor.fromColor(seed);
+    final accent = hsl
+        .withLightness(dark
+            ? hsl.lightness.clamp(0.58, 0.78)
+            : hsl.lightness.clamp(0.30, 0.48))
+        .toColor();
+    final partner = hsl.withHue((hsl.hue + 40) % 360);
+    final accent2 = partner
+        .withLightness(dark
+            ? (hsl.lightness + 0.08).clamp(0.62, 0.84)
+            : (hsl.lightness - 0.02).clamp(0.28, 0.44))
+        .toColor();
+    final aHsl = HSLColor.fromColor(accent);
+    final accentDeep =
+        aHsl.withLightness((aHsl.lightness - 0.12).clamp(0.14, 1.0)).toColor();
+    return base.copyWithAccent(
+      accent: accent,
+      accent2: accent2,
+      accentDeep: accentDeep,
+    );
+  }
+}
+
+/// Global theme selection: a persisted [mode] (auto/light/dark) and optional
+/// [accentSeed] resolved against the platform brightness into the active
+/// [palette]. [revision] bumps whenever the palette actually changes, so
+/// pushed routes (Settings, Connect) can subscribe and repaint in place — the
+/// root app rebuilds via its own listener in main.dart.
 class TalonTheme {
   TalonTheme._();
 
   static final ValueNotifier<ThemeMode> mode = ValueNotifier(ThemeMode.system);
+
+  /// Custom accent seed (null = the default Talon indigo). Persisted by
+  /// Settings; resolved through [TalonAccents.derive] on [apply].
+  static final ValueNotifier<Color?> accentSeed = ValueNotifier(null);
+
+  /// Global UI text scale (1.0 = default). Applied as a [TextScaler] at the
+  /// MaterialApp root in main.dart; persisted by Settings.
+  static final ValueNotifier<double> textScale = ValueNotifier(1.0);
+
   static final ValueNotifier<int> revision = ValueNotifier(0);
 
   static TalonPalette _palette = kTalonDark;
   static TalonPalette get palette => _palette;
   static bool get isDark => _palette.brightness == Brightness.dark;
 
-  /// Resolve [mode] against the platform brightness and swap the palette.
+  /// What the current palette was resolved from — used to skip no-op applies
+  /// so [revision] only bumps on an actual visual change.
+  static (bool, int?) _appliedKey = (true, null);
+
+  /// Resolve [mode] + [accentSeed] against the platform brightness and swap
+  /// the palette.
   static void apply(Brightness platformBrightness) {
     final dark = switch (mode.value) {
       ThemeMode.dark => true,
       ThemeMode.light => false,
       ThemeMode.system => platformBrightness == Brightness.dark,
     };
-    final next = dark ? kTalonDark : kTalonLight;
-    if (!identical(next, _palette)) {
-      _palette = next;
-      revision.value++;
-    }
+    final seed = accentSeed.value;
+    final key = (dark, seed?.toARGB32());
+    if (key == _appliedKey) return;
+    final base = dark ? kTalonDark : kTalonLight;
+    _palette = seed == null ? base : TalonAccents.derive(base, seed);
+    _appliedKey = key;
+    revision.value++;
   }
 
   /// Restyle the OS chrome (Android status/navigation bars, iOS status bar)

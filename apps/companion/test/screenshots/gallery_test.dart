@@ -233,6 +233,7 @@ void main() {
 
   setUp(() {
     TalonTheme.mode.value = ThemeMode.dark;
+    TalonTheme.accentSeed.value = null;
     TalonTheme.apply(Brightness.dark);
   });
 
@@ -268,6 +269,16 @@ void main() {
     addTearDown(state.dispose);
     await tester.pumpWidget(_app(SettingsScreen(state: state)));
     await _shoot(tester, 'phone_settings');
+  });
+
+  testWidgets('phone · conversation (emerald accent)', (tester) async {
+    _phone(tester);
+    TalonTheme.accentSeed.value = const Color(0xFF3ED598);
+    TalonTheme.apply(Brightness.dark);
+    final state = _demoState(narrow: true, select: 'c1');
+    addTearDown(state.dispose);
+    await tester.pumpWidget(_app(RootView(state: state)));
+    await _shoot(tester, 'phone_chat_accent');
   });
 
   testWidgets('phone · connect (first run)', (tester) async {

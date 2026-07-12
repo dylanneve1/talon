@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../models/bridge_models.dart';
+import '../services/haptics.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'brand.dart';
@@ -260,7 +260,7 @@ class _ChatTileState extends State<_ChatTile> {
       child: GestureDetector(
         onTap: widget.onTap,
         onLongPress: () {
-          HapticFeedback.mediumImpact();
+          Haptics.medium();
           widget.onLongPress();
         },
         onTapDown: (_) => setState(() => _pressed = true),

@@ -53,10 +53,28 @@ class Prefs {
   // ── Appearance ────────────────────────────────────────────────────────────
 
   static const _kThemeMode = 'themeMode.v1';
+  static const _kAccentSeed = 'accentSeed.v1';
+  static const _kTextScale = 'textScale.v1';
+  static const _kHaptics = 'haptics.v1';
 
   /// Persisted theme selection: 'system' (default), 'light', or 'dark'.
   String get themeMode => _sp.getString(_kThemeMode) ?? 'system';
   Future<void> setThemeMode(String v) => _sp.setString(_kThemeMode, v);
+
+  /// Custom accent seed as ARGB, or null for the default Talon indigo.
+  int? get accentSeed => _sp.getInt(_kAccentSeed);
+  Future<void> setAccentSeed(int? argb) => argb == null
+      ? _sp.remove(_kAccentSeed).then((_) {})
+      : _sp.setInt(_kAccentSeed, argb);
+
+  /// Global UI text scale (0.85–1.3, default 1.0).
+  double get textScale => (_sp.getDouble(_kTextScale) ?? 1.0).clamp(0.85, 1.3);
+  Future<void> setTextScale(double v) =>
+      _sp.setDouble(_kTextScale, v.clamp(0.85, 1.3));
+
+  /// UI haptic feedback (mobile). Default on.
+  bool get haptics => _sp.getBool(_kHaptics) ?? true;
+  Future<void> setHaptics(bool v) => _sp.setBool(_kHaptics, v);
 
   // ── Device mesh ──────────────────────────────────────────────────────────
 

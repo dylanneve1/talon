@@ -4,6 +4,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
 
 import '../models/bridge_models.dart';
+import '../services/haptics.dart';
 import '../theme.dart';
 import 'brand.dart';
 import 'code_block.dart';
@@ -109,7 +110,7 @@ class MessageBubble extends StatelessWidget {
                       onLongPress: message.text.isEmpty
                           ? null
                           : () async {
-                              HapticFeedback.mediumImpact();
+                              Haptics.medium();
                               final messenger =
                                   ScaffoldMessenger.maybeOf(context);
                               await Clipboard.setData(

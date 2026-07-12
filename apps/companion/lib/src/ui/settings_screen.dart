@@ -1,10 +1,13 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/bridge_models.dart';
 import '../services/autostart.dart';
+import '../services/haptics.dart';
 import '../services/log.dart';
 import '../services/mesh_background.dart';
 import '../state/app_state.dart';
@@ -40,6 +43,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool? _autostart;
   bool _autostartBusy = false;
 
+  /// This app's own version, for the About card ('' until loaded).
+  String _appVersion = '';
+
   /// Optimistic overrides for in-flight `_apply` config updates, keyed by
   /// config field. A toggle flips the moment it's tapped; the entry is
   /// dropped when the daemon confirms (snapshot replaces it) or reverted
@@ -63,6 +69,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (mounted) setState(() => _autostart = v);
       });
     }
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) {
+        setState(() => _appVersion = 'v${info.version}+${info.buildNumber}');
+      }
+    }).catchError((_) {});
   }
 
   Future<void> _setAutostart(bool v) async {
@@ -600,46 +611,171 @@ class _SettingsScreenState extends State<SettingsScreen> {
       (ThemeMode.light, 'Light', Icons.light_mode_outlined),
       (ThemeMode.dark, 'Dark', Icons.dark_mode_outlined),
     ];
+    final seed = TalonTheme.accentSeed.value;
+    final isPreset = seed != null &&
+        TalonAccents.presets
+            .any((p) => p.$2.toARGB32() == seed.toARGB32());
+    final isCustom = seed != null && !isPreset;
+    final scale = TalonTheme.textScale.value;
+    final mobile = defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
     return _Section(
       title: 'Appearance',
-      child: Wrap(
-        spacing: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final (mode, label, icon) in options)
-            ChoiceChip(
-              avatar: Icon(
-                icon,
-                size: 15,
-                color: current == mode
-                    ? TalonColors.accent
-                    : TalonColors.textFaint,
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final (mode, label, icon) in options)
+                ChoiceChip(
+                  avatar: Icon(
+                    icon,
+                    size: 15,
+                    color: current == mode
+                        ? TalonColors.accent
+                        : TalonColors.textFaint,
+                  ),
+                  label: Text(label),
+                  selected: current == mode,
+                  showCheckmark: false,
+                  backgroundColor: TalonColors.surface,
+                  selectedColor: TalonColors.accent.withValues(alpha: 0.22),
+                  side: BorderSide(
+                    color: current == mode
+                        ? TalonColors.accent
+                        : TalonColors.glassStroke,
+                  ),
+                  labelStyle: TextStyle(
+                    color: current == mode
+                        ? TalonColors.text
+                        : TalonColors.textDim,
+                    fontSize: 13,
+                  ),
+                  onSelected: (_) {
+                    TalonTheme.mode.value = mode;
+                    widget.state.prefs.setThemeMode(switch (mode) {
+                      ThemeMode.light => 'light',
+                      ThemeMode.dark => 'dark',
+                      ThemeMode.system => 'system',
+                    });
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'Accent color',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _AccentSwatch(
+                tooltip: 'Talon (default)',
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF7C8CFF), Color(0xFF54E6FF)],
+                ),
+                selected: seed == null,
+                onTap: () => _setAccent(null),
               ),
-              label: Text(label),
-              selected: current == mode,
-              showCheckmark: false,
-              backgroundColor: TalonColors.surface,
-              selectedColor: TalonColors.accent.withValues(alpha: 0.22),
-              side: BorderSide(
-                color: current == mode
-                    ? TalonColors.accent
-                    : TalonColors.glassStroke,
+              for (final (label, color) in TalonAccents.presets)
+                _AccentSwatch(
+                  tooltip: label,
+                  color: color,
+                  selected:
+                      seed != null && seed.toARGB32() == color.toARGB32(),
+                  onTap: () => _setAccent(color),
+                ),
+              _AccentSwatch(
+                tooltip: 'Custom…',
+                gradient: const SweepGradient(
+                  colors: [
+                    Color(0xFFFF5C5C),
+                    Color(0xFFFFC53D),
+                    Color(0xFF3ED598),
+                    Color(0xFF38C8F0),
+                    Color(0xFFA78BFA),
+                    Color(0xFFFF5C5C),
+                  ],
+                ),
+                icon: Icons.colorize,
+                selected: isCustom,
+                onTap: _pickCustomAccent,
               ),
-              labelStyle: TextStyle(
-                color: current == mode ? TalonColors.text : TalonColors.textDim,
-                fontSize: 13,
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              const SizedBox(
+                width: 120,
+                child: Text(
+                  'Text size',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
               ),
-              onSelected: (_) {
-                TalonTheme.mode.value = mode;
-                widget.state.prefs.setThemeMode(switch (mode) {
-                  ThemeMode.light => 'light',
-                  ThemeMode.dark => 'dark',
-                  ThemeMode.system => 'system',
-                });
+              Expanded(
+                child: Slider(
+                  value: scale,
+                  min: 0.85,
+                  max: 1.3,
+                  divisions: 9,
+                  label: '${(scale * 100).round()}%',
+                  onChanged: (v) {
+                    setState(() {
+                      TalonTheme.textScale.value =
+                          double.parse(v.toStringAsFixed(2));
+                    });
+                  },
+                  onChangeEnd: (v) => widget.state.prefs.setTextScale(v),
+                ),
+              ),
+              SizedBox(
+                width: 42,
+                child: Text(
+                  '${(scale * 100).round()}%',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(fontSize: 12.5, color: TalonColors.textDim),
+                ),
+              ),
+            ],
+          ),
+          if (mobile) ...[
+            const SizedBox(height: 6),
+            _switchRow(
+              'Haptic feedback',
+              'Vibrate lightly on long-presses and pickers',
+              Haptics.enabled,
+              (v) {
+                setState(() => Haptics.enabled = v);
+                widget.state.prefs.setHaptics(v);
+                if (v) Haptics.selection();
               },
             ),
+          ],
         ],
       ),
     );
+  }
+
+  void _setAccent(Color? seed) {
+    Haptics.selection();
+    // main.dart listens on accentSeed → re-applies the palette and rebuilds.
+    TalonTheme.accentSeed.value = seed;
+    widget.state.prefs.setAccentSeed(seed?.toARGB32());
+  }
+
+  Future<void> _pickCustomAccent() async {
+    final picked = await showDialog<Color>(
+      context: context,
+      builder: (_) => _AccentPickerDialog(
+        initial: TalonTheme.accentSeed.value ?? TalonColors.accent,
+      ),
+    );
+    if (picked != null) _setAccent(picked);
   }
 
   // ── Diagnostics ("doctor") + About ─────────────────────────────────────────
@@ -770,6 +906,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       title: 'About',
       child: Column(
         children: [
+          if (_appVersion.isNotEmpty) _infoRow('App version', _appVersion),
           _infoRow('Assistant', s.status.botName),
           _infoRow('Backend', s.status.backend),
           _infoRow(
@@ -1324,5 +1461,230 @@ class _ModelRow extends StatelessWidget {
       ),
     );
     if (picked != null) onPick(picked);
+  }
+}
+
+/// A circular accent color swatch: solid [color] or [gradient] fill, a check
+/// mark when selected, and an optional glyph (the custom picker's eyedropper).
+class _AccentSwatch extends StatelessWidget {
+  final Color? color;
+  final Gradient? gradient;
+  final IconData? icon;
+  final bool selected;
+  final String tooltip;
+  final VoidCallback onTap;
+  const _AccentSwatch({
+    this.color,
+    this.gradient,
+    this.icon,
+    required this.selected,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Pick a glyph color that survives both light swatches (amber) and dark.
+    final base = color ?? const Color(0xFF7C8CFF);
+    final glyph =
+        base.computeLuminance() > 0.6 ? Colors.black87 : Colors.white;
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 400),
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: tooltip,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: AnimatedContainer(
+            duration: TalonMotion.fast,
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: gradient == null ? color : null,
+              gradient: gradient,
+              border: Border.all(
+                color: selected ? TalonColors.text : TalonColors.glassStroke,
+                width: selected ? 2 : 1,
+              ),
+            ),
+            child: selected
+                ? Icon(Icons.check, size: 16, color: glyph)
+                : (icon == null ? null : Icon(icon, size: 15, color: glyph)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Dependency-free custom accent picker: hue + saturation sliders over
+/// gradient tracks, with a live preview of the accent the active palette
+/// would derive from the chosen seed.
+class _AccentPickerDialog extends StatefulWidget {
+  final Color initial;
+  const _AccentPickerDialog({required this.initial});
+
+  @override
+  State<_AccentPickerDialog> createState() => _AccentPickerDialogState();
+}
+
+class _AccentPickerDialogState extends State<_AccentPickerDialog> {
+  late double _hue;
+  late double _sat;
+
+  @override
+  void initState() {
+    super.initState();
+    final hsl = HSLColor.fromColor(widget.initial);
+    _hue = hsl.hue;
+    // A grey initial (saturation ~0) would make the hue slider feel dead.
+    _sat = hsl.saturation < 0.05 ? 0.8 : hsl.saturation;
+  }
+
+  Color get _seed => HSLColor.fromColor(Colors.red)
+      .withHue(_hue)
+      .withSaturation(_sat)
+      .withLightness(0.62)
+      .toColor();
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = TalonAccents.derive(TalonTheme.palette, _seed);
+    return AlertDialog(
+      backgroundColor: TalonColors.surface,
+      title: const Text('Custom accent'),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Live preview: the derived accent gradient with sample text.
+            Container(
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: preview.accentGradient,
+                borderRadius: TalonRadius.rMd,
+              ),
+              child: Text(
+                'Talon',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: preview.accent.computeLuminance() > 0.6
+                      ? Colors.black87
+                      : Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            _gradientSlider(
+              label: 'Hue',
+              value: _hue,
+              max: 360,
+              gradient: LinearGradient(
+                colors: [
+                  for (var h = 0; h <= 360; h += 60)
+                    HSLColor.fromAHSL(1, h.toDouble() % 360, _sat, 0.6)
+                        .toColor(),
+                ],
+              ),
+              onChanged: (v) => setState(() => _hue = v),
+            ),
+            const SizedBox(height: 12),
+            _gradientSlider(
+              label: 'Saturation',
+              value: _sat,
+              max: 1,
+              gradient: LinearGradient(
+                colors: [
+                  HSLColor.fromAHSL(1, _hue, 0, 0.6).toColor(),
+                  HSLColor.fromAHSL(1, _hue, 1, 0.6).toColor(),
+                ],
+              ),
+              onChanged: (v) => setState(() => _sat = v),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: preview.accent,
+            foregroundColor: preview.accent.computeLuminance() > 0.6
+                ? Colors.black87
+                : Colors.white,
+          ),
+          onPressed: () => Navigator.of(context).pop(_seed),
+          child: const Text('Use color'),
+        ),
+      ],
+    );
+  }
+
+  /// A slider whose track is the given [gradient] — the standard trick of a
+  /// rounded gradient bar underneath a Slider with transparent tracks.
+  Widget _gradientSlider({
+    required String label,
+    required double value,
+    required double max,
+    required Gradient gradient,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(fontSize: 12.5, color: TalonColors.textDim),
+        ),
+        const SizedBox(height: 4),
+        SizedBox(
+          height: 32,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                height: 12,
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(
+                  gradient: gradient,
+                  borderRadius: TalonRadius.rPill,
+                  border: Border.all(color: TalonColors.glassStroke),
+                ),
+              ),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 12,
+                  activeTrackColor: Colors.transparent,
+                  inactiveTrackColor: Colors.transparent,
+                  overlayShape:
+                      const RoundSliderOverlayShape(overlayRadius: 14),
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 9,
+                    elevation: 2,
+                  ),
+                  thumbColor: Colors.white,
+                ),
+                child: Slider(
+                  value: value.clamp(0, max),
+                  min: 0,
+                  max: max,
+                  onChanged: onChanged,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }

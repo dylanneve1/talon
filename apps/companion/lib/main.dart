@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
+import 'src/services/haptics.dart';
 import 'src/services/mesh_background.dart';
 import 'src/services/prefs.dart';
 import 'src/services/windows_tray.dart';
@@ -23,6 +24,10 @@ Future<void> main() async {
     'dark' => ThemeMode.dark,
     _ => ThemeMode.system,
   };
+  final seed = prefs.accentSeed;
+  TalonTheme.accentSeed.value = seed == null ? null : Color(seed);
+  TalonTheme.textScale.value = prefs.textScale;
+  Haptics.enabled = prefs.haptics;
   TalonTheme.apply(
     WidgetsBinding.instance.platformDispatcher.platformBrightness,
   );
@@ -44,8 +49,11 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Theme-mode changes (Settings) re-resolve the palette and rebuild.
+    // Theme-mode / accent changes (Settings) re-resolve the palette and
+    // rebuild; text-scale changes rebuild to re-apply the root TextScaler.
     TalonTheme.mode.addListener(_onThemeChanged);
+    TalonTheme.accentSeed.addListener(_onThemeChanged);
+    TalonTheme.textScale.addListener(_onThemeChanged);
     // Connect on launch using the saved profile (or platform default).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.state.prefs.onboarded) widget.state.start();
@@ -68,6 +76,8 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     TalonTheme.mode.removeListener(_onThemeChanged);
+    TalonTheme.accentSeed.removeListener(_onThemeChanged);
+    TalonTheme.textScale.removeListener(_onThemeChanged);
     WidgetsBinding.instance.removeObserver(this);
     widget.state.dispose();
     super.dispose();
@@ -79,6 +89,19 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
       title: 'Talon',
       debugShowCheckedModeBanner: false,
       theme: buildTalonTheme(),
+      // Apply the user's text-size preference on top of whatever scaling the
+      // OS already requests, for every route in one place.
+      builder: (context, child) {
+        final mq = MediaQuery.of(context);
+        final osFactor = mq.textScaler.scale(1.0);
+        return MediaQuery(
+          data: mq.copyWith(
+            textScaler:
+                TextScaler.linear(osFactor * TalonTheme.textScale.value),
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: RootView(state: widget.state),
     );
   }
