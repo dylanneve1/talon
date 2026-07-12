@@ -203,6 +203,8 @@ export async function handleMessage(
     messageId,
     onTextBlock,
     onToolUse,
+    onToolStart,
+    onToolEnd,
   } = params;
   const t0 = Date.now();
   const session = getSession(chatId);
@@ -316,6 +318,7 @@ export async function handleMessage(
   // into the live-turn overlay — /status updates while the turn runs.
   const streamState = createStreamState(chatId);
   const seenToolCallIds = new Set<string>();
+  const startedToolIds = new Set<string>();
   const codexToolMetrics = { count: 0 };
   const abortController = new AbortController();
   activeAborts.set(chatId, abortController);
@@ -440,9 +443,12 @@ export async function handleMessage(
       handleEvent(event, {
         state: streamState,
         seenToolCallIds,
+        startedToolIds,
         codexToolMetrics,
         onTextBlock,
         onToolUse,
+        onToolStart,
+        onToolEnd,
         chatId,
       });
 

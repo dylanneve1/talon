@@ -48,10 +48,32 @@ export type QueryParams = {
    * their SDKs surface it at (or after) terminal status, with no separate
    * start/finish pair. `meta.failed` marks a call whose terminal status was
    * an error, so consumers can render it as failed rather than successful.
+   *
+   * Backends whose SDK exposes a live start signal should prefer the
+   * `onToolStart` / `onToolEnd` pair below and only fall back to this
+   * for calls whose start was never observed.
    */
   onToolUse?: (
     toolName: string,
     input: Record<string, unknown>,
+    meta?: { failed?: boolean },
+  ) => void;
+  /**
+   * Live tool lifecycle (backends with start signals — Codex emits
+   * `item.started`). `callId` is the SDK's stable item id: the same id
+   * must be passed to `onToolEnd` so consumers can pair the two and
+   * measure a real duration. Without this pair, `onToolUse` collapses
+   * call+result into one instant and every tool renders as 0ms.
+   */
+  onToolStart?: (
+    callId: string,
+    toolName: string,
+    input: Record<string, unknown>,
+  ) => void;
+  /** Terminal counterpart to [onToolStart]; ignored for unknown ids. */
+  onToolEnd?: (
+    callId: string,
+    toolName: string,
     meta?: { failed?: boolean },
   ) => void;
 };

@@ -21,11 +21,28 @@ import {
 export interface HandleEventContext {
   state: StreamState;
   seenToolCallIds: Set<string>;
+  /**
+   * Tool item ids whose `item.started` was reported via [onToolStart] and
+   * still await their completion — the completion path must close them via
+   * [onToolEnd] (same id) instead of the collapsed [onToolUse] fallback.
+   * Owned by the caller so it spans the whole turn, like [seenToolCallIds].
+   */
+  startedToolIds: Set<string>;
   codexToolMetrics: { count: number };
   onTextBlock?: (text: string) => Promise<void>;
   onToolUse?: (
     toolName: string,
     input: Record<string, unknown>,
+    meta?: { failed?: boolean },
+  ) => void;
+  onToolStart?: (
+    callId: string,
+    toolName: string,
+    input: Record<string, unknown>,
+  ) => void;
+  onToolEnd?: (
+    callId: string,
+    toolName: string,
     meta?: { failed?: boolean },
   ) => void;
   chatId: string;
@@ -36,10 +53,103 @@ export interface HandleEventContext {
  *
  * Synchronous — keeps the for-await loop simple. The shared
  * `routeDelivery` step at end-of-turn handles the final emit.
+ *
+ * `item.started` is observed ONLY to open the live tool window for
+ * consumers ([onToolStart] → UI spinner + real durations); every
+ * side effect that matters — metrics, terminator detection, delivered-
+ * text capture — stays strictly on `item.completed`, preserving the
+ * in_progress race fix documented on [handleMcpToolCall].
  */
 export function handleEvent(event: ThreadEvent, ctx: HandleEventContext): void {
+  if (event.type === "item.started") {
+    handleItemStarted(event.item, ctx);
+    return;
+  }
   if (event.type !== "item.completed") return;
   handleItem(event.item, ctx);
+}
+
+/**
+ * Map a tool-shaped [ThreadItem] to its fleet-vocabulary name + input,
+ * or null for non-tool items (agent_message / reasoning / todo_list /
+ * error). Single source of truth for the started + completed paths so
+ * the pair always reports the same name.
+ */
+function toolShape(
+  item: ThreadItem,
+): { name: string; input: Record<string, unknown> } | null {
+  switch (item.type) {
+    case "mcp_tool_call":
+      return {
+        name: item.tool,
+        input:
+          item.arguments && typeof item.arguments === "object"
+            ? (item.arguments as Record<string, unknown>)
+            : {},
+      };
+    case "command_execution":
+      return { name: "Bash", input: { command: item.command } };
+    case "file_change":
+      return {
+        name: fileChangeToolName(item.changes),
+        input: { changes: item.changes },
+      };
+    case "web_search":
+      return { name: "WebSearch", input: { query: item.query } };
+    case "agent_message":
+    case "reasoning":
+    case "todo_list":
+    case "error":
+      return null;
+    default: {
+      const type =
+        typeof (item as { type?: unknown }).type === "string"
+          ? (item as { type: string }).type
+          : "unknown";
+      return { name: type, input: nativeItemPayload(item) };
+    }
+  }
+}
+
+function handleItemStarted(item: ThreadItem, ctx: HandleEventContext): void {
+  if (!ctx.onToolStart) return;
+  const shape = toolShape(item);
+  if (!shape || ctx.startedToolIds.has(item.id)) return;
+  ctx.startedToolIds.add(item.id);
+  try {
+    ctx.onToolStart(item.id, shape.name, shape.input);
+  } catch {
+    /* non-fatal */
+  }
+}
+
+/**
+ * Close the live tool window for [item] if its start was reported,
+ * falling back to the collapsed one-shot [onToolUse] when it wasn't
+ * (older CLIs that never emit `item.started`, or no start listener).
+ */
+function reportToolTerminal(
+  ctx: HandleEventContext,
+  item: { id: string },
+  toolName: string,
+  input: Record<string, unknown>,
+  meta?: { failed?: boolean },
+): void {
+  if (ctx.startedToolIds.delete(item.id) && ctx.onToolEnd) {
+    try {
+      ctx.onToolEnd(item.id, toolName, meta);
+    } catch {
+      /* non-fatal */
+    }
+    return;
+  }
+  if (ctx.onToolUse) {
+    try {
+      ctx.onToolUse(toolName, input, meta);
+    } catch {
+      /* non-fatal */
+    }
+  }
 }
 
 function handleItem(item: ThreadItem, ctx: HandleEventContext): void {
@@ -56,7 +166,7 @@ function handleItem(item: ThreadItem, ctx: HandleEventContext): void {
     // backend instead of splitting the same activity across
     // `tool_calls.command_execution` vs `tool_calls.Bash`.
     case "command_execution":
-      handleNativeCodexTool(ctx, "Bash", {
+      handleNativeCodexTool(ctx, item, "Bash", {
         command: item.command,
         status: item.status,
         ...(typeof item.exit_code === "number"
@@ -65,13 +175,13 @@ function handleItem(item: ThreadItem, ctx: HandleEventContext): void {
       });
       return;
     case "file_change":
-      handleNativeCodexTool(ctx, fileChangeToolName(item.changes), {
+      handleNativeCodexTool(ctx, item, fileChangeToolName(item.changes), {
         status: item.status,
         changes: item.changes,
       });
       return;
     case "web_search":
-      handleNativeCodexTool(ctx, "WebSearch", { query: item.query });
+      handleNativeCodexTool(ctx, item, "WebSearch", { query: item.query });
       return;
     case "reasoning":
     case "todo_list":
@@ -88,7 +198,7 @@ function handleItem(item: ThreadItem, ctx: HandleEventContext): void {
         typeof (item as { type?: unknown }).type === "string"
           ? (item as { type: string }).type
           : "unknown";
-      handleNativeCodexTool(ctx, type, nativeItemPayload(item));
+      handleNativeCodexTool(ctx, item, type, nativeItemPayload(item));
       return;
     }
   }
@@ -150,25 +260,12 @@ function handleMcpToolCall(
     // nothing was delivered and the turn is not terminated, so skip
     // the stream-state mutations (delivered-text capture / terminator
     // flip) that assume a successful call.
-    if (ctx.onToolUse) {
-      try {
-        ctx.onToolUse(toolName, input, { failed: true });
-      } catch {
-        /* non-fatal */
-      }
-    }
+    reportToolTerminal(ctx, item, toolName, input, { failed: true });
     return;
   }
 
   recordToolUse(ctx.state, toolName, input);
-
-  if (ctx.onToolUse) {
-    try {
-      ctx.onToolUse(toolName, input);
-    } catch {
-      /* non-fatal */
-    }
-  }
+  reportToolTerminal(ctx, item, toolName, input);
 
   if (!ctx.state.turnTerminated && isTurnTerminator(toolName, input)) {
     ctx.state.turnTerminated = true;
@@ -192,17 +289,12 @@ function recordCodexToolMetric(
 
 function handleNativeCodexTool(
   ctx: HandleEventContext,
+  item: { id: string },
   toolName: string,
   input: Record<string, unknown>,
 ): void {
   recordCodexToolMetric(ctx, toolName);
-  if (ctx.onToolUse) {
-    try {
-      ctx.onToolUse(toolName, input);
-    } catch {
-      /* non-fatal */
-    }
-  }
+  reportToolTerminal(ctx, item, toolName, input);
 }
 
 /**

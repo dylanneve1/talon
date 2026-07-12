@@ -63,6 +63,12 @@ export async function* handlerToEvents(
     r?.();
   };
 
+  // Tool calls announced via `onToolStart` that have not yet reported an
+  // `onToolEnd` — flushed with an error result if the handler settles with
+  // any still open (abort/crash mid-tool), preserving the call→result
+  // pairing contract for every consumer.
+  const openToolCalls = new Map<string, string>();
+
   // Handler `onStreamDelta` delivers the FULL accumulated text so far,
   // not the new chunk. `AgentEvent.text_delta.text` carries the delta —
   // event-native consumers (the frontends, via the dispatcher's
@@ -109,7 +115,7 @@ export async function* handlerToEvents(
         .toString(36)
         .slice(2, 8)}`;
       emit({ type: "tool_call", id, name: toolName, input });
-      // Callback backends (Codex, OpenCode, Kilo, OpenAI Agents) surface a
+      // Callback backends (OpenCode, Kilo, OpenAI Agents) surface a
       // tool call only at terminal status — by the time onToolUse fires,
       // the tool has already finished. Emit the matching `tool_result`
       // immediately so consumers see the same call→result contract the
@@ -119,6 +125,23 @@ export async function* handlerToEvents(
       emit({
         type: "tool_result",
         id,
+        name: toolName,
+        ...(meta?.failed ? { error: "tool call failed" } : {}),
+      });
+    },
+    // Live tool lifecycle (Codex `item.started` → `item.completed`):
+    // `tool_call` goes out the moment the SDK dispatches the tool and the
+    // matching `tool_result` when it settles, so consumers see a real
+    // running window instead of the collapsed 0ms call+result above.
+    onToolStart: (callId, toolName, input) => {
+      openToolCalls.set(callId, toolName);
+      emit({ type: "tool_call", id: callId, name: toolName, input });
+    },
+    onToolEnd: (callId, toolName, meta) => {
+      if (!openToolCalls.delete(callId)) return; // unknown/duplicate id
+      emit({
+        type: "tool_result",
+        id: callId,
         name: toolName,
         ...(meta?.failed ? { error: "tool call failed" } : {}),
       });
@@ -157,6 +180,13 @@ export async function* handlerToEvents(
     }
   }
   await handlerPromise;
+
+  // Resolve any tool that started but never settled (abort or crash killed
+  // the subprocess mid-call) so spinners close instead of hanging forever.
+  for (const [id, name] of openToolCalls) {
+    yield { type: "tool_result", id, name, error: "tool did not complete" };
+  }
+  openToolCalls.clear();
 
   if (error) {
     yield { type: "error", error: classifiedToAgentError(classify(error)) };
