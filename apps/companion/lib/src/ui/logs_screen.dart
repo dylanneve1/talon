@@ -417,7 +417,7 @@ class _LogsScreenState extends State<LogsScreen> {
                 Text(
                   e.ts == 0 ? '—' : _fmtTime(e.time),
                   style: TextStyle(
-                    fontFamily: 'monospace',
+                    fontFamily: 'JetBrains Mono',
                     fontSize: 11.5,
                     color: TalonColors.textFaint,
                   ),
@@ -446,7 +446,7 @@ class _LogsScreenState extends State<LogsScreen> {
                   child: Text(
                     e.msg.isEmpty ? '—' : e.msg,
                     style: TextStyle(
-                      fontFamily: 'monospace',
+                      fontFamily: 'JetBrains Mono',
                       fontSize: 12,
                       height: 1.45,
                       color: _isSevere(e.level) ? color : TalonColors.text,
@@ -479,7 +479,7 @@ class _LogsScreenState extends State<LogsScreen> {
                     if (e.stack != null) e.stack!,
                   ].join('\n\n'),
                   style: TextStyle(
-                    fontFamily: 'monospace',
+                    fontFamily: 'JetBrains Mono',
                     fontSize: 11.5,
                     height: 1.45,
                     color: TalonColors.textDim,

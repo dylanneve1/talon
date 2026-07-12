@@ -93,3 +93,26 @@ flutter:
   assets:
     # Windows tray icon (tray_manager resolves it from the asset bundle).
     - assets/icon/talon_icon.ico
+
+  # Bundled type: Inter for UI text, JetBrains Mono for code — identical
+  # rendering on every platform instead of whatever the OS default is.
+  # Both are OFL-licensed (license files ship next to the fonts).
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/JetBrainsMono-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/JetBrainsMono-Bold.ttf
+          weight: 700

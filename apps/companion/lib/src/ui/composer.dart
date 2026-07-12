@@ -55,10 +55,17 @@ class _ComposerState extends State<Composer> {
   Uint8List? _pendingBytes;
   String? _pendingName;
 
+  bool _focused = false;
+
   @override
   void initState() {
     super.initState();
     _controller.addListener(_recomputeCanSend);
+    _focus.addListener(() {
+      if (_focused != _focus.hasFocus) {
+        setState(() => _focused = _focus.hasFocus);
+      }
+    });
   }
 
   @override
@@ -174,11 +181,30 @@ class _ComposerState extends State<Composer> {
     final canSend = _canSend && widget.enabled && !_uploading;
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
-      child: Container(
+      // The input is the app's one persistent control, so it floats: layered
+      // shadow at rest, and on focus the hairline warms to the accent with a
+      // soft matching glow — the "you are here" signal.
+      child: AnimatedContainer(
+        duration: TalonMotion.base,
+        curve: TalonMotion.standard,
         decoration: BoxDecoration(
-          color: TalonColors.void1.withValues(alpha: 0.7),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: TalonColors.glassStroke),
+          color: TalonColors.void1.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: _focused
+                ? TalonColors.accent.withValues(alpha: 0.65)
+                : TalonColors.glassStroke,
+            width: _focused ? 1.4 : 1,
+          ),
+          boxShadow: [
+            ...TalonShadows.raised,
+            if (_focused)
+              BoxShadow(
+                color: TalonColors.accent.withValues(alpha: 0.18),
+                blurRadius: 20,
+                offset: const Offset(0, 2),
+              ),
+          ],
         ),
         padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
         child: Column(
@@ -220,15 +246,27 @@ class _ComposerState extends State<Composer> {
                 const SizedBox(width: 6),
                 // Stop while a turn runs and there's nothing staged to send;
                 // as soon as the user types, it flips back to send-to-queue.
-                if (widget.running && !canSend && !_uploading &&
-                    widget.onStop != null)
-                  _StopButton(onTap: widget.onStop!)
-                else
-                  _SendButton(
-                    enabled: canSend,
-                    busy: _uploading,
-                    onTap: _send,
+                // The two buttons morph through a scale+fade so the swap reads
+                // as one control changing mode, not a replacement.
+                AnimatedSwitcher(
+                  duration: TalonMotion.base,
+                  switchInCurve: TalonMotion.emphasized,
+                  switchOutCurve: Curves.easeIn,
+                  transitionBuilder: (child, anim) => ScaleTransition(
+                    scale: Tween(begin: 0.6, end: 1.0).animate(anim),
+                    child: FadeTransition(opacity: anim, child: child),
                   ),
+                  child: (widget.running && !canSend && !_uploading &&
+                          widget.onStop != null)
+                      ? _StopButton(
+                          key: const ValueKey('stop'), onTap: widget.onStop!)
+                      : _SendButton(
+                          key: const ValueKey('send'),
+                          enabled: canSend,
+                          busy: _uploading,
+                          onTap: _send,
+                        ),
+                ),
               ],
             ),
           ],
@@ -306,7 +344,7 @@ class _AttachButton extends StatelessWidget {
 /// interrupt on tap.
 class _StopButton extends StatelessWidget {
   final Future<void> Function() onTap;
-  const _StopButton({required this.onTap});
+  const _StopButton({super.key, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -340,6 +378,7 @@ class _SendButton extends StatefulWidget {
   final bool busy;
   final VoidCallback onTap;
   const _SendButton({
+    super.key,
     required this.enabled,
     required this.busy,
     required this.onTap,
@@ -380,8 +419,16 @@ class _SendButtonState extends State<_SendButton> {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: colored ? TalonColors.accent : TalonColors.surfaceHi,
-            borderRadius: BorderRadius.circular(13),
+            gradient: colored
+                ? LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [TalonColors.accent, TalonColors.accentDeep],
+                  )
+                : null,
+            color: colored ? null : TalonColors.surfaceHi,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: colored ? TalonShadows.glow : null,
           ),
           child: busy
               ? const Padding(

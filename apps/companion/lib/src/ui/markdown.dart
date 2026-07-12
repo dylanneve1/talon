@@ -27,7 +27,7 @@ MarkdownStyleSheet talonMarkdownStyle() {
       color: TalonColors.accent2,
       backgroundColor:
           TalonTheme.isDark ? const Color(0x22000000) : Colors.transparent,
-      fontFamily: 'monospace',
+      fontFamily: 'JetBrains Mono',
       fontSize: 13.2,
     ),
     // Fenced blocks are rendered by CodeElementBuilder (its own framed panel);

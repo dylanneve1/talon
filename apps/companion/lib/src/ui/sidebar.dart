@@ -91,11 +91,22 @@ class _SidebarState extends State<Sidebar> {
               Row(
                 children: [
                   const BrandMark(size: 30),
-                  const SizedBox(width: TalonSpace.sm),
+                  const SizedBox(width: TalonSpace.sm + 2),
                   Expanded(
-                    child: Text(
-                      widget.state.status.botName,
-                      style: TalonType.title,
+                    // The wordmark wears the brand gradient — one deliberate
+                    // hero moment, matching the falcon tile beside it.
+                    child: ShaderMask(
+                      shaderCallback: (bounds) =>
+                          TalonColors.accentGradient.createShader(bounds),
+                      blendMode: BlendMode.srcIn,
+                      child: Text(
+                        widget.state.status.botName,
+                        style: TalonType.title.copyWith(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -315,6 +326,55 @@ class _Group {
   _Group(this.label, this.chats);
 }
 
+/// Per-chat identity gradient, derived from the title so every conversation
+/// gets a stable, distinct hue pair (WhatsApp/Telegram avatar pattern).
+/// Saturation/lightness are pinned per brightness so any hue stays readable
+/// under white text.
+LinearGradient chatIdentityGradient(String seedText) {
+  final h =
+      seedText.codeUnits.fold<int>(0, (a, c) => (a * 31 + c) & 0x7fffffff);
+  final hue = (h % 360).toDouble();
+  final dark = TalonTheme.isDark;
+  final c1 = HSLColor.fromAHSL(1, hue, 0.55, dark ? 0.60 : 0.50).toColor();
+  final c2 = HSLColor.fromAHSL(1, (hue + 42) % 360, 0.60, dark ? 0.46 : 0.38)
+      .toColor();
+  return LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [c1, c2],
+  );
+}
+
+/// Rounded-square avatar with the chat's identity gradient and initial.
+class _ChatAvatar extends StatelessWidget {
+  final String title;
+  const _ChatAvatar({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = title.trim();
+    final initial = t.isEmpty ? '·' : String.fromCharCode(t.runes.first);
+    return Container(
+      width: 34,
+      height: 34,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        gradient: chatIdentityGradient(title),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Text(
+        initial.toUpperCase(),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          height: 1,
+        ),
+      ),
+    );
+  }
+}
+
 /// Compact "how long ago" stamp for chat tiles: `now`, `12m`, `3h`, `2d`,
 /// then a short date once it's over a week old.
 String _relTime(DateTime t) {
@@ -377,29 +437,25 @@ class _ChatTileState extends State<_ChatTile> {
           child: AnimatedContainer(
             duration: TalonMotion.fast,
             curve: TalonMotion.standard,
+            margin: const EdgeInsets.symmetric(vertical: 2),
             padding: const EdgeInsets.symmetric(
-                horizontal: TalonSpace.sm, vertical: 9),
+                horizontal: TalonSpace.sm, vertical: 8),
             decoration: BoxDecoration(
-              borderRadius: TalonRadius.rSm,
+              borderRadius: TalonRadius.rMd,
               color: selected
-                  ? TalonColors.surfaceHi
+                  ? TalonColors.accent.withValues(alpha: 0.14)
                   : (_hover ? TalonColors.surface : Colors.transparent),
+              border: Border.all(
+                color: selected
+                    ? TalonColors.accent.withValues(alpha: 0.35)
+                    : Colors.transparent,
+              ),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // A slim accent bar slides in on the selected tile.
-                AnimatedContainer(
-                  duration: TalonMotion.base,
-                  curve: TalonMotion.emphasized,
-                  width: selected ? 3 : 0,
-                  height: 28,
-                  margin: EdgeInsets.only(right: selected ? 9 : 0),
-                  decoration: BoxDecoration(
-                    gradient: TalonColors.accentGradient,
-                    borderRadius: const BorderRadius.all(Radius.circular(2)),
-                  ),
-                ),
+                _ChatAvatar(title: widget.chat.title),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -507,30 +563,40 @@ class _NewChatButtonState extends State<_NewChatButton> {
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: widget.onTap,
+        // The one primary CTA in the sidebar: full accent gradient with a
+        // matching glow that deepens on hover.
         child: AnimatedContainer(
           duration: TalonMotion.fast,
           curve: TalonMotion.standard,
           padding: const EdgeInsets.symmetric(
-              vertical: 11, horizontal: TalonSpace.md),
+              vertical: 12, horizontal: TalonSpace.md),
           decoration: BoxDecoration(
             borderRadius: TalonRadius.rMd,
-            color: _hover
-                ? TalonColors.accent.withValues(alpha: 0.18)
-                : TalonColors.glassFill,
-            border: Border.all(
-              color: _hover
-                  ? TalonColors.accent.withValues(alpha: 0.6)
-                  : TalonColors.glassStroke,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: _hover
+                  ? [TalonColors.accent, TalonColors.accent]
+                  : [TalonColors.accent, TalonColors.accentDeep],
             ),
+            boxShadow: [
+              BoxShadow(
+                color: TalonColors.accent
+                    .withValues(alpha: _hover ? 0.45 : 0.28),
+                blurRadius: _hover ? 22 : 14,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          child: Row(
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.add_rounded, color: TalonColors.text, size: 19),
-              const SizedBox(width: TalonSpace.sm),
+              Icon(Icons.add_rounded, color: Colors.white, size: 19),
+              SizedBox(width: TalonSpace.sm),
               Text(
                 'New chat',
                 style: TextStyle(
-                    color: TalonColors.text,
+                    color: Colors.white,
                     fontWeight: FontWeight.w600,
                     fontSize: 13.5),
               ),

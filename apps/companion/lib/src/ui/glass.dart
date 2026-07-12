@@ -16,6 +16,10 @@ class Glass extends StatelessWidget {
   final Color? stroke;
   final Gradient? glow;
 
+  /// Optional drop shadows painted outside the blur clip (e.g.
+  /// [TalonShadows.soft]) so a panel can float off the backdrop.
+  final List<BoxShadow>? shadows;
+
   const Glass({
     super.key,
     required this.child,
@@ -25,12 +29,13 @@ class Glass extends StatelessWidget {
     this.fill,
     this.stroke,
     this.glow,
+    this.shadows,
   });
 
   @override
   Widget build(BuildContext context) {
     final r = BorderRadius.circular(radius);
-    return ClipRRect(
+    final panel = ClipRRect(
       borderRadius: r,
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
@@ -48,6 +53,11 @@ class Glass extends StatelessWidget {
           child: child,
         ),
       ),
+    );
+    if (shadows == null) return panel;
+    return DecoratedBox(
+      decoration: BoxDecoration(borderRadius: r, boxShadow: shadows),
+      child: panel,
     );
   }
 }
@@ -85,6 +95,9 @@ class AmbientGlow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.of(context).disableAnimations;
+    // The light canvas takes a slightly stronger wash than the near-black one
+    // (colour reads quieter on white).
+    final boost = TalonTheme.isDark ? 1.0 : 1.25;
     return IgnorePointer(
       child: Stack(
         children: [
@@ -92,20 +105,40 @@ class AmbientGlow extends StatelessWidget {
             top: -180,
             left: -140,
             child: _drift(
-              _blob(TalonColors.accent.withValues(alpha: 0.10), 440),
+              _blob(TalonColors.accent.withValues(alpha: 0.14 * boost), 460),
               reduceMotion,
               const Offset(24, 18),
               18000,
             ),
           ),
           Positioned(
+            top: -120,
+            right: -180,
+            child: _drift(
+              _blob(TalonColors.accent2.withValues(alpha: 0.08 * boost), 400),
+              reduceMotion,
+              const Offset(-26, 20),
+              21000,
+            ),
+          ),
+          Positioned(
             bottom: -200,
             right: -140,
             child: _drift(
-              _blob(TalonColors.accent2.withValues(alpha: 0.07), 480),
+              _blob(TalonColors.accent2.withValues(alpha: 0.10 * boost), 500),
               reduceMotion,
               const Offset(-20, -22),
               24000,
+            ),
+          ),
+          Positioned(
+            bottom: -160,
+            left: -200,
+            child: _drift(
+              _blob(TalonColors.accentDeep.withValues(alpha: 0.09 * boost), 420),
+              reduceMotion,
+              const Offset(28, -16),
+              27000,
             ),
           ),
         ],

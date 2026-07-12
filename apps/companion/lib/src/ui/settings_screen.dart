@@ -842,7 +842,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 : (c.isLoopback ? 'None (loopback)' : 'None'),
           ),
           const SizedBox(height: 12),
-          Row(
+          // Wrap, not Row: both labelled buttons don't always fit one line on
+          // a narrow phone (and Inter runs a touch wider than the old system
+          // face) — wrapping beats clipping.
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
             children: [
               OutlinedButton.icon(
                 onPressed: () => s.start(),
@@ -855,7 +860,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
               TextButton.icon(
                 onPressed: _copyDiagnostics,
                 icon: const Icon(Icons.copy_all_outlined, size: 16),

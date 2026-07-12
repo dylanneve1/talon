@@ -128,14 +128,29 @@ class MessageBubble extends StatelessWidget {
                             ? TalonSpace.sm
                             : 11),
                     decoration: BoxDecoration(
-                      color: TalonColors.surfaceHi,
+                      // The user's voice wears the accent: a soft diagonal
+                      // accent→deep gradient with an accent-tinted shadow, so
+                      // your messages read as the vivid half of the dialogue
+                      // (iMessage/Telegram pattern) against the calm canvas.
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [TalonColors.accent, TalonColors.accentDeep],
+                      ),
                       borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(18),
-                        topRight: Radius.circular(18),
-                        bottomLeft: Radius.circular(18),
+                        topLeft: Radius.circular(20),
+                        topRight: Radius.circular(20),
+                        bottomLeft: Radius.circular(20),
                         bottomRight: Radius.circular(6),
                       ),
-                      border: Border.all(color: TalonColors.glassStroke),
+                      boxShadow: [
+                        BoxShadow(
+                          color:
+                              TalonColors.accentDeep.withValues(alpha: 0.30),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
@@ -154,7 +169,11 @@ class MessageBubble extends StatelessWidget {
                             if (message.text.isNotEmpty)
                               SelectableText(
                                 message.text,
-                                style: TalonType.body,
+                                style: TalonType.body.copyWith(
+                                  color: Colors.white,
+                                  // A touch more presence on the gradient.
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                           ],
                         ),
@@ -419,7 +438,16 @@ class _MessageActionsState extends State<_MessageActions> {
             ),
           if (m.hasStats) ...[
             const SizedBox(width: TalonSpace.sm),
-            Text(_stats(m), style: TalonType.caption.copyWith(fontSize: 11)),
+            // Flexible + ellipsis: on a narrow phone column the full
+            // "2.1k in · 460 out · 9.4s" readout can outgrow the row.
+            Flexible(
+              child: Text(
+                _stats(m),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TalonType.caption.copyWith(fontSize: 11),
+              ),
+            ),
           ],
         ],
       ),

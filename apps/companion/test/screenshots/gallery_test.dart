@@ -45,6 +45,25 @@ Future<void> _loadRealFonts() async {
     ..addFont(font('MaterialIcons-Regular.otf'));
   await icons.load();
 
+  // The app's bundled faces (pubspec fonts don't auto-load in widget tests):
+  // load them from the repo assets so screenshots show real typography.
+  Future<ByteData> asset(String file) async {
+    final bytes = await File('assets/fonts/$file').readAsBytes();
+    return ByteData.view(bytes.buffer);
+  }
+
+  final inter = FontLoader('Inter')
+    ..addFont(asset('Inter-Regular.ttf'))
+    ..addFont(asset('Inter-Medium.ttf'))
+    ..addFont(asset('Inter-SemiBold.ttf'))
+    ..addFont(asset('Inter-Bold.ttf'));
+  await inter.load();
+  final mono = FontLoader('JetBrains Mono')
+    ..addFont(asset('JetBrainsMono-Regular.ttf'))
+    ..addFont(asset('JetBrainsMono-Medium.ttf'))
+    ..addFont(asset('JetBrainsMono-Bold.ttf'));
+  await mono.load();
+
   // Emoji (reaction chips, message text): the SDK font cache has no emoji
   // font, so anything like 👍 renders as tofu in screenshots — on-device the
   // platform supplies the fallback. Borrow the system's Noto Color Emoji
@@ -193,17 +212,11 @@ Widget _app(Widget home) {
   final base = buildTalonTheme();
   return MaterialApp(
     debugShowCheckedModeBanner: false,
-    // Pin every text style to the loaded Roboto: the app's own styles leave
-    // fontFamily null (fine on-device — the platform default is used), but in
-    // a test that resolves to the blocky FlutterTest font.
+    // The app pins its own bundled Inter (loaded above); just add the emoji
+    // fallback so reaction chips don't render as tofu.
     theme: base.copyWith(
       textTheme: base.textTheme.apply(
-        fontFamily: 'Roboto',
         fontFamilyFallback: const ['Noto Color Emoji'],
-      ),
-      appBarTheme: base.appBarTheme.copyWith(
-        titleTextStyle:
-            base.appBarTheme.titleTextStyle?.copyWith(fontFamily: 'Roboto'),
       ),
     ),
     // Freeze the ambient/looping animations so frames are deterministic.

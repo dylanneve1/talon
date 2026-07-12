@@ -115,7 +115,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
                   children: [
                     const BrandMark(size: 44),
                     const SizedBox(width: 14),
-                    Column(
+                    Expanded(
+                      child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
@@ -129,6 +130,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
                               color: TalonColors.textFaint, fontSize: 12.5),
                         ),
                       ],
+                      ),
                     ),
                   ],
                 ),
@@ -241,12 +243,16 @@ class _ConnectScreenState extends State<ConnectScreen> {
                     size: 16,
                     color: selected ? Colors.white : TalonColors.textDim),
                 const SizedBox(width: 7),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: selected ? Colors.white : TalonColors.textDim,
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: selected ? Colors.white : TalonColors.textDim,
+                    ),
                   ),
                 ),
               ],
@@ -313,7 +319,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
           keyboardType: number ? TextInputType.number : null,
           inputFormatters:
               number ? [FilteringTextInputFormatter.digitsOnly] : null,
-          style: TextStyle(fontSize: 14, fontFamily: mono ? 'monospace' : null),
+          style: TextStyle(fontSize: 14, fontFamily: mono ? 'JetBrains Mono' : null),
           decoration: InputDecoration(
             hintText: hint,
             filled: true,

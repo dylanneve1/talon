@@ -361,19 +361,26 @@ class _JumpToLatest extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: TalonColors.surfaceHi,
-      shape: CircleBorder(
-        side: BorderSide(color: TalonColors.glassStroke),
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [TalonColors.accent, TalonColors.accentDeep],
+        ),
+        boxShadow: TalonShadows.glow,
       ),
-      elevation: 3,
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: Padding(
-          padding: const EdgeInsets.all(9),
-          child: Icon(Icons.arrow_downward_rounded,
-              size: 18, color: TalonColors.textDim),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: const Padding(
+            padding: EdgeInsets.all(10),
+            child: Icon(Icons.arrow_downward_rounded,
+                size: 18, color: Colors.white),
+          ),
         ),
       ),
     );
@@ -458,6 +465,7 @@ class _Header extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
       decoration: BoxDecoration(
+        color: TalonColors.glassFill,
         border: Border(bottom: BorderSide(color: TalonColors.glassStroke)),
       ),
       // Auto-detect available width instead of hard-coding a platform check:
@@ -980,11 +988,20 @@ class _ConversationEmpty extends StatelessWidget {
     final header = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const BrandMark(size: 52),
+        const BrandMark(size: 56),
         const SizedBox(height: TalonSpace.lg),
-        Text(
-          'How can I help?',
-          style: TalonType.title.copyWith(fontSize: 19),
+        // Gradient greeting — the fresh-conversation hero moment.
+        ShaderMask(
+          shaderCallback: (bounds) =>
+              TalonColors.accentGradient.createShader(bounds),
+          blendMode: BlendMode.srcIn,
+          child: Text(
+            'How can I help?',
+            style: TalonType.display.copyWith(
+              fontSize: 24,
+              color: Colors.white,
+            ),
+          ),
         ),
         const SizedBox(height: 6),
         Text('Send a message to begin.',
@@ -1049,19 +1066,31 @@ class _StarterChip extends StatelessWidget {
         onTap: onTap,
         borderRadius: TalonRadius.rMd,
         child: Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: TalonSpace.md, vertical: TalonSpace.sm),
+          padding: const EdgeInsets.fromLTRB(
+              TalonSpace.sm, TalonSpace.sm, TalonSpace.md, TalonSpace.sm),
           decoration: BoxDecoration(
             color: TalonColors.glassFill,
             borderRadius: TalonRadius.rMd,
             border: Border.all(color: TalonColors.glassStroke),
+            boxShadow: TalonShadows.soft,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(starter.icon, size: 15, color: TalonColors.accent),
-              const SizedBox(width: 7),
-              Text(starter.label, style: TalonType.label),
+              // Accent-tinted icon well, so the starters read as actions.
+              Container(
+                width: 28,
+                height: 28,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: TalonColors.accent.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(starter.icon, size: 15, color: TalonColors.accent),
+              ),
+              const SizedBox(width: TalonSpace.sm),
+              Text(starter.label,
+                  style: TalonType.label.copyWith(color: TalonColors.text)),
             ],
           ),
         ),
