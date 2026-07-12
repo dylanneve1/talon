@@ -79,7 +79,11 @@ describe("codex handleEvent — live tool lifecycle", () => {
     handleEvent(mcpItem("completed"), ctx);
 
     expect(calls).toEqual([
-      { kind: "start", id: "call-1", name: "mcp__brave-search__brave_web_search" },
+      {
+        kind: "start",
+        id: "call-1",
+        name: "mcp__brave-search__brave_web_search",
+      },
       {
         kind: "end",
         id: "call-1",
