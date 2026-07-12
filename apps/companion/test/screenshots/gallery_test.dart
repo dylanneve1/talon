@@ -44,6 +44,23 @@ Future<void> _loadRealFonts() async {
   final icons = FontLoader('MaterialIcons')
     ..addFont(font('MaterialIcons-Regular.otf'));
   await icons.load();
+
+  // Emoji (reaction chips, message text): the SDK font cache has no emoji
+  // font, so anything like 👍 renders as tofu in screenshots — on-device the
+  // platform supplies the fallback. Borrow the system's Noto Color Emoji
+  // when present; skip quietly otherwise.
+  for (final path in const [
+    '/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf', // Debian/Ubuntu
+    '/usr/share/fonts/google-noto-emoji/NotoColorEmoji.ttf', // Fedora
+  ]) {
+    final f = File(path);
+    if (!f.existsSync()) continue;
+    final bytes = await f.readAsBytes();
+    final emoji = FontLoader('Noto Color Emoji')
+      ..addFont(Future.value(ByteData.view(bytes.buffer)));
+    await emoji.load();
+    break;
+  }
 }
 
 int _ts(int minutesAgo) => DateTime.now()
@@ -180,7 +197,10 @@ Widget _app(Widget home) {
     // fontFamily null (fine on-device — the platform default is used), but in
     // a test that resolves to the blocky FlutterTest font.
     theme: base.copyWith(
-      textTheme: base.textTheme.apply(fontFamily: 'Roboto'),
+      textTheme: base.textTheme.apply(
+        fontFamily: 'Roboto',
+        fontFamilyFallback: const ['Noto Color Emoji'],
+      ),
       appBarTheme: base.appBarTheme.copyWith(
         titleTextStyle:
             base.appBarTheme.titleTextStyle?.copyWith(fontFamily: 'Roboto'),
