@@ -101,6 +101,39 @@ function expectedBinaryKind(mimeType: string): "image" | "pdf" | "zip" | null {
   return null;
 }
 
+function isTextMimeType(mimeType: string): boolean {
+  return (
+    mimeType.startsWith("text/") ||
+    mimeType === "application/json" ||
+    mimeType.endsWith("+json") ||
+    mimeType === "application/xml" ||
+    mimeType.endsWith("+xml") ||
+    mimeType === "application/javascript" ||
+    mimeType === "application/x-javascript"
+  );
+}
+
+function looksLikeStructuredText(buffer: Buffer): boolean {
+  if (buffer.subarray(0, 512).includes(0)) return false;
+  const sample = buffer.subarray(0, 512).toString("utf-8").trimStart();
+  return (
+    sample.startsWith("{") ||
+    sample.startsWith("[") ||
+    sample.startsWith("<?xml") ||
+    /^<!doctype\s+html/i.test(sample) ||
+    /^<[a-z][\w:-]*(?:\s|>)/i.test(sample)
+  );
+}
+
+function decodeText(buffer: Buffer, contentType: string): string {
+  const charset = /charset\s*=\s*["']?([^;\s"']+)/i.exec(contentType)?.[1];
+  try {
+    return new TextDecoder(charset || "utf-8").decode(buffer);
+  } catch {
+    return buffer.toString("utf-8");
+  }
+}
+
 export const fetchUrlHandlers: SharedActionHandlers = {
   fetch_url: async (body) => {
     const url = String(body.url ?? "");
@@ -134,8 +167,6 @@ export const fetchUrlHandlers: SharedActionHandlers = {
 
       // Binary content: download and save to workspace
       const mimeType = ct.split(";")[0].trim().toLowerCase();
-      const isText =
-        mimeType.startsWith("text/") || mimeType === "application/json";
       let buffer: Buffer;
       try {
         buffer = await readBodyLimited(resp, MAX_RESPONSE_BYTES);
@@ -145,6 +176,12 @@ export const fetchUrlHandlers: SharedActionHandlers = {
         }
         throw err;
       }
+
+      const isGenericMime =
+        !mimeType || mimeType === "application/octet-stream";
+      const isText =
+        isTextMimeType(mimeType) ||
+        (isGenericMime && looksLikeStructuredText(buffer));
 
       if (!isText) {
         if (buffer.length === 0)
@@ -164,7 +201,7 @@ export const fetchUrlHandlers: SharedActionHandlers = {
         // Do not save an error page or arbitrary bytes under a trusted-looking
         // image/PDF/ZIP extension merely because the server advertised one.
         if (!contentMatchesHeader) {
-          const text = extractText(buffer.toString("utf-8"), 500);
+          const text = extractText(decodeText(buffer, ct), 500);
           return {
             ok: false,
             error: `Server returned invalid ${advertisedKind} content.${text ? ` Content: ${text}` : ""}`,
@@ -189,7 +226,7 @@ export const fetchUrlHandlers: SharedActionHandlers = {
           text: `Downloaded ${typeLabel} (${(buffer.length / 1024).toFixed(0)}KB) to: ${filePath}\nRead it with the Read tool or send it with send(type="file", file_path="${filePath}").`,
         };
       }
-      const raw = buffer.toString("utf-8");
+      const raw = decodeText(buffer, ct);
       const text = extractText(raw);
       if (text.length < 20)
         return { ok: true, text: "(Page has no readable content)" };

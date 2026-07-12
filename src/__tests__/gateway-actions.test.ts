@@ -429,6 +429,78 @@ describe("gateway shared actions", () => {
       expect(result?.text).toContain('"key": "value"');
     });
 
+    it("returns structured JSON media types as text", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValueOnce(
+          mockResponse({
+            ok: true,
+            contentType: "application/problem+json",
+            body: '{"title":"Rate limited","status":429}',
+          }),
+        ),
+      );
+
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://api.example.com/problem" },
+        123,
+      );
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain("Rate limited");
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
+    });
+
+    it("decodes text using the response charset", async () => {
+      const encoded = Uint8Array.from(
+        Buffer.from("Hello from a UTF-16 page — café", "utf16le"),
+      );
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValueOnce(
+          mockResponse({
+            ok: true,
+            contentType: "text/plain; charset=utf-16le",
+            arrayBuffer: encoded.buffer,
+          }),
+        ),
+      );
+
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/utf16" },
+        123,
+      );
+
+      expect(result).toEqual({
+        ok: true,
+        text: "Hello from a UTF-16 page — café",
+      });
+    });
+
+    it("sniffs headerless HTML as text instead of saving it as binary", async () => {
+      const encoded = new TextEncoder().encode(
+        "<!doctype html><html><body><h1>Headerless page content is readable</h1></body></html>",
+      );
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValueOnce(
+          mockResponse({
+            ok: true,
+            arrayBuffer: encoded.buffer,
+          }),
+        ),
+      );
+
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/headerless" },
+        123,
+      );
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain("Headerless page content is readable");
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
+    });
+
     it("truncates large text content to 8000 chars", async () => {
       const longText = "A".repeat(10000);
       const mockFetch = vi.fn().mockResolvedValueOnce(
