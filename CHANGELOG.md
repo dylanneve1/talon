@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.46.0](https://github.com/dylanneve1/talon/compare/v1.45.0...v1.46.0) (2026-07-12)
+
+
+### Features
+
+* **companion:** custom accent colors, text size, and haptics in Settings ([#535](https://github.com/dylanneve1/talon/issues/535)) ([81cbd2e](https://github.com/dylanneve1/talon/commit/81cbd2e38d6c12804965e3c7d2294287822605cf))
+
 ## [1.45.0](https://github.com/dylanneve1/talon/compare/v1.44.0...v1.45.0) (2026-07-11)
 
 
