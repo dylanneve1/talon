@@ -9,6 +9,50 @@ import { dirs } from "../../../util/paths.js";
 import { extractText } from "./shared.js";
 import type { SharedActionHandlers } from "./types.js";
 
+const MAX_RESPONSE_BYTES = 20 * 1024 * 1024;
+
+class ResponseTooLargeError extends Error {}
+
+/**
+ * Read a response incrementally so a missing or dishonest Content-Length
+ * header cannot make Talon buffer an unbounded body in memory.
+ */
+async function readBodyLimited(
+  response: Response,
+  maxBytes: number,
+): Promise<Buffer> {
+  if (!response.body) {
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > maxBytes) throw new ResponseTooLargeError();
+    return buffer;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel("response exceeds download limit");
+        throw new ResponseTooLargeError();
+      }
+      chunks.push(
+        Buffer.from(value.buffer, value.byteOffset, value.byteLength),
+      );
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return Buffer.concat(chunks, totalBytes);
+}
+
 export const fetchUrlHandlers: SharedActionHandlers = {
   fetch_url: async (body) => {
     const url = String(body.url ?? "");
@@ -32,9 +76,8 @@ export const fetchUrlHandlers: SharedActionHandlers = {
 
       // Reject oversized responses before downloading the body.
       // The Content-Length header is advisory but saves bandwidth when present.
-      const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
       const contentLength = resp.headers.get("content-length");
-      if (contentLength && Number(contentLength) > MAX_BYTES) {
+      if (contentLength && Number(contentLength) > MAX_RESPONSE_BYTES) {
         return {
           ok: false,
           error: `File too large (${(Number(contentLength) / 1024 / 1024).toFixed(0)}MB, max 20MB)`,
@@ -45,10 +88,17 @@ export const fetchUrlHandlers: SharedActionHandlers = {
       const mimeType = ct.split(";")[0].trim().toLowerCase();
       const isText =
         mimeType.startsWith("text/") || mimeType === "application/json";
+      let buffer: Buffer;
+      try {
+        buffer = await readBodyLimited(resp, MAX_RESPONSE_BYTES);
+      } catch (err) {
+        if (err instanceof ResponseTooLargeError) {
+          return { ok: false, error: "Response too large (max 20MB)" };
+        }
+        throw err;
+      }
+
       if (!isText) {
-        const buffer = Buffer.from(await resp.arrayBuffer());
-        if (buffer.length > MAX_BYTES)
-          return { ok: false, error: "File too large (max 20MB)" };
         if (buffer.length === 0)
           return { ok: false, error: "Empty response (0 bytes)" };
 
@@ -105,7 +155,7 @@ export const fetchUrlHandlers: SharedActionHandlers = {
           text: `Downloaded ${typeLabel} (${(buffer.length / 1024).toFixed(0)}KB) to: ${filePath}\nRead it with the Read tool or send it with send(type="file", file_path="${filePath}").`,
         };
       }
-      const raw = await resp.text();
+      const raw = buffer.toString("utf-8");
       const text = extractText(raw);
       if (text.length < 20)
         return { ok: true, text: "(Page has no readable content)" };

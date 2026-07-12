@@ -117,18 +117,14 @@ function mockResponse(opts: {
   contentType?: string;
   body?: string;
   arrayBuffer?: ArrayBuffer;
-  json?: unknown;
 }): Response {
   const headers = new Headers();
   if (opts.contentType) headers.set("content-type", opts.contentType);
-  return {
-    ok: opts.ok ?? true,
-    status: opts.status ?? 200,
+  const body = opts.arrayBuffer ?? opts.body ?? "";
+  return new Response(body, {
+    status: opts.status ?? (opts.ok === false ? 500 : 200),
     headers,
-    text: async () => opts.body ?? "",
-    json: async () => opts.json ?? {},
-    arrayBuffer: async () => opts.arrayBuffer ?? new ArrayBuffer(0),
-  } as unknown as Response;
+  });
 }
 
 /** Create an ArrayBuffer with valid image magic bytes. */
@@ -733,7 +729,7 @@ describe("gateway shared actions", () => {
       expect(mockMkdirSync).not.toHaveBeenCalled();
     });
 
-    it("rejects files larger than 20MB", async () => {
+    it("rejects chunked binary responses larger than 20MB", async () => {
       const buffer = new ArrayBuffer(21 * 1024 * 1024); // 21MB
       const mockFetch = vi.fn().mockResolvedValueOnce(
         mockResponse({
@@ -750,8 +746,30 @@ describe("gateway shared actions", () => {
       );
 
       expect(result?.ok).toBe(false);
-      expect(result?.error).toContain("File too large");
+      expect(result?.error).toContain("Response too large");
       expect(result?.error).toContain("20MB");
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
+    });
+
+    it("rejects chunked text responses larger than 20MB", async () => {
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "text/plain",
+          body: "A".repeat(21 * 1024 * 1024),
+        }),
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/huge.txt" },
+        123,
+      );
+
+      expect(result).toEqual({
+        ok: false,
+        error: "Response too large (max 20MB)",
+      });
       expect(mockWriteFileSync).not.toHaveBeenCalled();
     });
 
