@@ -58,7 +58,6 @@ class ToolStep extends StatefulWidget {
 
 class _ToolStepState extends State<ToolStep> {
   bool _expanded = false;
-  bool _userToggled = false;
   Timer? _ticker;
 
   bool get _failed => widget.tool.error != null;
@@ -80,7 +79,9 @@ class _ToolStepState extends State<ToolStep> {
         if (mounted && _running) setState(() {});
       });
     }
-    _expanded = _failed; // a failure explains itself without a tap.
+    // Errors stay collapsed like everything else — failed tool calls are
+    // routine (the agent usually retries and recovers), so the red badge is
+    // enough signal; the detail is a tap away.
   }
 
   @override
@@ -89,11 +90,6 @@ class _ToolStepState extends State<ToolStep> {
     if (!_running) {
       _ticker?.cancel();
       _ticker = null;
-    }
-    // Surface a freshly-arrived error automatically (unless the user has
-    // deliberately collapsed this step).
-    if (_failed && !_userToggled && !_expanded) {
-      _expanded = true;
     }
   }
 
@@ -258,10 +254,7 @@ class _ToolStepState extends State<ToolStep> {
         children: [
           InkWell(
             onTap: _expandable
-                ? () => setState(() {
-                      _expanded = !_expanded;
-                      _userToggled = true;
-                    })
+                ? () => setState(() => _expanded = !_expanded)
                 : null,
             borderRadius: TalonRadius.rSm,
             child: Padding(
@@ -414,7 +407,8 @@ class _CodeBlock extends StatelessWidget {
 
 /// A collapsible summary of a finished turn's tool calls, for message history.
 /// Reads "Worked for 4.2s · 3 steps"; expands to the full [ToolTimeline].
-/// Opens itself when a step failed so problems aren't buried.
+/// Starts collapsed even when steps failed — errors are routine agent life
+/// (retries usually recover); the red count in the summary is signal enough.
 class ToolTrace extends StatefulWidget {
   final List<ToolActivity> tools;
   const ToolTrace({super.key, required this.tools});
@@ -424,7 +418,7 @@ class ToolTrace extends StatefulWidget {
 }
 
 class _ToolTraceState extends State<ToolTrace> {
-  late bool _open = widget.tools.any((t) => t.error != null);
+  bool _open = false;
 
   @override
   Widget build(BuildContext context) {

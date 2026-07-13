@@ -54,7 +54,7 @@ void main() {
     expect(find.text('email · search_emails'), findsOneWidget);
   });
 
-  testWidgets('a failed tool step auto-expands to show its error',
+  testWidgets('a failed tool step stays collapsed until tapped',
       (tester) async {
     await tester.pumpWidget(_host(ToolTimeline(tools: [
       _tool(
@@ -67,8 +67,14 @@ void main() {
     ])));
     await tester.pumpAndSettle();
 
+    // The badge carries the signal; errors are routine and must not
+    // auto-expand the step.
     expect(find.text('Failed'), findsOneWidget);
-    // Error detail is visible without any tap because failures open on arrival.
+    expect(find.textContaining('exit code 1'), findsNothing);
+
+    // The detail is still one tap away.
+    await tester.tap(find.text('run_tests'));
+    await tester.pumpAndSettle();
     expect(find.textContaining('exit code 1'), findsOneWidget);
   });
 
