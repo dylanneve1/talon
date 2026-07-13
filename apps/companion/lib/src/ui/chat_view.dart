@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -15,6 +13,11 @@ import 'message_bubble.dart';
 import 'model_sheet.dart';
 
 const double _columnMax = 768;
+
+/// Top inset for the scrollback so the newest-at-top content clears the
+/// floating header when the list is scrolled all the way up. The scrollback
+/// itself still runs (and fades) beneath the header while scrolling.
+const double _headerClearance = 74;
 
 class ChatView extends StatefulWidget {
   final AppState state;
@@ -144,40 +147,57 @@ class _ChatViewState extends State<ChatView> {
     // The conversation is the canvas, not a card placed on top of it. Keeping
     // this layer transparent lets the global backdrop run continuously from
     // the system bars to the composer; glass is reserved for controls that
-    // actually need separation (header, chips and input).
+    // actually need separation (chips and input). The header is not a bar at
+    // all: it floats over the scrollback, which slides underneath and melts
+    // into a scrim, so nothing reads as a separate strip on the canvas.
     return ListenableBuilder(
       listenable: widget.state,
       builder: (context, _) {
         final chat = widget.state.selectedChat;
         if (chat == null) return const _EmptyState();
         _autoScroll(chat.id, widget.state.messagesFor(chat.id).length);
-        return Column(
+        return Stack(
           children: [
-            _Header(
-              state: widget.state,
-              chat: chat,
-              showBack: widget.showBack,
-              onBack: widget.onBack,
-            ),
-            if (widget.state.conn != ConnState.connected)
-              _ConnBanner(state: widget.state),
-            Expanded(child: _messages(chat.id)),
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: _columnMax),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _QueuedBar(state: widget.state, chatId: chat.id),
-                    Composer(
-                      onSend: widget.state.sendMessage,
-                      onUpload: widget.state.uploadImage,
-                      enabled: widget.state.conn == ConnState.connected,
-                      running: widget.state.isTurnRunning(chat.id),
-                      onStop: () => widget.state.interruptTurn(chat.id),
+            Positioned.fill(
+              child: Column(
+                children: [
+                  Expanded(child: _messages(chat.id)),
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: _columnMax),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _QueuedBar(state: widget.state, chatId: chat.id),
+                          Composer(
+                            onSend: widget.state.sendMessage,
+                            onUpload: widget.state.uploadImage,
+                            enabled: widget.state.conn == ConnState.connected,
+                            running: widget.state.isTurnRunning(chat.id),
+                            onStop: () => widget.state.interruptTurn(chat.id),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Column(
+                children: [
+                  _Header(
+                    state: widget.state,
+                    chat: chat,
+                    showBack: widget.showBack,
+                    onBack: widget.onBack,
+                  ),
+                  if (widget.state.conn != ConnState.connected)
+                    _ConnBanner(state: widget.state),
+                ],
               ),
             ),
           ],
@@ -234,7 +254,7 @@ class _ChatViewState extends State<ChatView> {
             constraints: const BoxConstraints(maxWidth: _columnMax),
             child: ListView.builder(
               controller: _scroll,
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+              padding: const EdgeInsets.fromLTRB(20, _headerClearance, 20, 10),
               itemCount: itemCount,
               itemBuilder: (context, i) {
                 if (topLoader && i == 0) {
@@ -462,78 +482,82 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final model = chat.model ?? state.status.model;
     final effort = chat.effort ?? 'adaptive';
-    // A flat-edged frosted strip anchors navigation without reintroducing an
-    // enclosing chat card. ClipRect keeps the blur local while the translucent
-    // fill lets the same ambient backdrop remain visible underneath.
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-          decoration: BoxDecoration(
-            color: TalonTheme.isDark
-                ? TalonColors.void1.withValues(alpha: 0.54)
-                : Colors.white.withValues(alpha: 0.42),
-            border: Border(bottom: BorderSide(color: TalonColors.glassStroke)),
-          ),
-          // Auto-detect available width instead of hard-coding a platform
-          // check: a desktop window with the sidebar open gives the chat pane
-          // less room than fullscreen, and the phone is always narrow.
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 560;
-              final modelLabel = model.isEmpty ? 'model' : model;
-              return Row(
-                children: [
-                  if (showBack)
-                    IconButton(
-                      onPressed: onBack,
-                      tooltip: 'Back to chats',
-                      // Platform-adaptive: Material arrow on Android, iOS chevron
-                      // on Apple platforms.
-                      icon: Icon(Icons.adaptive.arrow_back, size: 20),
-                    ),
-                  Expanded(
-                    child: Text(
-                      chat.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 15.5, fontWeight: FontWeight.w700),
-                    ),
+    // Not a bar: the controls float directly on the canvas and a soft scrim
+    // fades the backdrop colour in behind them, so scrollback dissolves as it
+    // slides underneath instead of hitting a frosted strip with an edge.
+    final base = TalonTheme.isDark ? TalonColors.void1 : Colors.white;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            base.withValues(alpha: 0.92),
+            base.withValues(alpha: 0.72),
+            base.withValues(alpha: 0.0),
+          ],
+          stops: const [0.0, 0.55, 1.0],
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 8, 18),
+        // Auto-detect available width instead of hard-coding a platform
+        // check: a desktop window with the sidebar open gives the chat pane
+        // less room than fullscreen, and the phone is always narrow.
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 560;
+            final modelLabel = model.isEmpty ? 'model' : model;
+            return Row(
+              children: [
+                if (showBack)
+                  IconButton(
+                    onPressed: onBack,
+                    tooltip: 'Back to chats',
+                    // Platform-adaptive: Material arrow on Android, iOS chevron
+                    // on Apple platforms.
+                    icon: Icon(Icons.adaptive.arrow_back, size: 20),
                   ),
-                  if (chat.context?.known == true) ...[
-                    _ContextChip(context: chat.context!),
-                    const SizedBox(width: 6),
-                  ],
-                  if (compact)
-                    // One pill with just the model. Effort still lives a tap away
-                    // in the model sheet; spelling it out here starved the chat
-                    // title of width on phones ("Trip to…" next to
-                    // "opus · adaptive").
-                    _Chip(
-                      icon: Icons.memory,
-                      label: modelLabel,
-                      onTap: () => openModelSheet(context, state, chat),
-                    )
-                  else ...[
-                    _Chip(
-                      icon: Icons.memory,
-                      label: modelLabel,
-                      onTap: () => openModelSheet(context, state, chat),
-                    ),
-                    const SizedBox(width: 6),
-                    _Chip(
-                      icon: Icons.tune,
-                      label: effort,
-                      onTap: () => openModelSheet(context, state, chat),
-                    ),
-                  ],
-                  _ChatMenu(state: state, chat: chat),
+                Expanded(
+                  child: Text(
+                    chat.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 15.5, fontWeight: FontWeight.w700),
+                  ),
+                ),
+                if (chat.context?.known == true) ...[
+                  _ContextChip(context: chat.context!),
+                  const SizedBox(width: 6),
                 ],
-              );
-            },
-          ),
+                if (compact)
+                  // One pill with just the model. Effort still lives a tap away
+                  // in the model sheet; spelling it out here starved the chat
+                  // title of width on phones ("Trip to…" next to
+                  // "opus · adaptive").
+                  _Chip(
+                    icon: Icons.memory,
+                    label: modelLabel,
+                    onTap: () => openModelSheet(context, state, chat),
+                  )
+                else ...[
+                  _Chip(
+                    icon: Icons.memory,
+                    label: modelLabel,
+                    onTap: () => openModelSheet(context, state, chat),
+                  ),
+                  const SizedBox(width: 6),
+                  _Chip(
+                    icon: Icons.tune,
+                    label: effort,
+                    onTap: () => openModelSheet(context, state, chat),
+                  ),
+                ],
+                _ChatMenu(state: state, chat: chat),
+              ],
+            );
+          },
         ),
       ),
     );

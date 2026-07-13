@@ -7,8 +7,11 @@ rounded panel sitting on top of it.
 
 - Remove the chat pane's fill, clipping, outer radius, and phone inset.
 - Let the ambient background run continuously behind the message history.
-- Keep separation local: a flat-edge frosted header and a floating frosted
-  composer provide contrast where controls need it.
+- No header bar at all: the title, chips and menu float directly on the
+  canvas, and the scrollback slides underneath them, dissolving into a soft
+  scrim instead of hitting a frosted strip with an edge.
+- Keep separation local: the floating frosted composer pill provides contrast
+  where the one control that needs it lives.
 - Preserve the existing message hierarchy, accent bubbles, typography, and
   desktop column width so this is a surface refinement, not a navigation
   redesign.
