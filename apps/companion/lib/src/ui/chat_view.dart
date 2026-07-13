@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -465,6 +467,66 @@ class _ConnBanner extends StatelessWidget {
   }
 }
 
+/// Approximates a progressive backdrop blur behind [child]: the area is
+/// covered by stacked blur bands, full-height first and progressively
+/// shorter ones on top, so the compounded blur is strongest behind the top
+/// of the header and melts to nothing at its bottom edge. This keeps the
+/// glass feel without the hard lower boundary a single BackdropFilter strip
+/// would draw across the canvas.
+class _ProgressiveGlass extends StatelessWidget {
+  final Widget child;
+  const _ProgressiveGlass({required this.child});
+
+  /// (fraction of header height covered from the top, blur sigma).
+  /// Overlapping filters compound, so the top of the header ends up heavily
+  /// frosted while the last few pixels are effectively untouched.
+  static const _bands = [
+    (1.00, 2.0),
+    (0.85, 3.0),
+    (0.70, 4.0),
+    (0.55, 6.0),
+    (0.40, 8.0),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final h = constraints.maxHeight;
+                return Stack(
+                  children: [
+                    for (final (frac, sigma) in _bands)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: h * frac,
+                        child: ClipRect(
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(
+                              sigmaX: sigma,
+                              sigmaY: sigma,
+                            ),
+                            child: const SizedBox.expand(),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
 class _Header extends StatelessWidget {
   final AppState state;
   final ClientChat chat;
@@ -482,24 +544,26 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final model = chat.model ?? state.status.model;
     final effort = chat.effort ?? 'adaptive';
-    // Not a bar: the controls float directly on the canvas and a soft scrim
-    // fades the backdrop colour in behind them, so scrollback dissolves as it
-    // slides underneath instead of hitting a frosted strip with an edge.
+    // Not a bar: the controls float directly on the canvas over a progressive
+    // glass gradient — heavy backdrop blur behind the title that melts to
+    // nothing at the bottom — plus a soft scrim for legibility. Scrollback
+    // dissolves as it slides underneath instead of hitting a frosted strip
+    // with an edge.
     final base = TalonTheme.isDark ? TalonColors.void1 : Colors.white;
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            base.withValues(alpha: 0.92),
-            base.withValues(alpha: 0.72),
-            base.withValues(alpha: 0.0),
-          ],
-          stops: const [0.0, 0.55, 1.0],
+    return _ProgressiveGlass(
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              base.withValues(alpha: 0.80),
+              base.withValues(alpha: 0.55),
+              base.withValues(alpha: 0.0),
+            ],
+            stops: const [0.0, 0.55, 1.0],
+          ),
         ),
-      ),
-      child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 8, 18),
         // Auto-detect available width instead of hard-coding a platform
         // check: a desktop window with the sidebar open gives the chat pane
