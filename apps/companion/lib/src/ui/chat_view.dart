@@ -256,7 +256,12 @@ class _ChatViewState extends State<ChatView> {
             constraints: const BoxConstraints(maxWidth: _columnMax),
             child: ListView.builder(
               controller: _scroll,
-              padding: const EdgeInsets.fromLTRB(20, _headerClearance, 20, 10),
+              padding: EdgeInsets.fromLTRB(
+                20,
+                _headerClearance + MediaQuery.of(context).padding.top,
+                20,
+                10,
+              ),
               itemCount: itemCount,
               itemBuilder: (context, i) {
                 if (topLoader && i == 0) {
@@ -559,6 +564,10 @@ class _Header extends StatelessWidget {
     // dissolves as it slides underneath instead of hitting a frosted strip
     // with an edge.
     final base = TalonTheme.isDark ? TalonColors.void1 : Colors.white;
+    // The shell doesn't consume the top inset for the conversation: the
+    // frost and scrim run up behind the system status bar (same canvas, one
+    // surface) and only the controls are padded down below it.
+    final topInset = MediaQuery.of(context).padding.top;
     return _ProgressiveGlass(
       child: Container(
         decoration: BoxDecoration(
@@ -576,7 +585,7 @@ class _Header extends StatelessWidget {
             stops: const [0.0, 0.55, 1.0],
           ),
         ),
-        padding: const EdgeInsets.fromLTRB(12, 8, 8, 26),
+        padding: EdgeInsets.fromLTRB(12, 8 + topInset, 8, 26),
         // Auto-detect available width instead of hard-coding a platform
         // check: a desktop window with the sidebar open gives the chat pane
         // less room than fullscreen, and the phone is always narrow.

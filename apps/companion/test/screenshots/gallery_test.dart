@@ -243,6 +243,9 @@ Future<void> _shoot(WidgetTester tester, String name) async {
 void _phone(WidgetTester tester) {
   tester.view.physicalSize = const Size(1080, 2280);
   tester.view.devicePixelRatio = 2.75;
+  // Simulate a real status bar (48lp) so the shots exercise the
+  // edge-to-edge header: frost running up behind the system bar.
+  tester.view.padding = const FakeViewPadding(top: 132);
   addTearDown(tester.view.reset);
 }
 

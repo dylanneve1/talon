@@ -40,7 +40,13 @@ class AppShell extends StatelessWidget {
           const SingleActivator(LogicalKeyboardKey.keyN, control: true):
               state.newChat,
         },
+        // top: false — the conversation owns the status-bar zone: ChatView's
+        // header glass runs up behind it and pads its controls by the inset,
+        // so the system bar sits on the same continuous canvas instead of on
+        // a separate strip above it. Layouts that keep a panelled top edge
+        // (the chat list, the wide two-pane shell) re-add their own SafeArea.
         child: SafeArea(
+          top: false,
           child: LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= _wideBreakpoint;
@@ -48,17 +54,22 @@ class AppShell extends StatelessWidget {
               // treats the chat list as its own screen (no auto-selection).
               state.setNarrowLayout(!wide);
               if (wide) {
-                return Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 308,
-                        child: Sidebar(state: state, onSelect: null),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(child: ChatView(state: state, showBack: false)),
-                    ],
+                return SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 308,
+                          child: Sidebar(state: state, onSelect: null),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ChatView(state: state, showBack: false),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               }
@@ -112,12 +123,15 @@ class AppShell extends StatelessWidget {
                                 showBack: true,
                                 onBack: state.clearSelection,
                               )
-                            : Padding(
+                            : SafeArea(
                                 key: const ValueKey('list'),
-                                padding: const EdgeInsets.all(8),
-                                child: Sidebar(
-                                  state: state,
-                                  onSelect: (id) => state.selectChat(id),
+                                bottom: false,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(8),
+                                  child: Sidebar(
+                                    state: state,
+                                    onSelect: (id) => state.selectChat(id),
+                                  ),
                                 ),
                               ),
                       ),
