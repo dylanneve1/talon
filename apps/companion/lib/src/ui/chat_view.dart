@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -139,50 +141,48 @@ class _ChatViewState extends State<ChatView> {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-      child: Container(
-        color: TalonColors.void1.withValues(alpha: 0.55),
-        child: ListenableBuilder(
-          listenable: widget.state,
-          builder: (context, _) {
-            final chat = widget.state.selectedChat;
-            if (chat == null) return const _EmptyState();
-            _autoScroll(chat.id, widget.state.messagesFor(chat.id).length);
-            return Column(
-              children: [
-                _Header(
-                  state: widget.state,
-                  chat: chat,
-                  showBack: widget.showBack,
-                  onBack: widget.onBack,
-                ),
-                if (widget.state.conn != ConnState.connected)
-                  _ConnBanner(state: widget.state),
-                Expanded(child: _messages(chat.id)),
-                Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: _columnMax),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _QueuedBar(state: widget.state, chatId: chat.id),
-                        Composer(
-                          onSend: widget.state.sendMessage,
-                          onUpload: widget.state.uploadImage,
-                          enabled: widget.state.conn == ConnState.connected,
-                          running: widget.state.isTurnRunning(chat.id),
-                          onStop: () => widget.state.interruptTurn(chat.id),
-                        ),
-                      ],
+    // The conversation is the canvas, not a card placed on top of it. Keeping
+    // this layer transparent lets the global backdrop run continuously from
+    // the system bars to the composer; glass is reserved for controls that
+    // actually need separation (header, chips and input).
+    return ListenableBuilder(
+      listenable: widget.state,
+      builder: (context, _) {
+        final chat = widget.state.selectedChat;
+        if (chat == null) return const _EmptyState();
+        _autoScroll(chat.id, widget.state.messagesFor(chat.id).length);
+        return Column(
+          children: [
+            _Header(
+              state: widget.state,
+              chat: chat,
+              showBack: widget.showBack,
+              onBack: widget.onBack,
+            ),
+            if (widget.state.conn != ConnState.connected)
+              _ConnBanner(state: widget.state),
+            Expanded(child: _messages(chat.id)),
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: _columnMax),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _QueuedBar(state: widget.state, chatId: chat.id),
+                    Composer(
+                      onSend: widget.state.sendMessage,
+                      onUpload: widget.state.uploadImage,
+                      enabled: widget.state.conn == ConnState.connected,
+                      running: widget.state.isTurnRunning(chat.id),
+                      onStop: () => widget.state.interruptTurn(chat.id),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            );
-          },
-        ),
-      ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -224,7 +224,8 @@ class _ChatViewState extends State<ChatView> {
     }
 
     final topLoader = widget.state.isLoadingOlder(chatId);
-    final itemCount = (topLoader ? 1 : 0) + rows.length + (showActivity ? 1 : 0);
+    final itemCount =
+        (topLoader ? 1 : 0) + rows.length + (showActivity ? 1 : 0);
     return Stack(
       children: [
         Align(
@@ -398,9 +399,8 @@ class _ConnBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final error = state.conn == ConnState.error;
     final color = error ? TalonColors.bad : TalonColors.warn;
-    final text = error
-        ? (state.connError ?? 'Connection lost')
-        : 'Connecting to Talon…';
+    final text =
+        error ? (state.connError ?? 'Connection lost') : 'Connecting to Talon…';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
@@ -462,72 +462,79 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final model = chat.model ?? state.status.model;
     final effort = chat.effort ?? 'adaptive';
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-      decoration: BoxDecoration(
-        color: TalonColors.glassFill,
-        border: Border(bottom: BorderSide(color: TalonColors.glassStroke)),
-      ),
-      // Auto-detect available width instead of hard-coding a platform check:
-      // a desktop window with the sidebar open gives the chat pane less room
-      // than the same window fullscreen, and the phone is always narrow. Below
-      // the breakpoint we fold model + reasoning-effort into a single pill so
-      // the bar stops squishing on mobile; the context% pill always stays (the
-      // ring readout is worth its width). Above it, keep them separate.
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 560;
-          final modelLabel = model.isEmpty ? 'model' : model;
-          return Row(
-            children: [
-              if (showBack)
-                IconButton(
-                  onPressed: onBack,
-                  tooltip: 'Back to chats',
-                  // Platform-adaptive: Material arrow on Android, iOS chevron
-                  // on Apple platforms.
-                  icon: Icon(Icons.adaptive.arrow_back, size: 20),
-                ),
-              Expanded(
-                child: Text(
-                  chat.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 15.5, fontWeight: FontWeight.w700),
-                ),
-              ),
-              if (chat.context?.known == true) ...[
-                _ContextChip(context: chat.context!),
-                const SizedBox(width: 6),
-              ],
-              if (compact)
-                // One pill with just the model. Effort still lives a tap away
-                // in the model sheet; spelling it out here starved the chat
-                // title of width on phones ("Trip to…" next to
-                // "opus · adaptive").
-                _Chip(
-                  icon: Icons.memory,
-                  label: modelLabel,
-                  onTap: () => openModelSheet(context, state, chat),
-                )
-              else ...[
-                _Chip(
-                  icon: Icons.memory,
-                  label: modelLabel,
-                  onTap: () => openModelSheet(context, state, chat),
-                ),
-                const SizedBox(width: 6),
-                _Chip(
-                  icon: Icons.tune,
-                  label: effort,
-                  onTap: () => openModelSheet(context, state, chat),
-                ),
-              ],
-              _ChatMenu(state: state, chat: chat),
-            ],
-          );
-        },
+    // A flat-edged frosted strip anchors navigation without reintroducing an
+    // enclosing chat card. ClipRect keeps the blur local while the translucent
+    // fill lets the same ambient backdrop remain visible underneath.
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+          decoration: BoxDecoration(
+            color: TalonTheme.isDark
+                ? TalonColors.void1.withValues(alpha: 0.54)
+                : Colors.white.withValues(alpha: 0.42),
+            border: Border(bottom: BorderSide(color: TalonColors.glassStroke)),
+          ),
+          // Auto-detect available width instead of hard-coding a platform
+          // check: a desktop window with the sidebar open gives the chat pane
+          // less room than fullscreen, and the phone is always narrow.
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 560;
+              final modelLabel = model.isEmpty ? 'model' : model;
+              return Row(
+                children: [
+                  if (showBack)
+                    IconButton(
+                      onPressed: onBack,
+                      tooltip: 'Back to chats',
+                      // Platform-adaptive: Material arrow on Android, iOS chevron
+                      // on Apple platforms.
+                      icon: Icon(Icons.adaptive.arrow_back, size: 20),
+                    ),
+                  Expanded(
+                    child: Text(
+                      chat.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 15.5, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  if (chat.context?.known == true) ...[
+                    _ContextChip(context: chat.context!),
+                    const SizedBox(width: 6),
+                  ],
+                  if (compact)
+                    // One pill with just the model. Effort still lives a tap away
+                    // in the model sheet; spelling it out here starved the chat
+                    // title of width on phones ("Trip to…" next to
+                    // "opus · adaptive").
+                    _Chip(
+                      icon: Icons.memory,
+                      label: modelLabel,
+                      onTap: () => openModelSheet(context, state, chat),
+                    )
+                  else ...[
+                    _Chip(
+                      icon: Icons.memory,
+                      label: modelLabel,
+                      onTap: () => openModelSheet(context, state, chat),
+                    ),
+                    const SizedBox(width: 6),
+                    _Chip(
+                      icon: Icons.tune,
+                      label: effort,
+                      onTap: () => openModelSheet(context, state, chat),
+                    ),
+                  ],
+                  _ChatMenu(state: state, chat: chat),
+                ],
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -599,7 +606,6 @@ class _ChatMenu extends StatelessWidget {
       ],
     );
   }
-
 }
 
 class _MenuRow extends StatelessWidget {
@@ -703,8 +709,7 @@ class _QueuedBarState extends State<_QueuedBar> {
 
   void _startEdit(String current) {
     _controller.text = current;
-    _controller.selection =
-        TextSelection.collapsed(offset: current.length);
+    _controller.selection = TextSelection.collapsed(offset: current.length);
     setState(() => _editing = true);
     _focus.requestFocus();
   }
@@ -731,7 +736,8 @@ class _QueuedBarState extends State<_QueuedBar> {
           decoration: BoxDecoration(
             color: TalonColors.accent.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: TalonColors.accent.withValues(alpha: 0.35)),
+            border:
+                Border.all(color: TalonColors.accent.withValues(alpha: 0.35)),
           ),
           child: Row(
             children: [
@@ -871,8 +877,7 @@ class _Chip extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style:
-                    TextStyle(fontSize: 12, color: TalonColors.textDim),
+                style: TextStyle(fontSize: 12, color: TalonColors.textDim),
               ),
             ),
           ],
