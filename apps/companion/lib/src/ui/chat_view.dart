@@ -761,7 +761,9 @@ class _ContextChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: TalonColors.glassFill,
+          // Solid for the same reason as _Chip: translucent fills smear
+          // against the header frost behind them.
+          color: TalonColors.surfaceHi,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: context.warn ? TalonColors.warn : TalonColors.glassStroke,
@@ -972,7 +974,10 @@ class _Chip extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 170),
         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
         decoration: BoxDecoration(
-          color: TalonColors.glassFill,
+          // Solid, not glass: these pills live inside the header's frost,
+          // and a translucent fill over heavy blur reads as mush — an
+          // opaque surface keeps them crisp on the glass.
+          color: TalonColors.surfaceHi,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(color: TalonColors.glassStroke),
         ),
