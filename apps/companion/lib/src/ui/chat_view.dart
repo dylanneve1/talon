@@ -19,7 +19,7 @@ const double _columnMax = 768;
 /// Top inset for the scrollback so the newest-at-top content clears the
 /// floating header when the list is scrolled all the way up. The scrollback
 /// itself still runs (and fades) beneath the header while scrolling.
-const double _headerClearance = 74;
+const double _headerClearance = 82;
 
 class ChatView extends StatefulWidget {
   final AppState state;
@@ -478,14 +478,23 @@ class _ProgressiveGlass extends StatelessWidget {
   const _ProgressiveGlass({required this.child});
 
   /// (fraction of header height covered from the top, blur sigma).
-  /// Overlapping filters compound, so the top of the header ends up heavily
-  /// frosted while the last few pixels are effectively untouched.
+  ///
+  /// Every band spans the top 55% — that zone gets all sigmas compounded
+  /// (σ_eff = √Σσ² ≈ 12), reading as one solid sheet of frost. Below it the
+  /// band bottoms are staggered every ~6% of the height with geometrically
+  /// increasing sigmas, and crucially the band reaching furthest down
+  /// carries the smallest sigma: each visible step only sheds a σ≈1-2 pass
+  /// from already-blurred content, so the frost dissolves as a smooth ramp
+  /// instead of a staircase with a defined edge.
   static const _bands = [
-    (1.00, 2.0),
-    (0.85, 3.0),
-    (0.70, 4.0),
-    (0.55, 6.0),
-    (0.40, 8.0),
+    (1.00, 0.8),
+    (0.94, 1.1),
+    (0.88, 1.6),
+    (0.82, 2.2),
+    (0.76, 3.1),
+    (0.70, 4.4),
+    (0.63, 6.2),
+    (0.55, 8.7),
   ];
 
   @override
@@ -556,15 +565,18 @@ class _Header extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
+            // Matches the blur ramp: solid through the control zone, then a
+            // single smooth falloff to nothing across the same border the
+            // frost dissolves over.
             colors: [
               base.withValues(alpha: 0.80),
-              base.withValues(alpha: 0.55),
+              base.withValues(alpha: 0.74),
               base.withValues(alpha: 0.0),
             ],
             stops: const [0.0, 0.55, 1.0],
           ),
         ),
-        padding: const EdgeInsets.fromLTRB(12, 8, 8, 18),
+        padding: const EdgeInsets.fromLTRB(12, 8, 8, 26),
         // Auto-detect available width instead of hard-coding a platform
         // check: a desktop window with the sidebar open gives the chat pane
         // less room than fullscreen, and the phone is always narrow.
