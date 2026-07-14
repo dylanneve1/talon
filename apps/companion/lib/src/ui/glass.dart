@@ -1,10 +1,11 @@
 import 'dart:ui';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:soft_edge_blur/soft_edge_blur.dart';
 
 import '../theme.dart';
+import 'animated_sampler.dart';
 
 /// A frosted-glass panel: blurred translucent fill, hairline stroke, soft
 /// rounding. The building block of the whole UI.
@@ -63,10 +64,21 @@ class Glass extends StatelessWidget {
   }
 }
 
+/// C2-continuous ease (smootherstep). Linear alpha ramps end with a kink
+/// (C0) that the eye reads as a line — Mach banding. This curve has zero
+/// first and second derivatives at both ends, so frost and scrim dissolve
+/// with no perceptible start or stop.
+double _ease(double t) {
+  final x = t.clamp(0.0, 1.0);
+  return x * x * x * (x * (x * 6 - 15) + 10);
+}
+
 /// The app-wide progressive frost: content slides beneath a floating header
 /// and dissolves into a blur that is solid through the control zone and
-/// eases continuously to nothing (a snapshot of [child] blurred once and
-/// masked by a single linear gradient — smooth on every backend).
+/// eases to nothing along a smootherstep curve. Implementation: snapshot
+/// [child] (AnimatedSampler), draw it sharp, then draw a blurred copy
+/// masked by a many-stop eased gradient — one continuous mask, smooth on
+/// every backend, no Mach band at either end of the ramp.
 class TopEdgeFrost extends StatelessWidget {
   final Widget child;
 
@@ -87,51 +99,90 @@ class TopEdgeFrost extends StatelessWidget {
   /// One blur strength for every frosted header in the app.
   static const double sigma = 16;
 
+  /// Gradient resolution for the eased mask.
+  static const int _steps = 24;
+
   @override
   Widget build(BuildContext context) {
-    return SoftEdgeBlur(
-      edges: [
-        EdgeBlur(
-          type: EdgeType.topEdge,
-          size: extent,
-          sigma: sigma,
-          controlPoints: [
-            ControlPoint(
-              position: (solidUntil / extent).clamp(0.0, 0.9).toDouble(),
-              type: ControlPointType.visible,
-            ),
-            ControlPoint(position: 1, type: ControlPointType.transparent),
-          ],
-        ),
-      ],
-      child: child,
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    return ClipRect(
+      child: AnimatedSampler(
+        (ui.Image image, Size size, Canvas canvas) {
+          canvas.scale(1 / dpr);
+          // The child, untouched.
+          canvas.drawImage(image, Offset.zero, Paint());
+
+          // A blurred copy on top, masked by the eased dissolve.
+          final rect = Rect.fromLTWH(0, 0, size.width * dpr, extent * dpr);
+          final solidFrac = (solidUntil / extent).clamp(0.0, 0.95);
+          final positions = <double>[0.0];
+          final colors = <Color>[Colors.black];
+          for (var i = 0; i <= _steps; i++) {
+            final t = i / _steps;
+            positions.add(solidFrac + t * (1 - solidFrac));
+            colors.add(Colors.black.withValues(alpha: 1 - _ease(t)));
+          }
+          final mask = Paint()
+            ..shader = ui.Gradient.linear(
+              rect.topCenter,
+              rect.bottomCenter,
+              colors,
+              positions,
+            )
+            ..blendMode = BlendMode.dstIn;
+          canvas.saveLayer(rect, Paint());
+          canvas.drawImage(
+            image,
+            Offset.zero,
+            Paint()
+              ..imageFilter = ui.ImageFilter.blur(
+                sigmaX: sigma,
+                sigmaY: sigma,
+                tileMode: TileMode.clamp,
+              ),
+          );
+          canvas.drawRect(rect, mask);
+          canvas.restore();
+        },
+        child: child,
+      ),
     );
   }
 }
 
-/// The gradient wash painted behind floating header controls: near-solid
-/// backdrop colour through the control zone, falling to nothing across the
-/// same border the frost dissolves over. Runs edge-to-edge (behind the
-/// status bar) — callers pad their controls below the inset.
+/// The gradient wash painted behind floating header controls: a translucent
+/// veil through the control zone that dissolves along the same eased curve
+/// as the frost. Kept deliberately light — the frost carries the glass
+/// look; the scrim only tops up text contrast. Runs edge-to-edge (behind
+/// the status bar) — callers pad their controls below the inset.
 class HeaderScrim extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
   const HeaderScrim({super.key, required this.child, required this.padding});
 
+  /// Peak scrim opacity (dark canvas hides a veil better than paper-white,
+  /// which was reading as a white wash instead of blur).
+  static double get _peak => TalonTheme.isDark ? 0.62 : 0.42;
+
   @override
   Widget build(BuildContext context) {
     final base = TalonTheme.isDark ? TalonColors.void1 : Colors.white;
+    const plateau = 0.45; // fraction of height at full veil
+    const steps = 12;
+    final stops = <double>[0.0];
+    final colors = <Color>[base.withValues(alpha: _peak)];
+    for (var i = 0; i <= steps; i++) {
+      final t = i / steps;
+      stops.add(plateau + t * (1 - plateau));
+      colors.add(base.withValues(alpha: _peak * (1 - _ease(t))));
+    }
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            base.withValues(alpha: 0.80),
-            base.withValues(alpha: 0.74),
-            base.withValues(alpha: 0.0),
-          ],
-          stops: const [0.0, 0.55, 1.0],
+          colors: colors,
+          stops: stops,
         ),
       ),
       padding: padding,
@@ -170,8 +221,10 @@ class FrostedScreen extends StatelessWidget {
         children: [
           Positioned.fill(
             child: TopEdgeFrost(
-              extent: inset + 76,
-              solidUntil: inset + 52,
+              // A long dissolve: the fade gets ~70px of runway so there is
+              // no point where the eye can anchor a boundary.
+              extent: inset + 118,
+              solidUntil: inset + 46,
               child: body,
             ),
           ),

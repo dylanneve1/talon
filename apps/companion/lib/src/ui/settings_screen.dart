@@ -1129,7 +1129,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ValueChanged<bool>? onChanged,
   ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         children: [
           Expanded(
@@ -1143,13 +1143,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: TextStyle(fontSize: 12, color: TalonColors.textFaint),
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: TalonColors.textFaint,
+                  ),
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 12),
           // Plain Switch, not .adaptive: this app uses fully custom Material
           // theming everywhere (not platform-native widgets), and .adaptive
           // renders a CupertinoSwitch on macOS/iOS that ignores
@@ -1341,10 +1347,12 @@ class _ControlButton extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle,
                     style: TextStyle(
                       fontSize: 12,
+                      height: 1.35,
                       color: TalonColors.textFaint,
                     ),
                   ),

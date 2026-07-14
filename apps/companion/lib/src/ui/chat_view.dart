@@ -162,7 +162,9 @@ class _ChatViewState extends State<ChatView> {
         // copy) that is solid behind the header controls and dissolves
         // continuously to nothing — smooth on every backend, no banding.
         final topInset = MediaQuery.of(context).padding.top;
-        final frostExtent = topInset + _headerClearance + 12;
+        // Generous dissolve runway past the header so the frost has no
+        // findable end.
+        final frostExtent = topInset + _headerClearance + 48;
         return Stack(
           children: [
             Positioned.fill(
@@ -171,7 +173,7 @@ class _ChatViewState extends State<ChatView> {
                   Expanded(
                     child: TopEdgeFrost(
                       extent: frostExtent,
-                      solidUntil: topInset + 58,
+                      solidUntil: topInset + 52,
                       child: _messages(chat.id),
                     ),
                   ),
