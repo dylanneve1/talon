@@ -613,8 +613,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
     final seed = TalonTheme.accentSeed.value;
     final isPreset = seed != null &&
-        TalonAccents.presets
-            .any((p) => p.$2.toARGB32() == seed.toARGB32());
+        TalonAccents.presets.any((p) => p.$2.toARGB32() == seed.toARGB32());
     final isCustom = seed != null && !isPreset;
     final scale = TalonTheme.textScale.value;
     final mobile = defaultTargetPlatform == TargetPlatform.android ||
@@ -624,43 +623,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 8,
+          // A full-width segmented row (not chips): the three options share
+          // the line equally, so there's no orphaned gap on the right.
+          Row(
             children: [
-              for (final (mode, label, icon) in options)
-                ChoiceChip(
-                  avatar: Icon(
-                    icon,
-                    size: 15,
-                    color: current == mode
-                        ? TalonColors.accent
-                        : TalonColors.textFaint,
+              for (final (i, (mode, label, icon)) in options.indexed) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(
+                  child: _ModeButton(
+                    label: label,
+                    icon: icon,
+                    selected: current == mode,
+                    onTap: () {
+                      TalonTheme.mode.value = mode;
+                      widget.state.prefs.setThemeMode(switch (mode) {
+                        ThemeMode.light => 'light',
+                        ThemeMode.dark => 'dark',
+                        ThemeMode.system => 'system',
+                      });
+                    },
                   ),
-                  label: Text(label),
-                  selected: current == mode,
-                  showCheckmark: false,
-                  backgroundColor: TalonColors.surface,
-                  selectedColor: TalonColors.accent.withValues(alpha: 0.22),
-                  side: BorderSide(
-                    color: current == mode
-                        ? TalonColors.accent
-                        : TalonColors.glassStroke,
-                  ),
-                  labelStyle: TextStyle(
-                    color: current == mode
-                        ? TalonColors.text
-                        : TalonColors.textDim,
-                    fontSize: 13,
-                  ),
-                  onSelected: (_) {
-                    TalonTheme.mode.value = mode;
-                    widget.state.prefs.setThemeMode(switch (mode) {
-                      ThemeMode.light => 'light',
-                      ThemeMode.dark => 'dark',
-                      ThemeMode.system => 'system',
-                    });
-                  },
                 ),
+              ],
             ],
           ),
           const SizedBox(height: 18),
@@ -669,10 +653,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
+          _SwatchGrid(
+            swatches: [
               _AccentSwatch(
                 tooltip: 'Talon (default)',
                 gradient: const LinearGradient(
@@ -685,8 +667,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _AccentSwatch(
                   tooltip: label,
                   color: color,
-                  selected:
-                      seed != null && seed.toARGB32() == color.toARGB32(),
+                  selected: seed != null && seed.toARGB32() == color.toARGB32(),
                   onTap: () => _setAccent(color),
                 ),
               _AccentSwatch(
@@ -1468,6 +1449,107 @@ class _ModelRow extends StatelessWidget {
   }
 }
 
+/// One segment of the full-width theme-mode selector (Auto / Light / Dark).
+/// Styled like the old ChoiceChips but stretchable, so the three share the
+/// row edge-to-edge instead of leaving a gap after the last chip.
+class _ModeButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ModeButton({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: AnimatedContainer(
+        duration: TalonMotion.fast,
+        height: 36,
+        decoration: BoxDecoration(
+          color: selected
+              ? TalonColors.accent.withValues(alpha: 0.22)
+              : TalonColors.surface,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? TalonColors.accent : TalonColors.glassStroke,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: selected ? TalonColors.accent : TalonColors.textFaint,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? TalonColors.text : TalonColors.textDim,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Lays the accent swatches out as a balanced, edge-aligned grid: every row
+/// gets the same number of circles and rows are justified space-between, so
+/// the first and last columns sit flush with the section's edges — no
+/// left-aligned Wrap leaving a ragged right gap or a lonely overflow row.
+class _SwatchGrid extends StatelessWidget {
+  final List<Widget> swatches;
+  const _SwatchGrid({required this.swatches});
+
+  static const double _size = 34; // _AccentSwatch diameter
+  static const double _minGap = 10;
+  static const double _rowGap = 12;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final n = swatches.length;
+        final maxCols = ((constraints.maxWidth + _minGap) / (_size + _minGap))
+            .floor()
+            .clamp(1, n);
+        final rows = (n / maxCols).ceil();
+        // Balance the rows: 10 swatches on a phone become 5 + 5, not 7 + 3.
+        final cols = (n / rows).ceil();
+        return Column(
+          children: [
+            for (var r = 0; r < rows; r++) ...[
+              if (r > 0) const SizedBox(height: _rowGap),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  for (var i = r * cols; i < (r + 1) * cols; i++)
+                    // Invisible placeholders keep a short last row aligned
+                    // to the same column grid.
+                    i < n
+                        ? swatches[i]
+                        : const SizedBox(width: _size, height: _size),
+                ],
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
 /// A circular accent color swatch: solid [color] or [gradient] fill, a check
 /// mark when selected, and an optional glyph (the custom picker's eyedropper).
 class _AccentSwatch extends StatelessWidget {
@@ -1490,8 +1572,7 @@ class _AccentSwatch extends StatelessWidget {
   Widget build(BuildContext context) {
     // Pick a glyph color that survives both light swatches (amber) and dark.
     final base = color ?? const Color(0xFF7C8CFF);
-    final glyph =
-        base.computeLuminance() > 0.6 ? Colors.black87 : Colors.white;
+    final glyph = base.computeLuminance() > 0.6 ? Colors.black87 : Colors.white;
     return Tooltip(
       message: tooltip,
       waitDuration: const Duration(milliseconds: 400),
