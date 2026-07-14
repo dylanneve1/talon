@@ -94,9 +94,6 @@ flutter:
     # Windows tray icon (tray_manager resolves it from the asset bundle).
     - assets/icon/talon_icon.ico
 
-  shaders:
-    - shaders/progressive_blur.frag
-
   # Bundled type: Inter for UI text, JetBrains Mono for code — identical
   # rendering on every platform instead of whatever the OS default is.
   # Both are OFL-licensed (license files ship next to the fonts).

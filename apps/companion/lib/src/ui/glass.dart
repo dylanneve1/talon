@@ -1,5 +1,4 @@
 import 'dart:ui';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -72,11 +71,12 @@ double _ease(double t) {
   return x * x * x * (x * (x * 6 - 15) + 10);
 }
 
-/// The app-wide progressive frost: one Impeller backdrop shader samples the
-/// already-painted scene and decreases its blur radius continuously to zero.
-/// The final filtered row is identical to the untouched backdrop — no clip
-/// edge, blur bands, snapshots, or synchronous GPU readbacks.
-class TopEdgeFrost extends StatefulWidget {
+/// The app-wide progressive frost: a single native Gaussian backdrop blur,
+/// confined to the header strip, whose composited result is dissolved with a
+/// continuous alpha mask. This stays on Impeller's fast separable-blur path;
+/// there are no scene snapshots, synchronous GPU readbacks, or brute-force
+/// fragment-shader taps.
+class TopEdgeFrost extends StatelessWidget {
   final Widget child;
 
   /// Total frost depth from the top, in logical pixels (usually includes
@@ -93,102 +93,94 @@ class TopEdgeFrost extends StatefulWidget {
     required this.solidUntil,
   });
 
-  /// Radius of the shader's outer sample ring in logical pixels.
-  static const double radius = 28;
-
-  @override
-  State<TopEdgeFrost> createState() => _TopEdgeFrostState();
-}
-
-class _TopEdgeFrostState extends State<TopEdgeFrost> {
-  static ui.FragmentProgram? _program;
-  static Future<void>? _loading;
-  static bool _loadFailed = false;
-
-  ui.FragmentShader? _shader;
-
-  @override
-  void initState() {
-    super.initState();
-    if (ui.ImageFilter.isShaderFilterSupported &&
-        _program == null &&
-        !_loadFailed) {
-      (_loading ??= _loadProgram()).whenComplete(() {
-        if (mounted) setState(() {});
-      });
-    }
-  }
-
-  static Future<void> _loadProgram() async {
-    try {
-      _program = await ui.FragmentProgram.fromAsset(
-        'shaders/progressive_blur.frag',
-      );
-    } catch (error, stack) {
-      _loadFailed = true;
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stack,
-          library: 'talon companion',
-          context: ErrorDescription('loading the progressive frost shader'),
-        ),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _shader?.dispose();
-    super.dispose();
-  }
+  /// Strong enough to dissolve text and card edges under the controls. The
+  /// native blur is separable, so this is dramatically cheaper than sampling
+  /// a two-dimensional kernel in a runtime shader.
+  static const double sigma = 32;
 
   @override
   Widget build(BuildContext context) {
-    final dpr = MediaQuery.devicePixelRatioOf(context);
     return Stack(
       fit: StackFit.expand,
       children: [
-        widget.child,
-        if (ui.ImageFilter.isShaderFilterSupported && _program != null)
-          Positioned.fill(
-            child: IgnorePointer(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  if (!constraints.maxHeight.isFinite ||
-                      constraints.maxHeight <= 0) {
-                    return const SizedBox.shrink();
-                  }
-                  final height = widget.extent.clamp(
-                    0.0,
-                    constraints.maxHeight,
-                  );
-                  final solid = (widget.solidUntil / height).clamp(0.0, 0.95);
-                  final shader = _shader ??= _program!.fragmentShader();
-                  // Slots 0-1 are the engine-provided input texture size.
-                  shader
-                    ..setFloat(2, TopEdgeFrost.radius * dpr)
-                    ..setFloat(3, solid);
-                  return Align(
-                    alignment: Alignment.topCenter,
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: height,
-                      child: ClipRect(
-                        child: BackdropFilter(
-                          filter: ui.ImageFilter.shader(shader),
-                          child: const SizedBox.expand(),
+        child,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                if (!constraints.maxHeight.isFinite ||
+                    constraints.maxHeight <= 0) {
+                  return const SizedBox.shrink();
+                }
+                final height = extent.clamp(0.0, constraints.maxHeight);
+                final solid = solidUntil.clamp(0.0, height);
+                return Align(
+                  alignment: Alignment.topCenter,
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: height,
+                    child: ClipRect(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(
+                          sigmaX: sigma,
+                          sigmaY: sigma,
+                          tileMode: TileMode.clamp,
+                        ),
+                        child: CustomPaint(
+                          painter: _BottomFadeMaskPainter(solid: solid),
+                          size: Size.infinite,
                         ),
                       ),
                     ),
-                  );
-                },
-              ),
+                  ),
+                );
+              },
             ),
           ),
+        ),
       ],
     );
   }
+}
+
+/// Masks the backdrop-filter layer itself. Painting this as a child of the
+/// [BackdropFilter] is important: [BlendMode.dstIn] then feathers the filtered
+/// backdrop rather than adding a translucent veil over the sharp scene.
+class _BottomFadeMaskPainter extends CustomPainter {
+  const _BottomFadeMaskPainter({required this.solid});
+
+  final double solid;
+  static const int _steps = 16;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final fadeHeight = size.height - solid;
+    if (fadeHeight <= 0) return;
+
+    final stops = <double>[0];
+    final colors = <Color>[Colors.white];
+    for (var i = 0; i <= _steps; i++) {
+      final t = i / _steps;
+      stops.add((solid + fadeHeight * t) / size.height);
+      colors.add(Colors.white.withValues(alpha: 1 - _ease(t)));
+    }
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..blendMode = BlendMode.dstIn
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: colors,
+          stops: stops,
+        ).createShader(Offset.zero & size),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_BottomFadeMaskPainter oldDelegate) =>
+      oldDelegate.solid != solid;
 }
 
 /// The gradient wash painted behind floating header controls: a translucent

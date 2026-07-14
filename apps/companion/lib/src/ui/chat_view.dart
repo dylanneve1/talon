@@ -157,10 +157,9 @@ class _ChatViewState extends State<ChatView> {
         final chat = widget.state.selectedChat;
         if (chat == null) return const _EmptyState();
         _autoScroll(chat.id, widget.state.messagesFor(chat.id).length);
-        // The frost lives on the scrollback itself, not the header: a
-        // progressive top-edge blur (snapshot + gradient-masked blurred
-        // copy) that is solid behind the header controls and dissolves
-        // continuously to nothing — smooth on every backend, no banding.
+        // The frost lives on the scrollback itself, not the header: one native
+        // backdrop blur whose composited result is gradient-masked from solid
+        // behind the controls to fully clear — no snapshots or blur bands.
         final topInset = MediaQuery.of(context).padding.top;
         // Keep the dissolve compact: enough runway to feather the controls,
         // not a blank frosted slab consuming the top quarter of the phone.
