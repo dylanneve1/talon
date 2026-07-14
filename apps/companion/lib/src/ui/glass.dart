@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../theme.dart';
-import 'top_edge_sampler.dart';
 
 /// A frosted-glass panel: blurred translucent fill, hairline stroke, soft
 /// rounding. The building block of the whole UI.
@@ -73,12 +72,11 @@ double _ease(double t) {
   return x * x * x * (x * (x * 6 - 15) + 10);
 }
 
-/// The app-wide progressive frost: the child paints normally, while a small
-/// top-edge snapshot is painted over it as a blurred copy behind a continuous
-/// smootherstep mask. Only [extent] plus a blur guard band is sampled — not
-/// the full screen — keeping the overlay current with scrolling without the
-/// full-frame snapshot stalls that caused the old implementation to flicker.
-class TopEdgeFrost extends StatelessWidget {
+/// The app-wide progressive frost: one Impeller backdrop shader samples the
+/// already-painted scene and decreases its blur radius continuously to zero.
+/// The final filtered row is identical to the untouched backdrop — no clip
+/// edge, blur bands, snapshots, or synchronous GPU readbacks.
+class TopEdgeFrost extends StatefulWidget {
   final Widget child;
 
   /// Total frost depth from the top, in logical pixels (usually includes
@@ -95,63 +93,100 @@ class TopEdgeFrost extends StatelessWidget {
     required this.solidUntil,
   });
 
-  /// Peak blur strength for every frosted header in the app.
-  // Strong enough to fully dissolve text and card edges behind the controls.
-  // The previous 18px pass mostly dimmed high-contrast content on Android.
-  static const double sigma = 32;
+  /// Radius of the shader's outer sample ring in logical pixels.
+  static const double radius = 28;
 
-  static const int _steps = 24;
+  @override
+  State<TopEdgeFrost> createState() => _TopEdgeFrostState();
+}
+
+class _TopEdgeFrostState extends State<TopEdgeFrost> {
+  static ui.FragmentProgram? _program;
+  static Future<void>? _loading;
+  static bool _loadFailed = false;
+
+  ui.FragmentShader? _shader;
+
+  @override
+  void initState() {
+    super.initState();
+    if (ui.ImageFilter.isShaderFilterSupported &&
+        _program == null &&
+        !_loadFailed) {
+      (_loading ??= _loadProgram()).whenComplete(() {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  static Future<void> _loadProgram() async {
+    try {
+      _program = await ui.FragmentProgram.fromAsset(
+        'shaders/progressive_blur.frag',
+      );
+    } catch (error, stack) {
+      _loadFailed = true;
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'talon companion',
+          context: ErrorDescription('loading the progressive frost shader'),
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _shader?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    return TopEdgeSampler(
-      sampleHeight: extent + sigma * 3,
-      builder: (ui.Image image, Size size, Canvas canvas) {
-        canvas.scale(1 / dpr);
-        final rect = Rect.fromLTWH(0, 0, size.width * dpr, extent * dpr);
-        final solid = (solidUntil / extent).clamp(0.0, 0.95);
-        final stops = <double>[0.0];
-        final colors = <Color>[Colors.black];
-        for (var i = 0; i <= _steps; i++) {
-          final t = i / _steps;
-          stops.add(solid + t * (1 - solid));
-          colors.add(Colors.black.withValues(alpha: 1 - _ease(t)));
-        }
-        final mask = Paint()
-          ..shader = ui.Gradient.linear(
-            rect.topCenter,
-            rect.bottomCenter,
-            colors,
-            stops,
-          )
-          ..blendMode = BlendMode.dstIn;
-        canvas.saveLayer(rect, Paint());
-        // The sampled child is intentionally transparent so the global Talon
-        // backdrop can show through during normal painting. A blurred copy of
-        // that transparent layer cannot replace the original sharp pixels by
-        // itself, though: it merely lays a soft ghost over them. Reconstruct
-        // the canvas under the sample first so the frosted copy is opaque and
-        // genuinely obscures text/cards behind the header.
-        canvas.drawRect(
-          rect,
-          Paint()..color = TalonColors.void0.withValues(alpha: 0.86),
-        );
-        canvas.drawImage(
-          image,
-          Offset.zero,
-          Paint()
-            ..imageFilter = ui.ImageFilter.blur(
-              // The sampled image is in physical pixels.
-              sigmaX: sigma * dpr,
-              sigmaY: sigma * dpr,
-              tileMode: TileMode.clamp,
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.child,
+        if (ui.ImageFilter.isShaderFilterSupported && _program != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  if (!constraints.maxHeight.isFinite ||
+                      constraints.maxHeight <= 0) {
+                    return const SizedBox.shrink();
+                  }
+                  final height = widget.extent.clamp(
+                    0.0,
+                    constraints.maxHeight,
+                  );
+                  final solid = (widget.solidUntil / height).clamp(0.0, 0.95);
+                  final shader = _shader ??= _program!.fragmentShader();
+                  // Slots 0-1 are the engine-provided input texture size.
+                  shader
+                    ..setFloat(2, TopEdgeFrost.radius * dpr)
+                    ..setFloat(3, solid);
+                  return Align(
+                    alignment: Alignment.topCenter,
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: height,
+                      child: ClipRect(
+                        child: BackdropFilter(
+                          filter: ui.ImageFilter.shader(shader),
+                          child: const SizedBox.expand(),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
-        );
-        canvas.drawRect(rect, mask);
-        canvas.restore();
-      },
-      child: child,
+          ),
+      ],
     );
   }
 }
