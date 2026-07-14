@@ -96,7 +96,9 @@ class TopEdgeFrost extends StatelessWidget {
   });
 
   /// Peak blur strength for every frosted header in the app.
-  static const double sigma = 18;
+  // Strong enough to fully dissolve text and card edges behind the controls.
+  // The previous 18px pass mostly dimmed high-contrast content on Android.
+  static const double sigma = 32;
 
   static const int _steps = 24;
 
@@ -125,6 +127,16 @@ class TopEdgeFrost extends StatelessWidget {
           )
           ..blendMode = BlendMode.dstIn;
         canvas.saveLayer(rect, Paint());
+        // The sampled child is intentionally transparent so the global Talon
+        // backdrop can show through during normal painting. A blurred copy of
+        // that transparent layer cannot replace the original sharp pixels by
+        // itself, though: it merely lays a soft ghost over them. Reconstruct
+        // the canvas under the sample first so the frosted copy is opaque and
+        // genuinely obscures text/cards behind the header.
+        canvas.drawRect(
+          rect,
+          Paint()..color = TalonColors.void0.withValues(alpha: 0.86),
+        );
         canvas.drawImage(
           image,
           Offset.zero,
