@@ -472,25 +472,90 @@ class _ConnBanner extends StatelessWidget {
   }
 }
 
-/// Approximates a progressive backdrop blur behind [child]: the area is
-/// covered by stacked blur bands, full-height first and progressively
-/// shorter ones on top, so the compounded blur is strongest behind the top
-/// of the header and melts to nothing at its bottom edge. This keeps the
-/// glass feel without the hard lower boundary a single BackdropFilter strip
-/// would draw across the canvas.
-class _ProgressiveGlass extends StatelessWidget {
+/// A progressive backdrop frost behind [child]: heavy blur through the
+/// control zone that dissolves to nothing at the bottom edge.
+///
+/// The real implementation is a custom fragment shader used as the backdrop
+/// [ImageFilter] (`shaders/progressive_blur.frag`): the blur radius is a
+/// continuous per-pixel function of height, so the falloff is mathematically
+/// smooth — no bands, no steps, no terminating line. That path requires
+/// Impeller ([ImageFilter.isShaderFilterSupported]), which covers Android,
+/// iOS and macOS. On Skia backends (Linux/Windows desktop, widget tests) it
+/// falls back to a stack of compounding blur bands that approximate the same
+/// ramp.
+class _ProgressiveGlass extends StatefulWidget {
   final Widget child;
   const _ProgressiveGlass({required this.child});
 
-  /// (fraction of header height covered from the top, blur sigma).
-  ///
-  /// Every band spans the top 55% — that zone gets all sigmas compounded
-  /// (σ_eff = √Σσ² ≈ 12), reading as one solid sheet of frost. Below it the
-  /// band bottoms are staggered every ~6% of the height with geometrically
-  /// increasing sigmas, and crucially the band reaching furthest down
-  /// carries the smallest sigma: each visible step only sheds a σ≈1-2 pass
-  /// from already-blurred content, so the frost dissolves as a smooth ramp
-  /// instead of a staircase with a defined edge.
+  @override
+  State<_ProgressiveGlass> createState() => _ProgressiveGlassState();
+}
+
+class _ProgressiveGlassState extends State<_ProgressiveGlass> {
+  /// Max blur radius in logical pixels (≈ a σ12 gaussian's visual weight).
+  static const double _maxRadius = 26;
+
+  /// Fraction of the header height that stays fully frosted; the dissolve
+  /// runs from here to the bottom edge. Mirrored by the scrim gradient.
+  static const double _solidFraction = 0.55;
+
+  /// Loaded once per process; null until the async load lands (the band
+  /// fallback renders in the interim, so there's no flash of no-frost).
+  static FragmentProgram? _program;
+  static Future<FragmentProgram>? _loading;
+
+  FragmentShader? _shader;
+
+  @override
+  void initState() {
+    super.initState();
+    if (ImageFilter.isShaderFilterSupported && _program == null) {
+      _loading ??= FragmentProgram.fromAsset('shaders/progressive_blur.frag');
+      _loading!.then((p) {
+        _program = p;
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _shader?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final program = _program;
+    if (!ImageFilter.isShaderFilterSupported || program == null) {
+      return _FrostBandsFallback(child: widget.child);
+    }
+    // Uniform layout: 0-1 are the engine-set size vec2, then ours.
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    _shader ??= program.fragmentShader();
+    _shader!
+      ..setFloat(2, _maxRadius * dpr)
+      ..setFloat(3, _solidFraction);
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.shader(_shader!),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// Skia fallback for [_ProgressiveGlass]: stacked blur bands, full-height
+/// first and progressively shorter ones on top, compounding so the frost is
+/// strongest behind the controls and steps down in σ≈1-2 increments — close
+/// to the shader's ramp, at the cost of faint banding.
+class _FrostBandsFallback extends StatelessWidget {
+  final Widget child;
+  const _FrostBandsFallback({required this.child});
+
+  /// (fraction of header height covered from the top, blur sigma). The band
+  /// reaching furthest down carries the smallest sigma so each step sheds
+  /// only a σ≈1-2 pass from already-blurred content.
   static const _bands = [
     (1.00, 0.8),
     (0.94, 1.1),
