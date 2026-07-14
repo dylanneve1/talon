@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../theme.dart';
-import 'animated_sampler.dart';
 
 /// A frosted-glass panel: blurred translucent fill, hairline stroke, soft
 /// rounding. The building block of the whole UI.
@@ -75,10 +74,18 @@ double _ease(double t) {
 
 /// The app-wide progressive frost: content slides beneath a floating header
 /// and dissolves into a blur that is solid through the control zone and
-/// eases to nothing along a smootherstep curve. Implementation: snapshot
-/// [child] (AnimatedSampler), draw it sharp, then draw a blurred copy
-/// masked by a many-stop eased gradient — one continuous mask, smooth on
-/// every backend, no Mach band at either end of the ramp.
+/// eases to nothing along a smootherstep curve.
+///
+/// Implementation: a stepped progressive blur — the industry answer to this
+/// effect in Flutter. The frost area is sliced into thin, non-overlapping
+/// horizontal bands, each a clipped [BackdropFilter.grouped] whose sigma
+/// follows the eased profile; a [BackdropGroup] shares one backdrop readback
+/// across all bands. Everything is engine-composited (no snapshot round
+/// trips), so it stays perfectly in sync with scrolling content — no
+/// flicker — and 20 eased steps of a few pixels each read as one continuous
+/// dissolve. (Masking a BackdropFilter with a gradient is a documented
+/// compositor trap, and per-pixel shader blurs both underperform and, via
+/// ImageFilter.shader's geometry bugs, misrender — this pattern avoids both.)
 class TopEdgeFrost extends StatelessWidget {
   final Widget child;
 
@@ -96,55 +103,60 @@ class TopEdgeFrost extends StatelessWidget {
     required this.solidUntil,
   });
 
-  /// One blur strength for every frosted header in the app.
-  static const double sigma = 16;
+  /// Peak blur strength for every frosted header in the app.
+  static const double sigma = 28;
 
-  /// Gradient resolution for the eased mask.
-  static const int _steps = 24;
+  /// Bands in the dissolve zone. Research consensus is 8-12 already reads
+  /// as continuous; 20 leaves margin at our higher peak sigma.
+  static const int _steps = 20;
 
   @override
   Widget build(BuildContext context) {
-    final dpr = MediaQuery.devicePixelRatioOf(context);
-    return ClipRect(
-      child: AnimatedSampler(
-        (ui.Image image, Size size, Canvas canvas) {
-          canvas.scale(1 / dpr);
-          // The child, untouched.
-          canvas.drawImage(image, Offset.zero, Paint());
-
-          // A blurred copy on top, masked by the eased dissolve.
-          final rect = Rect.fromLTWH(0, 0, size.width * dpr, extent * dpr);
-          final solidFrac = (solidUntil / extent).clamp(0.0, 0.95);
-          final positions = <double>[0.0];
-          final colors = <Color>[Colors.black];
-          for (var i = 0; i <= _steps; i++) {
-            final t = i / _steps;
-            positions.add(solidFrac + t * (1 - solidFrac));
-            colors.add(Colors.black.withValues(alpha: 1 - _ease(t)));
-          }
-          final mask = Paint()
-            ..shader = ui.Gradient.linear(
-              rect.topCenter,
-              rect.bottomCenter,
-              colors,
-              positions,
-            )
-            ..blendMode = BlendMode.dstIn;
-          canvas.saveLayer(rect, Paint());
-          canvas.drawImage(
-            image,
-            Offset.zero,
-            Paint()
-              ..imageFilter = ui.ImageFilter.blur(
-                sigmaX: sigma,
-                sigmaY: sigma,
-                tileMode: TileMode.clamp,
+    final fadeZone = (extent - solidUntil).clamp(1.0, extent);
+    final bandHeight = fadeZone / _steps;
+    return Stack(
+      children: [
+        Positioned.fill(child: child),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: extent,
+          child: IgnorePointer(
+            child: BackdropGroup(
+              child: Column(
+                children: [
+                  // The solid sheet behind the header controls.
+                  _band(solidUntil, sigma),
+                  // The dissolve: eased sigma per band, ending at ~0 so the
+                  // last step hands off invisibly to unfiltered content.
+                  for (var i = 0; i < _steps; i++)
+                    _band(
+                      bandHeight,
+                      sigma * (1 - _ease((i + 0.5) / _steps)),
+                    ),
+                ],
               ),
-          );
-          canvas.drawRect(rect, mask);
-          canvas.restore();
-        },
-        child: child,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _band(double height, double s) {
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: ClipRect(
+        child: BackdropFilter.grouped(
+          filter: ui.ImageFilter.blur(
+            sigmaX: s,
+            sigmaY: s,
+            tileMode: TileMode.clamp,
+          ),
+          child: const SizedBox.expand(),
+        ),
       ),
     );
   }
