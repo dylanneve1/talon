@@ -30,6 +30,10 @@ dependencies:
   # hand-rolled AnimationControllers with a chainable .animate() API and powers
   # the staggered list entrances, shimmer skeletons, and streaming caret.
   flutter_animate: ^4.5.0
+  # Progressive edge blur (snapshot + gradient-masked blurred copy): frosts
+  # the top of the scrollback under the floating chat header with a truly
+  # continuous falloff, on both Impeller and Skia.
+  soft_edge_blur: ^0.1.3
   # Open links from assistant messages / buttons in the OS browser.
   url_launcher: ^6.3.0
   # Pick an image to attach to a message. Chosen over image_picker because it
@@ -94,10 +98,6 @@ flutter:
     # Windows tray icon (tray_manager resolves it from the asset bundle).
     - assets/icon/talon_icon.ico
 
-  # Custom fragment shaders (compiled by the Flutter tool). The progressive
-  # header frost runs as a backdrop ImageFilter on Impeller backends.
-  shaders:
-    - shaders/progressive_blur.frag
 
   # Bundled type: Inter for UI text, JetBrains Mono for code — identical
   # rendering on every platform instead of whatever the OS default is.

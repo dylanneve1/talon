@@ -1,8 +1,7 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:soft_edge_blur/soft_edge_blur.dart';
 
 import '../models/bridge_models.dart';
 import '../state/app_state.dart';
@@ -158,12 +157,41 @@ class _ChatViewState extends State<ChatView> {
         final chat = widget.state.selectedChat;
         if (chat == null) return const _EmptyState();
         _autoScroll(chat.id, widget.state.messagesFor(chat.id).length);
+        // The frost lives on the scrollback itself, not the header: a
+        // progressive top-edge blur (snapshot + gradient-masked blurred
+        // copy) that is solid behind the header controls and dissolves
+        // continuously to nothing — smooth on every backend, no banding.
+        final topInset = MediaQuery.of(context).padding.top;
+        final frostExtent = topInset + _headerClearance + 12;
+        final frostSolid =
+            ((topInset + 58) / frostExtent).clamp(0.0, 0.9).toDouble();
         return Stack(
           children: [
             Positioned.fill(
               child: Column(
                 children: [
-                  Expanded(child: _messages(chat.id)),
+                  Expanded(
+                    child: SoftEdgeBlur(
+                      edges: [
+                        EdgeBlur(
+                          type: EdgeType.topEdge,
+                          size: frostExtent,
+                          sigma: 12,
+                          controlPoints: [
+                            ControlPoint(
+                              position: frostSolid,
+                              type: ControlPointType.visible,
+                            ),
+                            ControlPoint(
+                              position: 1,
+                              type: ControlPointType.transparent,
+                            ),
+                          ],
+                        ),
+                      ],
+                      child: _messages(chat.id),
+                    ),
+                  ),
                   Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: _columnMax),
@@ -472,140 +500,6 @@ class _ConnBanner extends StatelessWidget {
   }
 }
 
-/// A progressive backdrop frost behind [child]: heavy blur through the
-/// control zone that dissolves to nothing at the bottom edge.
-///
-/// The real implementation is a custom fragment shader used as the backdrop
-/// [ImageFilter] (`shaders/progressive_blur.frag`): the blur radius is a
-/// continuous per-pixel function of height, so the falloff is mathematically
-/// smooth — no bands, no steps, no terminating line. That path requires
-/// Impeller ([ImageFilter.isShaderFilterSupported]), which covers Android,
-/// iOS and macOS. On Skia backends (Linux/Windows desktop, widget tests) it
-/// falls back to a stack of compounding blur bands that approximate the same
-/// ramp.
-class _ProgressiveGlass extends StatefulWidget {
-  final Widget child;
-  const _ProgressiveGlass({required this.child});
-
-  @override
-  State<_ProgressiveGlass> createState() => _ProgressiveGlassState();
-}
-
-class _ProgressiveGlassState extends State<_ProgressiveGlass> {
-  /// Max blur radius in logical pixels (≈ a σ12 gaussian's visual weight).
-  static const double _maxRadius = 26;
-
-  /// Fraction of the header height that stays fully frosted; the dissolve
-  /// runs from here to the bottom edge. Mirrored by the scrim gradient.
-  static const double _solidFraction = 0.55;
-
-  /// Loaded once per process; null until the async load lands (the band
-  /// fallback renders in the interim, so there's no flash of no-frost).
-  static FragmentProgram? _program;
-  static Future<FragmentProgram>? _loading;
-
-  FragmentShader? _shader;
-
-  @override
-  void initState() {
-    super.initState();
-    if (ImageFilter.isShaderFilterSupported && _program == null) {
-      _loading ??= FragmentProgram.fromAsset('shaders/progressive_blur.frag');
-      _loading!.then((p) {
-        _program = p;
-        if (mounted) setState(() {});
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _shader?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final program = _program;
-    if (!ImageFilter.isShaderFilterSupported || program == null) {
-      return _FrostBandsFallback(child: widget.child);
-    }
-    // Uniform layout: 0-1 are the engine-set size vec2, then ours.
-    final dpr = MediaQuery.of(context).devicePixelRatio;
-    _shader ??= program.fragmentShader();
-    _shader!
-      ..setFloat(2, _maxRadius * dpr)
-      ..setFloat(3, _solidFraction);
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.shader(_shader!),
-        child: widget.child,
-      ),
-    );
-  }
-}
-
-/// Skia fallback for [_ProgressiveGlass]: stacked blur bands, full-height
-/// first and progressively shorter ones on top, compounding so the frost is
-/// strongest behind the controls and steps down in σ≈1-2 increments — close
-/// to the shader's ramp, at the cost of faint banding.
-class _FrostBandsFallback extends StatelessWidget {
-  final Widget child;
-  const _FrostBandsFallback({required this.child});
-
-  /// (fraction of header height covered from the top, blur sigma). The band
-  /// reaching furthest down carries the smallest sigma so each step sheds
-  /// only a σ≈1-2 pass from already-blurred content.
-  static const _bands = [
-    (1.00, 0.8),
-    (0.94, 1.1),
-    (0.88, 1.6),
-    (0.82, 2.2),
-    (0.76, 3.1),
-    (0.70, 4.4),
-    (0.63, 6.2),
-    (0.55, 8.7),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRect(
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final h = constraints.maxHeight;
-                return Stack(
-                  children: [
-                    for (final (frac, sigma) in _bands)
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: h * frac,
-                        child: ClipRect(
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(
-                              sigmaX: sigma,
-                              sigmaY: sigma,
-                            ),
-                            child: const SizedBox.expand(),
-                          ),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
 class _Header extends StatelessWidget {
   final AppState state;
   final ClientChat chat;
@@ -623,92 +517,89 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final model = chat.model ?? state.status.model;
     final effort = chat.effort ?? 'adaptive';
-    // Not a bar: the controls float directly on the canvas over a progressive
-    // glass gradient — heavy backdrop blur behind the title that melts to
-    // nothing at the bottom — plus a soft scrim for legibility. Scrollback
-    // dissolves as it slides underneath instead of hitting a frosted strip
-    // with an edge.
+    // Not a bar: the controls float directly on the canvas over a soft
+    // scrim. Scrollback dissolves as it slides underneath (the scrollback's
+    // own top-edge frost) instead of hitting a frosted strip with an edge.
     final base = TalonTheme.isDark ? TalonColors.void1 : Colors.white;
     // The shell doesn't consume the top inset for the conversation: the
-    // frost and scrim run up behind the system status bar (same canvas, one
-    // surface) and only the controls are padded down below it.
+    // scrim runs up behind the system status bar (same canvas, one surface)
+    // and only the controls are padded down below it. The frost itself is
+    // the scrollback's top-edge blur — the header adds no blur of its own.
     final topInset = MediaQuery.of(context).padding.top;
-    return _ProgressiveGlass(
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            // Matches the blur ramp: solid through the control zone, then a
-            // single smooth falloff to nothing across the same border the
-            // frost dissolves over.
-            colors: [
-              base.withValues(alpha: 0.80),
-              base.withValues(alpha: 0.74),
-              base.withValues(alpha: 0.0),
-            ],
-            stops: const [0.0, 0.55, 1.0],
-          ),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          // Matches the blur ramp: solid through the control zone, then a
+          // single smooth falloff to nothing across the same border the
+          // frost dissolves over.
+          colors: [
+            base.withValues(alpha: 0.80),
+            base.withValues(alpha: 0.74),
+            base.withValues(alpha: 0.0),
+          ],
+          stops: const [0.0, 0.55, 1.0],
         ),
-        padding: EdgeInsets.fromLTRB(12, 8 + topInset, 8, 26),
-        // Auto-detect available width instead of hard-coding a platform
-        // check: a desktop window with the sidebar open gives the chat pane
-        // less room than fullscreen, and the phone is always narrow.
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 560;
-            final modelLabel = model.isEmpty ? 'model' : model;
-            return Row(
-              children: [
-                if (showBack)
-                  IconButton(
-                    onPressed: onBack,
-                    tooltip: 'Back to chats',
-                    // Platform-adaptive: Material arrow on Android, iOS chevron
-                    // on Apple platforms.
-                    icon: Icon(Icons.adaptive.arrow_back, size: 20),
-                  ),
-                Expanded(
-                  child: Text(
-                    chat.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 15.5, fontWeight: FontWeight.w700),
-                  ),
+      ),
+      padding: EdgeInsets.fromLTRB(12, 8 + topInset, 8, 26),
+      // Auto-detect available width instead of hard-coding a platform
+      // check: a desktop window with the sidebar open gives the chat pane
+      // less room than fullscreen, and the phone is always narrow.
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 560;
+          final modelLabel = model.isEmpty ? 'model' : model;
+          return Row(
+            children: [
+              if (showBack)
+                IconButton(
+                  onPressed: onBack,
+                  tooltip: 'Back to chats',
+                  // Platform-adaptive: Material arrow on Android, iOS chevron
+                  // on Apple platforms.
+                  icon: Icon(Icons.adaptive.arrow_back, size: 20),
                 ),
-                if (chat.context?.known == true) ...[
-                  _ContextChip(context: chat.context!),
-                  const SizedBox(width: 6),
-                ],
-                if (compact)
-                  // One pill with just the model. Effort still lives a tap away
-                  // in the model sheet; spelling it out here starved the chat
-                  // title of width on phones ("Trip to…" next to
-                  // "opus · adaptive").
-                  _Chip(
-                    icon: Icons.memory,
-                    label: modelLabel,
-                    onTap: () => openModelSheet(context, state, chat),
-                  )
-                else ...[
-                  _Chip(
-                    icon: Icons.memory,
-                    label: modelLabel,
-                    onTap: () => openModelSheet(context, state, chat),
-                  ),
-                  const SizedBox(width: 6),
-                  _Chip(
-                    icon: Icons.tune,
-                    label: effort,
-                    onTap: () => openModelSheet(context, state, chat),
-                  ),
-                ],
-                _ChatMenu(state: state, chat: chat),
+              Expanded(
+                child: Text(
+                  chat.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 15.5, fontWeight: FontWeight.w700),
+                ),
+              ),
+              if (chat.context?.known == true) ...[
+                _ContextChip(context: chat.context!),
+                const SizedBox(width: 6),
               ],
-            );
-          },
-        ),
+              if (compact)
+                // One pill with just the model. Effort still lives a tap away
+                // in the model sheet; spelling it out here starved the chat
+                // title of width on phones ("Trip to…" next to
+                // "opus · adaptive").
+                _Chip(
+                  icon: Icons.memory,
+                  label: modelLabel,
+                  onTap: () => openModelSheet(context, state, chat),
+                )
+              else ...[
+                _Chip(
+                  icon: Icons.memory,
+                  label: modelLabel,
+                  onTap: () => openModelSheet(context, state, chat),
+                ),
+                const SizedBox(width: 6),
+                _Chip(
+                  icon: Icons.tune,
+                  label: effort,
+                  onTap: () => openModelSheet(context, state, chat),
+                ),
+              ],
+              _ChatMenu(state: state, chat: chat),
+            ],
+          );
+        },
       ),
     );
   }
