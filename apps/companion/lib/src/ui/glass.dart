@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../theme.dart';
+import 'top_edge_sampler.dart';
 
 /// A frosted-glass panel: blurred translucent fill, hairline stroke, soft
 /// rounding. The building block of the whole UI.
@@ -72,22 +73,12 @@ double _ease(double t) {
   return x * x * x * (x * (x * 6 - 15) + 10);
 }
 
-/// The app-wide progressive frost: content slides beneath a floating header
-/// and dissolves into a blur that is solid through the control zone and
-/// eases continuously to untouched content.
-///
-/// One engine Gaussian blur is composed with a tiny Impeller image-filter
-/// shader that fades the blurred result's premultiplied alpha. The filtered
-/// layer is then blended over the original backdrop. This keeps the blur in
-/// the compositor (no snapshots or one-frame scroll lag) while the falloff is
-/// a real continuous curve (no clipped bands or stepladder edges). The filter
-/// keeps a three-sigma transparent guard band below [extent], rather than
-/// clipping where the visible frost ends and exposing a blur-kernel edge.
-///
-/// Shader image filters require Impeller. Unsupported backends keep the
-/// continuous header scrim but skip frost instead of rendering a visibly
-/// stepped approximation.
-class TopEdgeFrost extends StatefulWidget {
+/// The app-wide progressive frost: the child paints normally, while a small
+/// top-edge snapshot is painted over it as a blurred copy behind a continuous
+/// smootherstep mask. Only [extent] plus a blur guard band is sampled — not
+/// the full screen — keeping the overlay current with scrolling without the
+/// full-frame snapshot stalls that caused the old implementation to flicker.
+class TopEdgeFrost extends StatelessWidget {
   final Widget child;
 
   /// Total frost depth from the top, in logical pixels (usually includes
@@ -104,111 +95,51 @@ class TopEdgeFrost extends StatefulWidget {
     required this.solidUntil,
   });
 
-  /// Peak blur strength for every frosted header in the app. This remains a
-  /// native separable Gaussian; the shader only supplies the continuous mask.
-  static const double sigma = 28;
+  /// Peak blur strength for every frosted header in the app.
+  static const double sigma = 18;
 
-  @override
-  State<TopEdgeFrost> createState() => _TopEdgeFrostState();
-}
-
-class _TopEdgeFrostState extends State<TopEdgeFrost> {
-  static ui.FragmentProgram? _program;
-  static Future<void>? _loading;
-  static bool _loadFailed = false;
-
-  ui.FragmentShader? _shader;
-
-  @override
-  void initState() {
-    super.initState();
-    if (ui.ImageFilter.isShaderFilterSupported &&
-        _program == null &&
-        !_loadFailed) {
-      (_loading ??= _loadProgram()).whenComplete(() {
-        if (mounted) setState(() {});
-      });
-    }
-  }
-
-  static Future<void> _loadProgram() async {
-    try {
-      _program = await ui.FragmentProgram.fromAsset(
-        'shaders/progressive_blur.frag',
-      );
-    } catch (error, stack) {
-      _loadFailed = true;
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stack,
-          library: 'talon companion',
-          context: ErrorDescription('loading the progressive frost shader'),
-        ),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _shader?.dispose();
-    super.dispose();
-  }
+  static const int _steps = 24;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        widget.child,
-        if (ui.ImageFilter.isShaderFilterSupported && _program != null)
-          Positioned.fill(
-            child: IgnorePointer(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final availableHeight = constraints.maxHeight;
-                  if (!availableHeight.isFinite || availableHeight <= 0) {
-                    return const SizedBox.shrink();
-                  }
-                  // Keep enough transparent space for the Gaussian kernel to
-                  // finish below the visible fade. The eventual clip is then
-                  // cutting transparent pixels, not the blur itself.
-                  final height = (widget.extent + TopEdgeFrost.sigma * 3)
-                      .clamp(0.0, availableHeight);
-                  final solid = (widget.solidUntil / height).clamp(0.0, 1.0);
-                  final end = (widget.extent / height).clamp(solid, 1.0);
-                  final program = _program!;
-                  _shader ??= program.fragmentShader();
-                  // Slots 0-1 are the engine-provided input texture size.
-                  _shader!
-                    ..setFloat(2, solid)
-                    ..setFloat(3, end);
-                  return Align(
-                    alignment: Alignment.topCenter,
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: height,
-                      child: ClipRect(
-                        child: BackdropFilter(
-                          filter: ui.ImageFilter.compose(
-                            inner: ui.ImageFilter.blur(
-                              sigmaX: TopEdgeFrost.sigma,
-                              sigmaY: TopEdgeFrost.sigma,
-                              tileMode: TileMode.clamp,
-                            ),
-                            outer: ui.ImageFilter.shader(_shader!),
-                          ),
-                          blendMode: BlendMode.srcOver,
-                          child: const SizedBox.expand(),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    return TopEdgeSampler(
+      sampleHeight: extent + sigma * 3,
+      builder: (ui.Image image, Size size, Canvas canvas) {
+        canvas.scale(1 / dpr);
+        final rect = Rect.fromLTWH(0, 0, size.width * dpr, extent * dpr);
+        final solid = (solidUntil / extent).clamp(0.0, 0.95);
+        final stops = <double>[0.0];
+        final colors = <Color>[Colors.black];
+        for (var i = 0; i <= _steps; i++) {
+          final t = i / _steps;
+          stops.add(solid + t * (1 - solid));
+          colors.add(Colors.black.withValues(alpha: 1 - _ease(t)));
+        }
+        final mask = Paint()
+          ..shader = ui.Gradient.linear(
+            rect.topCenter,
+            rect.bottomCenter,
+            colors,
+            stops,
+          )
+          ..blendMode = BlendMode.dstIn;
+        canvas.saveLayer(rect, Paint());
+        canvas.drawImage(
+          image,
+          Offset.zero,
+          Paint()
+            ..imageFilter = ui.ImageFilter.blur(
+              // The sampled image is in physical pixels.
+              sigmaX: sigma * dpr,
+              sigmaY: sigma * dpr,
+              tileMode: TileMode.clamp,
             ),
-          ),
-      ],
+        );
+        canvas.drawRect(rect, mask);
+        canvas.restore();
+      },
+      child: child,
     );
   }
 }
@@ -284,10 +215,8 @@ class FrostedScreen extends StatelessWidget {
         children: [
           Positioned.fill(
             child: TopEdgeFrost(
-              // A long dissolve: the fade gets ~70px of runway so there is
-              // no point where the eye can anchor a boundary.
-              extent: inset + 118,
-              solidUntil: inset + 46,
+              extent: inset + 94,
+              solidUntil: inset + 48,
               child: body,
             ),
           ),

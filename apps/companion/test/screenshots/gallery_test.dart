@@ -307,6 +307,20 @@ void main() {
     await _shoot(tester, 'phone_settings');
   });
 
+  testWidgets('phone · settings scrolled under frost', (tester) async {
+    _phone(tester);
+    final state = _demoState(narrow: true);
+    addTearDown(state.dispose);
+    await tester.pumpWidget(_app(SettingsScreen(state: state)));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.drag(
+      find.byType(SingleChildScrollView),
+      const Offset(0, -520),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    await _shoot(tester, 'phone_settings_scrolled');
+  });
+
   testWidgets('phone · conversation (emerald accent)', (tester) async {
     _phone(tester);
     TalonTheme.accentSeed.value = const Color(0xFF3ED598);
