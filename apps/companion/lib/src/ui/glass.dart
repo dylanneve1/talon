@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:soft_edge_blur/soft_edge_blur.dart';
 
 import '../theme.dart';
 
@@ -58,6 +59,155 @@ class Glass extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(borderRadius: r, boxShadow: shadows),
       child: panel,
+    );
+  }
+}
+
+/// The app-wide progressive frost: content slides beneath a floating header
+/// and dissolves into a blur that is solid through the control zone and
+/// eases continuously to nothing (a snapshot of [child] blurred once and
+/// masked by a single linear gradient — smooth on every backend).
+class TopEdgeFrost extends StatelessWidget {
+  final Widget child;
+
+  /// Total frost depth from the top, in logical pixels (usually includes
+  /// the status-bar inset).
+  final double extent;
+
+  /// How many of those pixels stay fully frosted before the dissolve.
+  final double solidUntil;
+
+  const TopEdgeFrost({
+    super.key,
+    required this.child,
+    required this.extent,
+    required this.solidUntil,
+  });
+
+  /// One blur strength for every frosted header in the app.
+  static const double sigma = 16;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftEdgeBlur(
+      edges: [
+        EdgeBlur(
+          type: EdgeType.topEdge,
+          size: extent,
+          sigma: sigma,
+          controlPoints: [
+            ControlPoint(
+              position: (solidUntil / extent).clamp(0.0, 0.9).toDouble(),
+              type: ControlPointType.visible,
+            ),
+            ControlPoint(position: 1, type: ControlPointType.transparent),
+          ],
+        ),
+      ],
+      child: child,
+    );
+  }
+}
+
+/// The gradient wash painted behind floating header controls: near-solid
+/// backdrop colour through the control zone, falling to nothing across the
+/// same border the frost dissolves over. Runs edge-to-edge (behind the
+/// status bar) — callers pad their controls below the inset.
+class HeaderScrim extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  const HeaderScrim({super.key, required this.child, required this.padding});
+
+  @override
+  Widget build(BuildContext context) {
+    final base = TalonTheme.isDark ? TalonColors.void1 : Colors.white;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            base.withValues(alpha: 0.80),
+            base.withValues(alpha: 0.74),
+            base.withValues(alpha: 0.0),
+          ],
+          stops: const [0.0, 0.55, 1.0],
+        ),
+      ),
+      padding: padding,
+      child: child,
+    );
+  }
+}
+
+/// A pushed-route scaffold in the frosted-canvas language: the body runs
+/// edge-to-edge (behind the status bar) and slides under a floating header
+/// — auto back button, title, actions — instead of a distinct AppBar strip.
+/// Scrollables in [body] should top-pad by [topClearance] so resting
+/// content sits below the header.
+class FrostedScreen extends StatelessWidget {
+  final String title;
+  final List<Widget> actions;
+  final Widget body;
+  const FrostedScreen({
+    super.key,
+    required this.title,
+    this.actions = const [],
+    required this.body,
+  });
+
+  /// Vertical room the floating header needs: status-bar inset + controls.
+  static double topClearance(BuildContext context) =>
+      MediaQuery.of(context).padding.top + 64;
+
+  @override
+  Widget build(BuildContext context) {
+    final inset = MediaQuery.of(context).padding.top;
+    final canPop = Navigator.of(context).canPop();
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: TopEdgeFrost(
+              extent: inset + 76,
+              solidUntil: inset + 52,
+              child: body,
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: HeaderScrim(
+              padding: EdgeInsets.fromLTRB(4, 4 + inset, 8, 16),
+              child: Row(
+                children: [
+                  if (canPop)
+                    IconButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      tooltip: 'Back',
+                      icon: Icon(Icons.adaptive.arrow_back, size: 20),
+                    ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  ...actions,
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -135,7 +285,8 @@ class AmbientGlow extends StatelessWidget {
             bottom: -160,
             left: -200,
             child: _drift(
-              _blob(TalonColors.accentDeep.withValues(alpha: 0.09 * boost), 420),
+              _blob(
+                  TalonColors.accentDeep.withValues(alpha: 0.09 * boost), 420),
               reduceMotion,
               const Offset(28, -16),
               27000,

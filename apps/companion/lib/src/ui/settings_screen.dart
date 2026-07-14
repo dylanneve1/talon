@@ -256,22 +256,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return ValueListenableBuilder<int>(
       valueListenable: TalonTheme.revision,
       builder: (context, _, __) => TalonBackdrop(
-        child: Scaffold(
-          backgroundColor: Colors.transparent,
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            title: const Text('Talon settings'),
-            actions: [
-              IconButton(
-                onPressed: _load,
-                icon: const Icon(Icons.refresh),
-                tooltip: 'Refresh',
-              ),
-            ],
-          ),
-          body: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
+        child: FrostedScreen(
+          title: 'Talon settings',
+          actions: [
+            IconButton(
+              onPressed: _load,
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh',
+            ),
+          ],
+          // Content scrolls edge-to-edge beneath the floating header and
+          // frosts as it slides under; resting content clears the controls.
+          body: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              FrostedScreen.topClearance(context) + 4,
+              20,
+              20,
+            ),
+            child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 560),
                 child: _loading ? const _SettingsSkeleton() : _body(),

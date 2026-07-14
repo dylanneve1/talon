@@ -100,7 +100,14 @@ class _ConnectScreenState extends State<ConnectScreen> {
   Widget build(BuildContext context) {
     final body = Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        // Top padding clears the floating header when pushed as a route
+        // (firstRun renders without one; the extra headroom is harmless).
+        padding: EdgeInsets.fromLTRB(
+          24,
+          FrostedScreen.topClearance(context),
+          24,
+          24,
+        ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 460),
           child: Glass(
@@ -117,19 +124,19 @@ class _ConnectScreenState extends State<ConnectScreen> {
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.firstRun ? 'Welcome to Talon' : 'Connection',
-                          style: const TextStyle(
-                              fontSize: 20, fontWeight: FontWeight.w700),
-                        ),
-                        Text(
-                          'Connect your companion',
-                          style: TextStyle(
-                              color: TalonColors.textFaint, fontSize: 12.5),
-                        ),
-                      ],
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.firstRun ? 'Welcome to Talon' : 'Connection',
+                            style: const TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.w700),
+                          ),
+                          Text(
+                            'Connect your companion',
+                            style: TextStyle(
+                                color: TalonColors.textFaint, fontSize: 12.5),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -156,8 +163,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
                         const SizedBox(height: 14),
                         Text(
                           widget.state.connError!,
-                          style: TextStyle(
-                              color: TalonColors.bad, fontSize: 12.5),
+                          style:
+                              TextStyle(color: TalonColors.bad, fontSize: 12.5),
                         ),
                       ],
                     ],
@@ -176,14 +183,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
     return ValueListenableBuilder<int>(
       valueListenable: TalonTheme.revision,
       builder: (context, _, __) => TalonBackdrop(
-        child: Scaffold(
-          backgroundColor: Colors.transparent,
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            title: const Text('Settings'),
-          ),
-          body: body,
-        ),
+        child: FrostedScreen(title: 'Connection', body: body),
       ),
     );
   }
@@ -319,7 +319,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
           keyboardType: number ? TextInputType.number : null,
           inputFormatters:
               number ? [FilteringTextInputFormatter.digitsOnly] : null,
-          style: TextStyle(fontSize: 14, fontFamily: mono ? 'JetBrains Mono' : null),
+          style: TextStyle(
+              fontSize: 14, fontFamily: mono ? 'JetBrains Mono' : null),
           decoration: InputDecoration(
             hintText: hint,
             filled: true,

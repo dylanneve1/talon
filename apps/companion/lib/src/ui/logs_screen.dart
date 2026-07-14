@@ -147,38 +147,39 @@ class _LogsScreenState extends State<LogsScreen> {
     return ValueListenableBuilder<int>(
       valueListenable: TalonTheme.revision,
       builder: (context, _, __) => TalonBackdrop(
-        child: Scaffold(
-          backgroundColor: Colors.transparent,
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            title: const Text('Daemon logs'),
-            actions: [
-              IconButton(
-                tooltip: _follow ? 'Pause live follow' : 'Follow live',
-                onPressed: () {
-                  setState(() => _follow = !_follow);
-                  _armFollow();
-                  if (_follow) _load(quiet: true);
-                },
-                icon: Icon(
-                  _follow ? Icons.pause_circle_outline : Icons.play_circle_outline,
-                  color: _follow ? TalonColors.accent : null,
-                ),
+        child: FrostedScreen(
+          title: 'Daemon logs',
+          actions: [
+            IconButton(
+              tooltip: _follow ? 'Pause live follow' : 'Follow live',
+              onPressed: () {
+                setState(() => _follow = !_follow);
+                _armFollow();
+                if (_follow) _load(quiet: true);
+              },
+              icon: Icon(
+                _follow
+                    ? Icons.pause_circle_outline
+                    : Icons.play_circle_outline,
+                color: _follow ? TalonColors.accent : null,
               ),
-              IconButton(
-                tooltip: 'Refresh',
-                onPressed: _load,
-                icon: const Icon(Icons.refresh),
-              ),
-              IconButton(
-                tooltip: 'Copy visible lines',
-                onPressed: _visible.isEmpty ? null : _copyVisible,
-                icon: const Icon(Icons.copy_all_outlined),
-              ),
-            ],
-          ),
+            ),
+            IconButton(
+              tooltip: 'Refresh',
+              onPressed: _load,
+              icon: const Icon(Icons.refresh),
+            ),
+            IconButton(
+              tooltip: 'Copy visible lines',
+              onPressed: _visible.isEmpty ? null : _copyVisible,
+              icon: const Icon(Icons.copy_all_outlined),
+            ),
+          ],
           body: Column(
             children: [
+              // Fixed controls sit below the floating header; only the log
+              // list itself runs (and frosts) beneath it while scrolling.
+              SizedBox(height: FrostedScreen.topClearance(context) - 4),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
                 child: _filterBar(),

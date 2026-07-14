@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:soft_edge_blur/soft_edge_blur.dart';
 
 import '../models/bridge_models.dart';
 import '../state/app_state.dart';
@@ -10,6 +9,7 @@ import 'activity_card.dart';
 import 'brand.dart';
 import 'chat_actions.dart';
 import 'composer.dart';
+import 'glass.dart';
 import 'message_bubble.dart';
 import 'model_sheet.dart';
 
@@ -163,32 +163,15 @@ class _ChatViewState extends State<ChatView> {
         // continuously to nothing — smooth on every backend, no banding.
         final topInset = MediaQuery.of(context).padding.top;
         final frostExtent = topInset + _headerClearance + 12;
-        final frostSolid =
-            ((topInset + 58) / frostExtent).clamp(0.0, 0.9).toDouble();
         return Stack(
           children: [
             Positioned.fill(
               child: Column(
                 children: [
                   Expanded(
-                    child: SoftEdgeBlur(
-                      edges: [
-                        EdgeBlur(
-                          type: EdgeType.topEdge,
-                          size: frostExtent,
-                          sigma: 12,
-                          controlPoints: [
-                            ControlPoint(
-                              position: frostSolid,
-                              type: ControlPointType.visible,
-                            ),
-                            ControlPoint(
-                              position: 1,
-                              type: ControlPointType.transparent,
-                            ),
-                          ],
-                        ),
-                      ],
+                    child: TopEdgeFrost(
+                      extent: frostExtent,
+                      solidUntil: topInset + 58,
                       child: _messages(chat.id),
                     ),
                   ),
@@ -518,30 +501,10 @@ class _Header extends StatelessWidget {
     final model = chat.model ?? state.status.model;
     final effort = chat.effort ?? 'adaptive';
     // Not a bar: the controls float directly on the canvas over a soft
-    // scrim. Scrollback dissolves as it slides underneath (the scrollback's
-    // own top-edge frost) instead of hitting a frosted strip with an edge.
-    final base = TalonTheme.isDark ? TalonColors.void1 : Colors.white;
-    // The shell doesn't consume the top inset for the conversation: the
-    // scrim runs up behind the system status bar (same canvas, one surface)
-    // and only the controls are padded down below it. The frost itself is
-    // the scrollback's top-edge blur — the header adds no blur of its own.
+    // scrim, edge-to-edge behind the status bar. The frost itself is the
+    // scrollback's own top-edge blur — the header adds no blur of its own.
     final topInset = MediaQuery.of(context).padding.top;
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          // Matches the blur ramp: solid through the control zone, then a
-          // single smooth falloff to nothing across the same border the
-          // frost dissolves over.
-          colors: [
-            base.withValues(alpha: 0.80),
-            base.withValues(alpha: 0.74),
-            base.withValues(alpha: 0.0),
-          ],
-          stops: const [0.0, 0.55, 1.0],
-        ),
-      ),
+    return HeaderScrim(
       padding: EdgeInsets.fromLTRB(12, 8 + topInset, 8, 26),
       // Auto-detect available width instead of hard-coding a platform
       // check: a desktop window with the sidebar open gives the chat pane
