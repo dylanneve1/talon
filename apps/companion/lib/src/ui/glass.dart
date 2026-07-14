@@ -74,19 +74,20 @@ double _ease(double t) {
 
 /// The app-wide progressive frost: content slides beneath a floating header
 /// and dissolves into a blur that is solid through the control zone and
-/// eases to nothing along a smootherstep curve.
+/// eases continuously to untouched content.
 ///
-/// Implementation: a stepped progressive blur — the industry answer to this
-/// effect in Flutter. The frost area is sliced into thin, non-overlapping
-/// horizontal bands, each a clipped [BackdropFilter.grouped] whose sigma
-/// follows the eased profile; a [BackdropGroup] shares one backdrop readback
-/// across all bands. Everything is engine-composited (no snapshot round
-/// trips), so it stays perfectly in sync with scrolling content — no
-/// flicker — and 20 eased steps of a few pixels each read as one continuous
-/// dissolve. (Masking a BackdropFilter with a gradient is a documented
-/// compositor trap, and per-pixel shader blurs both underperform and, via
-/// ImageFilter.shader's geometry bugs, misrender — this pattern avoids both.)
-class TopEdgeFrost extends StatelessWidget {
+/// One engine Gaussian blur is composed with a tiny Impeller image-filter
+/// shader that fades the blurred result's premultiplied alpha. The filtered
+/// layer is then blended over the original backdrop. This keeps the blur in
+/// the compositor (no snapshots or one-frame scroll lag) while the falloff is
+/// a real continuous curve (no clipped bands or stepladder edges). The filter
+/// keeps a three-sigma transparent guard band below [extent], rather than
+/// clipping where the visible frost ends and exposing a blur-kernel edge.
+///
+/// Shader image filters require Impeller. Unsupported backends keep the
+/// continuous header scrim but skip frost instead of rendering a visibly
+/// stepped approximation.
+class TopEdgeFrost extends StatefulWidget {
   final Widget child;
 
   /// Total frost depth from the top, in logical pixels (usually includes
@@ -103,61 +104,111 @@ class TopEdgeFrost extends StatelessWidget {
     required this.solidUntil,
   });
 
-  /// Peak blur strength for every frosted header in the app.
+  /// Peak blur strength for every frosted header in the app. This remains a
+  /// native separable Gaussian; the shader only supplies the continuous mask.
   static const double sigma = 28;
 
-  /// Bands in the dissolve zone. Research consensus is 8-12 already reads
-  /// as continuous; 20 leaves margin at our higher peak sigma.
-  static const int _steps = 20;
+  @override
+  State<TopEdgeFrost> createState() => _TopEdgeFrostState();
+}
+
+class _TopEdgeFrostState extends State<TopEdgeFrost> {
+  static ui.FragmentProgram? _program;
+  static Future<void>? _loading;
+  static bool _loadFailed = false;
+
+  ui.FragmentShader? _shader;
+
+  @override
+  void initState() {
+    super.initState();
+    if (ui.ImageFilter.isShaderFilterSupported &&
+        _program == null &&
+        !_loadFailed) {
+      (_loading ??= _loadProgram()).whenComplete(() {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  static Future<void> _loadProgram() async {
+    try {
+      _program = await ui.FragmentProgram.fromAsset(
+        'shaders/progressive_blur.frag',
+      );
+    } catch (error, stack) {
+      _loadFailed = true;
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'talon companion',
+          context: ErrorDescription('loading the progressive frost shader'),
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _shader?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final fadeZone = (extent - solidUntil).clamp(1.0, extent);
-    final bandHeight = fadeZone / _steps;
     return Stack(
+      fit: StackFit.expand,
       children: [
-        Positioned.fill(child: child),
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          height: extent,
-          child: IgnorePointer(
-            child: BackdropGroup(
-              child: Column(
-                children: [
-                  // The solid sheet behind the header controls.
-                  _band(solidUntil, sigma),
-                  // The dissolve: eased sigma per band, ending at ~0 so the
-                  // last step hands off invisibly to unfiltered content.
-                  for (var i = 0; i < _steps; i++)
-                    _band(
-                      bandHeight,
-                      sigma * (1 - _ease((i + 0.5) / _steps)),
+        widget.child,
+        if (ui.ImageFilter.isShaderFilterSupported && _program != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final availableHeight = constraints.maxHeight;
+                  if (!availableHeight.isFinite || availableHeight <= 0) {
+                    return const SizedBox.shrink();
+                  }
+                  // Keep enough transparent space for the Gaussian kernel to
+                  // finish below the visible fade. The eventual clip is then
+                  // cutting transparent pixels, not the blur itself.
+                  final height = (widget.extent + TopEdgeFrost.sigma * 3)
+                      .clamp(0.0, availableHeight);
+                  final solid = (widget.solidUntil / height).clamp(0.0, 1.0);
+                  final end = (widget.extent / height).clamp(solid, 1.0);
+                  final program = _program!;
+                  _shader ??= program.fragmentShader();
+                  // Slots 0-1 are the engine-provided input texture size.
+                  _shader!
+                    ..setFloat(2, solid)
+                    ..setFloat(3, end);
+                  return Align(
+                    alignment: Alignment.topCenter,
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: height,
+                      child: ClipRect(
+                        child: BackdropFilter(
+                          filter: ui.ImageFilter.compose(
+                            inner: ui.ImageFilter.blur(
+                              sigmaX: TopEdgeFrost.sigma,
+                              sigmaY: TopEdgeFrost.sigma,
+                              tileMode: TileMode.clamp,
+                            ),
+                            outer: ui.ImageFilter.shader(_shader!),
+                          ),
+                          blendMode: BlendMode.srcOver,
+                          child: const SizedBox.expand(),
+                        ),
+                      ),
                     ),
-                ],
+                  );
+                },
               ),
             ),
           ),
-        ),
       ],
-    );
-  }
-
-  Widget _band(double height, double s) {
-    return SizedBox(
-      height: height,
-      width: double.infinity,
-      child: ClipRect(
-        child: BackdropFilter.grouped(
-          filter: ui.ImageFilter.blur(
-            sigmaX: s,
-            sigmaY: s,
-            tileMode: TileMode.clamp,
-          ),
-          child: const SizedBox.expand(),
-        ),
-      ),
     );
   }
 }
