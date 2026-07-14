@@ -1504,17 +1504,17 @@ class _ModeButton extends StatelessWidget {
   }
 }
 
-/// Lays the accent swatches out as a balanced, compact, centered grid:
-/// every row gets the same number of circles (10 swatches on a phone become
-/// 5 + 5, never 7 + 3), rows share one fixed modest gap, and each row is
-/// centered in the card — so the space left over is split evenly between
-/// both sides instead of piling up as one big gap on the right.
+/// Lays the accent swatches out as a balanced grid: every row gets the same
+/// number of circles (10 swatches on a phone become 5 + 5, never 7 + 3) and
+/// rows are justified space-evenly — the free width is shared equally by
+/// the gaps *between* circles and the margins beside them, so nothing looks
+/// stretched to the edges, piled left, or floating in oversized side gaps.
 class _SwatchGrid extends StatelessWidget {
   final List<Widget> swatches;
   const _SwatchGrid({required this.swatches});
 
   static const double _size = 34; // _AccentSwatch diameter
-  static const double _gap = 12;
+  static const double _minGap = 12;
   static const double _rowGap = 12;
 
   @override
@@ -1522,7 +1522,7 @@ class _SwatchGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final n = swatches.length;
-        final maxCols = ((constraints.maxWidth + _gap) / (_size + _gap))
+        final maxCols = ((constraints.maxWidth + _minGap) / (_size + _minGap))
             .floor()
             .clamp(1, n);
         final rows = (n / maxCols).ceil();
@@ -1532,12 +1532,14 @@ class _SwatchGrid extends StatelessWidget {
             for (var r = 0; r < rows; r++) ...[
               if (r > 0) const SizedBox(height: _rowGap),
               Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  for (var i = r * cols; i < (r + 1) * cols && i < n; i++) ...[
-                    if (i > r * cols) const SizedBox(width: _gap),
-                    swatches[i],
-                  ],
+                  for (var i = r * cols; i < (r + 1) * cols; i++)
+                    // Invisible placeholders keep a short last row on the
+                    // same column grid as the full rows above it.
+                    i < n
+                        ? swatches[i]
+                        : const SizedBox(width: _size, height: _size),
                 ],
               ),
             ],
