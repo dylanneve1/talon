@@ -1504,48 +1504,53 @@ class _ModeButton extends StatelessWidget {
   }
 }
 
-/// Lays the accent swatches out as a balanced, edge-aligned grid: every row
-/// gets the same number of circles and rows are justified space-between, so
-/// the first and last columns sit flush with the section's edges — no
-/// left-aligned Wrap leaving a ragged right gap or a lonely overflow row.
+/// Lays the accent swatches out as a balanced, compact grid: every row gets
+/// the same number of circles (10 swatches on a phone become 5 + 5, never
+/// 7 + 3), rows share one fixed modest gap instead of stretching across the
+/// card, and the whole block is inset slightly from the section label so
+/// the circles don't crowd the text edge.
 class _SwatchGrid extends StatelessWidget {
   final List<Widget> swatches;
   const _SwatchGrid({required this.swatches});
 
   static const double _size = 34; // _AccentSwatch diameter
-  static const double _minGap = 10;
+  static const double _gap = 12;
   static const double _rowGap = 12;
+  static const double _indent = 6;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final n = swatches.length;
-        final maxCols = ((constraints.maxWidth + _minGap) / (_size + _minGap))
-            .floor()
-            .clamp(1, n);
-        final rows = (n / maxCols).ceil();
-        // Balance the rows: 10 swatches on a phone become 5 + 5, not 7 + 3.
-        final cols = (n / rows).ceil();
-        return Column(
-          children: [
-            for (var r = 0; r < rows; r++) ...[
-              if (r > 0) const SizedBox(height: _rowGap),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  for (var i = r * cols; i < (r + 1) * cols; i++)
-                    // Invisible placeholders keep a short last row aligned
-                    // to the same column grid.
-                    i < n
-                        ? swatches[i]
-                        : const SizedBox(width: _size, height: _size),
-                ],
-              ),
+    return Padding(
+      padding: const EdgeInsets.only(left: _indent),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final n = swatches.length;
+          final maxCols = ((constraints.maxWidth + _gap) / (_size + _gap))
+              .floor()
+              .clamp(1, n);
+          final rows = (n / maxCols).ceil();
+          final cols = (n / rows).ceil();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var r = 0; r < rows; r++) ...[
+                if (r > 0) const SizedBox(height: _rowGap),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = r * cols;
+                        i < (r + 1) * cols && i < n;
+                        i++) ...[
+                      if (i > r * cols) const SizedBox(width: _gap),
+                      swatches[i],
+                    ],
+                  ],
+                ),
+              ],
             ],
-          ],
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
