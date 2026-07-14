@@ -18,8 +18,17 @@ float smoother(float t) {
   return x * x * x * (x * (x * 6.0 - 15.0) + 10.0);
 }
 
-vec4 tap(vec2 uv, vec2 direction, float radius) {
-  return texture(u_input, uv + direction * radius / u_size);
+float binomial_weight(int index) {
+  if (index == 0 || index == 6) {
+    return 1.0;
+  }
+  if (index == 1 || index == 5) {
+    return 6.0;
+  }
+  if (index == 2 || index == 4) {
+    return 15.0;
+  }
+  return 20.0;
 }
 
 void main() {
@@ -33,30 +42,19 @@ void main() {
   float fade = 1.0 - smoother((y - u_solid) / max(1.0 - u_solid, 1e-4));
   float radius = u_radius * fade;
 
-  // A symmetric 17-tap two-ring kernel. Bilinear texture sampling fills the
-  // gaps between taps; the weighted inner ring keeps text/card edges from
-  // turning into a boxy bokeh pattern while staying cheap enough for 60 fps.
-  vec4 color = texture(u_input, uv) * 4.0;
+  // Dense 7x7 separable-binomial weights evaluated in one pass. The former
+  // sparse rings were cheap but rendered high-contrast text as discrete
+  // ghosts. These 49 regularly spaced taps approximate a true Gaussian while
+  // remaining confined to the small header strip.
+  vec4 color = vec4(0.0);
+  float step_size = radius / 3.0;
+  for (int iy = 0; iy < 7; iy++) {
+    for (int ix = 0; ix < 7; ix++) {
+      vec2 offset = vec2(float(ix - 3), float(iy - 3)) * step_size;
+      float weight = binomial_weight(ix) * binomial_weight(iy);
+      color += texture(u_input, uv + offset / u_size) * weight;
+    }
+  }
 
-  const float d = 0.70710678;
-  float inner = radius * 0.42;
-  color += tap(uv, vec2( 1.0,  0.0), inner) * 2.0;
-  color += tap(uv, vec2(-1.0,  0.0), inner) * 2.0;
-  color += tap(uv, vec2( 0.0,  1.0), inner) * 2.0;
-  color += tap(uv, vec2( 0.0, -1.0), inner) * 2.0;
-  color += tap(uv, vec2( d,  d), inner) * 2.0;
-  color += tap(uv, vec2(-d,  d), inner) * 2.0;
-  color += tap(uv, vec2( d, -d), inner) * 2.0;
-  color += tap(uv, vec2(-d, -d), inner) * 2.0;
-
-  color += tap(uv, vec2( 1.0,  0.0), radius);
-  color += tap(uv, vec2(-1.0,  0.0), radius);
-  color += tap(uv, vec2( 0.0,  1.0), radius);
-  color += tap(uv, vec2( 0.0, -1.0), radius);
-  color += tap(uv, vec2( d,  d), radius);
-  color += tap(uv, vec2(-d,  d), radius);
-  color += tap(uv, vec2( d, -d), radius);
-  color += tap(uv, vec2(-d, -d), radius);
-
-  frag_color = color / 28.0;
+  frag_color = color / 4096.0;
 }
