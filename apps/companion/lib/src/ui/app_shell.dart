@@ -103,18 +103,26 @@ class AppShell extends StatelessWidget {
                         // Shared-axis feel: the conversation slides in from the
                         // right, the list from the left, so navigation reads as
                         // moving through space instead of a flat cross-fade.
+                        //
+                        // The conversation must never fade. A fade is an
+                        // opacity saveLayer, and the glass bar's (and
+                        // composer's) BackdropFilter inside one reads the
+                        // layer's own backdrop instead of the screen — the
+                        // blur only snaps in when the transition ends and the
+                        // layer collapses. Slides are plain transforms, which
+                        // glass renders through correctly, so the chat slides
+                        // in opaque over the fading list.
                         transitionBuilder: (child, anim) {
                           final fromRight = child.key == const ValueKey('chat');
-                          return FadeTransition(
-                            opacity: anim,
-                            child: SlideTransition(
-                              position: Tween(
-                                begin: Offset(fromRight ? 0.10 : -0.10, 0),
-                                end: Offset.zero,
-                              ).animate(anim),
-                              child: child,
-                            ),
+                          final slide = SlideTransition(
+                            position: Tween(
+                              begin: Offset(fromRight ? 0.10 : -0.10, 0),
+                              end: Offset.zero,
+                            ).animate(anim),
+                            child: child,
                           );
+                          if (fromRight) return slide;
+                          return FadeTransition(opacity: anim, child: slide);
                         },
                         child: showChat
                             ? ChatView(

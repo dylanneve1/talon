@@ -6,6 +6,7 @@ import 'package:talon_companion/src/services/prefs.dart';
 import 'package:talon_companion/src/state/app_state.dart';
 import 'package:talon_companion/src/theme.dart';
 import 'package:talon_companion/src/ui/app_shell.dart';
+import 'package:talon_companion/src/ui/glass.dart';
 
 /// The Android back contract: from an open conversation, the system back
 /// button/gesture returns to the chat list; from the list it pops for real
@@ -83,6 +84,33 @@ void main() {
     expect(poppedAgain, isFalse);
 
     // Flush AppState's debounced snapshot timer before teardown.
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('narrow: the glass bar never sits under a fade mid-transition',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final state = await seededState();
+    addTearDown(state.dispose);
+    await tester.pumpWidget(host(state));
+    await tester.pumpAndSettle();
+
+    // Open the conversation and stop mid-way through the 240ms switcher
+    // transition.
+    state.selectChat('c1');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    // A fade is an opacity saveLayer, and a BackdropFilter inside one reads
+    // the layer's own backdrop instead of the screen — the bar's blur would
+    // render empty during the transition and pop in at the end. The chat
+    // child must slide in opaque (transforms are safe for glass).
+    final bar = tester.element(find.byType(GlassBar));
+    expect(bar.findAncestorWidgetOfExactType<FadeTransition>(), isNull);
+
+    await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 3));
   });
 

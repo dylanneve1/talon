@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -463,6 +464,22 @@ ThemeData buildTalonTheme() {
 
   return base.copyWith(
     scaffoldBackgroundColor: TalonColors.void0,
+    // Cupertino-style push on every platform: plain slide transforms. The
+    // Material defaults fade (fadeUpwards) or snapshot (zoom) the incoming
+    // route, and a BackdropFilter inside a fading saveLayer or an offscreen
+    // snapshot reads an empty backdrop — the glass bar on pushed routes
+    // (settings, logs, connect) would render unblurred until the push
+    // animation ends, then pop in. Slides keep the glass live throughout.
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.fuchsia: CupertinoPageTransitionsBuilder(),
+      },
+    ),
     colorScheme: base.colorScheme.copyWith(
       brightness: dark ? Brightness.dark : Brightness.light,
       primary: accent,
