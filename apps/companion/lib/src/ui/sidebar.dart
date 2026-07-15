@@ -10,6 +10,7 @@ import '../theme.dart';
 import 'brand.dart';
 import 'chat_actions.dart';
 import 'glass.dart';
+import 'markdown.dart';
 import 'motion.dart';
 import 'settings_screen.dart';
 import 'status_pill.dart';
@@ -506,10 +507,9 @@ class _ChatTileState extends State<_ChatTile> {
                       if (widget.chat.preview.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 1),
-                          child: Text(
-                            widget.chat.preview.replaceAll('\n', ' '),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          child: InlineMarkdownText(
+                            key: ValueKey('chat-preview-${widget.chat.id}'),
+                            data: widget.chat.preview,
                             style: TextStyle(
                                 fontSize: 11.5,
                                 color: TalonColors.textFaint,
@@ -646,10 +646,9 @@ class _HitTile extends StatelessWidget {
                       color: TalonColors.textDim,
                     ),
                   ),
-                  Text(
-                    hit.message.text.replaceAll('\n', ' '),
+                  InlineMarkdownText(
+                    data: hit.message.text,
                     maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
                       height: 1.35,

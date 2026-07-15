@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:markdown/markdown.dart' as md;
 
 import '../theme.dart';
 
@@ -55,4 +56,98 @@ MarkdownStyleSheet talonMarkdownStyle() {
       border: Border(top: BorderSide(color: TalonColors.glassStroke)),
     ),
   );
+}
+
+/// Compact Markdown for list previews. Unlike [MarkdownBody], this stays a
+/// single [RichText], so callers keep proper max-lines + ellipsis behaviour
+/// while common inline syntax is rendered instead of leaking `**` / `_` /
+/// backticks into the chat list.
+class InlineMarkdownText extends StatelessWidget {
+  final String data;
+  final TextStyle style;
+  final int maxLines;
+
+  const InlineMarkdownText({
+    super.key,
+    required this.data,
+    required this.style,
+    this.maxLines = 1,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final source = data.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final nodes =
+        md.Document(extensionSet: md.ExtensionSet.gitHubWeb).parse(source);
+    return Text.rich(
+      TextSpan(style: style, children: _spans(nodes, style, separate: true)),
+      maxLines: maxLines,
+      overflow: TextOverflow.ellipsis,
+      softWrap: maxLines > 1,
+    );
+  }
+
+  static List<InlineSpan> _spans(
+    List<md.Node> nodes,
+    TextStyle inherited, {
+    bool separate = false,
+  }) {
+    final spans = <InlineSpan>[];
+    for (var i = 0; i < nodes.length; i++) {
+      if (separate && i > 0) spans.add(const TextSpan(text: ' '));
+      final node = nodes[i];
+      if (node is md.Text) {
+        spans.add(TextSpan(text: node.text, style: inherited));
+        continue;
+      }
+      if (node is! md.Element) continue;
+
+      if (node.tag == 'br') {
+        spans.add(const TextSpan(text: ' '));
+        continue;
+      }
+      if (node.tag == 'img') {
+        spans.add(TextSpan(
+          text: node.attributes['alt'] ?? 'Image',
+          style: inherited,
+        ));
+        continue;
+      }
+
+      final next = switch (node.tag) {
+        'strong' ||
+        'b' =>
+          inherited.merge(const TextStyle(fontWeight: FontWeight.w700)),
+        'em' ||
+        'i' =>
+          inherited.merge(const TextStyle(fontStyle: FontStyle.italic)),
+        'del' => inherited
+            .merge(const TextStyle(decoration: TextDecoration.lineThrough)),
+        'code' => inherited.merge(TextStyle(
+            color: TalonColors.accent2,
+            fontFamily: 'JetBrains Mono',
+            fontSize: (inherited.fontSize ?? 12) * 0.95,
+          )),
+        'a' => inherited.merge(TextStyle(
+            color: TalonColors.accent,
+            decoration: TextDecoration.underline,
+          )),
+        'h1' ||
+        'h2' ||
+        'h3' ||
+        'h4' ||
+        'h5' ||
+        'h6' =>
+          inherited.merge(const TextStyle(fontWeight: FontWeight.w700)),
+        _ => inherited,
+      };
+      final children = node.children ?? const <md.Node>[];
+      final separatesChildren = node.tag == 'ul' || node.tag == 'ol';
+      spans.add(TextSpan(
+        style: next,
+        children: _spans(children, next, separate: separatesChildren),
+      ));
+    }
+    return spans;
+  }
 }

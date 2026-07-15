@@ -110,7 +110,7 @@ ClientChat _chat(
     );
 
 List<ClientChat> _demoChats() => [
-      _chat('c1', 'Trip to Kerry', 'Sounds good — booked for Saturday.', 4,
+      _chat('c1', 'Trip to Kerry', '**Sounds good** — booked for Saturday.', 4,
           model: 'opus'),
       _chat('c2', 'VPS disk cleanup', 'Freed 3.1G by pruning old builds.', 38,
           pulse: true),

@@ -7,6 +7,7 @@ import 'package:talon_companion/src/models/bridge_models.dart';
 import 'package:talon_companion/src/services/prefs.dart';
 import 'package:talon_companion/src/state/app_state.dart';
 import 'package:talon_companion/src/theme.dart';
+import 'package:talon_companion/src/ui/markdown.dart';
 import 'package:talon_companion/src/ui/sidebar.dart';
 
 /// Sidebar search + swipe actions: the search box filters chat titles
@@ -74,6 +75,49 @@ void main() {
     expect(find.text('Trip planning'), findsOneWidget);
 
     // Flush AppState's debounced snapshot timer before teardown.
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('chat previews render inline Markdown without delimiters',
+      (tester) async {
+    final state = await seededState();
+    addTearDown(state.dispose);
+    state.chats.first.preview =
+        '**July 15** with _details_, `code`, and [a link](https://talon.test)';
+
+    await tester.pumpWidget(host(state));
+    await tester.pumpAndSettle();
+
+    final preview = find.byKey(const ValueKey('chat-preview-c1'));
+    expect(preview, findsOneWidget);
+    expect(find.byType(InlineMarkdownText), findsNWidgets(2));
+
+    final rich = tester.widget<RichText>(find.descendant(
+      of: preview,
+      matching: find.byType(RichText),
+    ));
+    final span = rich.text as TextSpan;
+    expect(span.toPlainText(), 'July 15 with details, code, and a link');
+    expect(span.toPlainText(), isNot(contains('**')));
+    expect(rich.maxLines, 1);
+    expect(rich.overflow, TextOverflow.ellipsis);
+
+    TextSpan? withText(InlineSpan current, String text) {
+      if (current is! TextSpan) return null;
+      if (current.text == text) return current;
+      for (final child in current.children ?? const <InlineSpan>[]) {
+        final found = withText(child, text);
+        if (found != null) return found;
+      }
+      return null;
+    }
+
+    expect(withText(span, 'July 15')?.style?.fontWeight, FontWeight.w700);
+    expect(withText(span, 'details')?.style?.fontStyle, FontStyle.italic);
+    expect(withText(span, 'code')?.style?.fontFamily, 'JetBrains Mono');
+    expect(
+        withText(span, 'a link')?.style?.decoration, TextDecoration.underline);
+
     await tester.pump(const Duration(seconds: 3));
   });
 
