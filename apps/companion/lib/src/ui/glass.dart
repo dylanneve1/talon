@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -126,15 +127,32 @@ class TopEdgeFrost extends StatelessWidget {
         final clearAt = extent.clamp(0.0, height);
         if (clearAt <= 0) return child;
         final solid = solidUntil.clamp(0.0, clearAt);
+        // Strength 1 through the solid zone, then a baked smootherstep
+        // dissolve. The shader squares the strength map, so sampling
+        // sqrt(1 - ease) makes the effective sigma profile exactly
+        // 1 - ease(t): C2-continuous, zero slope at both ends. A plain
+        // linear ramp puts a slope kink at the solid boundary that the eye
+        // reads as a shelf across the frost (Mach banding).
+        const steps = 12;
+        final solidStop = solid / height;
+        final clearStop = clearAt / height;
+        final values = <double>[1, 1];
+        final stops = <double>[0, solidStop];
+        for (var i = 1; i <= steps; i++) {
+          final t = i / steps;
+          values.add(math.sqrt(1 - _ease(t)));
+          stops.add(solidStop + t * (clearStop - solidStop));
+        }
         return ProgressiveBlurWidget(
           sigma: sigma,
-          // Strength 1 through the solid zone, easing to 0 at the fade edge
-          // (the shader squares the strength map, which lands the melt at
-          // zero with zero slope — no visible end line). Stops are fractions
-          // of the child, hence the LayoutBuilder.
+          // The strength map covers the whole child, so the dissolve lives
+          // in a narrow slice of it; at the default 128px the ramp only
+          // gets a handful of texels and the bilinear seams show. 512 puts
+          // ~4px between texels through the fade.
+          blurTextureDimensions: 512,
           linearGradientBlur: LinearGradientBlur(
-            values: const [1, 1, 0],
-            stops: [0, solid / height, clearAt / height],
+            values: values,
+            stops: stops,
             start: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),

@@ -289,6 +289,21 @@ void main() {
     await _shoot(tester, 'phone_chat');
   });
 
+  testWidgets('phone · conversation mid-scroll (frost stress)',
+      (tester) async {
+    _phone(tester);
+    final state = _demoState(narrow: true, select: 'c1');
+    addTearDown(state.dispose);
+    await tester.pumpWidget(_app(RootView(state: state)));
+    await tester.pump(const Duration(milliseconds: 500));
+    // Park the scrollback mid-scroll so the bright accent bubble straddles
+    // the header frost — the hardest case for the melt (any banding or
+    // seams in the dissolve shows on it immediately).
+    await tester.drag(find.byType(ListView), const Offset(0, 90));
+    await tester.pump(const Duration(milliseconds: 300));
+    await _shoot(tester, 'phone_chat_melt');
+  });
+
   testWidgets('phone · chat actions sheet (long-press)', (tester) async {
     _phone(tester);
     final state = _demoState(narrow: true);

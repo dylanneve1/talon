@@ -25,6 +25,8 @@ rounded panel sitting on top of it.
 
 - `phone-light.png`
 - `phone-dark.png`
+- `phone-dark-melt.png` — mid-scroll, the accent bubble straddling the frost
+  dissolve (the stress case for the melt)
 - `desktop-dark.png`
 
 These screenshots are rendered from the real Flutter widgets by

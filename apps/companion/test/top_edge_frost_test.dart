@@ -37,12 +37,28 @@ void main() {
     // Full strength from the top through solidUntil, melting to zero at
     // extent — as fractions of the 180-high child.
     final ramp = blur.linearGradientBlur!;
-    expect(ramp.values, [1, 1, 0]);
-    expect(ramp.stops[0], 0);
+    expect(ramp.stops.first, 0);
     expect(ramp.stops[1], moreOrLessEquals(40 / 180));
-    expect(ramp.stops[2], moreOrLessEquals(100 / 180));
+    expect(ramp.stops.last, moreOrLessEquals(100 / 180));
+    expect(ramp.values.first, 1);
+    expect(ramp.values[1], 1);
+    expect(ramp.values.last, moreOrLessEquals(0));
     expect(ramp.start, Alignment.topCenter);
     expect(ramp.end, Alignment.bottomCenter);
+
+    // The dissolve must be an eased curve, not a straight ramp: strictly
+    // decreasing, and — because the shader squares the strength — the
+    // squared values (the effective sigma profile) must start and end
+    // gently. A linear ramp here reads as a shelf line across the frost.
+    final melt = ramp.values.sublist(1);
+    for (var i = 1; i < melt.length; i++) {
+      expect(melt[i], lessThan(melt[i - 1]));
+    }
+    double sigmaAt(int i) => melt[i] * melt[i];
+    final n = melt.length - 1;
+    final linearStep = 1 / n;
+    expect(sigmaAt(0) - sigmaAt(1), lessThan(linearStep / 2));
+    expect(sigmaAt(n - 1) - sigmaAt(n), lessThan(linearStep / 2));
   });
 
   testWidgets('zero extent renders the child without a blur surface',
