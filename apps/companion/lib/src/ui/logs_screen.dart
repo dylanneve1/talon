@@ -147,7 +147,7 @@ class _LogsScreenState extends State<LogsScreen> {
     return ValueListenableBuilder<int>(
       valueListenable: TalonTheme.revision,
       builder: (context, _, __) => TalonBackdrop(
-        child: FrostedScreen(
+        child: GlassBarScreen(
           title: 'Daemon logs',
           actions: [
             IconButton(
@@ -178,8 +178,8 @@ class _LogsScreenState extends State<LogsScreen> {
           body: Column(
             children: [
               // Fixed controls sit below the floating header; only the log
-              // list itself runs (and frosts) beneath it while scrolling.
-              SizedBox(height: FrostedScreen.topClearance(context) - 4),
+              // list itself runs (blurred through the bar) beneath it while scrolling.
+              SizedBox(height: GlassBarScreen.topClearance(context) - 4),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
                 child: _filterBar(),

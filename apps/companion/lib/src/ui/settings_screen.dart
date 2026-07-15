@@ -256,7 +256,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return ValueListenableBuilder<int>(
       valueListenable: TalonTheme.revision,
       builder: (context, _, __) => TalonBackdrop(
-        child: FrostedScreen(
+        child: GlassBarScreen(
           title: 'Talon settings',
           actions: [
             IconButton(
@@ -266,11 +266,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
           // Content scrolls edge-to-edge beneath the floating header and
-          // frosts as it slides under; resting content clears the controls.
+          // blurs through the bar as it slides under; resting content clears it.
           body: SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(
               20,
-              FrostedScreen.topClearance(context) + 4,
+              GlassBarScreen.topClearance(context) + 4,
               20,
               20,
             ),

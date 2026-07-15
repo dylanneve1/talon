@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
-import 'package:progressive_blur/progressive_blur.dart';
 
 import 'src/services/haptics.dart';
 import 'src/services/mesh_background.dart';
@@ -12,12 +11,6 @@ import 'src/ui/root_view.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Warm the frost shader (TopEdgeFrost) so the header glass is there from
-  // the first frame. A failure must never brick boot — the frost degrades
-  // to an unblurred header instead.
-  try {
-    await ProgressiveBlurWidget.precache();
-  } catch (_) {}
   // UI ↔ foreground-service isolate messaging (mesh reconfigure pokes).
   if (MeshForegroundController.isSupported) {
     FlutterForegroundTask.initCommunicationPort();

@@ -1,9 +1,6 @@
-import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import 'package:progressive_blur/progressive_blur.dart';
 
 import '../theme.dart';
 
@@ -64,163 +61,62 @@ class Glass extends StatelessWidget {
   }
 }
 
-/// C2-continuous ease (smootherstep). Linear alpha ramps end with a kink
-/// (C0) that the eye reads as a line — Mach banding. This curve has zero
-/// first and second derivatives at both ends, so the scrim dissolves with
-/// no perceptible start or stop.
-double _ease(double t) {
-  final x = t.clamp(0.0, 1.0);
-  return x * x * x * (x * (x * 6 - 15) + 10);
-}
-
-/// The app-wide progressive frost: the scrollback under the floating header
-/// runs through a shader-driven variable-radius blur whose per-pixel sigma
-/// follows a vertical gradient — [sigma] from the top edge down to
-/// [solidUntil], melting continuously to zero at [extent]. One surface, no
-/// seams, nothing overlaid.
+/// The app's navigation surface: one uniform native backdrop blur with a
+/// translucent tint and a hairline bottom edge, running edge-to-edge behind
+/// the status bar. Content slides beneath it and glows through the glass.
 ///
-/// It filters the child (progressive_blur's two-pass separable Gaussian:
-/// chained ImageFilter.shader passes on Impeller, an AnimatedSampler
-/// fallback on Skia), deliberately not the backdrop:
-///
-/// * Masking one uniform BackdropFilter with an outer ShaderMask cannot
-///   work: ShaderMask is a saveLayer, and a backdrop filter inside a
-///   saveLayer reads that layer's own (empty) backdrop, so the frost
-///   silently disappears. Alpha-fading a uniform blur would also read as a
-///   milky double exposure over sharp text, not as glass dissolving.
-/// * Approximating the melt with stepped backdrop-blur bands leaves visible
-///   seams at every sigma step, however the bands are stacked.
-///
-/// Blurring the child is equivalent here because the scrollback is exactly
-/// what slides under the header; the canvas behind it is a near-uniform
-/// gradient that a blur would not change.
-///
-/// The shader must be warmed with [ProgressiveBlurWidget.precache] before
-/// the first frame (done in main and in the test bootstrap); until then the
-/// child renders unfrosted.
-class TopEdgeFrost extends StatelessWidget {
-  final Widget child;
-
-  /// Total frost depth from the top, in logical pixels (usually includes
-  /// the status-bar inset).
-  final double extent;
-
-  /// How many of those pixels stay fully frosted before the dissolve.
-  final double solidUntil;
-
-  const TopEdgeFrost({
-    super.key,
-    required this.child,
-    required this.extent,
-    required this.solidUntil,
-  });
-
-  /// Strong enough to dissolve text and card edges under the controls.
-  static const double sigma = 32;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final height = constraints.maxHeight;
-        if (!height.isFinite || height <= 0) return child;
-        final clearAt = extent.clamp(0.0, height);
-        if (clearAt <= 0) return child;
-        final solid = solidUntil.clamp(0.0, clearAt);
-        // Strength 1 through the solid zone, then a baked smootherstep
-        // dissolve. The shader squares the strength map, so sampling
-        // sqrt(1 - ease) makes the effective sigma profile exactly
-        // 1 - ease(t): C2-continuous, zero slope at both ends. A plain
-        // linear ramp puts a slope kink at the solid boundary that the eye
-        // reads as a shelf across the frost (Mach banding).
-        const steps = 12;
-        final solidStop = solid / height;
-        final clearStop = clearAt / height;
-        final values = <double>[1, 1];
-        final stops = <double>[0, solidStop];
-        for (var i = 1; i <= steps; i++) {
-          final t = i / steps;
-          values.add(math.sqrt(1 - _ease(t)));
-          stops.add(solidStop + t * (clearStop - solidStop));
-        }
-        return ProgressiveBlurWidget(
-          sigma: sigma,
-          // The strength map covers the whole child, so the dissolve lives
-          // in a narrow slice of it; at the default 128px the ramp only
-          // gets a handful of texels and the bilinear seams show. 512 puts
-          // ~4px between texels through the fade.
-          blurTextureDimensions: 512,
-          linearGradientBlur: LinearGradientBlur(
-            values: values,
-            stops: stops,
-            start: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-          child: child,
-        );
-      },
-    );
-  }
-}
-
-/// The gradient wash painted behind floating header controls: a translucent
-/// veil through the control zone that dissolves along the same eased curve
-/// as the frost. Kept deliberately light — the frost carries the glass
-/// look; the scrim only tops up text contrast. Runs edge-to-edge (behind
-/// the status bar) — callers pad their controls below the inset.
-class HeaderScrim extends StatelessWidget {
+/// Uniform sigma is the design, not a shortcut. A progressive melt needs
+/// either a variable-sigma fragment shader (hundreds of texture taps per
+/// pixel across the strip — measured too slow on phones) or stacked
+/// backdrop bands (visible sigma steps however they're arranged). One
+/// honest surface on the engine's downsampled Gaussian costs the same as
+/// the composer's pill and cannot band — there is no gradient to step.
+class GlassBar extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
-  const HeaderScrim({super.key, required this.child, required this.padding});
+  const GlassBar({super.key, required this.child, required this.padding});
 
-  /// Peak scrim opacity (dark canvas hides a veil better than paper-white,
-  /// which was reading as a white wash instead of blur).
-  static double get _peak => TalonTheme.isDark ? 0.62 : 0.42;
+  static const double sigma = 24;
 
   @override
   Widget build(BuildContext context) {
-    final base = TalonTheme.isDark ? TalonColors.void1 : Colors.white;
-    const plateau = 0.45; // fraction of height at full veil
-    const steps = 12;
-    final stops = <double>[0.0];
-    final colors = <Color>[base.withValues(alpha: _peak)];
-    for (var i = 0; i <= steps; i++) {
-      final t = i / steps;
-      stops.add(plateau + t * (1 - plateau));
-      colors.add(base.withValues(alpha: _peak * (1 - _ease(t))));
-    }
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: colors,
-          stops: stops,
+    final fill = TalonTheme.isDark
+        ? TalonColors.void1.withValues(alpha: 0.52)
+        : Colors.white.withValues(alpha: 0.58);
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: fill,
+            border: Border(
+              bottom: BorderSide(color: TalonColors.glassStroke),
+            ),
+          ),
+          child: child,
         ),
       ),
-      padding: padding,
-      child: child,
     );
   }
 }
 
-/// A pushed-route scaffold in the frosted-canvas language: the body runs
-/// edge-to-edge (behind the status bar) and slides under a floating header
-/// — auto back button, title, actions — instead of a distinct AppBar strip.
-/// Scrollables in [body] should top-pad by [topClearance] so resting
-/// content sits below the header.
-class FrostedScreen extends StatelessWidget {
+/// A pushed-route scaffold in the glass-bar language: the body runs
+/// edge-to-edge (behind the status bar) and slides under the bar — auto
+/// back button, title, actions. Scrollables in [body] should top-pad by
+/// [topClearance] so resting content sits below the bar.
+class GlassBarScreen extends StatelessWidget {
   final String title;
   final List<Widget> actions;
   final Widget body;
-  const FrostedScreen({
+  const GlassBarScreen({
     super.key,
     required this.title,
     this.actions = const [],
     required this.body,
   });
 
-  /// Vertical room the floating header needs: status-bar inset + controls.
+  /// Vertical room the bar needs: status-bar inset + controls.
   static double topClearance(BuildContext context) =>
       MediaQuery.of(context).padding.top + 64;
 
@@ -232,19 +128,13 @@ class FrostedScreen extends StatelessWidget {
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          Positioned.fill(
-            child: TopEdgeFrost(
-              extent: inset + 94,
-              solidUntil: inset + 48,
-              child: body,
-            ),
-          ),
+          Positioned.fill(child: body),
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: HeaderScrim(
-              padding: EdgeInsets.fromLTRB(4, 4 + inset, 8, 16),
+            child: GlassBar(
+              padding: EdgeInsets.fromLTRB(4, 4 + inset, 8, 6),
               child: Row(
                 children: [
                   if (canPop)
@@ -300,15 +190,16 @@ class TalonBackdrop extends StatelessWidget {
 }
 
 /// A whisper of radial colour behind the backdrop, giving the near-black canvas
-/// depth without tinting the whole surface. The two blobs drift on a slow,
-/// offset loop so the background feels alive rather than static — the effect is
-/// deliberately barely-perceptible, and it holds still under reduce-motion.
+/// depth without tinting the whole surface. Deliberately static: the blobs
+/// used to drift on 18–27s loops, but any motion beneath a BackdropFilter
+/// dirties the backdrop every frame and forces every glass surface (bar,
+/// composer, sheets) to re-composite continuously — permanent idle GPU load
+/// for a sub-perceptual effect.
 class AmbientGlow extends StatelessWidget {
   const AmbientGlow({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
     // The light canvas takes a slightly stronger wash than the near-black one
     // (colour reads quieter on white).
     final boost = TalonTheme.isDark ? 1.0 : 1.25;
@@ -318,57 +209,30 @@ class AmbientGlow extends StatelessWidget {
           Positioned(
             top: -180,
             left: -140,
-            child: _drift(
-              _blob(TalonColors.accent.withValues(alpha: 0.14 * boost), 460),
-              reduceMotion,
-              const Offset(24, 18),
-              18000,
-            ),
+            child:
+                _blob(TalonColors.accent.withValues(alpha: 0.14 * boost), 460),
           ),
           Positioned(
             top: -120,
             right: -180,
-            child: _drift(
-              _blob(TalonColors.accent2.withValues(alpha: 0.08 * boost), 400),
-              reduceMotion,
-              const Offset(-26, 20),
-              21000,
-            ),
+            child:
+                _blob(TalonColors.accent2.withValues(alpha: 0.08 * boost), 400),
           ),
           Positioned(
             bottom: -200,
             right: -140,
-            child: _drift(
-              _blob(TalonColors.accent2.withValues(alpha: 0.10 * boost), 500),
-              reduceMotion,
-              const Offset(-20, -22),
-              24000,
-            ),
+            child:
+                _blob(TalonColors.accent2.withValues(alpha: 0.10 * boost), 500),
           ),
           Positioned(
             bottom: -160,
             left: -200,
-            child: _drift(
-              _blob(
-                  TalonColors.accentDeep.withValues(alpha: 0.09 * boost), 420),
-              reduceMotion,
-              const Offset(28, -16),
-              27000,
-            ),
+            child: _blob(
+                TalonColors.accentDeep.withValues(alpha: 0.09 * boost), 420),
           ),
         ],
       ),
     );
-  }
-
-  Widget _drift(Widget child, bool reduceMotion, Offset to, int ms) {
-    if (reduceMotion) return child;
-    return child.animate(onPlay: (c) => c.repeat(reverse: true)).move(
-          begin: Offset.zero,
-          end: to,
-          duration: ms.ms,
-          curve: Curves.easeInOut,
-        );
   }
 
   Widget _blob(Color color, double size) => Container(

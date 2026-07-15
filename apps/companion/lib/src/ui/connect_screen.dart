@@ -104,7 +104,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
         // (firstRun renders without one; the extra headroom is harmless).
         padding: EdgeInsets.fromLTRB(
           24,
-          FrostedScreen.topClearance(context),
+          GlassBarScreen.topClearance(context),
           24,
           24,
         ),
@@ -183,7 +183,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
     return ValueListenableBuilder<int>(
       valueListenable: TalonTheme.revision,
       builder: (context, _, __) => TalonBackdrop(
-        child: FrostedScreen(title: 'Connection', body: body),
+        child: GlassBarScreen(title: 'Connection', body: body),
       ),
     );
   }

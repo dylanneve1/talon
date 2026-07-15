@@ -16,8 +16,8 @@ import 'model_sheet.dart';
 const double _columnMax = 768;
 
 /// Top inset for the scrollback so the newest-at-top content clears the
-/// floating header when the list is scrolled all the way up. The scrollback
-/// itself still runs (and fades) beneath the header while scrolling.
+/// glass bar when the list is scrolled all the way up. The scrollback
+/// itself still runs beneath the bar (blurred through it) while scrolling.
 const double _headerClearance = 82;
 
 class ChatView extends StatefulWidget {
@@ -147,35 +147,22 @@ class _ChatViewState extends State<ChatView> {
   Widget build(BuildContext context) {
     // The conversation is the canvas, not a card placed on top of it. Keeping
     // this layer transparent lets the global backdrop run continuously from
-    // the system bars to the composer; glass is reserved for controls that
-    // actually need separation (chips and input). The header is not a bar at
-    // all: it floats over the scrollback, which slides underneath and melts
-    // into a scrim, so nothing reads as a separate strip on the canvas.
+    // the system bars to the composer. Chrome is glass, used sparingly: the
+    // header bar on top, the composer pill at the bottom, and the open
+    // canvas between them — the scrollback slides under the bar and glows
+    // through it.
     return ListenableBuilder(
       listenable: widget.state,
       builder: (context, _) {
         final chat = widget.state.selectedChat;
         if (chat == null) return const _EmptyState();
         _autoScroll(chat.id, widget.state.messagesFor(chat.id).length);
-        // The frost lives on the scrollback itself, not the header: a banded
-        // progressive backdrop blur that melts from solid behind the controls
-        // to fully clear — see TopEdgeFrost for why it's built that way.
-        final topInset = MediaQuery.of(context).padding.top;
-        // Keep the dissolve compact: enough runway to feather the controls,
-        // not a blank frosted slab consuming the top quarter of the phone.
-        final frostExtent = topInset + _headerClearance + 12;
         return Stack(
           children: [
             Positioned.fill(
               child: Column(
                 children: [
-                  Expanded(
-                    child: TopEdgeFrost(
-                      extent: frostExtent,
-                      solidUntil: topInset + 50,
-                      child: _messages(chat.id),
-                    ),
-                  ),
+                  Expanded(child: _messages(chat.id)),
                   Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: _columnMax),
@@ -499,72 +486,75 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final topInset = MediaQuery.of(context).padding.top;
+    // One honest glass bar: a single uniform native blur with a hairline
+    // bottom edge — content slides under it and glows through the glass.
+    return GlassBar(
+      padding: EdgeInsets.fromLTRB(12, 6 + topInset, 8, 6),
+      child: _controls(context),
+    );
+  }
+
+  Widget _controls(BuildContext context) {
     final model = chat.model ?? state.status.model;
     final effort = chat.effort ?? 'adaptive';
-    // Not a bar: the controls float directly on the canvas over a soft
-    // scrim, edge-to-edge behind the status bar. The frost itself is the
-    // scrollback's own top-edge blur — the header adds no blur of its own.
-    final topInset = MediaQuery.of(context).padding.top;
-    return HeaderScrim(
-      padding: EdgeInsets.fromLTRB(12, 8 + topInset, 8, 26),
-      // Auto-detect available width instead of hard-coding a platform
-      // check: a desktop window with the sidebar open gives the chat pane
-      // less room than fullscreen, and the phone is always narrow.
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 560;
-          final modelLabel = model.isEmpty ? 'model' : model;
-          return Row(
-            children: [
-              if (showBack)
-                IconButton(
-                  onPressed: onBack,
-                  tooltip: 'Back to chats',
-                  // Platform-adaptive: Material arrow on Android, iOS chevron
-                  // on Apple platforms.
-                  icon: Icon(Icons.adaptive.arrow_back, size: 20),
-                ),
-              Expanded(
-                child: Text(
-                  chat.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 15.5, fontWeight: FontWeight.w700),
-                ),
+    // Auto-detect available width instead of hard-coding a platform
+    // check: a desktop window with the sidebar open gives the chat pane
+    // less room than fullscreen, and the phone is always narrow.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 560;
+        final modelLabel = model.isEmpty ? 'model' : model;
+        return Row(
+          children: [
+            if (showBack)
+              IconButton(
+                onPressed: onBack,
+                tooltip: 'Back to chats',
+                // Platform-adaptive: Material arrow on Android, iOS chevron
+                // on Apple platforms.
+                icon: Icon(Icons.adaptive.arrow_back, size: 20),
               ),
-              if (chat.context?.known == true) ...[
-                _ContextChip(context: chat.context!),
-                const SizedBox(width: 6),
-              ],
-              if (compact)
-                // One pill with just the model. Effort still lives a tap away
-                // in the model sheet; spelling it out here starved the chat
-                // title of width on phones ("Trip to…" next to
-                // "opus · adaptive").
-                _Chip(
-                  icon: Icons.memory,
-                  label: modelLabel,
-                  onTap: () => openModelSheet(context, state, chat),
-                )
-              else ...[
-                _Chip(
-                  icon: Icons.memory,
-                  label: modelLabel,
-                  onTap: () => openModelSheet(context, state, chat),
-                ),
-                const SizedBox(width: 6),
-                _Chip(
-                  icon: Icons.tune,
-                  label: effort,
-                  onTap: () => openModelSheet(context, state, chat),
-                ),
-              ],
-              _ChatMenu(state: state, chat: chat),
+            Expanded(
+              child: Text(
+                chat.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 15.5, fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (chat.context?.known == true) ...[
+              _ContextChip(context: chat.context!),
+              const SizedBox(width: 6),
             ],
-          );
-        },
-      ),
+            if (compact)
+              // One pill with just the model. Effort still lives a tap away
+              // in the model sheet; spelling it out here starved the chat
+              // title of width on phones ("Trip to…" next to
+              // "opus · adaptive").
+              _Chip(
+                icon: Icons.memory,
+                label: modelLabel,
+                onTap: () => openModelSheet(context, state, chat),
+              )
+            else ...[
+              _Chip(
+                icon: Icons.memory,
+                label: modelLabel,
+                onTap: () => openModelSheet(context, state, chat),
+              ),
+              const SizedBox(width: 6),
+              _Chip(
+                icon: Icons.tune,
+                label: effort,
+                onTap: () => openModelSheet(context, state, chat),
+              ),
+            ],
+            _ChatMenu(state: state, chat: chat),
+          ],
+        );
+      },
     );
   }
 }

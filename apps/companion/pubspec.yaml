@@ -8,10 +8,9 @@ publish_to: "none"
 version: 1.0.0+1
 
 environment:
-  # Uses the Color.withValues / WidgetStateProperty APIs (Flutter 3.27+) and
-  # ImageFilter.shader via progressive_blur (Flutter 3.35+).
+  # Uses the Color.withValues / WidgetStateProperty APIs (Flutter 3.27+).
   sdk: ">=3.6.0 <4.0.0"
-  flutter: ">=3.35.0"
+  flutter: ">=3.27.0"
 
 dependencies:
   flutter:
@@ -31,10 +30,6 @@ dependencies:
   # hand-rolled AnimationControllers with a chainable .animate() API and powers
   # the staggered list entrances, shimmer skeletons, and streaming caret.
   flutter_animate: ^4.5.0
-  # Shader-driven variable-radius blur (per-pixel sigma from a gradient
-  # strength map) — powers the header frost's seamless melt. Impeller uses
-  # chained ImageFilter.shader passes; Skia falls back to AnimatedSampler.
-  progressive_blur: ^0.0.2
   # Open links from assistant messages / buttons in the OS browser.
   url_launcher: ^6.3.0
   # Pick an image to attach to a message. Chosen over image_picker because it
