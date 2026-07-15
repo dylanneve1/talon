@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.47.1](https://github.com/dylanneve1/talon/compare/v1.47.0...v1.47.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* bound fetch_url response buffering ([#541](https://github.com/dylanneve1/talon/issues/541)) ([f99a1c3](https://github.com/dylanneve1/talon/commit/f99a1c35578b0bd421d1b8e9cf789f5b465dae36))
+
 ## [1.47.0](https://github.com/dylanneve1/talon/compare/v1.46.1...v1.47.0) (2026-07-12)
 
 
