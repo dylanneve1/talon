@@ -633,24 +633,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon,
                     size: 15,
                     color: current == mode
-                        ? TalonColors.accent
+                        ? Colors.white
                         : TalonColors.textFaint,
                   ),
                   label: Text(label),
                   selected: current == mode,
                   showCheckmark: false,
                   backgroundColor: TalonColors.surface,
-                  selectedColor: TalonColors.accent.withValues(alpha: 0.22),
+                  // Selected = a solid indigo pill with white content, matching
+                  // the concept's filled segmented control.
+                  selectedColor: TalonColors.accent,
                   side: BorderSide(
                     color: current == mode
                         ? TalonColors.accent
                         : TalonColors.glassStroke,
                   ),
                   labelStyle: TextStyle(
-                    color: current == mode
-                        ? TalonColors.text
-                        : TalonColors.textDim,
+                    color: current == mode ? Colors.white : TalonColors.textDim,
                     fontSize: 13,
+                    fontWeight:
+                        current == mode ? FontWeight.w600 : FontWeight.w500,
                   ),
                   onSelected: (_) {
                     TalonTheme.mode.value = mode;
@@ -1292,21 +1294,21 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Glass(
-      radius: 18,
-      padding: const EdgeInsets.all(18),
+    // A crisp solid card — white surface, hairline border, soft shadow —
+    // floating on the off-white canvas. Not a blurred glass panel: the light
+    // design reads as clean layered paper, not frost.
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: TalonColors.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: TalonColors.glassStroke, width: 1),
+        boxShadow: TalonShadows.soft,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title.toUpperCase(),
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.1,
-              color: TalonColors.textFaint,
-            ),
-          ),
+          Text(title.toUpperCase(), style: TalonType.eyebrow),
           const SizedBox(height: 14),
           child,
         ],

@@ -116,30 +116,31 @@ const TalonPalette kTalonDark = TalonPalette(
   ),
 );
 
-/// Paper-white counterpart: same hues, deepened for contrast on light
-/// surfaces (the dark theme's pastel accent and faint grays wash out on
-/// white). Glass becomes ink-tinted instead of white-tinted.
+/// The light theme — the primary, default look. A cool off-white canvas with
+/// crisp white cards, a vivid indigo accent, and a teal partner for the
+/// gradient mark. Tuned to the settings-screen concept: soft ink hairlines,
+/// gentle shadows, colour used in small confident pops.
 const TalonPalette kTalonLight = TalonPalette(
   brightness: Brightness.light,
-  void0: Color(0xFFF2F3F9),
-  void1: Color(0xFFF9FAFD),
-  surface: Color(0xFFFFFFFF),
-  surfaceHi: Color(0xFFE9EBF6),
-  glassFill: Color(0x0A10123B),
-  glassStroke: Color(0x2210123B),
-  accent: Color(0xFF5B6BF0),
-  accent2: Color(0xFF0E9CC7),
-  accentDeep: Color(0xFF4553D6),
-  text: Color(0xFF191B2A),
-  textDim: Color(0xFF4C5069),
-  textFaint: Color(0xFF83879F),
-  ok: Color(0xFF178F62),
+  void0: Color(0xFFEEF0F7), // deepest canvas the cards float on
+  void1: Color(0xFFF5F6FB), // panel base
+  surface: Color(0xFFFFFFFF), // cards / tiles / fields
+  surfaceHi: Color(0xFFEAEDF9), // hover / selected fill
+  glassFill: Color(0x0A171A3D),
+  glassStroke: Color(0x14171A3D), // soft ink hairline around cards
+  accent: Color(0xFF5465ED), // vivid indigo — the signature
+  accent2: Color(0xFF43BACC), // teal partner (brand gradient, hero moments)
+  accentDeep: Color(0xFF4453D6), // pressed / border-on-accent
+  text: Color(0xFF1B1D2A), // near-black slate
+  textDim: Color(0xFF565A70),
+  textFaint: Color(0xFF9095A8),
+  ok: Color(0xFF12A150), // healthy green (dot, shield, "Good" pill)
   warn: Color(0xFFA9720A),
-  bad: Color(0xFFDB3B52),
+  bad: Color(0xFFE5484D), // coral red
   backdrop: LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFFF0F1F8), Color(0xFFF7F8FC), Color(0xFFEDEFF7)],
+    colors: [Color(0xFFF3F4FB), Color(0xFFF6F7FC), Color(0xFFEFF1FA)],
   ),
 );
 
@@ -198,7 +199,9 @@ class TalonAccents {
 class TalonTheme {
   TalonTheme._();
 
-  static final ValueNotifier<ThemeMode> mode = ValueNotifier(ThemeMode.system);
+  // Light is the default look. Users can still switch to Auto (follow OS) or
+  // Dark in Settings → Appearance; this is only the first-run default.
+  static final ValueNotifier<ThemeMode> mode = ValueNotifier(ThemeMode.light);
 
   /// Custom accent seed (null = the default Talon indigo). Persisted by
   /// Settings; resolved through [TalonAccents.derive] on [apply].
@@ -210,12 +213,13 @@ class TalonTheme {
 
   static final ValueNotifier<int> revision = ValueNotifier(0);
 
-  static TalonPalette _palette = kTalonDark;
+  static TalonPalette _palette = kTalonLight;
   static TalonPalette get palette => _palette;
   static bool get isDark => _palette.brightness == Brightness.dark;
 
   /// What the current palette was resolved from — used to skip no-op applies
-  /// so [revision] only bumps on an actual visual change.
+  /// so [revision] only bumps on an actual visual change. Seeded to the dark
+  /// key so the first [apply] (light, by default) always resolves and paints.
   static (bool, int?) _appliedKey = (true, null);
 
   /// Resolve [mode] + [accentSeed] against the platform brightness and swap

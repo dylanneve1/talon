@@ -298,6 +298,8 @@ void main() {
 
   testWidgets('phone · settings', (tester) async {
     _phone(tester);
+    TalonTheme.mode.value = ThemeMode.light;
+    TalonTheme.apply(Brightness.light);
     final state = _demoState(narrow: true);
     addTearDown(state.dispose);
     await tester.pumpWidget(_app(SettingsScreen(state: state)));
