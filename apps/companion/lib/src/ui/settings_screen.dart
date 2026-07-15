@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -118,10 +120,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _loading = true;
       _error = null;
     });
+
+    // Device and foreground-service health are useful, but neither is needed
+    // to paint Settings. Refresh them alongside the config request instead of
+    // serialising all three and holding the whole screen behind the result.
+    unawaited(_refreshMeshStatus());
     try {
       final c = await widget.state.loadConfig();
-      await widget.state.refreshMeshDevices();
-      await widget.state.refreshMeshBackgroundHealth();
       if (!mounted) return;
       setState(() {
         _cfg = c;
@@ -139,6 +144,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _error = e.toString();
         });
       }
+    }
+  }
+
+  Future<void> _refreshMeshStatus() async {
+    try {
+      await Future.wait([
+        widget.state.refreshMeshDevices(),
+        widget.state.refreshMeshBackgroundHealth(),
+      ]);
+    } catch (e) {
+      // Mesh status is auxiliary to this screen. Keep the last known state if
+      // the platform query fails; the config UI must remain usable.
+      AppLog.warn('settings', 'mesh status refresh failed', e);
     }
   }
 
@@ -263,8 +281,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: const Text('Talon settings'),
             actions: [
               IconButton(
-                onPressed: _load,
-                icon: const Icon(Icons.refresh),
+                onPressed: _loading ? null : _load,
+                icon: _loading
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh),
                 tooltip: 'Refresh',
               ),
             ],
@@ -274,7 +297,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               padding: const EdgeInsets.all(20),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 560),
-                child: _loading ? const _SettingsSkeleton() : _body(),
+                // Status, Appearance, diagnostics, and connection data are
+                // already local. Paint them on the first frame; only the
+                // daemon-backed cards below use a loading placeholder.
+                child: _body(),
               ),
             ),
           ),
@@ -294,7 +320,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 16),
         _appearanceCard(),
         const SizedBox(height: 16),
-        if (cfg == null)
+        if (cfg == null && _loading)
+          const _SettingsSkeleton()
+        else if (cfg == null)
           _Section(
             title: 'Settings unavailable',
             child: Column(
