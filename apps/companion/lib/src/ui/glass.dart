@@ -150,7 +150,6 @@ class _BottomFadeMaskPainter extends CustomPainter {
   const _BottomFadeMaskPainter({required this.solid});
 
   final double solid;
-  static const int _steps = 16;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -158,23 +157,23 @@ class _BottomFadeMaskPainter extends CustomPainter {
     final fadeHeight = size.height - solid;
     if (fadeHeight <= 0) return;
 
-    final stops = <double>[0];
-    final colors = <Color>[Colors.white];
-    for (var i = 0; i <= _steps; i++) {
-      final t = i / _steps;
-      stops.add((solid + fadeHeight * t) / size.height);
-      colors.add(Colors.white.withValues(alpha: 1 - _ease(t)));
-    }
+    // Blur a hard alpha edge whose centre sits halfway through the dissolve.
+    // Six sigmas span virtually the whole Gaussian transition, so [solid] is
+    // effectively opaque and the final row effectively clear. Unlike a list
+    // of gradient stops, this edge is continuous in device space and cannot
+    // crawl between interpolated segments while the backdrop is scrolling.
+    final sigma = fadeHeight / 6;
+    final edge = solid + fadeHeight / 2;
     canvas.drawRect(
-      Offset.zero & size,
+      Rect.fromLTRB(0, -fadeHeight, size.width, edge),
       Paint()
         ..blendMode = BlendMode.dstIn
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: colors,
-          stops: stops,
-        ).createShader(Offset.zero & size),
+        ..color = Colors.white
+        ..imageFilter = ImageFilter.blur(
+          sigmaX: 0,
+          sigmaY: sigma,
+          tileMode: TileMode.decal,
+        ),
     );
   }
 
