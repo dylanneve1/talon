@@ -13,7 +13,7 @@ import 'package:talon_companion/src/ui/glass.dart';
 /// (backgrounding the app). Regression coverage for the bug where back always
 /// killed the activity.
 void main() {
-  Future<AppState> seededState() async {
+  Future<AppState> seededState({int messages = 1}) async {
     SharedPreferences.setMockInitialValues({'onboarded.v1': true});
     final prefs = await Prefs.load();
     final state = AppState(prefs, narrowLayout: true);
@@ -29,13 +29,14 @@ void main() {
       ],
       messages: {
         'c1': [
-          ClientMessage(
-            id: 'm1',
-            chatId: 'c1',
-            role: Role.user,
-            text: 'hello there',
-            ts: 1,
-          ),
+          for (var i = 1; i <= messages; i++)
+            ClientMessage(
+              id: 'm$i',
+              chatId: 'c1',
+              role: i.isOdd ? Role.user : Role.assistant,
+              text: i == 1 ? 'hello there' : 'message number $i',
+              ts: i,
+            ),
         ],
       },
       connState: ConnState.connected,
@@ -82,6 +83,55 @@ void main() {
     // From the list, back is NOT consumed — the app may background/exit.
     final poppedAgain = await tester.binding.handlePopRoute();
     expect(poppedAgain, isFalse);
+
+    // Flush AppState's debounced snapshot timer before teardown.
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('narrow: reopening a chat restores its scroll position',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final state = await seededState(messages: 30);
+    addTearDown(state.dispose);
+    await tester.pumpWidget(host(state));
+    await tester.pumpAndSettle();
+
+    state.selectChat('c1');
+    await tester.pumpAndSettle();
+
+    ScrollPosition position() =>
+        tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+
+    // First open lands on the newest message.
+    expect(position().pixels,
+        moreOrLessEquals(position().maxScrollExtent, epsilon: 1));
+
+    // Scroll up into history, leave, come back: the position is restored,
+    // not re-jumped to the bottom (and not some third place).
+    await tester.drag(find.byType(ListView), const Offset(0, 900));
+    await tester.pumpAndSettle();
+    final parked = position().pixels;
+    expect(parked, greaterThan(0));
+    expect(parked, lessThan(position().maxScrollExtent - 260));
+
+    state.clearSelection();
+    await tester.pumpAndSettle();
+    state.selectChat('c1');
+    await tester.pumpAndSettle();
+
+    expect(position().pixels, moreOrLessEquals(parked, epsilon: 1));
+
+    // Left at the bottom → reopening lands on the newest message again.
+    await tester.drag(find.byType(ListView), const Offset(0, -4000));
+    await tester.pumpAndSettle();
+    state.clearSelection();
+    await tester.pumpAndSettle();
+    state.selectChat('c1');
+    await tester.pumpAndSettle();
+    expect(position().pixels,
+        moreOrLessEquals(position().maxScrollExtent, epsilon: 1));
 
     // Flush AppState's debounced snapshot timer before teardown.
     await tester.pump(const Duration(seconds: 3));

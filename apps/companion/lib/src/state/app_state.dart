@@ -73,6 +73,12 @@ class AppState extends ChangeNotifier {
   bool _narrowLayout;
   bool get narrowLayout => _narrowLayout;
 
+  /// Per-chat scrollback offset for this app session, so reopening a chat
+  /// returns to where the user left off. No entry means "was at the bottom"
+  /// (or never opened): land on the newest message. Written by ChatView as
+  /// the user scrolls; deliberately not persisted or notified.
+  final Map<String, double> chatScrollPixels = {};
+
   /// Called from AppShell whenever the layout breakpoint flips. Growing into
   /// the wide two-pane layout with nothing selected picks the most recent chat
   /// (an empty conversation pane is dead weight on desktop); shrinking to

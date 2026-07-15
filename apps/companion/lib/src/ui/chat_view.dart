@@ -48,6 +48,7 @@ class _ChatViewState extends State<ChatView> {
   /// message (like any chat app), not the top of the scrollback.
   String? _anchoredChatId;
   bool _pendingJumpToBottom = false;
+  int _settleFrames = 0;
 
   /// Whether the user has scrolled up into history far enough that a
   /// jump-to-latest affordance is useful.
@@ -75,6 +76,16 @@ class _ChatViewState extends State<ChatView> {
     final pos = _scroll.position;
     final away = pos.maxScrollExtent - pos.pixels > 420;
     if (away != _awayFromBottom) setState(() => _awayFromBottom = away);
+    // Remember where the user is in this chat (session-only). At the bottom
+    // the entry is cleared: reopening then lands on the newest message.
+    final id = _anchoredChatId;
+    if (id != null && !_pendingJumpToBottom) {
+      if (pos.maxScrollExtent - pos.pixels < 2) {
+        widget.state.chatScrollPixels.remove(id);
+      } else {
+        widget.state.chatScrollPixels[id] = pos.pixels;
+      }
+    }
     // Nearing the top of loaded scrollback → pull the previous page in.
     if (pos.pixels < 240 && !_pendingJumpToBottom) _maybeLoadOlder();
   }
@@ -119,26 +130,26 @@ class _ChatViewState extends State<ChatView> {
   }
 
   void _autoScroll(String chatId, int messageCount) {
-    // Opening (or switching to) a chat should land on the newest message. The
-    // history often loads a frame or two after the switch, so keep owing the
-    // jump until the chat actually has content, then snap to the bottom.
+    // Switching chats: return to where the user left this chat, or to the
+    // newest message if they left it at the bottom (or never opened it).
     if (chatId != _anchoredChatId) {
       _anchoredChatId = chatId;
       _pendingJumpToBottom = true;
+      _settleFrames = 0;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scroll.hasClients) return;
-      final pos = _scroll.position;
+      if (!mounted || !_scroll.hasClients) return;
       if (_pendingJumpToBottom) {
-        _scroll.jumpTo(pos.maxScrollExtent);
-        // Only consider it settled once there's something to anchor to, so an
-        // async history load right after the switch still snaps to newest.
-        if (messageCount > 0) _pendingJumpToBottom = false;
+        _settleToNewest();
         return;
       }
-      // Otherwise follow live growth only when the user is already near the
-      // bottom, so we never yank them up while they're reading scrollback.
-      if (pos.maxScrollExtent - pos.pixels < 260) {
+      final pos = _scroll.position;
+      // Follow live growth only when the user is already near the bottom —
+      // and never while they're scrolling, or the follow yanks the list out
+      // of their hands.
+      if (pos.isScrollingNotifier.value) return;
+      final fromBottom = pos.maxScrollExtent - pos.pixels;
+      if (fromBottom > 2 && fromBottom < 260) {
         _scroll.animateTo(
           pos.maxScrollExtent,
           duration: const Duration(milliseconds: 160),
@@ -146,6 +157,33 @@ class _ChatViewState extends State<ChatView> {
         );
       }
     });
+  }
+
+  /// Positions a freshly opened chat: back to the saved offset if the user
+  /// left it mid-history, otherwise onto the newest message. maxScrollExtent
+  /// is an estimate under ListView.builder — one jump lands wherever the
+  /// estimate says and then drifts as rows actually lay out — so the bottom
+  /// jump repeats each frame until it holds still (or gives up).
+  void _settleToNewest() {
+    if (!mounted || !_scroll.hasClients || !_pendingJumpToBottom) return;
+    final id = _anchoredChatId;
+    final pos = _scroll.position;
+    final saved = id == null ? null : widget.state.chatScrollPixels[id];
+    if (saved != null) {
+      _scroll.jumpTo(saved.clamp(0.0, pos.maxScrollExtent));
+      _pendingJumpToBottom = false;
+      return;
+    }
+    final atBottom = pos.pixels >= pos.maxScrollExtent - 0.5;
+    if (!atBottom) _scroll.jumpTo(pos.maxScrollExtent);
+    final hasContent =
+        id != null && widget.state.messagesFor(id).isNotEmpty;
+    if ((atBottom && hasContent) || _settleFrames >= 8) {
+      _pendingJumpToBottom = false;
+      return;
+    }
+    _settleFrames++;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _settleToNewest());
   }
 
   @override
