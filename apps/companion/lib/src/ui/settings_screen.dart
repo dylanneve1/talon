@@ -615,8 +615,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
     final seed = TalonTheme.accentSeed.value;
     final isPreset = seed != null &&
-        TalonAccents.presets
-            .any((p) => p.$2.toARGB32() == seed.toARGB32());
+        TalonAccents.presets.any((p) => p.$2.toARGB32() == seed.toARGB32());
     final isCustom = seed != null && !isPreset;
     final scale = TalonTheme.textScale.value;
     final mobile = defaultTargetPlatform == TargetPlatform.android ||
@@ -626,45 +625,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 8,
+          // Full-width segmented row: each mode gets the same room, so there
+          // is no dead strip after Dark on wider cards.
+          Row(
             children: [
-              for (final (mode, label, icon) in options)
-                ChoiceChip(
-                  avatar: Icon(
-                    icon,
-                    size: 15,
-                    color: current == mode
-                        ? Colors.white
-                        : TalonColors.textFaint,
+              for (final (i, (mode, label, icon)) in options.indexed) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(
+                  child: _ModeButton(
+                    label: label,
+                    icon: icon,
+                    selected: current == mode,
+                    onTap: () {
+                      TalonTheme.mode.value = mode;
+                      widget.state.prefs.setThemeMode(switch (mode) {
+                        ThemeMode.light => 'light',
+                        ThemeMode.dark => 'dark',
+                        ThemeMode.system => 'system',
+                      });
+                    },
                   ),
-                  label: Text(label),
-                  selected: current == mode,
-                  showCheckmark: false,
-                  backgroundColor: TalonColors.surface,
-                  // Selected = a solid indigo pill with white content, matching
-                  // the concept's filled segmented control.
-                  selectedColor: TalonColors.accent,
-                  side: BorderSide(
-                    color: current == mode
-                        ? TalonColors.accent
-                        : TalonColors.glassStroke,
-                  ),
-                  labelStyle: TextStyle(
-                    color: current == mode ? Colors.white : TalonColors.textDim,
-                    fontSize: 13,
-                    fontWeight:
-                        current == mode ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                  onSelected: (_) {
-                    TalonTheme.mode.value = mode;
-                    widget.state.prefs.setThemeMode(switch (mode) {
-                      ThemeMode.light => 'light',
-                      ThemeMode.dark => 'dark',
-                      ThemeMode.system => 'system',
-                    });
-                  },
                 ),
+              ],
             ],
           ),
           const SizedBox(height: 18),
@@ -673,10 +655,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
+          _SwatchGrid(
+            swatches: [
               _AccentSwatch(
                 tooltip: 'Talon (default)',
                 gradient: const LinearGradient(
@@ -689,8 +669,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _AccentSwatch(
                   tooltip: label,
                   color: color,
-                  selected:
-                      seed != null && seed.toARGB32() == color.toARGB32(),
+                  selected: seed != null && seed.toARGB32() == color.toARGB32(),
                   onTap: () => _setAccent(color),
                 ),
               _AccentSwatch(
@@ -1048,7 +1027,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ? 'Agent online and healthy'
                               : 'Agent online')
                           : 'Not connected to the daemon',
-                      style: TextStyle(fontSize: 13, color: TalonColors.textDim),
+                      style:
+                          TextStyle(fontSize: 13, color: TalonColors.textDim),
                     ),
                   ],
                 ),
@@ -1076,7 +1056,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Row(
               children: [
                 Expanded(
-                    child: _statTile(Icons.dns_outlined, 'Backend', cfg.backend)),
+                    child:
+                        _statTile(Icons.dns_outlined, 'Backend', cfg.backend)),
                 const SizedBox(width: 10),
                 Expanded(
                     child: _statTile(Icons.account_tree_outlined, 'Sessions',
@@ -1247,7 +1228,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ── Row builders ──────────────────────────────────────────────────────────
 
-
   Widget _textRow(
     String label,
     TextEditingController c, {
@@ -1290,7 +1270,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ValueChanged<bool>? onChanged,
   ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         children: [
           Expanded(
@@ -1304,13 +1284,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: TextStyle(fontSize: 12, color: TalonColors.textFaint),
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: TalonColors.textFaint,
+                  ),
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 12),
           // Plain Switch, not .adaptive: this app uses fully custom Material
           // theming everywhere (not platform-native widgets), and .adaptive
           // renders a CupertinoSwitch on macOS/iOS that ignores
@@ -1502,10 +1488,12 @@ class _ControlButton extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle,
                     style: TextStyle(
                       fontSize: 12,
+                      height: 1.35,
                       color: TalonColors.textFaint,
                     ),
                   ),
@@ -1613,6 +1601,99 @@ class _ModelRow extends StatelessWidget {
   }
 }
 
+/// One equal-width segment of the Auto / Light / Dark selector.
+class _ModeButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ModeButton({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: AnimatedContainer(
+        duration: TalonMotion.fast,
+        height: 36,
+        decoration: BoxDecoration(
+          color: selected ? TalonColors.accent : TalonColors.surface,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? TalonColors.accent : TalonColors.glassStroke,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: selected ? Colors.white : TalonColors.textFaint,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : TalonColors.textDim,
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Balanced accent grid from the glass-settings pass. Ten swatches become
+/// two even rows of five, with free width shared by both margins and gaps.
+class _SwatchGrid extends StatelessWidget {
+  final List<Widget> swatches;
+  const _SwatchGrid({required this.swatches});
+
+  static const double _size = 34;
+  static const double _minGap = 12;
+  static const double _rowGap = 12;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final n = swatches.length;
+        final maxCols = ((constraints.maxWidth + _minGap) / (_size + _minGap))
+            .floor()
+            .clamp(1, n);
+        final rows = (n / maxCols).ceil();
+        final cols = (n / rows).ceil();
+        return Column(
+          children: [
+            for (var r = 0; r < rows; r++) ...[
+              if (r > 0) const SizedBox(height: _rowGap),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  for (var i = r * cols; i < (r + 1) * cols; i++)
+                    i < n
+                        ? swatches[i]
+                        : const SizedBox(width: _size, height: _size),
+                ],
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
 /// A circular accent color swatch: solid [color] or [gradient] fill, a check
 /// mark when selected, and an optional glyph (the custom picker's eyedropper).
 class _AccentSwatch extends StatelessWidget {
@@ -1635,8 +1716,7 @@ class _AccentSwatch extends StatelessWidget {
   Widget build(BuildContext context) {
     // Pick a glyph color that survives both light swatches (amber) and dark.
     final base = color ?? const Color(0xFF7C8CFF);
-    final glyph =
-        base.computeLuminance() > 0.6 ? Colors.black87 : Colors.white;
+    final glyph = base.computeLuminance() > 0.6 ? Colors.black87 : Colors.white;
     return Tooltip(
       message: tooltip,
       waitDuration: const Duration(milliseconds: 400),

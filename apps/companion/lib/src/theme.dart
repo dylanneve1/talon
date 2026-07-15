@@ -155,6 +155,7 @@ class TalonAccents {
   static const List<(String, Color)> presets = [
     ('Cyan', Color(0xFF38C8F0)),
     ('Emerald', Color(0xFF3ED598)),
+    ('Lime', Color(0xFFA3E635)),
     ('Amber', Color(0xFFF5A524)),
     ('Rose', Color(0xFFFF5C8A)),
     ('Violet', Color(0xFFA78BFA)),
@@ -283,8 +284,7 @@ class TalonColors {
   static Color get warn => TalonTheme.palette.warn;
   static Color get bad => TalonTheme.palette.bad;
   static LinearGradient get backdrop => TalonTheme.palette.backdrop;
-  static LinearGradient get accentGradient =>
-      TalonTheme.palette.accentGradient;
+  static LinearGradient get accentGradient => TalonTheme.palette.accentGradient;
 }
 
 /// Spacing scale — an 8pt grid (with a 2/4 half-step for tight insets). Snap
@@ -399,7 +399,8 @@ class TalonShadows {
   /// Resting card / tile.
   static List<BoxShadow> get soft => [
         BoxShadow(
-          color: Colors.black.withValues(alpha: TalonTheme.isDark ? 0.35 : 0.08),
+          color:
+              Colors.black.withValues(alpha: TalonTheme.isDark ? 0.35 : 0.08),
           blurRadius: 14,
           offset: const Offset(0, 4),
         ),
@@ -408,12 +409,14 @@ class TalonShadows {
   /// Floating surface (composer, sheets, FABs).
   static List<BoxShadow> get raised => [
         BoxShadow(
-          color: Colors.black.withValues(alpha: TalonTheme.isDark ? 0.45 : 0.10),
+          color:
+              Colors.black.withValues(alpha: TalonTheme.isDark ? 0.45 : 0.10),
           blurRadius: 24,
           offset: const Offset(0, 8),
         ),
         BoxShadow(
-          color: Colors.black.withValues(alpha: TalonTheme.isDark ? 0.30 : 0.06),
+          color:
+              Colors.black.withValues(alpha: TalonTheme.isDark ? 0.30 : 0.06),
           blurRadius: 6,
           offset: const Offset(0, 2),
         ),

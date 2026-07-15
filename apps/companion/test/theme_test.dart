@@ -10,6 +10,10 @@ void main() {
     TalonTheme.apply(Brightness.dark);
   });
 
+  test('Auto is the first-run theme mode', () {
+    expect(TalonTheme.mode.value, ThemeMode.system);
+  });
+
   test('explicit modes override the platform brightness', () {
     TalonTheme.mode.value = ThemeMode.dark;
     TalonTheme.apply(Brightness.light);
