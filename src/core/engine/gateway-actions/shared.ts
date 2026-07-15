@@ -1,9 +1,8 @@
 /**
- * Helpers shared across shared-action domains: due-date parsing, HTML text
- * extraction, and per-job model-override validation.
+ * Helpers shared across shared-action domains: due-date parsing and per-job
+ * model-override validation.
  */
 
-import * as cheerio from "cheerio";
 import { resolveExplicitModelRef } from "../../models/active-model.js";
 import {
   getBackendForChat,
@@ -18,16 +17,6 @@ export function parseDueDate(value: unknown): number | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
   const ms = Date.parse(value);
   return Number.isFinite(ms) ? ms : undefined;
-}
-
-/** Extract readable text from HTML using cheerio (proper DOM parser). */
-export function extractText(html: string, maxLength = 8000): string {
-  const $ = cheerio.load(html);
-  // Remove non-content elements
-  $("script, style, noscript, iframe, svg, nav, footer, header").remove();
-  // Get text content, normalize whitespace
-  const text = $("body").text().replace(/\s+/g, " ").trim();
-  return text.slice(0, maxLength);
 }
 
 /**

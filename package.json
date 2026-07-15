@@ -110,6 +110,7 @@
     "croner": "^10.0.1",
     "cross-spawn": "^7.0.6",
     "discord.js": "^14.16.3",
+    "file-type": "^22.0.1",
     "grammy": "^1.42.0",
     "liquidjs": "^10.27.0",
     "marked": "^18.0.0",
