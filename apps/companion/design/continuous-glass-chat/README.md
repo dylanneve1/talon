@@ -9,9 +9,9 @@ rounded panel sitting on top of it.
 - Let the ambient background run continuously behind the message history.
 - No header bar at all: the title, chips and menu float directly on the
   canvas, and the scrollback slides underneath them, melting into a
-  progressive frost — a cumulative stack of backdrop-blur layers whose blur
-  radius grows toward the top — plus a soft scrim for text contrast, instead
-  of hitting a frosted strip with an edge.
+  progressive frost — a shader-driven variable-radius blur whose per-pixel
+  sigma follows a vertical gradient (via `progressive_blur`) — plus a soft
+  scrim for text contrast, instead of hitting a frosted strip with an edge.
 - Keep separation local: the floating frosted composer pill provides contrast
   where the one control that needs it lives.
 - Preserve the existing message hierarchy, accent bubbles, typography, and
