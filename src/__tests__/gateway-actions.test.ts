@@ -525,8 +525,8 @@ describe("gateway shared actions", () => {
       expect(mockWriteFileSync).not.toHaveBeenCalled();
     });
 
-    it("truncates large text content to 8000 chars", async () => {
-      const longText = "A".repeat(10000);
+    it("truncates large text content with an explicit marker", async () => {
+      const longText = "A".repeat(60_000);
       const mockFetch = vi.fn().mockResolvedValueOnce(
         mockResponse({
           ok: true,
@@ -542,7 +542,9 @@ describe("gateway shared actions", () => {
       );
 
       expect(result?.ok).toBe(true);
-      expect(result?.text!.length).toBe(8000);
+      expect(result?.text!.startsWith("AAA")).toBe(true);
+      expect(result?.text).toContain("[Content truncated at 50000 characters]");
+      expect(result?.text!.length).toBeLessThan(60_000);
     });
 
     it("returns message for pages with no readable content", async () => {
@@ -836,8 +838,8 @@ describe("gateway shared actions", () => {
       expect(mockMkdirSync).not.toHaveBeenCalled();
     });
 
-    it("rejects chunked binary responses larger than 20MB", async () => {
-      const buffer = new ArrayBuffer(21 * 1024 * 1024); // 21MB
+    it("rejects chunked binary responses larger than 50MB", async () => {
+      const buffer = new ArrayBuffer(51 * 1024 * 1024); // 51MB
       const mockFetch = vi.fn().mockResolvedValueOnce(
         mockResponse({
           ok: true,
@@ -854,16 +856,16 @@ describe("gateway shared actions", () => {
 
       expect(result?.ok).toBe(false);
       expect(result?.error).toContain("Response too large");
-      expect(result?.error).toContain("20MB");
+      expect(result?.error).toContain("50MB");
       expect(mockWriteFileSync).not.toHaveBeenCalled();
     });
 
-    it("rejects chunked text responses larger than 20MB", async () => {
+    it("rejects chunked text responses larger than 50MB", async () => {
       const mockFetch = vi.fn().mockResolvedValueOnce(
         mockResponse({
           ok: true,
           contentType: "text/plain",
-          body: "A".repeat(21 * 1024 * 1024),
+          body: "A".repeat(51 * 1024 * 1024),
         }),
       );
       vi.stubGlobal("fetch", mockFetch);
@@ -875,7 +877,7 @@ describe("gateway shared actions", () => {
 
       expect(result).toEqual({
         ok: false,
-        error: "Response too large (max 20MB)",
+        error: "Response too large (max 50MB)",
       });
       expect(mockWriteFileSync).not.toHaveBeenCalled();
     });
@@ -1951,11 +1953,11 @@ describe("gateway-actions — additional branch coverage", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("rejects fetch_url when Content-Length header exceeds 20MB (line 152 TRUE branch)", async () => {
-    // Build a response that has a Content-Length header > 20MB
+  it("rejects fetch_url when Content-Length header exceeds the size limit (line 152 TRUE branch)", async () => {
+    // Build a response that has a Content-Length header over the 50MB limit
     const headers = new Headers();
     headers.set("content-type", "text/html");
-    headers.set("content-length", String(25 * 1024 * 1024)); // 25MB
+    headers.set("content-length", String(55 * 1024 * 1024)); // 55MB
     const bigResponse = {
       ok: true,
       status: 200,

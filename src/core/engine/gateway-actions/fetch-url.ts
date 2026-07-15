@@ -22,8 +22,15 @@ import {
 import { dirs } from "../../../util/paths.js";
 import type { SharedActionHandlers } from "./types.js";
 
-const MAX_RESPONSE_BYTES = 20 * 1024 * 1024;
-const MAX_TEXT_CHARS = 8000;
+const MAX_RESPONSE_MB = 50;
+const MAX_RESPONSE_BYTES = MAX_RESPONSE_MB * 1024 * 1024;
+const MAX_TEXT_CHARS = 50_000;
+
+/** Cap returned text, marking the cut so truncation is never silent. */
+function capText(text: string): string {
+  if (text.length <= MAX_TEXT_CHARS) return text;
+  return `${text.slice(0, MAX_TEXT_CHARS)}\n\n[Content truncated at ${MAX_TEXT_CHARS} characters]`;
+}
 
 export const fetchUrlHandlers: SharedActionHandlers = {
   fetch_url: async (body) => {
@@ -52,7 +59,7 @@ export const fetchUrlHandlers: SharedActionHandlers = {
       if (contentLength && Number(contentLength) > MAX_RESPONSE_BYTES) {
         return {
           ok: false,
-          error: `File too large (${(Number(contentLength) / 1024 / 1024).toFixed(0)}MB, max 20MB)`,
+          error: `File too large (${(Number(contentLength) / 1024 / 1024).toFixed(0)}MB, max ${MAX_RESPONSE_MB}MB)`,
         };
       }
 
@@ -62,7 +69,10 @@ export const fetchUrlHandlers: SharedActionHandlers = {
         buffer = await readBodyLimited(resp, MAX_RESPONSE_BYTES);
       } catch (err) {
         if (err instanceof ResponseTooLargeError) {
-          return { ok: false, error: "Response too large (max 20MB)" };
+          return {
+            ok: false,
+            error: `Response too large (max ${MAX_RESPONSE_MB}MB)`,
+          };
         }
         throw err;
       }
@@ -76,12 +86,12 @@ export const fetchUrlHandlers: SharedActionHandlers = {
         // plain text strips small payloads like {"status":"ok"} to nothing,
         // so only HTML (declared or sniffed) goes through it.
         if (!isHtmlContent(mimeType, trimmed)) {
-          return { ok: true, text: trimmed.slice(0, MAX_TEXT_CHARS) };
+          return { ok: true, text: capText(trimmed) };
         }
-        const text = extractText(trimmed, MAX_TEXT_CHARS);
+        const text = extractText(trimmed, Number.POSITIVE_INFINITY);
         if (text.length < 20)
           return { ok: true, text: "(Page has no readable content)" };
-        return { ok: true, text };
+        return { ok: true, text: capText(text) };
       }
 
       if (buffer.length === 0)
