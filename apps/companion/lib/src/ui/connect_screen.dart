@@ -112,7 +112,6 @@ class _ConnectScreenState extends State<ConnectScreen> {
           constraints: const BoxConstraints(maxWidth: 460),
           child: Glass(
             radius: 26,
-            blur: 26,
             padding: const EdgeInsets.all(26),
             child: Column(
               mainAxisSize: MainAxisSize.min,

@@ -1,22 +1,21 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
 
-/// A frosted-glass panel: blurred translucent fill, hairline stroke, soft
-/// rounding. The building block of the whole UI.
+/// A translucent panel in the app's glass language — a sheer fill, a hairline
+/// stroke, soft rounding. Deliberately *no* live backdrop blur: the fill is
+/// substantial enough to separate content from the canvas on its own, which
+/// keeps every surface flicker-free and cheap to scroll. The building block of
+/// the whole UI.
 class Glass extends StatelessWidget {
   final Widget child;
   final double radius;
   final EdgeInsetsGeometry? padding;
-  final double blur;
   final Color? fill;
   final Color? stroke;
   final Gradient? glow;
 
-  /// Optional drop shadows painted outside the blur clip (e.g.
-  /// [TalonShadows.soft]) so a panel can float off the backdrop.
+  /// Optional drop shadows so a panel can float off the backdrop.
   final List<BoxShadow>? shadows;
 
   const Glass({
@@ -24,79 +23,58 @@ class Glass extends StatelessWidget {
     required this.child,
     this.radius = 18,
     this.padding,
-    this.blur = 18,
     this.fill,
     this.stroke,
     this.glow,
     this.shadows,
   });
 
+  /// The default panel fill: the raised surface colour at partial opacity, so
+  /// the ambient backdrop still tints through without a blur pass.
+  static Color get panelFill =>
+      TalonColors.surface.withValues(alpha: TalonTheme.isDark ? 0.72 : 0.78);
+
   @override
   Widget build(BuildContext context) {
-    final r = BorderRadius.circular(radius);
-    final panel = ClipRRect(
-      borderRadius: r,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            gradient: glow,
-            color: glow == null ? (fill ?? TalonColors.glassFill) : null,
-            borderRadius: r,
-            border: Border.all(
-              color: stroke ?? TalonColors.glassStroke,
-              width: 1,
-            ),
-          ),
-          child: child,
-        ),
+    return Container(
+      padding: padding,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: glow,
+        color: glow == null ? (fill ?? panelFill) : null,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: stroke ?? TalonColors.glassStroke, width: 1),
+        boxShadow: shadows,
       ),
-    );
-    if (shadows == null) return panel;
-    return DecoratedBox(
-      decoration: BoxDecoration(borderRadius: r, boxShadow: shadows),
-      child: panel,
+      child: child,
     );
   }
 }
 
-/// The app's navigation surface: one uniform native backdrop blur with a
-/// translucent tint and a hairline bottom edge, running edge-to-edge behind
-/// the status bar. Content slides beneath it and glows through the glass.
-///
-/// Uniform sigma is the design, not a shortcut. A progressive melt needs
-/// either a variable-sigma fragment shader (hundreds of texture taps per
-/// pixel across the strip — measured too slow on phones) or stacked
-/// backdrop bands (visible sigma steps however they're arranged). One
-/// honest surface on the engine's downsampled Gaussian costs the same as
-/// the composer's pill and cannot band — there is no gradient to step.
+/// The app's navigation surface: a translucent tinted bar with a hairline
+/// bottom edge, running edge-to-edge behind the status bar. Content slides
+/// beneath it. No live backdrop blur — the fill is opaque enough to hold the
+/// controls legible over whatever scrolls under, so the bar costs nothing to
+/// composite and cannot band or shimmer.
 class GlassBar extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
   const GlassBar({super.key, required this.child, required this.padding});
 
-  static const double sigma = 24;
-
   @override
   Widget build(BuildContext context) {
     final fill = TalonTheme.isDark
-        ? TalonColors.void1.withValues(alpha: 0.52)
-        : Colors.white.withValues(alpha: 0.58);
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            color: fill,
-            border: Border(
-              bottom: BorderSide(color: TalonColors.glassStroke),
-            ),
-          ),
-          child: child,
+        ? TalonColors.void1.withValues(alpha: 0.94)
+        : Colors.white.withValues(alpha: 0.92);
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: fill,
+        border: Border(
+          bottom: BorderSide(color: TalonColors.glassStroke),
         ),
       ),
+      child: child,
     );
   }
 }
@@ -190,11 +168,9 @@ class TalonBackdrop extends StatelessWidget {
 }
 
 /// A whisper of radial colour behind the backdrop, giving the near-black canvas
-/// depth without tinting the whole surface. Deliberately static: the blobs
-/// used to drift on 18–27s loops, but any motion beneath a BackdropFilter
-/// dirties the backdrop every frame and forces every glass surface (bar,
-/// composer, sheets) to re-composite continuously — permanent idle GPU load
-/// for a sub-perceptual effect.
+/// depth without tinting the whole surface. Deliberately static: the blobs used
+/// to drift on 18–27s loops, but animating four large radial gradients every
+/// frame is permanent idle GPU load for a sub-perceptual effect.
 class AmbientGlow extends StatelessWidget {
   const AmbientGlow({super.key});
 

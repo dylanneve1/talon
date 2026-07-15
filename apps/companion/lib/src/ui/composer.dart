@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -201,95 +199,90 @@ class _ComposerState extends State<Composer> {
               ),
           ],
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(22),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-            child: AnimatedContainer(
-              duration: TalonMotion.base,
-              curve: TalonMotion.standard,
-              decoration: BoxDecoration(
-                color: TalonTheme.isDark
-                    ? TalonColors.void1.withValues(alpha: 0.66)
-                    : Colors.white.withValues(alpha: 0.54),
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: _focused
-                      ? TalonColors.accent.withValues(alpha: 0.65)
-                      : TalonColors.glassStroke,
-                  width: _focused ? 1.4 : 1,
-                ),
-              ),
-              padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+        // Solid translucent pill — no backdrop blur. The fill is opaque enough
+        // to read cleanly over the scrollback on its own, so the one persistent
+        // control stays crisp and cheap.
+        child: AnimatedContainer(
+          duration: TalonMotion.base,
+          curve: TalonMotion.standard,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: TalonTheme.isDark
+                ? TalonColors.void1.withValues(alpha: 0.94)
+                : Colors.white.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: _focused
+                  ? TalonColors.accent.withValues(alpha: 0.65)
+                  : TalonColors.glassStroke,
+              width: _focused ? 1.4 : 1,
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_pendingBytes != null) _attachmentPreview(),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  if (_pendingBytes != null) _attachmentPreview(),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      _AttachButton(
-                        enabled: widget.enabled && !_uploading,
-                        onTap: _pickImage,
+                  _AttachButton(
+                    enabled: widget.enabled && !_uploading,
+                    onTap: _pickImage,
+                  ),
+                  Expanded(
+                    child: Focus(
+                      onKeyEvent: _onKey,
+                      child: TextField(
+                        controller: _controller,
+                        focusNode: _focus,
+                        enabled: widget.enabled,
+                        minLines: 1,
+                        maxLines: 6,
+                        textInputAction: TextInputAction.newline,
+                        keyboardType: TextInputType.multiline,
+                        style: const TextStyle(fontSize: 14.5, height: 1.4),
+                        decoration: InputDecoration(
+                          isCollapsed: true,
+                          border: InputBorder.none,
+                          contentPadding:
+                              const EdgeInsets.symmetric(vertical: 12),
+                          hintText:
+                              widget.enabled ? 'Message Talon…' : 'Connecting…',
+                          hintStyle: TextStyle(color: TalonColors.textFaint),
+                        ),
                       ),
-                      Expanded(
-                        child: Focus(
-                          onKeyEvent: _onKey,
-                          child: TextField(
-                            controller: _controller,
-                            focusNode: _focus,
-                            enabled: widget.enabled,
-                            minLines: 1,
-                            maxLines: 6,
-                            textInputAction: TextInputAction.newline,
-                            keyboardType: TextInputType.multiline,
-                            style: const TextStyle(fontSize: 14.5, height: 1.4),
-                            decoration: InputDecoration(
-                              isCollapsed: true,
-                              border: InputBorder.none,
-                              contentPadding:
-                                  const EdgeInsets.symmetric(vertical: 12),
-                              hintText: widget.enabled
-                                  ? 'Message Talon…'
-                                  : 'Connecting…',
-                              hintStyle:
-                                  TextStyle(color: TalonColors.textFaint),
-                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  // Stop while a turn runs and there's nothing staged to send;
+                  // as soon as the user types, it flips back to send-to-queue.
+                  // The two buttons morph through a scale+fade so the swap reads
+                  // as one control changing mode, not a replacement.
+                  AnimatedSwitcher(
+                    duration: TalonMotion.base,
+                    switchInCurve: TalonMotion.emphasized,
+                    switchOutCurve: Curves.easeIn,
+                    transitionBuilder: (child, anim) => ScaleTransition(
+                      scale: Tween(begin: 0.6, end: 1.0).animate(anim),
+                      child: FadeTransition(opacity: anim, child: child),
+                    ),
+                    child: (widget.running &&
+                            !canSend &&
+                            !_uploading &&
+                            widget.onStop != null)
+                        ? _StopButton(
+                            key: const ValueKey('stop'), onTap: widget.onStop!)
+                        : _SendButton(
+                            key: const ValueKey('send'),
+                            enabled: canSend,
+                            busy: _uploading,
+                            onTap: _send,
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      // Stop while a turn runs and there's nothing staged to send;
-                      // as soon as the user types, it flips back to send-to-queue.
-                      // The two buttons morph through a scale+fade so the swap reads
-                      // as one control changing mode, not a replacement.
-                      AnimatedSwitcher(
-                        duration: TalonMotion.base,
-                        switchInCurve: TalonMotion.emphasized,
-                        switchOutCurve: Curves.easeIn,
-                        transitionBuilder: (child, anim) => ScaleTransition(
-                          scale: Tween(begin: 0.6, end: 1.0).animate(anim),
-                          child: FadeTransition(opacity: anim, child: child),
-                        ),
-                        child: (widget.running &&
-                                !canSend &&
-                                !_uploading &&
-                                widget.onStop != null)
-                            ? _StopButton(
-                                key: const ValueKey('stop'),
-                                onTap: widget.onStop!)
-                            : _SendButton(
-                                key: const ValueKey('send'),
-                                enabled: canSend,
-                                busy: _uploading,
-                                onTap: _send,
-                              ),
-                      ),
-                    ],
                   ),
                 ],
               ),
-            ),
+            ],
           ),
         ),
       ),

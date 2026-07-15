@@ -103,10 +103,8 @@ class AppShell extends StatelessWidget {
                         switchOutCurve: Curves.easeOutCubic,
                         // Push/pop, not crossfade: the conversation slides
                         // fully on/off screen over the list (which parallaxes
-                        // beneath). No fades — a fade's saveLayer starves the
-                        // glass BackdropFilters of their backdrop so the blur
-                        // pops in at the end, and a non-faded outgoing screen
-                        // shows through whatever fades in over it.
+                        // beneath). No fades — a non-faded outgoing screen would
+                        // show through whatever fades in over it.
                         transitionBuilder: (child, anim) {
                           final chat = child.key == const ValueKey('chat');
                           return SlideTransition(

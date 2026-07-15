@@ -176,8 +176,7 @@ class _ChatViewState extends State<ChatView> {
     }
     final atBottom = pos.pixels >= pos.maxScrollExtent - 0.5;
     if (!atBottom) _scroll.jumpTo(pos.maxScrollExtent);
-    final hasContent =
-        id != null && widget.state.messagesFor(id).isNotEmpty;
+    final hasContent = id != null && widget.state.messagesFor(id).isNotEmpty;
     if ((atBottom && hasContent) || _settleFrames >= 8) {
       _pendingJumpToBottom = false;
       return;
@@ -197,8 +196,8 @@ class _ChatViewState extends State<ChatView> {
     return ListenableBuilder(
       listenable: widget.state,
       builder: (context, _) {
-        final chat = widget.state.selectedChat ??
-            (widget.showBack ? _lastChat : null);
+        final chat =
+            widget.state.selectedChat ?? (widget.showBack ? _lastChat : null);
         if (chat == null) return const _EmptyState();
         _lastChat = chat;
         _autoScroll(chat.id, widget.state.messagesFor(chat.id).length);
@@ -325,16 +324,20 @@ class _ChatViewState extends State<ChatView> {
                   final row = rows[mi];
                   if (row is DateTime) return _DayDivider(day: row);
                   final m = row as ClientMessage;
-                  return MessageBubble(
-                    message: m,
-                    botName: widget.state.status.botName,
-                    animateIn: _shouldAnimate(m),
-                    // activeConfig, not config: in local auto-discover mode the
-                    // saved config lacks the bridge's real port/token, and media
-                    // fetched through it 404s or gets rejected.
-                    imageUrl: m.imagePath == null
-                        ? null
-                        : widget.state.activeConfig.mediaUrl(m.imagePath!),
+                  // Each bubble gets its own layer so scrolling only recomposits
+                  // moving rows instead of repainting the whole conversation.
+                  return RepaintBoundary(
+                    child: MessageBubble(
+                      message: m,
+                      botName: widget.state.status.botName,
+                      animateIn: _shouldAnimate(m),
+                      // activeConfig, not config: in local auto-discover mode the
+                      // saved config lacks the bridge's real port/token, and media
+                      // fetched through it 404s or gets rejected.
+                      imageUrl: m.imagePath == null
+                          ? null
+                          : widget.state.activeConfig.mediaUrl(m.imagePath!),
+                    ),
                   );
                 }
                 return LiveTurn(
