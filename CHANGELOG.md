@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.47.2](https://github.com/dylanneve1/talon/compare/v1.47.1...v1.47.2) (2026-07-15)
+
+
+### Bug Fixes
+
+* **native:** read image files as viewable image blocks, not mojibake ([#548](https://github.com/dylanneve1/talon/issues/548)) ([0844fa0](https://github.com/dylanneve1/talon/commit/0844fa009d0b0bfcad4bd08c286034c6a1b5f4e8))
+
 ## [1.47.1](https://github.com/dylanneve1/talon/compare/v1.47.0...v1.47.1) (2026-07-15)
 
 
