@@ -121,10 +121,15 @@ class TopEdgeFrost extends StatelessWidget {
                     height: clearAt,
                     child: ClipRect(
                       child: BackdropFilter(
-                        filter: ImageFilter.blur(
+                        // Bounded blur samples only real backdrop pixels in
+                        // this strip and renormalizes the kernel at its edge.
+                        // An unbounded clamp blur repeats the final source row,
+                        // stretching colorful content into a horizontal bar.
+                        filterConfig: const ImageFilterConfig.blur(
                           sigmaX: sigma,
                           sigmaY: sigma,
-                          tileMode: TileMode.clamp,
+                          tileMode: TileMode.decal,
+                          bounded: true,
                         ),
                         child: CustomPaint(
                           painter: _BottomFadeMaskPainter(solid: solid),
