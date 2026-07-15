@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -464,22 +463,14 @@ ThemeData buildTalonTheme() {
 
   return base.copyWith(
     scaffoldBackgroundColor: TalonColors.void0,
-    // Cupertino-style push on every platform: plain slide transforms. The
-    // Material defaults fade (fadeUpwards) or snapshot (zoom) the incoming
-    // route, and a BackdropFilter inside a fading saveLayer or an offscreen
-    // snapshot reads an empty backdrop — the glass bar on pushed routes
-    // (settings, logs, connect) would render unblurred until the push
-    // animation ends, then pop in. Slides keep the glass live throughout.
-    pageTransitionsTheme: const PageTransitionsTheme(
-      builders: {
-        TargetPlatform.android: CupertinoPageTransitionsBuilder(),
-        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-        TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-        TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
-        TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
-        TargetPlatform.fuchsia: CupertinoPageTransitionsBuilder(),
-      },
-    ),
+    // Page transitions stay on the platform defaults. The zoom transition
+    // snapshots the incoming route, which renders the glass bar unblurred
+    // mid-push — but pushed routes keep their resting content below the
+    // bar, so there is nothing under the glass and the pop is invisible.
+    // Swapping in Cupertino slides was tried and reverted: it breaks
+    // Android's predictive back (only the Material builders support it)
+    // and janks, since the glass re-blurs live on every frame of the slide
+    // while a snapshot animates as one cheap texture.
     colorScheme: base.colorScheme.copyWith(
       brightness: dark ? Brightness.dark : Brightness.light,
       primary: accent,
