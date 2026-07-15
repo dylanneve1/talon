@@ -105,10 +105,15 @@ void main() {
 
     // A fade is an opacity saveLayer, and a BackdropFilter inside one reads
     // the layer's own backdrop instead of the screen — the bar's blur would
-    // render empty during the transition and pop in at the end. The chat
-    // child must slide in opaque (transforms are safe for glass).
+    // render empty until the transition ends. Settled fades (opacity 1,
+    // e.g. from route transitions) are harmless; an actively fading
+    // ancestor is the bug.
     final bar = tester.element(find.byType(GlassBar));
-    expect(bar.findAncestorWidgetOfExactType<FadeTransition>(), isNull);
+    bar.visitAncestorElements((el) {
+      final w = el.widget;
+      if (w is FadeTransition) expect(w.opacity.value, 1.0);
+      return true;
+    });
 
     await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 3));

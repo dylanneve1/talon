@@ -463,14 +463,6 @@ ThemeData buildTalonTheme() {
 
   return base.copyWith(
     scaffoldBackgroundColor: TalonColors.void0,
-    // Page transitions stay on the platform defaults. The zoom transition
-    // snapshots the incoming route, which renders the glass bar unblurred
-    // mid-push — but pushed routes keep their resting content below the
-    // bar, so there is nothing under the glass and the pop is invisible.
-    // Swapping in Cupertino slides was tried and reverted: it breaks
-    // Android's predictive back (only the Material builders support it)
-    // and janks, since the glass re-blurs live on every frame of the slide
-    // while a snapshot animates as one cheap texture.
     colorScheme: base.colorScheme.copyWith(
       brightness: dark ? Brightness.dark : Brightness.light,
       primary: accent,
