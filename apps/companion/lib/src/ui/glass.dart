@@ -113,27 +113,46 @@ class TopEdgeFrost extends StatelessWidget {
                   return const SizedBox.shrink();
                 }
                 final clearAt = extent.clamp(0.0, constraints.maxHeight);
+                if (clearAt <= 0) return const SizedBox.shrink();
                 final solid = solidUntil.clamp(0.0, clearAt);
+                final solidFraction = (solid / clearAt).clamp(0.0, 0.95);
+                const steps = 32;
+                final stops = <double>[0];
+                final colors = <Color>[Colors.white];
+                for (var i = 0; i <= steps; i++) {
+                  final t = i / steps;
+                  stops.add(solidFraction + t * (1 - solidFraction));
+                  colors.add(
+                    Colors.white.withValues(alpha: 1 - _ease(t)),
+                  );
+                }
                 return Align(
                   alignment: Alignment.topCenter,
                   child: SizedBox(
                     width: double.infinity,
                     height: clearAt,
                     child: ClipRect(
-                      child: BackdropFilter(
-                        // Bounded blur samples only real backdrop pixels in
-                        // this strip and renormalizes the kernel at its edge.
-                        // An unbounded clamp blur repeats the final source row,
-                        // stretching colorful content into a horizontal bar.
-                        filterConfig: const ImageFilterConfig.blur(
-                          sigmaX: sigma,
-                          sigmaY: sigma,
-                          tileMode: TileMode.decal,
-                          bounded: true,
-                        ),
-                        child: CustomPaint(
-                          painter: _BottomFadeMaskPainter(solid: solid),
-                          size: Size.infinite,
+                      // This must be an outer compositor layer. A dstIn paint
+                      // inside BackdropFilter only masks its child on Android;
+                      // the filtered backdrop has already been composited and
+                      // retains a hard edge. ShaderMask attenuates the complete
+                      // backdrop-filter result to exactly zero at the clip.
+                      child: ShaderMask(
+                        blendMode: BlendMode.dstIn,
+                        shaderCallback: (bounds) => LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: colors,
+                          stops: stops,
+                        ).createShader(bounds),
+                        child: const BackdropFilter(
+                          filterConfig: ImageFilterConfig.blur(
+                            sigmaX: sigma,
+                            sigmaY: sigma,
+                            tileMode: TileMode.decal,
+                            bounded: true,
+                          ),
+                          child: SizedBox.expand(),
                         ),
                       ),
                     ),
@@ -146,45 +165,6 @@ class TopEdgeFrost extends StatelessWidget {
       ],
     );
   }
-}
-
-/// Masks the backdrop-filter layer itself. Painting this as a child of the
-/// [BackdropFilter] is important: [BlendMode.dstIn] then feathers the filtered
-/// backdrop rather than adding a translucent veil over the sharp scene.
-class _BottomFadeMaskPainter extends CustomPainter {
-  const _BottomFadeMaskPainter({required this.solid});
-
-  final double solid;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
-    final fadeHeight = size.height - solid;
-    if (fadeHeight <= 0) return;
-
-    // Blur a hard alpha edge whose centre sits halfway through the dissolve.
-    // Eight sigmas span the dissolve. At either boundary the Gaussian tail is
-    // below 1/30,000 alpha: visually solid at [solid] and visually zero at the
-    // clip, without extending the backdrop layer or introducing gradient
-    // segments that shimmer while scrolling.
-    final sigma = fadeHeight / 8;
-    final edge = solid + fadeHeight / 2;
-    canvas.drawRect(
-      Rect.fromLTRB(0, -fadeHeight, size.width, edge),
-      Paint()
-        ..blendMode = BlendMode.dstIn
-        ..color = Colors.white
-        ..imageFilter = ImageFilter.blur(
-          sigmaX: 0,
-          sigmaY: sigma,
-          tileMode: TileMode.decal,
-        ),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_BottomFadeMaskPainter oldDelegate) =>
-      oldDelegate.solid != solid;
 }
 
 /// The gradient wash painted behind floating header controls: a translucent
