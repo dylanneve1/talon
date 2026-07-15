@@ -4,7 +4,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../state/app_state.dart';
 import '../theme.dart';
-import 'brand.dart';
+import 'assistant_surface.dart';
 import 'markdown.dart';
 import 'tool_timeline.dart';
 
@@ -18,51 +18,76 @@ class LiveTurn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: TalonSpace.md),
-      child: Row(
+    return AssistantSurface(
+      botName: botName,
+      surfaceKey: const Key('assistant-live-card'),
+      trailing: _LiveBadge(active: turn.active),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 2),
-            child: BrandMark(size: 28),
+          if (turn.reasoning.isNotEmpty)
+            _ReasoningStrip(
+              text: turn.reasoning.join(''),
+              // Once the reply starts streaming, the thinking is done —
+              // fold the strip into a quiet pill (tap re-expands).
+              condensed: turn.draft.isNotEmpty,
+            ),
+          if (turn.tools.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: TalonSpace.sm),
+              child: ToolTimeline(tools: turn.tools),
+            ),
+          AnimatedSwitcher(
+            duration: TalonMotion.fast,
+            switchInCurve: TalonMotion.emphasized,
+            switchOutCurve: Curves.easeIn,
+            child: turn.draft.isNotEmpty
+                ? _StreamingText(text: turn.draft)
+                : turn.continuing
+                    ? const _WorkingPill(key: ValueKey('working'))
+                    : turn.typing
+                        ? const Padding(
+                            key: ValueKey('typing'),
+                            padding: EdgeInsets.only(top: 2),
+                            child: _TypingDots(),
+                          )
+                        : const SizedBox.shrink(key: ValueKey('idle')),
           ),
-          const SizedBox(width: TalonSpace.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(botName, style: TalonType.subtitle),
-                const SizedBox(height: 6),
-                if (turn.reasoning.isNotEmpty)
-                  _ReasoningStrip(
-                    text: turn.reasoning.join(''),
-                    // Once the reply starts streaming, the thinking is done —
-                    // fold the strip into a quiet pill (tap re-expands).
-                    condensed: turn.draft.isNotEmpty,
-                  ),
-                if (turn.tools.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: TalonSpace.sm),
-                    child: ToolTimeline(tools: turn.tools),
-                  ),
-                AnimatedSwitcher(
-                  duration: TalonMotion.fast,
-                  switchInCurve: TalonMotion.emphasized,
-                  switchOutCurve: Curves.easeIn,
-                  child: turn.draft.isNotEmpty
-                      ? _StreamingText(text: turn.draft)
-                      : turn.continuing
-                          ? const _WorkingPill(key: ValueKey('working'))
-                          : turn.typing
-                              ? const Padding(
-                                  key: ValueKey('typing'),
-                                  padding: EdgeInsets.only(top: 2),
-                                  child: _TypingDots(),
-                                )
-                              : const SizedBox.shrink(key: ValueKey('idle')),
-                ),
-              ],
+        ],
+      ),
+    );
+  }
+}
+
+class _LiveBadge extends StatelessWidget {
+  final bool active;
+  const _LiveBadge({required this.active});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? TalonColors.accent2 : TalonColors.textFaint;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: TalonRadius.rPill,
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            active ? 'Working' : 'Ready',
+            style: TextStyle(
+              color: color,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -258,7 +283,8 @@ class _WorkingPill extends StatelessWidget {
               ? dot
               : dot
                   .animate(onPlay: (c) => c.repeat(reverse: true))
-                  .fadeIn(begin: 0.35, duration: 900.ms, curve: Curves.easeInOut)
+                  .fadeIn(
+                      begin: 0.35, duration: 900.ms, curve: Curves.easeInOut)
                   .scaleXY(begin: 0.85, end: 1.15, curve: Curves.easeInOut),
           const SizedBox(width: 7),
           Text(

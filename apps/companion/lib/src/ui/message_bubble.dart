@@ -6,7 +6,7 @@ import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
 import '../models/bridge_models.dart';
 import '../services/haptics.dart';
 import '../theme.dart';
-import 'brand.dart';
+import 'assistant_surface.dart';
 import 'code_block.dart';
 import 'markdown.dart';
 import 'motion.dart';
@@ -89,13 +89,13 @@ class MessageBubble extends StatelessWidget {
       );
 
   Widget _userRow() => Padding(
-        padding: const EdgeInsets.symmetric(vertical: TalonSpace.sm),
+        padding: const EdgeInsets.symmetric(vertical: 9),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Spacer(flex: 2),
+            const Spacer(flex: 3),
             Flexible(
-              flex: 9,
+              flex: 10,
               child: Align(
                 alignment: Alignment.centerRight,
                 child: Tooltip(
@@ -120,61 +120,74 @@ class MessageBubble extends StatelessWidget {
                                   content: Text('Message copied')));
                             },
                       child: Container(
-                    padding: EdgeInsets.symmetric(
-                        horizontal: imageUrl != null && message.text.isEmpty
-                            ? TalonSpace.sm
-                            : TalonSpace.lg,
-                        vertical: imageUrl != null && message.text.isEmpty
-                            ? TalonSpace.sm
-                            : 11),
-                    decoration: BoxDecoration(
-                      // The user's voice wears the accent: a soft diagonal
-                      // accent→deep gradient with an accent-tinted shadow, so
-                      // your messages read as the vivid half of the dialogue
-                      // (iMessage/Telegram pattern) against the calm canvas.
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [TalonColors.accent, TalonColors.accentDeep],
-                      ),
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        topRight: Radius.circular(20),
-                        bottomLeft: Radius.circular(20),
-                        bottomRight: Radius.circular(6),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color:
-                              TalonColors.accentDeep.withValues(alpha: 0.30),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: imageUrl != null && message.text.isEmpty
+                              ? TalonSpace.sm
+                              : TalonSpace.lg,
+                          vertical: imageUrl != null && message.text.isEmpty
+                              ? TalonSpace.sm
+                              : 11,
                         ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Attached image — user rows previously dropped it
-                        // entirely, so an uploaded photo vanished from the
-                        // conversation and its history.
-                        if (imageUrl != null)
-                          Padding(
-                            padding: EdgeInsets.only(
-                                bottom:
-                                    message.text.isEmpty ? 0 : TalonSpace.sm),
-                            child: _InlineImage(url: imageUrl!),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              TalonColors.accent,
+                              TalonColors.accentDeep,
+                            ],
                           ),
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(20),
+                            topRight: Radius.circular(20),
+                            bottomLeft: Radius.circular(20),
+                            bottomRight: Radius.circular(6),
+                          ),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.13),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: TalonColors.accentDeep
+                                  .withValues(alpha: 0.22),
+                              blurRadius: 14,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (imageUrl != null)
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  bottom:
+                                      message.text.isEmpty ? 0 : TalonSpace.sm,
+                                ),
+                                child: _InlineImage(url: imageUrl!),
+                              ),
                             if (message.text.isNotEmpty)
                               SelectableText(
                                 message.text,
                                 style: TalonType.body.copyWith(
                                   color: Colors.white,
-                                  // A touch more presence on the gradient.
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _clock(message.time),
+                              key: const Key('user-message-time'),
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.72),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -187,64 +200,47 @@ class MessageBubble extends StatelessWidget {
         ),
       );
 
-  Widget _assistantRow() => Padding(
-        padding: const EdgeInsets.symmetric(vertical: TalonSpace.md),
-        child: Row(
+  Widget _assistantRow() => AssistantSurface(
+        botName: botName,
+        surfaceKey: const Key('assistant-message-card'),
+        trailing: Text(
+          _clock(message.time),
+          style: TalonType.caption.copyWith(
+            fontSize: 10.5,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.only(top: 2),
-              child: BrandMark(size: 28),
-            ),
-            const SizedBox(width: TalonSpace.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text(botName, style: TalonType.subtitle),
-                      const SizedBox(width: TalonSpace.sm),
-                      Text(
-                        _clock(message.time),
-                        style: TalonType.caption.copyWith(fontSize: 10.5),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: TalonSpace.xs),
-                  if (message.tools.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: TalonSpace.sm),
-                      child: ToolTrace(tools: message.tools),
-                    ),
-                  if (imageUrl != null)
-                    Padding(
-                      padding: EdgeInsets.only(
-                          bottom: message.text.isEmpty ? 0 : TalonSpace.sm),
-                      child: _InlineImage(url: imageUrl!),
-                    ),
-                  // Suppress the "…" placeholder for an image-only message.
-                  if (!(imageUrl != null && message.text.isEmpty))
-                    MarkdownBody(
-                      data: message.text.isEmpty ? '…' : message.text,
-                      selectable: true,
-                      builders: {'code': CodeElementBuilder()},
-                      onTapLink: (_, href, __) {
-                        if (href != null) {
-                          launchUrl(Uri.parse(href),
-                              mode: LaunchMode.externalApplication);
-                        }
-                      },
-                      styleSheet: talonMarkdownStyle(),
-                    ),
-                  if (message.buttons.isNotEmpty) _buttons(),
-                  if (message.reactions.isNotEmpty) _reactions(),
-                  _MessageActions(message: message),
-                ],
+            if (message.tools.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: TalonSpace.sm),
+                child: ToolTrace(tools: message.tools),
               ),
-            ),
+            if (imageUrl != null)
+              Padding(
+                padding: EdgeInsets.only(
+                    bottom: message.text.isEmpty ? 0 : TalonSpace.sm),
+                child: _InlineImage(url: imageUrl!),
+              ),
+            // Suppress the "…" placeholder for an image-only message.
+            if (!(imageUrl != null && message.text.isEmpty))
+              MarkdownBody(
+                data: message.text.isEmpty ? '…' : message.text,
+                selectable: true,
+                builders: {'code': CodeElementBuilder()},
+                onTapLink: (_, href, __) {
+                  if (href != null) {
+                    launchUrl(Uri.parse(href),
+                        mode: LaunchMode.externalApplication);
+                  }
+                },
+                styleSheet: talonMarkdownStyle(),
+              ),
+            if (message.buttons.isNotEmpty) _buttons(),
+            if (message.reactions.isNotEmpty) _reactions(),
+            _MessageActions(message: message),
           ],
         ),
       );

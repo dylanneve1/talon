@@ -224,7 +224,8 @@ class _ChatViewState extends State<ChatView> {
     }
 
     final topLoader = widget.state.isLoadingOlder(chatId);
-    final itemCount = (topLoader ? 1 : 0) + rows.length + (showActivity ? 1 : 0);
+    final itemCount =
+        (topLoader ? 1 : 0) + rows.length + (showActivity ? 1 : 0);
     return Stack(
       children: [
         Align(
@@ -328,28 +329,34 @@ class _DayDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: TalonSpace.sm),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: TalonSpace.md,
-            vertical: TalonSpace.xs,
-          ),
-          decoration: BoxDecoration(
-            color: TalonColors.glassFill,
-            borderRadius: TalonRadius.rPill,
-            border: Border.all(color: TalonColors.glassStroke),
-          ),
-          child: Text(
-            _label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.3,
-              color: TalonColors.textDim,
+      padding: const EdgeInsets.symmetric(vertical: TalonSpace.md),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: TalonColors.glassStroke)),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: TalonSpace.md,
+              vertical: TalonSpace.xs,
+            ),
+            decoration: BoxDecoration(
+              color: TalonColors.glassFill,
+              borderRadius: TalonRadius.rPill,
+              border: Border.all(color: TalonColors.glassStroke),
+            ),
+            child: Text(
+              _label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.3,
+                color: TalonColors.textDim,
+              ),
             ),
           ),
-        ),
+          const SizedBox(width: 10),
+          Expanded(child: Divider(color: TalonColors.glassStroke)),
+        ],
       ),
     );
   }
@@ -398,9 +405,8 @@ class _ConnBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final error = state.conn == ConnState.error;
     final color = error ? TalonColors.bad : TalonColors.warn;
-    final text = error
-        ? (state.connError ?? 'Connection lost')
-        : 'Connecting to Talon…';
+    final text =
+        error ? (state.connError ?? 'Connection lost') : 'Connecting to Talon…';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
@@ -465,8 +471,19 @@ class _Header extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
       decoration: BoxDecoration(
-        color: TalonColors.glassFill,
+        color: TalonColors.surface.withValues(
+          alpha: TalonTheme.isDark ? 0.68 : 0.92,
+        ),
         border: Border(bottom: BorderSide(color: TalonColors.glassStroke)),
+        boxShadow: TalonTheme.isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: const Color(0xFF171A3D).withValues(alpha: 0.045),
+                  blurRadius: 12,
+                  offset: const Offset(0, 3),
+                ),
+              ],
       ),
       // Auto-detect available width instead of hard-coding a platform check:
       // a desktop window with the sidebar open gives the chat pane less room
@@ -478,6 +495,77 @@ class _Header extends StatelessWidget {
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 560;
           final modelLabel = model.isEmpty ? 'model' : model;
+          if (compact) {
+            return Row(
+              children: [
+                if (showBack)
+                  IconButton(
+                    onPressed: onBack,
+                    tooltip: 'Back to chats',
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(Icons.adaptive.arrow_back, size: 21),
+                  ),
+                Expanded(
+                  child: InkWell(
+                    key: const Key('conversation-identity'),
+                    onTap: () => openModelSheet(context, state, chat),
+                    borderRadius: TalonRadius.rSm,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 3,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            chat.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TalonType.title.copyWith(fontSize: 16),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: state.conn == ConnState.connected
+                                      ? TalonColors.ok
+                                      : TalonColors.bad,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  '$modelLabel · $effort',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: TalonColors.textFaint,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (chat.context?.known == true) ...[
+                  _ContextChip(context: chat.context!, dense: true),
+                  const SizedBox(width: 2),
+                ],
+                _ChatMenu(state: state, chat: chat),
+              ],
+            );
+          }
           return Row(
             children: [
               if (showBack)
@@ -501,17 +589,7 @@ class _Header extends StatelessWidget {
                 _ContextChip(context: chat.context!),
                 const SizedBox(width: 6),
               ],
-              if (compact)
-                // One pill with just the model. Effort still lives a tap away
-                // in the model sheet; spelling it out here starved the chat
-                // title of width on phones ("Trip to…" next to
-                // "opus · adaptive").
-                _Chip(
-                  icon: Icons.memory,
-                  label: modelLabel,
-                  onTap: () => openModelSheet(context, state, chat),
-                )
-              else ...[
+              ...[
                 _Chip(
                   icon: Icons.memory,
                   label: modelLabel,
@@ -599,7 +677,6 @@ class _ChatMenu extends StatelessWidget {
       ],
     );
   }
-
 }
 
 class _MenuRow extends StatelessWidget {
@@ -627,7 +704,8 @@ class _MenuRow extends StatelessWidget {
 /// figures. Purely informational — no tap action.
 class _ContextChip extends StatelessWidget {
   final ContextInfo context;
-  const _ContextChip({required this.context});
+  final bool dense;
+  const _ContextChip({required this.context, this.dense = false});
 
   static String _fmt(int n) {
     if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
@@ -644,7 +722,10 @@ class _ContextChip extends StatelessWidget {
     return Tooltip(
       message: tip,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: EdgeInsets.symmetric(
+          horizontal: dense ? 8 : 10,
+          vertical: dense ? 5 : 6,
+        ),
         decoration: BoxDecoration(
           color: TalonColors.glassFill,
           borderRadius: BorderRadius.circular(999),
@@ -656,8 +737,8 @@ class _ContextChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
-              width: 13,
-              height: 13,
+              width: dense ? 12 : 13,
+              height: dense ? 12 : 13,
               child: CircularProgressIndicator(
                 value: (context.pct.clamp(0, 100)) / 100,
                 strokeWidth: 2.4,
@@ -668,7 +749,7 @@ class _ContextChip extends StatelessWidget {
             const SizedBox(width: 6),
             Text(
               '${context.pct}%',
-              style: TextStyle(fontSize: 12, color: color),
+              style: TextStyle(fontSize: dense ? 11 : 12, color: color),
             ),
           ],
         ),
@@ -703,8 +784,7 @@ class _QueuedBarState extends State<_QueuedBar> {
 
   void _startEdit(String current) {
     _controller.text = current;
-    _controller.selection =
-        TextSelection.collapsed(offset: current.length);
+    _controller.selection = TextSelection.collapsed(offset: current.length);
     setState(() => _editing = true);
     _focus.requestFocus();
   }
@@ -731,7 +811,8 @@ class _QueuedBarState extends State<_QueuedBar> {
           decoration: BoxDecoration(
             color: TalonColors.accent.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: TalonColors.accent.withValues(alpha: 0.35)),
+            border:
+                Border.all(color: TalonColors.accent.withValues(alpha: 0.35)),
           ),
           child: Row(
             children: [
@@ -871,8 +952,7 @@ class _Chip extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style:
-                    TextStyle(fontSize: 12, color: TalonColors.textDim),
+                style: TextStyle(fontSize: 12, color: TalonColors.textDim),
               ),
             ),
           ],

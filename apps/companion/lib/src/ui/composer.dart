@@ -180,7 +180,7 @@ class _ComposerState extends State<Composer> {
   Widget build(BuildContext context) {
     final canSend = _canSend && widget.enabled && !_uploading;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+      padding: const EdgeInsets.fromLTRB(12, 7, 12, 12),
       // The input is the app's one persistent control, so it floats: layered
       // shadow at rest, and on focus the hairline warms to the accent with a
       // soft matching glow — the "you are here" signal.
@@ -188,7 +188,9 @@ class _ComposerState extends State<Composer> {
         duration: TalonMotion.base,
         curve: TalonMotion.standard,
         decoration: BoxDecoration(
-          color: TalonColors.void1.withValues(alpha: 0.85),
+          color: TalonColors.surface.withValues(
+            alpha: TalonTheme.isDark ? 0.72 : 0.96,
+          ),
           borderRadius: BorderRadius.circular(22),
           border: Border.all(
             color: _focused
@@ -237,8 +239,7 @@ class _ComposerState extends State<Composer> {
                             const EdgeInsets.symmetric(vertical: 12),
                         hintText:
                             widget.enabled ? 'Message Talon…' : 'Connecting…',
-                        hintStyle:
-                            TextStyle(color: TalonColors.textFaint),
+                        hintStyle: TextStyle(color: TalonColors.textFaint),
                       ),
                     ),
                   ),
@@ -256,7 +257,9 @@ class _ComposerState extends State<Composer> {
                     scale: Tween(begin: 0.6, end: 1.0).animate(anim),
                     child: FadeTransition(opacity: anim, child: child),
                   ),
-                  child: (widget.running && !canSend && !_uploading &&
+                  child: (widget.running &&
+                          !canSend &&
+                          !_uploading &&
                           widget.onStop != null)
                       ? _StopButton(
                           key: const ValueKey('stop'), onTap: widget.onStop!)
@@ -332,8 +335,12 @@ class _AttachButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return IconButton(
       onPressed: enabled ? onTap : null,
-      icon: const Icon(Icons.add_photo_alternate_outlined, size: 22),
+      icon: const Icon(Icons.add_photo_alternate_outlined, size: 20),
       color: TalonColors.textDim,
+      style: IconButton.styleFrom(
+        backgroundColor: TalonColors.surfaceHi.withValues(alpha: 0.72),
+        disabledBackgroundColor: TalonColors.surfaceHi.withValues(alpha: 0.34),
+      ),
       tooltip: 'Attach image',
     );
   }

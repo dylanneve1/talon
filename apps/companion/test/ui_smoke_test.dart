@@ -100,10 +100,29 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Talon'), findsOneWidget);
+    expect(find.byKey(const Key('assistant-message-card')), findsOneWidget);
     expect(find.text('Copy'), findsOneWidget);
     // Compact stats: 1.5k in · 320 out · 4.2s
     expect(find.textContaining('1.5k in'), findsOneWidget);
     expect(find.textContaining('4.2s'), findsOneWidget);
+  });
+
+  testWidgets('user bubble surfaces its timestamp on touch layouts',
+      (tester) async {
+    final msg = ClientMessage(
+      id: 'm2',
+      chatId: 'c1',
+      role: Role.user,
+      text: 'A quick follow-up',
+      ts: DateTime(2026, 7, 15, 19, 10).millisecondsSinceEpoch,
+    );
+    await tester.pumpWidget(_host(
+      MessageBubble(message: msg, botName: 'Talon'),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('A quick follow-up'), findsOneWidget);
+    expect(find.byKey(const Key('user-message-time')), findsOneWidget);
   });
 
   testWidgets('EntranceFx plays through even when enabled flips to false',
