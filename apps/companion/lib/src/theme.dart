@@ -199,9 +199,9 @@ class TalonAccents {
 class TalonTheme {
   TalonTheme._();
 
-  // Light is the default look. Users can still switch to Auto (follow OS) or
-  // Dark in Settings → Appearance; this is only the first-run default.
-  static final ValueNotifier<ThemeMode> mode = ValueNotifier(ThemeMode.light);
+  // Auto (follow the OS) is the default; Light/Dark are explicit overrides in
+  // Settings → Appearance.
+  static final ValueNotifier<ThemeMode> mode = ValueNotifier(ThemeMode.system);
 
   /// Custom accent seed (null = the default Talon indigo). Persisted by
   /// Settings; resolved through [TalonAccents.derive] on [apply].
@@ -213,15 +213,14 @@ class TalonTheme {
 
   static final ValueNotifier<int> revision = ValueNotifier(0);
 
-  static TalonPalette _palette = kTalonLight;
+  static TalonPalette _palette = kTalonDark;
   static TalonPalette get palette => _palette;
   static bool get isDark => _palette.brightness == Brightness.dark;
 
   /// What the current palette was resolved from — used to skip no-op applies
-  /// so [revision] only bumps on an actual visual change. Seeded consistent
-  /// with the initial light palette (dark=false, no accent seed), so the key
-  /// and [_palette] never disagree.
-  static (bool, int?) _appliedKey = (false, null);
+  /// so [revision] only bumps on an actual visual change. Seeded to the dark
+  /// key, consistent with the initial [_palette], so the two never disagree.
+  static (bool, int?) _appliedKey = (true, null);
 
   /// Resolve [mode] + [accentSeed] against the platform brightness and swap
   /// the palette.
