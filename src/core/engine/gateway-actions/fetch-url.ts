@@ -11,6 +11,7 @@ import { extractText } from "./shared.js";
 import type { SharedActionHandlers } from "./types.js";
 
 const MAX_RESPONSE_BYTES = 20 * 1024 * 1024;
+const MAX_TEXT_CHARS = 8000;
 
 class ResponseTooLargeError extends Error {}
 
@@ -227,7 +228,18 @@ export const fetchUrlHandlers: SharedActionHandlers = {
         };
       }
       const raw = decodeText(buffer, ct);
-      const text = extractText(raw);
+      const trimmed = raw.trim();
+      if (!trimmed) return { ok: true, text: "(Page has no readable content)" };
+
+      // extractText is a DOM extractor — running it on JSON/XML/JavaScript/
+      // plain text strips small payloads like {"status":"ok"} to nothing, so
+      // only HTML (declared or sniffed) goes through it.
+      const isHtml =
+        mimeType.includes("html") ||
+        /^<!doctype\s+html|^<html[\s>]/i.test(trimmed);
+      if (!isHtml) return { ok: true, text: trimmed.slice(0, MAX_TEXT_CHARS) };
+
+      const text = extractText(raw, MAX_TEXT_CHARS);
       if (text.length < 20)
         return { ok: true, text: "(Page has no readable content)" };
       return { ok: true, text };

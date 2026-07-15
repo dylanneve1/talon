@@ -451,6 +451,26 @@ describe("gateway shared actions", () => {
       expect(mockWriteFileSync).not.toHaveBeenCalled();
     });
 
+    it("returns short JSON bodies verbatim instead of discarding them", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValueOnce(
+          mockResponse({
+            ok: true,
+            contentType: "application/json",
+            body: '{"status":"ok"}',
+          }),
+        ),
+      );
+
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://api.example.com/health" },
+        123,
+      );
+
+      expect(result).toEqual({ ok: true, text: '{"status":"ok"}' });
+    });
+
     it("decodes text using the response charset", async () => {
       const encoded = Uint8Array.from(
         Buffer.from("Hello from a UTF-16 page — café", "utf16le"),
