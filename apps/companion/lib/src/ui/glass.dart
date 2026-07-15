@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -64,18 +65,88 @@ class Glass extends StatelessWidget {
 
 /// C2-continuous ease (smootherstep). Linear alpha ramps end with a kink
 /// (C0) that the eye reads as a line — Mach banding. This curve has zero
-/// first and second derivatives at both ends, so frost and scrim dissolve
-/// with no perceptible start or stop.
+/// first and second derivatives at both ends, so the scrim dissolves with
+/// no perceptible start or stop.
 double _ease(double t) {
   final x = t.clamp(0.0, 1.0);
   return x * x * x * (x * (x * 6 - 15) + 10);
 }
 
-/// The app-wide progressive frost: a single native Gaussian backdrop blur,
-/// confined to the header strip, whose composited result is dissolved with a
-/// continuous alpha mask. This stays on Impeller's fast separable-blur path;
-/// there are no scene snapshots, synchronous GPU readbacks, or brute-force
-/// fragment-shader taps.
+/// One layer of the progressive frost: the strip from the top edge down to
+/// [height] is backdrop-blurred at [sigma], compounding with the layers
+/// painted before it.
+@visibleForTesting
+class FrostBand {
+  final double height;
+  final double sigma;
+  const FrostBand({required this.height, required this.sigma});
+}
+
+/// Plans the frost as a cumulative stack: every layer clips from the top
+/// edge, each shorter than the one before, so blur depth grows toward the
+/// top as layers pile up. Successive Gaussians compound as
+/// sqrt(sum of sigma squared), and the sigma ladder is chosen so the
+/// effective blur ramps evenly from ~0 at [extent] to [maxSigma] at
+/// [solidUntil], with soft steps at both ends. Pure geometry, separated
+/// from the widget so the plan itself is testable.
+@visibleForTesting
+List<FrostBand> planFrostBands({
+  required double extent,
+  required double solidUntil,
+  double maxSigma = TopEdgeFrost.sigma,
+}) {
+  // Fade slices. Each seam steps the effective blur by ~maxSigma/layers,
+  // which stays under the visible-jump threshold because the content at
+  // every seam except the lowest is already blurred by the layers beneath —
+  // and the lowest seam's step is half-size by construction.
+  const layers = 4;
+  if (!extent.isFinite || extent <= 0) return const [];
+  final solid = solidUntil.isFinite ? solidUntil.clamp(0.0, extent) : 0.0;
+  final fade = extent - solid;
+  if (fade <= 0) {
+    return [FrostBand(height: solid, sigma: maxSigma)];
+  }
+  final bands = <FrostBand>[];
+  var effSq = 0.0; // cumulative blur (sigma squared) applied so far
+  for (var k = 0; k < layers; k++) {
+    // Effective-blur target for the region this layer completes, on an even
+    // ladder sampled at region midpoints: maxSigma * (k + ½) / layers.
+    final eff = maxSigma * (k + 0.5) / layers;
+    final sigma = math.sqrt(eff * eff - effSq);
+    effSq = eff * eff;
+    bands.add(
+      FrostBand(height: solid + fade * (layers - k) / layers, sigma: sigma),
+    );
+  }
+  if (solid > 0) {
+    // Top-up layer over the solid zone so it lands exactly on maxSigma.
+    bands.add(FrostBand(
+      height: solid,
+      sigma: math.sqrt(maxSigma * maxSigma - effSq),
+    ));
+  }
+  return bands;
+}
+
+/// The app-wide progressive frost: a cumulative stack of backdrop-blur
+/// layers clipped from the top edge, each re-blurring the output of the one
+/// beneath, so the blur radius itself melts from [sigma] behind the header
+/// controls to nothing at the fade edge.
+///
+/// This construction is the only one that renders correctly on every
+/// backend, which is why it isn't something simpler:
+///
+/// * Masking one uniform BackdropFilter with an outer ShaderMask cannot
+///   work: ShaderMask is a saveLayer, and a backdrop filter inside a
+///   saveLayer reads that layer's own (empty) backdrop, so the frost
+///   silently disappears. Alpha-fading a uniform blur would also read as a
+///   milky double exposure over sharp text, not as glass dissolving.
+/// * Side-by-side bands at different sigmas (shareable via one
+///   BackdropGroup key) stripe on backends that sample the backdrop only
+///   inside each band's clip. Overlapping layers hide the seams — every
+///   seam except the lowest sits on content the layers beneath have already
+///   blurred — but overlapping filters must not share a backdrop key, so
+///   the layers stay ungrouped and are kept few and small instead.
 class TopEdgeFrost extends StatelessWidget {
   final Widget child;
 
@@ -112,51 +183,33 @@ class TopEdgeFrost extends StatelessWidget {
                     constraints.maxHeight <= 0) {
                   return const SizedBox.shrink();
                 }
-                final clearAt = extent.clamp(0.0, constraints.maxHeight);
-                if (clearAt <= 0) return const SizedBox.shrink();
-                final solid = solidUntil.clamp(0.0, clearAt);
-                final solidFraction = (solid / clearAt).clamp(0.0, 0.95);
-                const steps = 32;
-                final stops = <double>[0];
-                final colors = <Color>[Colors.white];
-                for (var i = 0; i <= steps; i++) {
-                  final t = i / steps;
-                  stops.add(solidFraction + t * (1 - solidFraction));
-                  colors.add(
-                    Colors.white.withValues(alpha: 1 - _ease(t)),
-                  );
-                }
-                return Align(
-                  alignment: Alignment.topCenter,
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: clearAt,
-                    child: ClipRect(
-                      // This must be an outer compositor layer. A dstIn paint
-                      // inside BackdropFilter only masks its child on Android;
-                      // the filtered backdrop has already been composited and
-                      // retains a hard edge. ShaderMask attenuates the complete
-                      // backdrop-filter result to exactly zero at the clip.
-                      child: ShaderMask(
-                        blendMode: BlendMode.dstIn,
-                        shaderCallback: (bounds) => LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: colors,
-                          stops: stops,
-                        ).createShader(bounds),
-                        child: const BackdropFilter(
-                          filterConfig: ImageFilterConfig.blur(
-                            sigmaX: sigma,
-                            sigmaY: sigma,
-                            tileMode: TileMode.decal,
-                            bounded: true,
+                final bands = planFrostBands(
+                  extent: extent.clamp(0.0, constraints.maxHeight),
+                  solidUntil: solidUntil,
+                );
+                if (bands.isEmpty) return const SizedBox.shrink();
+                // Paint order is the plan order: tallest (lightest) layer
+                // first, so each successive filter reads the compounded
+                // output of the ones beneath it.
+                return Stack(
+                  children: [
+                    for (final band in bands)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: band.height,
+                        child: ClipRect(
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(
+                              sigmaX: band.sigma,
+                              sigmaY: band.sigma,
+                            ),
+                            child: const SizedBox.expand(),
                           ),
-                          child: SizedBox.expand(),
                         ),
                       ),
-                    ),
-                  ),
+                  ],
                 );
               },
             ),
