@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, afterEach, beforeAll } from "vitest";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -240,6 +240,27 @@ describe("native tools — local execution", () => {
     );
     expect(r2.text).toContain("BETA!");
     expect(r2.text).not.toContain("beta");
+  });
+
+  it("reads an image file as a viewable image block, not mojibake", async () => {
+    // A 1x1 PNG. The bytes are not valid UTF-8, so the old text path would
+    // have returned garbage; the image path returns a base64 image block.
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const f = join(workdir, "pixel.png");
+    await writeFile(f, png);
+
+    const r = await nativeHandlers.native_read(
+      { action: "native_read", path: f },
+      1,
+    );
+    expect(r.ok).toBe(true);
+    expect(r.text).toContain("image (image/png");
+    expect(r.image).toBeDefined();
+    expect(r.image?.mimeType).toBe("image/png");
+    expect(r.image?.data).toBe(png.toString("base64"));
   });
 
   it("refuses an ambiguous edit unless replace_all is set", async () => {

@@ -25,7 +25,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 import { getMeshService } from "../../mesh/index.js";
 import {
   clearTeleport,
@@ -39,7 +39,12 @@ import {
 } from "../../../util/exec-output.js";
 import type { SharedActionHandlers } from "./types.js";
 
-type Result = { ok: boolean; text: string };
+type Result = {
+  ok: boolean;
+  text: string;
+  /** Set for image files so the tool result carries a viewable image block. */
+  image?: { data: string; mimeType: string };
+};
 
 /**
  * ripgrep binary, resolved from PATH (env-overridable for tests). NOT a
@@ -70,6 +75,21 @@ const TELEPORT_TIMEOUT_HINT =
   "background it in-shell instead: `cmd > /tmp/out.log 2>&1 &`, then poll the log " +
   "with read, or bound the command itself: `logcat -d`, `timeout 30 …`, `head -n 200`.)";
 const MAX_READ_LINES = 2_000;
+/**
+ * Image extensions the model can actually view, mapped to their MIME type.
+ * Reading one returns an image content block instead of the file's raw bytes
+ * decoded as (garbage) UTF-8 — so `read`ing a photo/screenshot/design shows
+ * the picture, not mojibake.
+ */
+const IMAGE_MIME: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
+/** Anthropic caps a single image around 5MB; refuse larger with a downscale hint. */
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 /** Caps for the pure-JS glob/search fallbacks (rg unavailable). */
 const MAX_JS_RESULTS = 2_000;
 const MAX_JS_FILE_BYTES = 2 * 1024 * 1024;
@@ -437,23 +457,58 @@ async function read(
 ): Promise<Result> {
   const p = str(path);
   if (!p) return { ok: false, text: "A file path is required." };
+  const active = await getTeleport(chatId);
+  const where = active ? active.deviceName : "local";
+
+  // Image files: return a viewable image block, not the raw bytes decoded as
+  // UTF-8. Without this, `read`ing a photo/screenshot/design hands the model
+  // mojibake and it can't see the picture at all.
+  const mime = IMAGE_MIME[extname(p).toLowerCase()];
+  if (mime) {
+    let bytes: Buffer;
+    if (active) {
+      const res = await getMeshService().readFileBytes(active.deviceId, p);
+      if ("error" in res) return { ok: false, text: res.error };
+      bytes = res.data;
+    } else {
+      try {
+        bytes = await readFile(p);
+      } catch (err) {
+        return {
+          ok: false,
+          text: `Cannot read ${p}: ${(err as Error).message}`,
+        };
+      }
+    }
+    if (bytes.length > MAX_IMAGE_BYTES) {
+      return {
+        ok: false,
+        text:
+          `${p} [${where}] is ${(bytes.length / 1_048_576).toFixed(1)}MB — over the ` +
+          `${MAX_IMAGE_BYTES / 1_048_576}MB image limit. Downscale it first ` +
+          `(e.g. \`convert '${p}' -resize 1568x /tmp/small.jpg\`) and read that.`,
+      };
+    }
+    return {
+      ok: true,
+      text: `${p} [${where}] — image (${mime}, ${bytes.length} bytes)`,
+      image: { data: bytes.toString("base64"), mimeType: mime },
+    };
+  }
+
   const start = num(offset) ?? 0;
   const max = Math.min(num(limit) ?? MAX_READ_LINES, MAX_READ_LINES);
-  const active = await getTeleport(chatId);
   let content: string;
-  let where: string;
   if (active) {
     const res = await getMeshService().readFileBytes(active.deviceId, p);
     if ("error" in res) return { ok: false, text: res.error };
     content = res.data.toString("utf8");
-    where = active.deviceName;
   } else {
     try {
       content = await readFile(p, "utf8");
     } catch (err) {
       return { ok: false, text: `Cannot read ${p}: ${(err as Error).message}` };
     }
-    where = "local";
   }
   const lines = content.split("\n");
   const slice = lines.slice(start, start + max);

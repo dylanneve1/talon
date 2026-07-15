@@ -247,7 +247,9 @@ describe("textResult", () => {
     const { textResult } = await import("../core/tools/bridge.js");
     const fail = textResult({ ok: false, text: "device offline" });
     expect(fail.isError).toBe(true);
-    expect(fail.content[0].text).toBe("device offline");
+    const failText = fail.content[0];
+    expect(failText.type).toBe("text");
+    if (failText.type === "text") expect(failText.text).toBe("device offline");
 
     const good = textResult({ ok: true, text: "done" });
     expect(good.isError).toBeUndefined();
@@ -255,5 +257,35 @@ describe("textResult", () => {
     // Results without an ok field (raw payloads) are never marked as errors.
     const raw = textResult({ text: "plain" });
     expect(raw.isError).toBeUndefined();
+  });
+
+  it("surfaces an image result as an MCP image content block", async () => {
+    const { textResult } = await import("../core/tools/bridge.js");
+    const res = textResult({
+      ok: true,
+      text: "/tmp/pic.jpg [local] — image (image/jpeg, 3 bytes)",
+      image: { data: "AAEC", mimeType: "image/jpeg" },
+    });
+    expect(res.isError).toBeUndefined();
+    // Text note first, then the viewable image block.
+    expect(res.content).toHaveLength(2);
+    expect(res.content[0].type).toBe("text");
+    const img = res.content[1];
+    expect(img.type).toBe("image");
+    if (img.type === "image") {
+      expect(img.data).toBe("AAEC");
+      expect(img.mimeType).toBe("image/jpeg");
+    }
+  });
+
+  it("ignores a malformed image field (no bogus block)", async () => {
+    const { textResult } = await import("../core/tools/bridge.js");
+    const res = textResult({
+      ok: true,
+      text: "plain",
+      image: { data: 123, mimeType: "image/png" },
+    });
+    expect(res.content).toHaveLength(1);
+    expect(res.content[0].type).toBe("text");
   });
 });

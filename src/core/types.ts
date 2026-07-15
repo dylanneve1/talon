@@ -233,6 +233,12 @@ export type ActionResult = {
    * tool calls (react/edit/delete) that target this message.
    */
   message_id?: number | string;
+  /**
+   * Set by tools that return a viewable image (e.g. `read` on a photo). The
+   * MCP layer turns this into an image content block so the model sees the
+   * picture instead of base64 text.
+   */
+  image?: { data: string; mimeType: string };
   [key: string]: unknown;
 };
 

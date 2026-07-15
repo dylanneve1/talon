@@ -125,14 +125,39 @@ export function createBridge(
 
 /** Wrap a bridge result into the MCP content format. */
 export function textResult(result: unknown): {
-  content: Array<{ type: "text"; text: string }>;
+  content: Array<
+    | { type: "text"; text: string }
+    | { type: "image"; data: string; mimeType: string }
+  >;
   isError?: boolean;
 } {
-  const r = result as { ok?: boolean; text?: string; error?: string };
+  const r = result as {
+    ok?: boolean;
+    text?: string;
+    error?: string;
+    image?: { data?: unknown; mimeType?: unknown };
+  };
+  const content: Array<
+    | { type: "text"; text: string }
+    | { type: "image"; data: string; mimeType: string }
+  > = [{ type: "text" as const, text: r.text ?? JSON.stringify(result) }];
+  // A result may carry an image (e.g. `read` on a photo) — surface it as an
+  // MCP image block so the model actually sees the picture, not base64 text.
+  if (
+    r &&
+    typeof r === "object" &&
+    r.image &&
+    typeof r.image.data === "string" &&
+    typeof r.image.mimeType === "string"
+  ) {
+    content.push({
+      type: "image" as const,
+      data: r.image.data,
+      mimeType: r.image.mimeType,
+    });
+  }
   return {
-    content: [
-      { type: "text" as const, text: r.text ?? JSON.stringify(result) },
-    ],
+    content,
     // Gateway results carry ok:false on failure — mark those as tool errors
     // so the model treats the message as a failure, not a success payload.
     ...(r && typeof r === "object" && r.ok === false ? { isError: true } : {}),
