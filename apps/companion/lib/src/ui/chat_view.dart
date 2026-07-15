@@ -53,6 +53,11 @@ class _ChatViewState extends State<ChatView> {
   /// jump-to-latest affordance is useful.
   bool _awayFromBottom = false;
 
+  /// Last chat this view rendered. Closing a conversation (narrow layout)
+  /// clears the selection while the view is still sliding off screen; keep
+  /// rendering the conversation instead of flashing the empty state mid-pop.
+  ClientChat? _lastChat;
+
   @override
   void initState() {
     super.initState();
@@ -154,8 +159,10 @@ class _ChatViewState extends State<ChatView> {
     return ListenableBuilder(
       listenable: widget.state,
       builder: (context, _) {
-        final chat = widget.state.selectedChat;
+        final chat = widget.state.selectedChat ??
+            (widget.showBack ? _lastChat : null);
         if (chat == null) return const _EmptyState();
+        _lastChat = chat;
         _autoScroll(chat.id, widget.state.messagesFor(chat.id).length);
         return Stack(
           children: [

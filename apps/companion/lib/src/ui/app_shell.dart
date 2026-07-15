@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../state/app_state.dart';
 import 'chat_view.dart';
+import 'glass.dart';
 import 'quick_switcher.dart';
 import 'sidebar.dart';
 
@@ -99,37 +100,44 @@ class AppShell extends StatelessWidget {
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 240),
                         switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeIn,
-                        // Shared-axis feel: the conversation slides in from the
-                        // right, the list from the left, so navigation reads as
-                        // moving through space instead of a flat cross-fade.
-                        //
-                        // The conversation must never fade. A fade is an
-                        // opacity saveLayer, and the glass bar's (and
-                        // composer's) BackdropFilter inside one reads the
-                        // layer's own backdrop instead of the screen — the
-                        // blur only snaps in when the transition ends and the
-                        // layer collapses. Slides are plain transforms, which
-                        // glass renders through correctly, so the chat slides
-                        // in opaque over the fading list.
+                        switchOutCurve: Curves.easeOutCubic,
+                        // Push/pop, not crossfade: the conversation slides
+                        // fully on/off screen over the list (which parallaxes
+                        // beneath). No fades — a fade's saveLayer starves the
+                        // glass BackdropFilters of their backdrop so the blur
+                        // pops in at the end, and a non-faded outgoing screen
+                        // shows through whatever fades in over it.
                         transitionBuilder: (child, anim) {
-                          final fromRight = child.key == const ValueKey('chat');
-                          final slide = SlideTransition(
+                          final chat = child.key == const ValueKey('chat');
+                          return SlideTransition(
                             position: Tween(
-                              begin: Offset(fromRight ? 0.10 : -0.10, 0),
+                              begin: Offset(chat ? 1 : -0.15, 0),
                               end: Offset.zero,
                             ).animate(anim),
                             child: child,
                           );
-                          if (fromRight) return slide;
-                          return FadeTransition(opacity: anim, child: slide);
                         },
+                        // The conversation must cover the list in both
+                        // directions; by default the switcher puts the
+                        // incoming child on top, which is wrong on close.
+                        layoutBuilder: (current, previous) => Stack(
+                          alignment: Alignment.center,
+                          children: showChat
+                              ? [...previous, if (current != null) current]
+                              : [if (current != null) current, ...previous],
+                        ),
+                        // The conversation carries its own canvas: ChatView
+                        // is transparent (the shell paints the backdrop
+                        // once), so without this the list shows through the
+                        // card while it slides.
                         child: showChat
-                            ? ChatView(
+                            ? TalonBackdrop(
                                 key: const ValueKey('chat'),
-                                state: state,
-                                showBack: true,
-                                onBack: state.clearSelection,
+                                child: ChatView(
+                                  state: state,
+                                  showBack: true,
+                                  onBack: state.clearSelection,
+                                ),
                               )
                             : SafeArea(
                                 key: const ValueKey('list'),
