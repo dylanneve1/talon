@@ -301,6 +301,36 @@ void main() {
     TalonTheme.mode.value = ThemeMode.light;
     TalonTheme.apply(Brightness.light);
     final state = _demoState(narrow: true);
+    // Seed a demo snapshot so the status card renders its stat tiles (there's
+    // no live daemon in the gallery).
+    state.appConfig = const ConfigSnapshot(
+      backend: 'claude',
+      frontend: 'telegram',
+      model: 'opus',
+      modelDisplay: 'Opus 4.8',
+      botDisplayName: 'Claudius',
+      timezone: '',
+      pulse: false,
+      pulseIntervalMs: 300000,
+      heartbeat: true,
+      heartbeatIntervalMinutes: 60,
+      dream: false,
+      editable: [
+        'model',
+        'botDisplayName',
+        'timezone',
+        'pulse',
+        'heartbeat',
+        'dream',
+        'pulseIntervalMs',
+        'heartbeatIntervalMinutes',
+      ],
+      healthy: true,
+      uptimeMs: 176400000,
+      sessions: 63,
+      messages: 43,
+      memoryMb: 168,
+    );
     addTearDown(state.dispose);
     await tester.pumpWidget(_app(SettingsScreen(state: state)));
     await _shoot(tester, 'phone_settings');

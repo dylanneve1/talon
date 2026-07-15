@@ -284,7 +284,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _body() {
-    final cfg = _cfg;
+    // Fall back to the cached snapshot so the status card shows instantly on a
+    // cold start, before the fresh fetch lands.
+    final cfg = _cfg ?? widget.state.appConfig;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -995,60 +997,217 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final s = widget.state;
     final connected = s.conn == ConnState.connected;
     final up = cfg == null ? '' : _fmtUptime(cfg.uptimeMs);
-    return Glass(
-      radius: 18,
+    final healthy = connected && (cfg?.healthy ?? true);
+    final badgeColor = !connected
+        ? TalonColors.bad
+        : (healthy ? TalonColors.ok : TalonColors.warn);
+    return Container(
       padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        // Faint indigo→teal wash so the white stat tiles pop off the card.
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            TalonColors.accent.withValues(alpha: 0.07),
+            TalonColors.accent2.withValues(alpha: 0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: TalonColors.glassStroke, width: 1),
+        boxShadow: TalonShadows.soft,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                width: 10,
-                height: 10,
+                width: 11,
+                height: 11,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: connected ? TalonColors.ok : TalonColors.bad,
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                connected ? 'Connected' : 'Disconnected',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      connected ? 'Connected' : 'Disconnected',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18,
+                      ),
+                    ),
+                    Text(
+                      connected
+                          ? (healthy
+                              ? 'Agent online and healthy'
+                              : 'Agent online')
+                          : 'Not connected to the daemon',
+                      style: TextStyle(fontSize: 13, color: TalonColors.textDim),
+                    ),
+                  ],
                 ),
               ),
-              const Spacer(),
-              if (s.config.canManageDaemon)
-                TextButton.icon(
-                  onPressed: () async {
-                    final r = await s.restartDaemon();
-                    if (mounted && !r.ok && r.detail != null) {
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text(r.detail!)));
-                    }
-                  },
-                  icon: const Icon(Icons.restart_alt, size: 18),
-                  label: const Text('Restart'),
+              Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: badgeColor.withValues(alpha: 0.14),
                 ),
+                child: Icon(
+                  connected && healthy
+                      ? Icons.verified_user_outlined
+                      : Icons.gpp_maybe_outlined,
+                  size: 22,
+                  color: badgeColor,
+                ),
+              ),
             ],
           ),
           if (cfg != null) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 18,
-              runSpacing: 10,
+            const SizedBox(height: 16),
+            Row(
               children: [
-                _stat('Backend', cfg.backend),
-                _stat('Sessions', '${cfg.sessions}'),
-                _stat('Messages', '${cfg.messages}'),
-                _stat('Memory', '${cfg.memoryMb} MB'),
-                if (up.isNotEmpty) _stat('Uptime', up),
+                Expanded(
+                    child: _statTile(Icons.dns_outlined, 'Backend', cfg.backend)),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: _statTile(Icons.account_tree_outlined, 'Sessions',
+                        '${cfg.sessions}')),
               ],
             ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                    child: _statTile(
+                        Icons.forum_outlined, 'Messages', '${cfg.messages}')),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: _statTile(
+                        Icons.memory_outlined, 'Memory', '${cfg.memoryMb} MB')),
+              ],
+            ),
+            if (up.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                      child: _statTile(Icons.schedule_outlined, 'Uptime', up)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _statTile(
+                      Icons.favorite_outline,
+                      'Health',
+                      healthy ? 'Good' : 'Check',
+                      pill: healthy,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
+          if (s.config.canManageDaemon) ...[
+            const SizedBox(height: 14),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () async {
+                  final r = await s.restartDaemon();
+                  if (mounted && !r.ok && r.detail != null) {
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(r.detail!)));
+                  }
+                },
+                icon: const Icon(Icons.restart_alt, size: 18),
+                label: const Text('Restart daemon'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// A compact stat tile: an indigo icon square, a small uppercase label, and a
+  /// bold value (or a green "Good" pill for the health readout).
+  Widget _statTile(IconData icon, String label, String value,
+      {bool pill = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: TalonColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: TalonColors.glassStroke, width: 1),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: TalonColors.accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, size: 17, color: TalonColors.accent),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    letterSpacing: 0.6,
+                    fontWeight: FontWeight.w700,
+                    color: TalonColors.textFaint,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                if (pill)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: TalonColors.ok.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      value,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: TalonColors.ok,
+                      ),
+                    ),
+                  )
+                else
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -1088,22 +1247,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ── Row builders ──────────────────────────────────────────────────────────
 
-  Widget _stat(String label, String value) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label.toUpperCase(),
-            style: TextStyle(
-              fontSize: 10,
-              color: TalonColors.textFaint,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.8,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(value, style: const TextStyle(fontSize: 14)),
-        ],
-      );
 
   Widget _textRow(
     String label,
