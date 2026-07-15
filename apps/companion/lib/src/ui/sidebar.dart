@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 
 import '../models/bridge_models.dart';
 import '../services/haptics.dart';
@@ -36,6 +37,21 @@ class _SidebarState extends State<Sidebar> {
   List<SearchHit> _hits = const [];
   bool _searching = false;
   Timer? _debounce;
+
+  /// The staggered entrance plays only for tiles present at first paint. Tiles
+  /// are inflated lazily as they enter the viewport, so without this gate a
+  /// fast fling would make each newly-seen row run its fade+slide as it scrolls
+  /// in — rows visibly popping in late, which reads as jank. Latched true after
+  /// the first frame; everything reached by scrolling then just appears.
+  bool _revealed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _revealed = true);
+    });
+  }
 
   @override
   void dispose() {
@@ -79,7 +95,6 @@ class _SidebarState extends State<Sidebar> {
   Widget build(BuildContext context) {
     return Glass(
       radius: TalonRadius.lg,
-      blur: 24,
       padding: const EdgeInsets.fromLTRB(
           TalonSpace.md, TalonSpace.lg, TalonSpace.md, TalonSpace.sm),
       child: ListenableBuilder(
@@ -149,7 +164,8 @@ class _SidebarState extends State<Sidebar> {
     }).toList();
 
     final searchingMessages = _query.trim().length >= 2;
-    if (chats.isEmpty && !(searchingMessages && (_searching || _hits.isNotEmpty))) {
+    if (chats.isEmpty &&
+        !(searchingMessages && (_searching || _hits.isNotEmpty))) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(TalonSpace.lg),
@@ -173,6 +189,9 @@ class _SidebarState extends State<Sidebar> {
 
     final list = ListView(
       padding: EdgeInsets.zero,
+      // Pre-rasterize a full viewport beyond the visible area so a fast fling
+      // meets already-rendered tiles instead of blanks catching up late.
+      scrollCacheExtent: const ScrollCacheExtent.viewport(1),
       children: [
         for (final group in groups) ...[
           Padding(
@@ -200,8 +219,7 @@ class _SidebarState extends State<Sidebar> {
                 // exist on a phone.
                 onLongPress: () =>
                     showChatActionsSheet(context, widget.state, chat),
-                onDelete: () =>
-                    confirmDeleteChat(context, widget.state, chat),
+                onDelete: () => confirmDeleteChat(context, widget.state, chat),
               );
               // Mobile: swipe a tile left to delete (with the usual confirm).
               // confirmDismiss always resolves false — deletion happens via
@@ -232,7 +250,7 @@ class _SidebarState extends State<Sidebar> {
               }
               return EntranceFx(
                 key: ValueKey('tile-${chat.id}'),
-                enabled: isFresh && !reduceMotion,
+                enabled: isFresh && !reduceMotion && !_revealed,
                 from: const Offset(-0.12, 0),
                 delay: delay,
                 child: tile,
@@ -317,7 +335,6 @@ class _SidebarState extends State<Sidebar> {
         if (entry.value.isNotEmpty) _Group(entry.key, entry.value),
     ];
   }
-
 }
 
 class _Group {
@@ -384,8 +401,18 @@ String _relTime(DateTime t) {
   if (diff.inHours < 24) return '${diff.inHours}h';
   if (diff.inDays < 7) return '${diff.inDays}d';
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${t.day} ${months[t.month - 1]}';
 }
@@ -581,8 +608,8 @@ class _NewChatButtonState extends State<_NewChatButton> {
             ),
             boxShadow: [
               BoxShadow(
-                color: TalonColors.accent
-                    .withValues(alpha: _hover ? 0.45 : 0.28),
+                color:
+                    TalonColors.accent.withValues(alpha: _hover ? 0.45 : 0.28),
                 blurRadius: _hover ? 22 : 14,
                 offset: const Offset(0, 4),
               ),
@@ -621,8 +648,8 @@ class _HitTile extends StatelessWidget {
       onTap: onTap,
       borderRadius: TalonRadius.rSm,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-            horizontal: TalonSpace.sm, vertical: 7),
+        padding:
+            const EdgeInsets.symmetric(horizontal: TalonSpace.sm, vertical: 7),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
