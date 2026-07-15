@@ -114,21 +114,11 @@ class TopEdgeFrost extends StatelessWidget {
                 }
                 final clearAt = extent.clamp(0.0, constraints.maxHeight);
                 final solid = solidUntil.clamp(0.0, clearAt);
-                final maskSigma = (clearAt - solid) / 6;
-                // A Gaussian only approaches zero asymptotically. Keep its
-                // compositor layer alive for another three sigmas after the
-                // visible dissolve so the tiny residual alpha can decay
-                // before ClipRect ends it. Without this invisible guard, the
-                // last non-zero row becomes a hairline on bright backdrops.
-                final layerHeight = (clearAt + maskSigma * 3).clamp(
-                  0.0,
-                  constraints.maxHeight,
-                );
                 return Align(
                   alignment: Alignment.topCenter,
                   child: SizedBox(
                     width: double.infinity,
-                    height: layerHeight,
+                    height: clearAt,
                     child: ClipRect(
                       child: BackdropFilter(
                         filter: ImageFilter.blur(
@@ -137,10 +127,7 @@ class TopEdgeFrost extends StatelessWidget {
                           tileMode: TileMode.clamp,
                         ),
                         child: CustomPaint(
-                          painter: _BottomFadeMaskPainter(
-                            solid: solid,
-                            clearAt: clearAt,
-                          ),
+                          painter: _BottomFadeMaskPainter(solid: solid),
                           size: Size.infinite,
                         ),
                       ),
@@ -160,26 +147,22 @@ class TopEdgeFrost extends StatelessWidget {
 /// [BackdropFilter] is important: [BlendMode.dstIn] then feathers the filtered
 /// backdrop rather than adding a translucent veil over the sharp scene.
 class _BottomFadeMaskPainter extends CustomPainter {
-  const _BottomFadeMaskPainter({
-    required this.solid,
-    required this.clearAt,
-  });
+  const _BottomFadeMaskPainter({required this.solid});
 
   final double solid;
-  final double clearAt;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
-    final fadeHeight = clearAt - solid;
+    final fadeHeight = size.height - solid;
     if (fadeHeight <= 0) return;
 
     // Blur a hard alpha edge whose centre sits halfway through the dissolve.
-    // Six sigmas span virtually the whole Gaussian transition, so [solid] is
-    // effectively opaque and the final row effectively clear. Unlike a list
-    // of gradient stops, this edge is continuous in device space and cannot
-    // crawl between interpolated segments while the backdrop is scrolling.
-    final sigma = fadeHeight / 6;
+    // Eight sigmas span the dissolve. At either boundary the Gaussian tail is
+    // below 1/30,000 alpha: visually solid at [solid] and visually zero at the
+    // clip, without extending the backdrop layer or introducing gradient
+    // segments that shimmer while scrolling.
+    final sigma = fadeHeight / 8;
     final edge = solid + fadeHeight / 2;
     canvas.drawRect(
       Rect.fromLTRB(0, -fadeHeight, size.width, edge),
@@ -196,7 +179,7 @@ class _BottomFadeMaskPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_BottomFadeMaskPainter oldDelegate) =>
-      oldDelegate.solid != solid || oldDelegate.clearAt != clearAt;
+      oldDelegate.solid != solid;
 }
 
 /// The gradient wash painted behind floating header controls: a translucent
