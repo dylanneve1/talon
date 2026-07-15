@@ -218,9 +218,10 @@ class TalonTheme {
   static bool get isDark => _palette.brightness == Brightness.dark;
 
   /// What the current palette was resolved from — used to skip no-op applies
-  /// so [revision] only bumps on an actual visual change. Seeded to the dark
-  /// key so the first [apply] (light, by default) always resolves and paints.
-  static (bool, int?) _appliedKey = (true, null);
+  /// so [revision] only bumps on an actual visual change. Seeded consistent
+  /// with the initial light palette (dark=false, no accent seed), so the key
+  /// and [_palette] never disagree.
+  static (bool, int?) _appliedKey = (false, null);
 
   /// Resolve [mode] + [accentSeed] against the platform brightness and swap
   /// the palette.
