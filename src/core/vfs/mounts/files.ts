@@ -48,6 +48,7 @@ export function createFileMount(options: {
         ...(stats.isFile() ? { size: stats.size } : {}),
         modifiedAt: Math.floor(stats.mtimeMs),
         writable: options.writable,
+        osPath: abs,
       });
     } catch {
       return vfsError("not-found");
@@ -57,12 +58,19 @@ export function createFileMount(options: {
   return {
     description: options.description,
     writable: options.writable,
+    osRoot: root,
 
     stat(rel) {
       const abs = realPath(rel);
       if (!abs) return vfsError("invalid-path");
       if (rel === "" && !existsSync(abs)) {
-        return vfsOk({ path: "", name: "", kind: "dir", writable: options.writable });
+        return vfsOk({
+          path: "",
+          name: "",
+          kind: "dir",
+          writable: options.writable,
+          osPath: abs,
+        });
       }
       return statAt(rel, abs);
     },
@@ -106,7 +114,7 @@ export function createFileMount(options: {
       if (stats.size > VFS_MAX_READ_BYTES) {
         return vfsError(
           "too-large",
-          `${stats.size} bytes (cap ${VFS_MAX_READ_BYTES})`,
+          `${stats.size} bytes (cap ${VFS_MAX_READ_BYTES}) — on disk at ${abs}`,
         );
       }
       const buffer = readFileSync(abs);

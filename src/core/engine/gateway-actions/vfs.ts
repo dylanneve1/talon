@@ -19,7 +19,13 @@ function formatEntry(entry: VfsStat): string {
   const kind = entry.kind === "dir" ? "d" : "-";
   const write = entry.writable ? "w" : "-";
   const suffix = entry.kind === "dir" ? "/" : "";
-  return `${kind}${write} ${formatSize(entry).padStart(9)}  ${entry.name}${suffix}`;
+  // Root entries (single-segment paths) show where the mount lives on
+  // disk — the bridge for OS-level tools, which can't read talon://.
+  const mapping =
+    entry.osPath !== undefined && !entry.path.includes("/")
+      ? `  → ${entry.osPath}`
+      : "";
+  return `${kind}${write} ${formatSize(entry).padStart(9)}  ${entry.name}${suffix}${mapping}`;
 }
 
 function normalize(body: Record<string, unknown>): string {

@@ -9,10 +9,16 @@
  * synthetic view has nothing meaningful to write), but the VFS is never a
  * permission layer.
  *
- * Paths are `/`-separated on every platform (`skills/review-pr/SKILL.md`),
- * relative to the root; the `talon://` scheme prefix is accepted and
- * stripped. Mounts receive mount-relative paths ("" = the mount root) and
- * report entry paths mount-relative too — the resolver owns prefixing.
+ * An address reaches the namespace in one of three spellings, all resolved
+ * by the same grammar (see `Vfs.#parse`):
+ *
+ *   - scheme:         `talon://skills/review-pr/SKILL.md`
+ *   - mount-relative: `skills/review-pr/SKILL.md` (`/`-separated everywhere)
+ *   - OS-absolute:    the disk spelling of a node inside a file-backed
+ *                     mount's root — the same node, other coordinate system
+ *
+ * Mounts receive mount-relative paths ("" = the mount root) and report
+ * entry paths mount-relative too — the resolver owns prefixing.
  */
 
 /** What a path points at. */
@@ -57,6 +63,12 @@ export interface VfsStat {
   readonly modifiedAt?: number;
   /** Whether write() can target this node (or nodes under this dir). */
   readonly writable: boolean;
+  /**
+   * Where this node lives on disk, for file-backed mounts. Absent on
+   * synthetic nodes — they have no disk representation. This is what lets
+   * OS-level tools (shell, editors) reach a node the namespace named.
+   */
+  readonly osPath?: string;
 }
 
 /**
@@ -69,6 +81,13 @@ export interface VfsMount {
   readonly description: string;
   /** Can write() ever succeed here? Synthetic views say false. */
   readonly writable: boolean;
+  /**
+   * Absolute disk root, for file-backed mounts. The single fact that makes
+   * addresses bidirectional: the resolver routes OS-absolute addresses into
+   * the mount by containment, and `Vfs.locate` maps namespace addresses
+   * back to disk. Synthetic mounts omit it.
+   */
+  readonly osRoot?: string;
   stat(rel: string): VfsResult<VfsStat>;
   list(rel: string): VfsResult<VfsStat[]>;
   read(rel: string): VfsResult<string>;

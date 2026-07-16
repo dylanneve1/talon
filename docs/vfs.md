@@ -40,6 +40,40 @@ filesystem with the tree mounted twice.
 (a registry view has nothing meaningful to write); nothing here restricts
 the agent, and nothing should be added that does.
 
+## The address grammar
+
+An address reaches the namespace in one of three spellings, resolved by
+one grammar (`Vfs.#parse`) — the grammar is total, so a spelling can never
+silently route to the wrong tree:
+
+| Spelling       | Example                       | Interpretation |
+| -------------- | ----------------------------- | -------------- |
+| scheme         | `talon://home/notes.md`       | always namespace |
+| mount-relative | `home/notes.md`               | namespace, routed by first segment |
+| OS-absolute    | `<workspace>/notes.md`        | routed through the mount table by containment (longest disk root wins), exactly like a kernel resolving through its mounts |
+
+File-backed mounts carry their disk root (`VfsMount.osRoot`) — the single
+fact that makes addresses bidirectional:
+
+- **OS → namespace**: an absolute path inside a mounted directory is the
+  same node as its `talon://` spelling and resolves to it. Outside every
+  mount, the resolver refuses (`not-found`) and names the mounted disk
+  roots — it never guesses.
+- **Namespace → OS**: `Vfs.locate(address)` answers where an address
+  lives on disk (`undefined` for synthetic nodes). The native
+  `read`/`write`/`edit`/`glob`/`search` tools use it, so they accept
+  `talon://` addresses: disk-backed nodes operate on the real file,
+  synthetic reads are served from the namespace, synthetic mutation
+  refuses honestly. Stats carry `osPath`, and the root listing shows each
+  mount's disk location.
+
+The one genuine boundary is the shell: `bash` hands paths to the OS, which
+has no `talon://`. The mapping is data, not tribal knowledge — the root
+listing (`talon ls`, `vfs_list ""`) prints `mount → disk root`, and a
+`too-large` read names the disk path to fall back to. Teleported chats
+refuse `talon://` addresses outright: the namespace names daemon state,
+and a teleported tool's paths belong to the device.
+
 ## Reads are bounded
 
 `read` serves UTF-8 text up to 256 KB and refuses binaries (null-byte

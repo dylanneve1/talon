@@ -99,7 +99,14 @@ export async function showLs(rawPath: string | undefined): Promise<void> {
   cells.forEach((row, i) => {
     const padded = row.map((cell, col) => cell.padEnd(widths[col]!));
     const name = entries[i]!.kind === "dir" ? pc.cyan(padded[3]!) : padded[3]!;
-    console.log(`  ${padded[0]}  ${padded[1]}  ${padded[2]}  ${name}`);
+    // Root entries carry the mount's disk location — show the mapping, it's
+    // what shell commands (which can't read talon://) need.
+    const entry = entries[i]!;
+    const mapping =
+      entry.osPath !== undefined && !entry.path.includes("/")
+        ? pc.dim(`  → ${entry.osPath}`)
+        : "";
+    console.log(`  ${padded[0]}  ${padded[1]}  ${padded[2]}  ${name}${mapping}`);
   });
   console.log();
 }

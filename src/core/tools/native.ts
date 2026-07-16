@@ -39,7 +39,8 @@ export const nativeTools: ToolDefinition[] = [
     name: "bash",
     description:
       "Run a shell command. Runs on the daemon host, or ON the active teleport device if one is engaged. On a teleported device, `cd` persists across calls (a real working-directory session). " +
-      "Foreground runs are killed at timeout_sec — for streaming/never-ending commands (adb logcat, tail -f, dev servers, watchers) set background:true instead: the command is launched detached in its own process group with stdout+stderr captured to a log file, and the tool returns immediately with the pid + log path so you can poll the log and kill it when done.",
+      "Foreground runs are killed at timeout_sec — for streaming/never-ending commands (adb logcat, tail -f, dev servers, watchers) set background:true instead: the command is launched detached in its own process group with stdout+stderr captured to a log file, and the tool returns immediately with the pid + log path so you can poll the log and kill it when done. " +
+      "talon:// addresses are not OS paths — the shell needs the disk locations the namespace root listing shows (vfs_list).",
     schema: {
       command: z.string().describe("The shell command to run."),
       cwd: z
@@ -69,7 +70,11 @@ export const nativeTools: ToolDefinition[] = [
     description:
       "Read a file (with line numbers). Runs on the daemon host or the active teleport device. Supports offset/limit for large files.",
     schema: {
-      path: z.string().describe("Absolute file path."),
+      path: z
+        .string()
+        .describe(
+          "Absolute file path, or a talon:// namespace address (resolved on the daemon host).",
+        ),
       offset: z.number().optional().describe("0-based line to start from."),
       limit: z
         .number()
@@ -84,7 +89,11 @@ export const nativeTools: ToolDefinition[] = [
     description:
       "Write (create/overwrite) a file with the given content. Runs on the daemon host or the active teleport device.",
     schema: {
-      path: z.string().describe("Absolute file path."),
+      path: z
+        .string()
+        .describe(
+          "Absolute file path, or a talon:// namespace address (resolved on the daemon host).",
+        ),
       content: z.string().describe("Full file content to write."),
     },
     execute: (params, bridge) => bridge("native_write", params),
@@ -95,7 +104,11 @@ export const nativeTools: ToolDefinition[] = [
     description:
       "Exact-string replacement in a file. old_string must be unique unless replace_all is set. Runs on the daemon host or the active teleport device.",
     schema: {
-      path: z.string().describe("Absolute file path."),
+      path: z
+        .string()
+        .describe(
+          "Absolute file path, or a talon:// namespace address (resolved on the daemon host).",
+        ),
       old_string: z.string().describe("Exact text to replace."),
       new_string: z.string().describe("Replacement text."),
       replace_all: z
@@ -115,7 +128,7 @@ export const nativeTools: ToolDefinition[] = [
       path: z
         .string()
         .optional()
-        .describe("Root directory to search (default cwd)."),
+        .describe("Root directory to search (default cwd; talon:// accepted)."),
     },
     execute: (params, bridge) => bridge("native_glob", params),
     tag: "native",
@@ -129,7 +142,7 @@ export const nativeTools: ToolDefinition[] = [
       path: z
         .string()
         .optional()
-        .describe("Root directory or file (default cwd)."),
+        .describe("Root directory or file (default cwd; talon:// accepted)."),
       glob: z
         .string()
         .optional()

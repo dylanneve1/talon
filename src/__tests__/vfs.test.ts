@@ -43,13 +43,18 @@ describe("resolver", () => {
     expect(listed.ok).toBe(true);
     if (!listed.ok) return;
     expect(listed.value.map((entry) => entry.name)).toEqual(["home"]);
-    expect(listed.value[0]).toMatchObject({ kind: "dir", writable: true });
+    expect(listed.value[0]).toMatchObject({
+      kind: "dir",
+      writable: true,
+      osPath: root,
+    });
   });
 
   it("strips the talon:// scheme and tolerates slash noise", () => {
     writeFileSync(join(root, "a.txt"), "hi");
     expect(vfs.read("talon://home/a.txt")).toEqual({ ok: true, value: "hi" });
-    expect(vfs.read("/home//a.txt/")).toEqual({ ok: true, value: "hi" });
+    expect(vfs.read("home//a.txt/")).toEqual({ ok: true, value: "hi" });
+    expect(vfs.read("talon://home//a.txt/")).toEqual({ ok: true, value: "hi" });
   });
 
   it("rejects traversal segments and backslashes", () => {
@@ -81,6 +86,13 @@ describe("resolver", () => {
     });
   });
 
+  it("addresses the namespace root as bare separators", () => {
+    const listed = vfs.list("/");
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.value.map((entry) => entry.name)).toEqual(["home"]);
+  });
+
   it("rejects duplicate and invalid mount names", () => {
     expect(() =>
       vfs.mount(
@@ -94,6 +106,122 @@ describe("resolver", () => {
         createFileMount({ root, description: "bad", writable: false }),
       ),
     ).toThrow(/Invalid mount name/);
+  });
+});
+
+describe("address grammar — OS-absolute spellings", () => {
+  it("routes an OS path inside a mount root to the same node", () => {
+    writeFileSync(join(root, "a.txt"), "hi");
+    expect(vfs.read(join(root, "a.txt"))).toEqual({ ok: true, value: "hi" });
+
+    const stat = vfs.stat(join(root, "a.txt"));
+    expect(stat).toMatchObject({
+      ok: true,
+      value: { path: "home/a.txt", kind: "file" },
+    });
+
+    const written = vfs.write(join(root, "notes", "new.md"), "content");
+    expect(written).toMatchObject({
+      ok: true,
+      value: { path: "home/notes/new.md" },
+    });
+    expect(vfs.read("home/notes/new.md")).toEqual({
+      ok: true,
+      value: "content",
+    });
+  });
+
+  it("routes the mount root's own OS path to the mount", () => {
+    expect(vfs.stat(root)).toMatchObject({
+      ok: true,
+      value: { path: "home", kind: "dir" },
+    });
+  });
+
+  it("prefers the most specific mount for nested disk roots", () => {
+    mkdirSync(join(root, "notes"));
+    writeFileSync(join(root, "notes", "b.md"), "nested");
+    vfs.mount(
+      "sub",
+      createFileMount({
+        root: join(root, "notes"),
+        description: "nested",
+        writable: true,
+      }),
+    );
+    expect(vfs.stat(join(root, "notes", "b.md"))).toMatchObject({
+      ok: true,
+      value: { path: "sub/b.md" },
+    });
+    // Outside the nested root, the outer mount still claims the path.
+    writeFileSync(join(root, "top.txt"), "t");
+    expect(vfs.stat(join(root, "top.txt"))).toMatchObject({
+      ok: true,
+      value: { path: "home/top.txt" },
+    });
+  });
+
+  it("refuses OS paths outside every mount, naming the disk roots", () => {
+    const outside = vfs.read(`${root}-elsewhere${join("/", "x.txt")}`);
+    expect(outside.ok).toBe(false);
+    if (outside.ok) return;
+    expect(outside.error).toBe("not-found");
+    expect(outside.detail).toContain("Mounts on disk");
+    expect(outside.detail).toContain(root);
+  });
+
+  it("suggests the namespace respelling when the OS path shadows a mount", () => {
+    const result = vfs.read("/home/nope.txt");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBe("not-found");
+    expect(result.detail).toContain('did you mean "talon://home/nope.txt"');
+  });
+
+  it("refuses unexpanded tildes with guidance", () => {
+    expect(vfs.read("~/notes.md")).toMatchObject({
+      ok: false,
+      error: "invalid-path",
+      detail: expect.stringContaining("not expanded"),
+    });
+  });
+
+  it("never routes a foreign drive spelling against this host", () => {
+    const result = vfs.read("C:/definitely/not/mounted.txt");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBe("not-found");
+  });
+});
+
+describe("locate — namespace → disk", () => {
+  it("maps file-mount addresses to absolute paths, existing or not", () => {
+    expect(vfs.locate("home/a.txt")).toEqual({
+      ok: true,
+      value: join(root, "a.txt"),
+    });
+    expect(vfs.locate("talon://home/deep/unborn.md")).toEqual({
+      ok: true,
+      value: join(root, "deep", "unborn.md"),
+    });
+    expect(vfs.locate("home")).toEqual({ ok: true, value: root });
+  });
+
+  it("answers undefined for synthetic nodes and the root", () => {
+    vfs.mount("plugins", createPluginsMount(() => []));
+    expect(vfs.locate("plugins/x")).toEqual({ ok: true, value: undefined });
+    expect(vfs.locate("")).toEqual({ ok: true, value: undefined });
+  });
+
+  it("propagates address errors", () => {
+    expect(vfs.locate("home/../etc")).toMatchObject({
+      ok: false,
+      error: "invalid-path",
+    });
+    expect(vfs.locate("nope/x")).toMatchObject({
+      ok: false,
+      error: "not-found",
+    });
   });
 });
 
@@ -124,6 +252,7 @@ describe("file mount", () => {
       kind: "file",
       size: 5,
       writable: true,
+      osPath: join(root, "a.txt"),
     });
     expect(stat.value.modifiedAt).toBeGreaterThan(0);
   });
@@ -147,6 +276,9 @@ describe("file mount", () => {
     expect(vfs.read("home/big")).toMatchObject({
       ok: false,
       error: "too-large",
+      // The disk location is the escape hatch: OS tools can read what the
+      // namespace's context-sized cap refuses.
+      detail: expect.stringContaining(join(root, "big")),
     });
   });
 

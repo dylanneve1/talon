@@ -11,7 +11,7 @@
 import { z } from "zod";
 import type { ToolDefinition } from "./types.js";
 
-const NAMESPACE = `Namespace roots: home/ (workspace), skills/, scripts/, logs/, proc/ (live task table under proc/tasks/<id> and the event ring at proc/events), plugins/ (registry view). List "" to see the root.`;
+const NAMESPACE = `Namespace roots: home/ (workspace), skills/, scripts/, logs/, proc/ (live task table under proc/tasks/<id> and the event ring at proc/events), plugins/ (registry view). List "" to see the root and where each mount lives on disk. Absolute OS paths inside a mounted directory are accepted and translated.`;
 
 export const vfsTools: ToolDefinition[] = [
   {

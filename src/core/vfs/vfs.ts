@@ -1,16 +1,33 @@
 /**
- * VFS resolver — the mount table and the path discipline.
+ * VFS resolver — the mount table and the address grammar.
  *
- * The resolver owns everything mounts shouldn't have to repeat: scheme
- * stripping, normalization, traversal rejection, routing to the mount by
- * first segment, and re-prefixing the mount-relative stats that come back.
- * Mounts therefore only ever see clean relative paths.
+ * The resolver owns everything mounts shouldn't have to repeat: address
+ * parsing, normalization, traversal rejection, routing to the mount, and
+ * re-prefixing the mount-relative stats that come back. Mounts therefore
+ * only ever see clean relative paths.
+ *
+ * An address is one of three spellings of the same node:
+ *
+ *   talon://home/notes.md   scheme form — always namespace-interpreted
+ *   home/notes.md           mount-relative form
+ *   <workspace>/notes.md    OS-absolute form — routed through the mount
+ *                           table by containment, exactly like a kernel
+ *                           resolving a path through its mounts
+ *
+ * The grammar is total: an unschemed address starting with a separator or
+ * drive prefix is always an OS path, never mount-relative — so an OS path
+ * can't silently misroute into a like-named mount, and a namespace path
+ * can't be mistaken for disk.
  */
 
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { VfsMount, VfsResult, VfsStat } from "./types.js";
 import { vfsError, vfsOk } from "./types.js";
 
 const SCHEME = "talon://";
+
+/** OS-absolute spellings: `/x`, `\\server\x`, `C:\x`, `C:/x`. */
+const OS_ABSOLUTE = /^(?:[\\/]|[A-Za-z]:[\\/])/;
 
 /** A parsed path: which mount, and the path inside it. */
 type Resolved = { mount: VfsMount; prefix: string; rel: string };
@@ -55,6 +72,7 @@ export class Vfs {
           name,
           kind: "dir" as const,
           writable: mount.writable,
+          ...(mount.osRoot !== undefined ? { osPath: mount.osRoot } : {}),
         })),
       );
     }
@@ -84,6 +102,25 @@ export class Vfs {
     return result.ok ? vfsOk(withPrefix(result.value, prefix)) : result;
   }
 
+  /**
+   * Where an address lives on disk: the absolute path for nodes of
+   * file-backed mounts (whether or not the node exists yet), `undefined`
+   * for addresses with no disk representation (the root, synthetic
+   * mounts). This is the namespace→OS direction of the address grammar —
+   * OS-level tools call it to run real file operations on a talon://
+   * address.
+   */
+  locate(path: string): VfsResult<string | undefined> {
+    const parsed = this.#parse(path);
+    if (!parsed.ok) return parsed;
+    if (parsed.value === null) return vfsOk(undefined);
+    const { mount, rel } = parsed.value;
+    if (mount.osRoot === undefined) return vfsOk(undefined);
+    return vfsOk(
+      rel === "" ? mount.osRoot : resolve(mount.osRoot, ...rel.split("/")),
+    );
+  }
+
   /** Mount names + descriptions, for docs/tool output. */
   describeMounts(): { name: string; description: string; writable: boolean }[] {
     return [...this.#mounts.entries()].map(([name, mount]) => ({
@@ -96,7 +133,20 @@ export class Vfs {
   /** null = the namespace root. */
   #parse(raw: string): VfsResult<Resolved | null> {
     let path = raw.trim();
-    if (path.startsWith(SCHEME)) path = path.slice(SCHEME.length);
+    const schemed = path.startsWith(SCHEME);
+    if (schemed) {
+      path = path.slice(SCHEME.length);
+    } else {
+      // Bare separators address the namespace root ("talon ls /").
+      if (/^[\\/]+$/.test(path)) return vfsOk(null);
+      if (OS_ABSOLUTE.test(path)) return this.#parseOsPath(path);
+      if (path.startsWith("~")) {
+        return vfsError(
+          "invalid-path",
+          '"~" is not expanded — use an absolute path or a talon:// address',
+        );
+      }
+    }
     if (path.includes("\\")) {
       return vfsError(
         "invalid-path",
@@ -118,6 +168,63 @@ export class Vfs {
       );
     }
     return vfsOk({ mount, prefix: head!, rel: rest.join("/") });
+  }
+
+  /**
+   * Route an OS-absolute address through the mount table by containment —
+   * the most specific (longest) disk root wins, so a mount nested inside
+   * another's root (skills/ inside the workspace) claims its own subtree.
+   * Outside every mount there is nothing to address: refuse with the mount
+   * table rather than guess.
+   */
+  #parseOsPath(osPath: string): VfsResult<Resolved> {
+    // isAbsolute guards the host boundary: a foreign spelling (a drive path
+    // on POSIX) can't be resolved against this host's roots.
+    if (isAbsolute(osPath)) {
+      const abs = resolve(osPath);
+      let best: (Resolved & { rootLength: number }) | undefined;
+      for (const [name, mount] of this.#mounts) {
+        if (mount.osRoot === undefined) continue;
+        const offset = relative(mount.osRoot, abs);
+        if (
+          offset === ".." ||
+          offset.startsWith(`..${sep}`) ||
+          isAbsolute(offset)
+        ) {
+          continue;
+        }
+        if (best !== undefined && mount.osRoot.length <= best.rootLength) {
+          continue;
+        }
+        best = {
+          mount,
+          prefix: name,
+          rel: offset.split(sep).filter((s) => s.length > 0).join("/"),
+          rootLength: mount.osRoot.length,
+        };
+      }
+      if (best !== undefined) {
+        return vfsOk({ mount: best.mount, prefix: best.prefix, rel: best.rel });
+      }
+    }
+    const respelled = osPath
+      .split(/[\\/]+/)
+      .filter((s) => s.length > 0 && !/^[A-Za-z]:$/.test(s));
+    if (respelled[0] !== undefined && this.#mounts.has(respelled[0])) {
+      return vfsError(
+        "not-found",
+        `OS paths resolve only inside a mounted directory — did you mean "talon://${respelled.join("/")}"?`,
+      );
+    }
+    const roots = [...this.#mounts.entries()]
+      .filter(([, mount]) => mount.osRoot !== undefined)
+      .map(([name, mount]) => `${name} → ${mount.osRoot}`);
+    return vfsError(
+      "not-found",
+      roots.length > 0
+        ? `Not inside any mounted directory. Mounts on disk: ${roots.join(", ")}`
+        : "Not inside any mounted directory",
+    );
   }
 }
 

@@ -96,6 +96,23 @@ describe("vfs gateway actions", () => {
     expect(traversal.error).toContain("invalid-path");
   });
 
+  it("accepts the OS spelling of a mounted path", async () => {
+    const written = await call("vfs_write", {
+      path: join(workspaceDir, "os-spelled.md"),
+      content: "hello",
+    });
+    expect(written.ok).toBe(true);
+
+    const read = await call("vfs_read", { path: "home/os-spelled.md" });
+    expect(read).toMatchObject({ ok: true, text: "hello" });
+  });
+
+  it("shows disk mappings for file mounts at the root", async () => {
+    const result = await call("vfs_list", { path: "" });
+    expect(result.ok).toBe(true);
+    expect(result.text).toContain(`home/  → ${workspaceDir}`);
+  });
+
   it("exposes live proc structure through the same tools", async () => {
     const listed = await call("vfs_list", { path: "proc" });
     expect(listed.ok).toBe(true);
