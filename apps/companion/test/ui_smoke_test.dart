@@ -93,6 +93,9 @@ void main() {
       durationMs: 4200,
       tokensIn: 1500,
       tokensOut: 320,
+      tools: [
+        _tool(id: 't1', name: 'Bash', input: {'command': 'ls'}),
+      ],
     );
     await tester.pumpWidget(_host(
       MessageBubble(message: msg, botName: 'Talon'),
@@ -105,6 +108,20 @@ void main() {
     // Compact stats: 1.5k in · 320 out · 4.2s
     expect(find.textContaining('1.5k in'), findsOneWidget);
     expect(find.textContaining('4.2s'), findsOneWidget);
+
+    // Anatomy: only the reply lives inside the bubble. The name header, the
+    // tool trace, and the copy/token/duration footer sit outside on the
+    // canvas.
+    final card = find.byKey(const Key('assistant-message-card'));
+    expect(
+        find.descendant(of: card, matching: find.text('Talon')), findsNothing);
+    expect(
+        find.descendant(of: card, matching: find.text('Copy')), findsNothing);
+    expect(find.descendant(of: card, matching: find.textContaining('1.5k in')),
+        findsNothing);
+    expect(find.descendant(of: card, matching: find.byType(ToolTrace)),
+        findsNothing);
+    expect(find.byType(ToolTrace), findsOneWidget);
   });
 
   testWidgets('user bubble surfaces its timestamp on touch layouts',
@@ -123,6 +140,14 @@ void main() {
 
     expect(find.text('A quick follow-up'), findsOneWidget);
     expect(find.byKey(const Key('user-message-time')), findsOneWidget);
+    // The timestamp sits under the bubble on the canvas, not inside it.
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('user-message-bubble')),
+        matching: find.byKey(const Key('user-message-time')),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('EntranceFx plays through even when enabled flips to false',

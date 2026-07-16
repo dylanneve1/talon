@@ -18,43 +18,48 @@ class LiveTurn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Same anatomy as a finished turn: reasoning and the tool timeline live
+    // on the canvas above the bubble; only the streaming reply text wears the
+    // bubble. Until text arrives, no bubble is drawn at all — the typing dots
+    // / working pill sit quietly on the canvas instead.
+    final hasPre = turn.reasoning.isNotEmpty || turn.tools.isNotEmpty;
     return AssistantSurface(
       botName: botName,
       surfaceKey: const Key('assistant-live-card'),
       trailing: _LiveBadge(active: turn.active),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (turn.reasoning.isNotEmpty)
-            _ReasoningStrip(
-              text: turn.reasoning.join(''),
-              // Once the reply starts streaming, the thinking is done —
-              // fold the strip into a quiet pill (tap re-expands).
-              condensed: turn.draft.isNotEmpty,
-            ),
-          if (turn.tools.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: TalonSpace.sm),
-              child: ToolTimeline(tools: turn.tools),
-            ),
-          AnimatedSwitcher(
-            duration: TalonMotion.fast,
-            switchInCurve: TalonMotion.emphasized,
-            switchOutCurve: Curves.easeIn,
-            child: turn.draft.isNotEmpty
-                ? _StreamingText(text: turn.draft)
-                : turn.continuing
-                    ? const _WorkingPill(key: ValueKey('working'))
-                    : turn.typing
-                        ? const Padding(
-                            key: ValueKey('typing'),
-                            padding: EdgeInsets.only(top: 2),
-                            child: _TypingDots(),
-                          )
-                        : const SizedBox.shrink(key: ValueKey('idle')),
-          ),
-        ],
-      ),
+      aboveBubble: hasPre
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (turn.reasoning.isNotEmpty)
+                  _ReasoningStrip(
+                    text: turn.reasoning.join(''),
+                    // Once the reply starts streaming, the thinking is done —
+                    // fold the strip into a quiet pill (tap re-expands).
+                    condensed: turn.draft.isNotEmpty,
+                  ),
+                if (turn.tools.isNotEmpty) ToolTimeline(tools: turn.tools),
+              ],
+            )
+          : null,
+      bubble: turn.draft.isNotEmpty ? _StreamingText(text: turn.draft) : null,
+      belowBubble: turn.draft.isEmpty
+          ? AnimatedSwitcher(
+              duration: TalonMotion.fast,
+              switchInCurve: TalonMotion.emphasized,
+              switchOutCurve: Curves.easeIn,
+              child: turn.continuing
+                  ? const _WorkingPill(key: ValueKey('working'))
+                  : turn.typing
+                      ? const Padding(
+                          key: ValueKey('typing'),
+                          padding: EdgeInsets.only(top: 2),
+                          child: _TypingDots(),
+                        )
+                      : const SizedBox.shrink(key: ValueKey('idle')),
+            )
+          : null,
     );
   }
 }
@@ -116,6 +121,7 @@ class _StreamingText extends StatelessWidget {
     );
     return Row(
       key: const ValueKey('draft'),
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Flexible(
