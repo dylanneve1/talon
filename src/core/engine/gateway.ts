@@ -414,6 +414,34 @@ export class Gateway {
           return;
         }
 
+        if (
+          req.method === "GET" &&
+          (req.url?.startsWith("/vfs/list") || req.url?.startsWith("/vfs/read"))
+        ) {
+          // The talon:// namespace — the transport for `talon ls` /
+          // `talon cat`, which need the daemon's live synthetic mounts
+          // (proc, plugins). Same 127.0.0.1 trust boundary as /action.
+          const url = new URL(req.url, "http://gateway");
+          const path = url.searchParams.get("path") ?? "";
+          const { getVfs } = await import("../vfs/index.js");
+          const vfs = getVfs();
+          let result: Record<string, unknown>;
+          if (url.pathname === "/vfs/list") {
+            const listed = vfs.list(path);
+            result = listed.ok
+              ? { ok: true, entries: listed.value }
+              : { ok: false, error: listed.error, detail: listed.detail };
+          } else {
+            const content = vfs.read(path);
+            result = content.ok
+              ? { ok: true, content: content.value }
+              : { ok: false, error: content.error, detail: content.detail };
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(result));
+          return;
+        }
+
         if (req.method === "GET" && req.url === "/tasks") {
           // The task table — every live/recent unit of agent work. Read by
           // `talon ps`. Same 127.0.0.1 trust boundary as /action.
