@@ -1,0 +1,161 @@
+/**
+ * TaskTable — live registry plus bounded history of agent-work runs.
+ *
+ * One instance (`taskTable`) serves the whole daemon. Call sites register a
+ * run with `begin`/`enqueue` and settle it through the returned TaskHandle;
+ * the gateway serves `list()` over HTTP and routes `talon kill` to `kill()`.
+ *
+ * The table is observational: it never schedules, retries, or times out a
+ * run — those disciplines stay with the owning module (weaver, heartbeat,
+ * dream, job-oneshot). In-memory only by design: a task is a live run, and
+ * a daemon restart ends every run, so persisted rows could only describe
+ * work that no longer exists.
+ */
+
+import type {
+  KillOutcome,
+  TaskBinding,
+  TaskHandle,
+  TaskRecord,
+  TaskSpec,
+  TaskState,
+  TaskUsage,
+} from "./types.js";
+
+/** Settled tasks kept for `list()` after they leave the live map. */
+const DEFAULT_HISTORY_LIMIT = 50;
+
+type MutableTaskRecord = {
+  -readonly [K in keyof TaskRecord]: TaskRecord[K];
+};
+
+interface LiveTask {
+  readonly record: MutableTaskRecord;
+  readonly abort?: () => void;
+  killRequested: boolean;
+}
+
+export class TaskTable {
+  private readonly live = new Map<number, LiveTask>();
+  private readonly history: TaskRecord[] = [];
+  private readonly historyLimit: number;
+  private nextId = 1;
+
+  constructor(historyLimit = DEFAULT_HISTORY_LIMIT) {
+    this.historyLimit = historyLimit;
+  }
+
+  /** Register a run that starts immediately. */
+  begin(spec: TaskSpec): TaskHandle {
+    const handle = this.enqueue(spec);
+    handle.start();
+    return handle;
+  }
+
+  /** Register a run that is waiting its turn (e.g. a chat's FIFO queue). */
+  enqueue(spec: TaskSpec): TaskHandle {
+    const id = this.nextId++;
+    const record: MutableTaskRecord = {
+      id,
+      kind: spec.kind,
+      label: spec.label,
+      state: "queued",
+      killable: spec.abort !== undefined,
+      queuedAt: Date.now(),
+    };
+    if (spec.chatId !== undefined) record.chatId = spec.chatId;
+    const task: LiveTask = {
+      record,
+      killRequested: false,
+      ...(spec.abort !== undefined ? { abort: spec.abort } : {}),
+    };
+    this.live.set(id, task);
+    return {
+      id,
+      start: () => this.start(id),
+      bind: (binding) => this.bind(id, binding),
+      succeed: (usage) => this.settle(id, "done", undefined, usage),
+      fail: (error) => this.settle(id, "failed", error),
+    };
+  }
+
+  /**
+   * Request an abort of a live killable task. Returns immediately — the
+   * task stays `running` until its owner's failure path lands, at which
+   * point it settles as `killed`. Repeat kills are no-ops that still
+   * report `ok` (the request stands); the abort hook fires only once.
+   */
+  kill(id: number): KillOutcome {
+    const task = this.live.get(id);
+    if (!task) {
+      return this.history.some((record) => record.id === id)
+        ? { ok: false, reason: "finished" }
+        : { ok: false, reason: "not-found" };
+    }
+    if (!task.abort) return { ok: false, reason: "not-killable" };
+    if (!task.killRequested) {
+      task.killRequested = true;
+      try {
+        task.abort();
+      } catch {
+        // The abort hook contract is "must not throw" — a violation must
+        // not break the kill path for the caller.
+      }
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Every live task plus the bounded settled history, id-ascending.
+   * Snapshots are copies — callers can never mutate table state.
+   */
+  list(): TaskRecord[] {
+    const records: TaskRecord[] = this.history.map((record) => ({
+      ...record,
+    }));
+    for (const task of this.live.values()) records.push({ ...task.record });
+    return records.sort((a, b) => a.id - b.id);
+  }
+
+  private start(id: number): void {
+    const task = this.live.get(id);
+    if (!task || task.record.state !== "queued") return;
+    task.record.state = "running";
+    task.record.startedAt = Date.now();
+  }
+
+  private bind(id: number, binding: TaskBinding): void {
+    const task = this.live.get(id);
+    if (!task) return;
+    if (binding.model !== undefined) task.record.model = binding.model;
+    if (binding.backendId !== undefined)
+      task.record.backendId = binding.backendId;
+  }
+
+  private settle(
+    id: number,
+    state: Extract<TaskState, "done" | "failed">,
+    error?: unknown,
+    usage?: TaskUsage,
+  ): void {
+    const task = this.live.get(id);
+    if (!task) return;
+    const { record } = task;
+    // A kill only "takes" when the run actually dies: a run that completes
+    // despite the abort settles as done, one that unwinds settles as killed.
+    record.state = state === "failed" && task.killRequested ? "killed" : state;
+    record.endedAt = Date.now();
+    if (error !== undefined) {
+      record.error = error instanceof Error ? error.message : String(error);
+    }
+    if (usage !== undefined) record.usage = usage;
+    this.live.delete(id);
+    this.history.push(record);
+    if (this.history.length > this.historyLimit) {
+      this.history.splice(0, this.history.length - this.historyLimit);
+    }
+  }
+}
+
+/** The daemon-wide table. Tests needing isolation construct their own. */
+export const taskTable = new TaskTable();

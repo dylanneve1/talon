@@ -22,6 +22,7 @@ import { getDefaultModel } from "../models/catalog.js";
 import type { OneShotAgentParams } from "../types.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
 import { getSoul } from "../soul/service.js";
+import { taskTable } from "../tasks/index.js";
 import { FailureBackoff } from "./failure-backoff.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -259,6 +260,13 @@ If commands fail, log the error and continue — this stage is optional.`
 
   const abortController = new AbortController();
 
+  const task = taskTable.begin({
+    kind: "dream",
+    label: "consolidation",
+    abort: () => abortController.abort(),
+  });
+  task.bind({ model });
+
   const oneShotParams: OneShotAgentParams = {
     prompt,
     systemPrompt,
@@ -298,6 +306,7 @@ If commands fail, log the error and continue — this stage is optional.`
   try {
     await Promise.race([agentPromise, timeoutPromise]);
   } catch (err) {
+    task.fail(err);
     appendDreamLog(
       dreamLogFile,
       `\n---\n**Dream FAILED at ${new Date().toISOString()}:** ${err}\n`,
@@ -323,6 +332,7 @@ If commands fail, log the error and continue — this stage is optional.`
     if (timeoutHandle) clearTimeout(timeoutHandle);
   }
 
+  task.succeed();
   return dreamLogFile;
 }
 

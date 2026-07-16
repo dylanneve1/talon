@@ -3,6 +3,7 @@ import type { RetrievedMemory } from "../core/agent-runtime/capabilities.js";
 import type { MemoryRetriever } from "../core/memory/retrieval.js";
 import type { QueryParams } from "../backend/shared/handler-types.js";
 import { Loom, Thread, Weaver } from "../core/weaver/index.js";
+import { taskTable, type TaskRecord } from "../core/tasks/index.js";
 import type { ExecuteParams } from "../core/types.js";
 import { stubBackend, stubResolveActiveModel } from "./helpers/stub-backend.js";
 
@@ -154,6 +155,126 @@ describe("weaver", () => {
     b.resolve();
     await Promise.all([p1, p2]);
     expect(order).toEqual(["start:a", "start:b", "end:a", "end:b"]);
+  });
+});
+
+describe("weaver task registration", () => {
+  // The weaver reports to the daemon-wide task table; tests share it, so
+  // every case isolates by a chatId unique to this file.
+  const turnTask = (chatId: string): TaskRecord | undefined =>
+    taskTable
+      .list()
+      .filter((t) => t.kind === "turn" && t.chatId === chatId)
+      .at(-1);
+
+  function makeWeaver(backend = stubBackend()) {
+    return new Weaver({
+      getBackend: () => backend,
+      resolveActiveModel: stubResolveActiveModel(),
+      context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
+      sendTyping: vi.fn(async () => {}),
+      onActivity: vi.fn(),
+    });
+  }
+
+  it("settles a completed turn as done with its warp binding and usage", async () => {
+    const backend = stubBackend({
+      query: async () => ({
+        text: "ok",
+        durationMs: 1,
+        inputTokens: 11,
+        outputTokens: 7,
+        cacheRead: 3,
+        cacheWrite: 2,
+      }),
+    });
+
+    await makeWeaver(backend).runTurn(params({ chatId: "task-ok" }));
+
+    expect(turnTask("task-ok")).toMatchObject({
+      state: "done",
+      label: "message",
+      killable: false,
+      model: "stub-model",
+      backendId: "claude",
+      usage: { inputTokens: 11, outputTokens: 7, cacheRead: 3, cacheWrite: 2 },
+    });
+  });
+
+  it("settles a throwing turn as failed", async () => {
+    const backend = stubBackend({
+      query: async () => {
+        throw new Error("backend exploded");
+      },
+    });
+
+    await expect(
+      makeWeaver(backend).runTurn(params({ chatId: "task-boom" })),
+    ).rejects.toThrow("backend exploded");
+
+    expect(turnTask("task-boom")).toMatchObject({
+      state: "failed",
+      error: expect.stringContaining("backend exploded"),
+    });
+  });
+
+  it("settles a no-model refusal as done without a binding", async () => {
+    const weaver = new Weaver({
+      getBackend: () => stubBackend(),
+      resolveActiveModel: async () => ({
+        model: null,
+        ref: null,
+        backendId: "claude",
+      }),
+      context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
+      sendTyping: vi.fn(async () => {}),
+      onActivity: vi.fn(),
+    });
+
+    await weaver.runTurn(params({ chatId: "task-refused" }));
+
+    const record = turnTask("task-refused");
+    expect(record).toMatchObject({ state: "done" });
+    expect(record!.model).toBeUndefined();
+  });
+
+  it("shows a turn waiting in its chat's FIFO as queued", async () => {
+    const gate = deferred();
+    const backend = stubBackend({
+      query: async (queryParams) => {
+        if (queryParams.text === "first") await gate.promise;
+        return {
+          text: queryParams.text,
+          durationMs: 1,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        };
+      },
+    });
+    const weaver = makeWeaver(backend);
+
+    const p1 = weaver.runTurn(params({ chatId: "task-fifo", prompt: "first" }));
+    const p2 = weaver.runTurn(
+      params({ chatId: "task-fifo", prompt: "second" }),
+    );
+
+    await vi.waitFor(() => {
+      const states = taskTable
+        .list()
+        .filter((t) => t.chatId === "task-fifo")
+        .map((t) => t.state);
+      expect(states).toEqual(["running", "queued"]);
+    });
+
+    gate.resolve();
+    await Promise.all([p1, p2]);
+    const states = taskTable
+      .list()
+      .filter((t) => t.chatId === "task-fifo")
+      .map((t) => t.state);
+    expect(states).toEqual(["done", "done"]);
   });
 });
 

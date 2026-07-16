@@ -24,6 +24,7 @@ import type { AgentResult } from "../agent-runtime/events.js";
 import type { ModelRef } from "../agent-runtime/model-ref.js";
 import type { MemoryRetriever } from "../memory/retrieval.js";
 import type { ContextManager, ExecuteParams, ExecuteResult } from "../types.js";
+import { taskTable, type TaskHandle } from "../tasks/index.js";
 import { log, logDebug, logWarn } from "../../util/log.js";
 import { Loom } from "./loom.js";
 import { prefetchMemory } from "./memory-prefetch.js";
@@ -80,7 +81,14 @@ export class Weaver {
 
   runTurn(params: ExecuteParams): Promise<ExecuteResult> {
     const thread = this.loom.thread(params.chatId);
-    return thread.enqueue(() => this.run(thread, params));
+    // Registered before enqueueing so a turn waiting in its chat's FIFO is
+    // visible as `queued` in the task table, not invisible until it runs.
+    const task = taskTable.enqueue({
+      kind: "turn",
+      label: params.source,
+      chatId: params.chatId,
+    });
+    return thread.enqueue(() => this.run(thread, params, task));
   }
 
   /** Number of turns currently running (not queued) across all chats. */
@@ -100,10 +108,22 @@ export class Weaver {
   private async run(
     thread: Thread,
     params: ExecuteParams,
+    task: TaskHandle,
   ): Promise<ExecuteResult> {
     this.activeCount++;
+    task.start();
     try {
-      return await this.executeInner(thread, params);
+      const result = await this.executeInner(thread, params, task);
+      task.succeed({
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        cacheRead: result.cacheRead,
+        cacheWrite: result.cacheWrite,
+      });
+      return result;
+    } catch (err) {
+      task.fail(err);
+      throw err;
     } finally {
       this.activeCount--;
     }
@@ -112,6 +132,7 @@ export class Weaver {
   private async executeInner(
     thread: Thread,
     params: ExecuteParams,
+    task: TaskHandle,
   ): Promise<ExecuteResult> {
     const { context, onActivity, retrieveMemory } = this.deps;
     const backend = this.deps.getBackend(params.chatId);
@@ -151,6 +172,7 @@ export class Weaver {
       overridden: warp.overridden,
       boundAt: Date.now(),
     });
+    task.bind({ model: warp.ref.id, backendId: warp.backendId });
     if (drifted && previous) {
       logDebug(
         "dispatcher",

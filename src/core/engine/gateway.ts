@@ -27,6 +27,7 @@ import {
   HUB_PATH_PREFIX,
 } from "../mcp-hub/index.js";
 import { handlePluginAction } from "../plugin/index.js";
+import { taskTable } from "../tasks/index.js";
 import type { FrontendActionHandler } from "../types.js";
 import { BOT_MESSAGE_ACTIONS, noteBotMessage } from "../soul/taps.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
@@ -392,6 +393,39 @@ export class Gateway {
           res.end(JSON.stringify({ ok: true }));
           const handler = this.shutdownHandler;
           setImmediate(() => handler("gateway /shutdown"));
+          return;
+        }
+
+        if (req.method === "GET" && req.url === "/tasks") {
+          // The task table — every live/recent unit of agent work. Read by
+          // `talon ps`. Same 127.0.0.1 trust boundary as /action.
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true, tasks: taskTable.list() }));
+          return;
+        }
+
+        if (req.method === "POST" && req.url === "/tasks/kill") {
+          // Abort one killable task by id — the transport for `talon kill`.
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(chunk as Buffer);
+          let id: unknown;
+          try {
+            const body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+            id = (body as { id?: unknown }).id;
+          } catch {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+            return;
+          }
+          if (typeof id !== "number" || !Number.isInteger(id)) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({ ok: false, error: "id must be an integer" }),
+            );
+            return;
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(taskTable.kill(id)));
           return;
         }
 

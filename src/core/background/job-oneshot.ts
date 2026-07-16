@@ -20,6 +20,7 @@ import {
   acquireBackendInstance,
   isModelValidForBackend,
 } from "../engine/backend-controller/index.js";
+import { taskTable } from "../tasks/index.js";
 import type { OneShotAgentParams } from "../types.js";
 import { runIsolatedAgent } from "./isolated-agent.js";
 import {
@@ -132,6 +133,15 @@ export async function runJobOneShot(
       params.model,
     );
 
+    const abortController = new AbortController();
+    const task = taskTable.begin({
+      kind: params.kind,
+      label: params.label,
+      chatId: params.chatId,
+      abort: () => abortController.abort(),
+    });
+    task.bind({ model: params.model, backendId: params.backendId });
+
     const oneShot: OneShotAgentParams = {
       prompt: params.payload,
       systemPrompt: buildJobSystemPrompt(
@@ -142,18 +152,24 @@ export async function runJobOneShot(
       contextLabel: JOB_CONTEXT_LABEL,
       workspace: dirs.workspace,
       model: params.model,
-      abortController: new AbortController(),
+      abortController,
       appendLog,
     };
 
-    await runIsolatedAgent({
-      background,
-      params: oneShot,
-      timeoutMs: params.timeoutMs ?? DEFAULT_JOB_TIMEOUT_MS,
-      // No evictLabel: the job context label is shared with heartbeat, so a
-      // sweep here could kill a concurrent heartbeat's subprocess. Bounded
-      // abort-grace is enough.
-    });
+    try {
+      await runIsolatedAgent({
+        background,
+        params: oneShot,
+        timeoutMs: params.timeoutMs ?? DEFAULT_JOB_TIMEOUT_MS,
+        // No evictLabel: the job context label is shared with heartbeat, so a
+        // sweep here could kill a concurrent heartbeat's subprocess. Bounded
+        // abort-grace is enough.
+      });
+      task.succeed();
+    } catch (err) {
+      task.fail(err);
+      throw err;
+    }
     log(
       params.kind === "cron" ? "cron" : "triggers",
       `isolated job "${params.label}" ran on ${params.backendId}/${params.model}`,

@@ -12,6 +12,7 @@ import { toYMD } from "../../../util/time.js";
 import { getDefaultModel } from "../../models/catalog.js";
 import { loadSystemTemplate } from "../../prompt/templates.js";
 import { formatGoal, getOpenGoals } from "../../../storage/goal-store.js";
+import { taskTable } from "../../tasks/index.js";
 import type { OneShotAgentParams } from "../../types.js";
 import { hb } from "./state.js";
 
@@ -184,6 +185,13 @@ export async function runHeartbeatAgent(
   // heartbeatAbortGraceMs below.
   const abortController = new AbortController();
 
+  const task = taskTable.begin({
+    kind: "heartbeat",
+    label: `#${runCount}`,
+    abort: () => abortController.abort(),
+  });
+  task.bind({ model });
+
   const oneShotParams: OneShotAgentParams = {
     prompt,
     systemPrompt: buildHeartbeatSystemPrompt(),
@@ -231,6 +239,7 @@ export async function runHeartbeatAgent(
       clearTimeout(timeoutHandle);
       timeoutHandle = null;
     }
+    task.fail(err);
     await appendHeartbeatLog(
       heartbeatLogFile,
       `\n---\n**Heartbeat #${runCount} FAILED at ${new Date().toISOString()}:** ${err}\n`,
@@ -269,6 +278,7 @@ export async function runHeartbeatAgent(
     if (timeoutHandle) clearTimeout(timeoutHandle);
   }
 
+  task.succeed();
   return heartbeatLogFile;
 }
 

@@ -30,6 +30,7 @@ import { tailLogs } from "./logs.js";
 import { runDoctor } from "./doctor.js";
 import { startChat } from "./chat.js";
 import { daemonStart, daemonStop, daemonRestart } from "./daemon.js";
+import { showTasks, killTask } from "./tasks.js";
 import { mainMenu } from "./menu.js";
 
 export * from "./context.js";
@@ -55,6 +56,8 @@ const CLI_COMMANDS = [
   "run",
   "chat",
   "doctor",
+  "ps",
+  "kill",
 ];
 
 /** Route a `talon <command>` invocation. Called by the entry point. */
@@ -96,6 +99,12 @@ export async function runCli(): Promise<void> {
     case "doctor":
       runDoctor();
       break;
+    case "ps":
+      await showTasks();
+      break;
+    case "kill":
+      await killTask(process.argv[3]);
+      break;
     case "--version":
     case "-v": {
       console.log(pkg.version);
@@ -113,6 +122,8 @@ export async function runCli(): Promise<void> {
       console.log(`    ${pc.cyan("run")}        Run in foreground (attached)`);
       console.log(`    ${pc.cyan("chat")}       Terminal chat mode`);
       console.log(`    ${pc.cyan("status")}     Show bot health`);
+      console.log(`    ${pc.cyan("ps")}         List agent tasks (task table)`);
+      console.log(`    ${pc.cyan("kill")}       Abort a killable task by id`);
       console.log(`    ${pc.cyan("config")}     View/edit configuration`);
       console.log(`    ${pc.cyan("logs")}       Tail log file`);
       console.log(`    ${pc.cyan("doctor")}     Validate environment`);

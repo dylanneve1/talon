@@ -56,6 +56,7 @@ vi.mock("write-file-atomic", () => ({
 }));
 
 import { Gateway } from "../core/engine/gateway.js";
+import { taskTable } from "../core/tasks/index.js";
 
 let gateway: Gateway;
 let port: number;
@@ -111,6 +112,70 @@ describe("gateway HTTP server", () => {
       expect(data.ok).toBeDefined();
       expect(data.uptime).toBeDefined();
       expect(data.memory).toBeDefined();
+    });
+  });
+
+  describe("task endpoints", () => {
+    it("GET /tasks lists the task table", async () => {
+      const task = taskTable.begin({ kind: "heartbeat", label: "#1" });
+      try {
+        const resp = await fetch(`http://127.0.0.1:${port}/tasks`);
+        expect(resp.status).toBe(200);
+        const data = (await resp.json()) as {
+          ok: boolean;
+          tasks: Array<Record<string, unknown>>;
+        };
+        expect(data.ok).toBe(true);
+        expect(data.tasks.find((t) => t.id === task.id)).toMatchObject({
+          kind: "heartbeat",
+          state: "running",
+        });
+      } finally {
+        task.succeed();
+      }
+    });
+
+    it("POST /tasks/kill aborts a killable task", async () => {
+      const abort = vi.fn();
+      const task = taskTable.begin({ kind: "dream", label: "test", abort });
+      try {
+        const resp = await fetch(`http://127.0.0.1:${port}/tasks/kill`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: task.id }),
+        });
+        expect(resp.status).toBe(200);
+        expect(await resp.json()).toEqual({ ok: true });
+        expect(abort).toHaveBeenCalledTimes(1);
+      } finally {
+        task.fail(new Error("aborted"));
+      }
+    });
+
+    it("POST /tasks/kill reports unknown ids", async () => {
+      const resp = await fetch(`http://127.0.0.1:${port}/tasks/kill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: 999_999 }),
+      });
+      expect(resp.status).toBe(200);
+      expect(await resp.json()).toEqual({ ok: false, reason: "not-found" });
+    });
+
+    it("POST /tasks/kill rejects malformed bodies", async () => {
+      const invalidJson = await fetch(`http://127.0.0.1:${port}/tasks/kill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "not json{{{",
+      });
+      expect(invalidJson.status).toBe(400);
+
+      const nonIntegerId = await fetch(`http://127.0.0.1:${port}/tasks/kill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: "7" }),
+      });
+      expect(nonIntegerId.status).toBe(400);
     });
   });
 
