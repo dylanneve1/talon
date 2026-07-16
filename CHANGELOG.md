@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.0](https://github.com/dylanneve1/talon/compare/v1.47.2...v1.48.0) (2026-07-16)
+
+
+### Features
+
+* **core:** task table — live registry of agent work with talon ps / talon kill ([#553](https://github.com/dylanneve1/talon/issues/553)) ([5368874](https://github.com/dylanneve1/talon/commit/5368874549a7aae96e9fb0161bc7429ee6833aee))
+
 ## [1.47.2](https://github.com/dylanneve1/talon/compare/v1.47.1...v1.47.2) (2026-07-15)
 
 
