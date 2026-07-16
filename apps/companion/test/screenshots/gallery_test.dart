@@ -20,6 +20,7 @@ import 'package:talon_companion/src/services/prefs.dart';
 import 'package:talon_companion/src/state/app_state.dart';
 import 'package:talon_companion/src/theme.dart';
 import 'package:talon_companion/src/ui/connect_screen.dart';
+import 'package:talon_companion/src/ui/extensions_screen.dart';
 import 'package:talon_companion/src/ui/glass.dart';
 import 'package:talon_companion/src/ui/root_view.dart';
 import 'package:talon_companion/src/ui/settings_screen.dart';
@@ -184,6 +185,50 @@ Map<String, List<ClientMessage>> _demoMessages() => {
       ],
     };
 
+List<PluginInfo> _demoPlugins() => const [
+      PluginInfo(
+          name: 'github',
+          kind: 'builtin',
+          enabled: true,
+          source: 'config.github'),
+      PluginInfo(
+          name: 'mempalace',
+          kind: 'builtin',
+          enabled: true,
+          source: 'config.mempalace'),
+      PluginInfo(
+          name: 'playwright',
+          kind: 'builtin',
+          enabled: false,
+          source: 'config.playwright'),
+      PluginInfo(
+          name: 'weather-tools',
+          kind: 'module',
+          enabled: true,
+          source: '~/.talon/plugins/node_modules/weather-tools'),
+      PluginInfo(
+          name: 'fetch',
+          kind: 'mcp',
+          enabled: false,
+          source: 'npx -y @modelcontextprotocol/server-fetch'),
+    ];
+
+List<SkillInfo> _demoSkills() => const [
+      SkillInfo(
+          name: 'review-pr',
+          description: 'Checklist-driven pull request review with repo context',
+          enabled: true),
+      SkillInfo(
+          name: 'trip-planner',
+          description:
+              'Plan multi-day trips: routes, bookings, weather windows',
+          enabled: true),
+      SkillInfo(
+          name: 'meeting-notes',
+          description: 'Summarise a transcript into decisions and actions',
+          enabled: false),
+    ];
+
 AppState _demoState({required bool narrow, String? select}) {
   final prefs = Prefs(_FakePrefsBacking.instance);
   final state = AppState(prefs, narrowLayout: narrow);
@@ -199,7 +244,10 @@ AppState _demoState({required bool narrow, String? select}) {
       'model': 'opus',
       'activeChats': 6,
       'startedAt': '',
+      'capabilities': ['mesh', 'mesh-commands', 'plugins-skills'],
     }),
+    plugins: _demoPlugins(),
+    skills: _demoSkills(),
   );
   return state;
 }
@@ -302,6 +350,22 @@ void main() {
     addTearDown(state.dispose);
     await tester.pumpWidget(_app(SettingsScreen(state: state)));
     await _shoot(tester, 'phone_settings');
+  });
+
+  testWidgets('phone · plugins', (tester) async {
+    _phone(tester);
+    final state = _demoState(narrow: true);
+    addTearDown(state.dispose);
+    await tester.pumpWidget(_app(PluginsScreen(state: state)));
+    await _shoot(tester, 'phone_plugins');
+  });
+
+  testWidgets('phone · skills', (tester) async {
+    _phone(tester);
+    final state = _demoState(narrow: true);
+    addTearDown(state.dispose);
+    await tester.pumpWidget(_app(SkillsScreen(state: state)));
+    await _shoot(tester, 'phone_skills');
   });
 
   testWidgets('phone · conversation (emerald accent)', (tester) async {

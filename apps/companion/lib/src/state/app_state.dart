@@ -162,8 +162,7 @@ class AppState extends ChangeNotifier {
   List<DeviceInfo> meshDevices = [];
   List<DeviceLocation> meshLocations = [];
   MeshForegroundHealth meshBackgroundHealth = evaluateMeshForegroundHealth(
-    supported:
-        MeshForegroundController.isSupported ||
+    supported: MeshForegroundController.isSupported ||
         MeshForegroundController.isResidentDesktop,
     sharingEnabled: false,
     serviceRunning: false,
@@ -819,6 +818,59 @@ class AppState extends ChangeNotifier {
     return result;
   }
 
+  /// Seeded extension lists for widget tests / the screenshot gallery —
+  /// [listPlugins]/[listSkills] serve these instead of hitting the bridge.
+  List<PluginInfo>? _debugPlugins;
+  List<SkillInfo>? _debugSkills;
+
+  /// Installed plugins for the settings sub-menu. Throws on transport
+  /// failure — the screen owns the error presentation.
+  Future<List<PluginInfo>> listPlugins() async {
+    final seeded = _debugPlugins;
+    if (seeded != null) return seeded;
+    final client = _client;
+    if (client == null) throw BridgeException('Not connected');
+    return client.listPlugins();
+  }
+
+  Future<({bool ok, String? error})> togglePlugin(
+    String name,
+    bool enabled,
+  ) async {
+    final client = _client;
+    if (client == null) return (ok: false, error: 'Not connected');
+    try {
+      return await client.togglePlugin(name, enabled);
+    } catch (e) {
+      AppLog.warn('app_state', 'plugin toggle failed', e);
+      return (ok: false, error: e.toString());
+    }
+  }
+
+  /// Installed skills for the settings sub-menu. Throws on transport
+  /// failure — the screen owns the error presentation.
+  Future<List<SkillInfo>> listSkills() async {
+    final seeded = _debugSkills;
+    if (seeded != null) return seeded;
+    final client = _client;
+    if (client == null) throw BridgeException('Not connected');
+    return client.listSkills();
+  }
+
+  Future<({bool ok, String? error})> toggleSkill(
+    String name,
+    bool enabled,
+  ) async {
+    final client = _client;
+    if (client == null) return (ok: false, error: 'Not connected');
+    try {
+      return await client.toggleSkill(name, enabled);
+    } catch (e) {
+      AppLog.warn('app_state', 'skill toggle failed', e);
+      return (ok: false, error: e.toString());
+    }
+  }
+
   /// Newest daemon log entries for the log viewer. Throws on transport
   /// failure — the screen owns the error presentation.
   Future<List<DaemonLogEntry>> daemonLogs({
@@ -1174,6 +1226,8 @@ class AppState extends ChangeNotifier {
     String? select,
     ConnState? connState,
     BridgeStatus? bridgeStatus,
+    List<PluginInfo>? plugins,
+    List<SkillInfo>? skills,
   }) {
     if (chats != null) {
       this.chats
@@ -1191,6 +1245,8 @@ class AppState extends ChangeNotifier {
     if (select != null) selectedChatId = select;
     if (connState != null) conn = connState;
     if (bridgeStatus != null) status = bridgeStatus;
+    if (plugins != null) _debugPlugins = plugins;
+    if (skills != null) _debugSkills = skills;
     notifyListeners();
   }
 

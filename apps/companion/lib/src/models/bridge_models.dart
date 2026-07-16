@@ -334,10 +334,12 @@ class ClientChat {
         effort: j['effort'] is String ? j['effort'] as String : null,
         pulse: j['pulse'] is bool ? j['pulse'] as bool : null,
         context: j['context'] is Map
-            ? ContextInfo.fromJson((j['context'] as Map).cast<String, dynamic>())
+            ? ContextInfo.fromJson(
+                (j['context'] as Map).cast<String, dynamic>())
             : null,
         queued: j['queued'] is Map
-            ? QueuedMessage.fromJson((j['queued'] as Map).cast<String, dynamic>())
+            ? QueuedMessage.fromJson(
+                (j['queued'] as Map).cast<String, dynamic>())
             : null,
       );
 
@@ -431,6 +433,10 @@ class BridgeStatus {
   final int activeChats;
   final String startedAt;
 
+  /// Additive bridge features this daemon supports (e.g. "plugins-skills").
+  /// The app gates optional surfaces on these instead of protocol bumps.
+  final List<String> capabilities;
+
   const BridgeStatus({
     required this.protocol,
     required this.botName,
@@ -438,7 +444,10 @@ class BridgeStatus {
     required this.model,
     required this.activeChats,
     required this.startedAt,
+    this.capabilities = const [],
   });
+
+  bool hasCapability(String name) => capabilities.contains(name);
 
   factory BridgeStatus.fromJson(Map<String, dynamic> j) => BridgeStatus(
         protocol: _int(j['protocol'], 1),
@@ -447,6 +456,11 @@ class BridgeStatus {
         model: _string(j['model']),
         activeChats: _int(j['activeChats']),
         startedAt: _string(j['startedAt']),
+        capabilities: j['capabilities'] is List
+            ? (j['capabilities'] as List)
+                .whereType<String>()
+                .toList(growable: false)
+            : const [],
       );
 
   static const empty = BridgeStatus(
@@ -501,6 +515,7 @@ class ToolActivity {
   bool done;
   String? error;
   Map<String, dynamic> input;
+
   /// Truncated string form of the tool's result, shown in the expanded view.
   /// Arrives on the `result` phase (or re-hydrated from history).
   String? output;
@@ -594,5 +609,52 @@ class SearchHit {
         chatId: _string(j['chatId']),
         chatTitle: _string(j['chatTitle']),
         message: ClientMessage.fromJson(_map(j['message'])),
+      );
+}
+
+/// One installed plugin, as `GET /plugins` lists it (behind the
+/// `plugins-skills` bridge capability).
+class PluginInfo {
+  final String name;
+
+  /// "builtin" (config-section plugin), "module", or "mcp".
+  final String kind;
+  final bool enabled;
+
+  /// Where it comes from: a config section, module path, or MCP command.
+  final String source;
+
+  const PluginInfo({
+    required this.name,
+    required this.kind,
+    required this.enabled,
+    required this.source,
+  });
+
+  factory PluginInfo.fromJson(Map<String, dynamic> j) => PluginInfo(
+        name: _string(j['name']),
+        kind: _string(j['kind']),
+        enabled: _bool(j['enabled']),
+        source: _string(j['source']),
+      );
+}
+
+/// One installed skill, as `GET /skills` lists it. A disabled skill drops
+/// out of the model's prompt index but stays installed.
+class SkillInfo {
+  final String name;
+  final String description;
+  final bool enabled;
+
+  const SkillInfo({
+    required this.name,
+    required this.description,
+    required this.enabled,
+  });
+
+  factory SkillInfo.fromJson(Map<String, dynamic> j) => SkillInfo(
+        name: _string(j['name']),
+        description: _string(j['description']),
+        enabled: _bool(j['enabled']),
       );
 }

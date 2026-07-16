@@ -346,6 +346,51 @@ class BridgeClient {
     );
   }
 
+  /// Installed plugins with their enabled state (`plugins-skills` capability).
+  Future<List<PluginInfo>> listPlugins() async {
+    final j = await _getJson('/plugins');
+    return _list(j['plugins'])
+        .map((p) => PluginInfo.fromJson(_map(p)))
+        .toList();
+  }
+
+  /// Enable/disable a plugin. The daemon persists and hot-reloads; `ok`
+  /// is the application outcome (always HTTP 200, mirroring `/backend`).
+  Future<({bool ok, String? error})> togglePlugin(
+    String name,
+    bool enabled,
+  ) async {
+    final j = await _postJson('/plugins/toggle', {
+      'name': name,
+      'enabled': enabled,
+    });
+    return (
+      ok: j['ok'] == true,
+      error: j['error'] is String ? j['error'] as String : null,
+    );
+  }
+
+  /// Installed skills with their enabled state (`plugins-skills` capability).
+  Future<List<SkillInfo>> listSkills() async {
+    final j = await _getJson('/skills');
+    return _list(j['skills']).map((s) => SkillInfo.fromJson(_map(s))).toList();
+  }
+
+  /// Enable/disable a skill (drops it from / restores it to the prompt index).
+  Future<({bool ok, String? error})> toggleSkill(
+    String name,
+    bool enabled,
+  ) async {
+    final j = await _postJson('/skills/toggle', {
+      'name': name,
+      'enabled': enabled,
+    });
+    return (
+      ok: j['ok'] == true,
+      error: j['error'] is String ? j['error'] as String : null,
+    );
+  }
+
   /// A page of history: the newest window by default, or — when [before] is
   /// given — the window of messages strictly older than that message id.
   Future<List<ClientMessage>> history(
