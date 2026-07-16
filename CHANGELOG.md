@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.49.0](https://github.com/dylanneve1/talon/compare/v1.48.0...v1.49.0) (2026-07-16)
+
+
+### Features
+
+* **core:** event bus — typed pub-sub spine with task/turn events and talon events tail ([#557](https://github.com/dylanneve1/talon/issues/557)) ([ab10f83](https://github.com/dylanneve1/talon/commit/ab10f8386cc1c1d4a3736c1babed569f369425d0))
+
 ## [1.48.0](https://github.com/dylanneve1/talon/compare/v1.47.2...v1.48.0) (2026-07-16)
 
 
