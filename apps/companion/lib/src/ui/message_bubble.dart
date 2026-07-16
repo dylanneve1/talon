@@ -96,109 +96,117 @@ class MessageBubble extends StatelessWidget {
             const Spacer(flex: 3),
             Flexible(
               flex: 10,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Tooltip(
-                    message: message.time.toLocal().toString().split('.').first,
-                    waitDuration: const Duration(milliseconds: 600),
-                    child: Builder(
-                      builder: (context) => GestureDetector(
-                        // Touch path to copy your own message: assistant rows
-                        // have a Copy button, user bubbles previously had
-                        // nothing reachable without a mouse (SelectableText
-                        // still handles precise selection on the text itself).
-                        onLongPress: message.text.isEmpty
-                            ? null
-                            : () async {
-                                Haptics.medium();
-                                final messenger =
-                                    ScaffoldMessenger.maybeOf(context);
-                                await Clipboard.setData(
-                                    ClipboardData(text: message.text));
-                                messenger?.hideCurrentSnackBar();
-                                messenger?.showSnackBar(const SnackBar(
-                                    content: Text('Message copied')));
-                              },
-                        child: Container(
-                          key: const Key('user-message-bubble'),
-                          padding: EdgeInsets.symmetric(
-                            horizontal: imageUrl != null && message.text.isEmpty
-                                ? TalonSpace.sm
-                                : TalonSpace.lg,
-                            vertical: imageUrl != null && message.text.isEmpty
-                                ? TalonSpace.sm
-                                : 11,
-                          ),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                TalonColors.accent,
-                                TalonColors.accentDeep,
+              // Align fills the flex slot and pins the (shrink-wrapped)
+              // bubble column to its right edge — without it the column sits
+              // at the start of the slot and user messages drift left.
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Tooltip(
+                      message:
+                          message.time.toLocal().toString().split('.').first,
+                      waitDuration: const Duration(milliseconds: 600),
+                      child: Builder(
+                        builder: (context) => GestureDetector(
+                          // Touch path to copy your own message: assistant rows
+                          // have a Copy button, user bubbles previously had
+                          // nothing reachable without a mouse (SelectableText
+                          // still handles precise selection on the text itself).
+                          onLongPress: message.text.isEmpty
+                              ? null
+                              : () async {
+                                  Haptics.medium();
+                                  final messenger =
+                                      ScaffoldMessenger.maybeOf(context);
+                                  await Clipboard.setData(
+                                      ClipboardData(text: message.text));
+                                  messenger?.hideCurrentSnackBar();
+                                  messenger?.showSnackBar(const SnackBar(
+                                      content: Text('Message copied')));
+                                },
+                          child: Container(
+                            key: const Key('user-message-bubble'),
+                            padding: EdgeInsets.symmetric(
+                              horizontal:
+                                  imageUrl != null && message.text.isEmpty
+                                      ? TalonSpace.sm
+                                      : TalonSpace.lg,
+                              vertical: imageUrl != null && message.text.isEmpty
+                                  ? TalonSpace.sm
+                                  : 11,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  TalonColors.accent,
+                                  TalonColors.accentDeep,
+                                ],
+                              ),
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(20),
+                                topRight: Radius.circular(20),
+                                bottomLeft: Radius.circular(20),
+                                bottomRight: Radius.circular(6),
+                              ),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.13),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: TalonColors.accentDeep
+                                      .withValues(alpha: 0.22),
+                                  blurRadius: 14,
+                                  offset: const Offset(0, 5),
+                                ),
                               ],
                             ),
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(20),
-                              topRight: Radius.circular(20),
-                              bottomLeft: Radius.circular(20),
-                              bottomRight: Radius.circular(6),
-                            ),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.13),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: TalonColors.accentDeep
-                                    .withValues(alpha: 0.22),
-                                blurRadius: 14,
-                                offset: const Offset(0, 5),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (imageUrl != null)
-                                Padding(
-                                  padding: EdgeInsets.only(
-                                    bottom: message.text.isEmpty
-                                        ? 0
-                                        : TalonSpace.sm,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (imageUrl != null)
+                                  Padding(
+                                    padding: EdgeInsets.only(
+                                      bottom: message.text.isEmpty
+                                          ? 0
+                                          : TalonSpace.sm,
+                                    ),
+                                    child: _InlineImage(url: imageUrl!),
                                   ),
-                                  child: _InlineImage(url: imageUrl!),
-                                ),
-                              if (message.text.isNotEmpty)
-                                SelectableText(
-                                  message.text,
-                                  style: TalonType.body.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w500,
+                                if (message.text.isNotEmpty)
+                                  SelectableText(
+                                    message.text,
+                                    style: TalonType.body.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
-                                ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  // Timestamp on the canvas under the bubble, not inside it —
-                  // same anatomy as the assistant row's external metadata.
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4, right: 4),
-                    child: Text(
-                      _clock(message.time),
-                      key: const Key('user-message-time'),
-                      style: TalonType.caption.copyWith(
-                        fontSize: 10.5,
-                        fontFeatures: const [FontFeature.tabularFigures()],
+                    // Timestamp on the canvas under the bubble, not inside it —
+                    // same anatomy as the assistant row's external metadata.
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, right: 4),
+                      child: Text(
+                        _clock(message.time),
+                        key: const Key('user-message-time'),
+                        style: TalonType.caption.copyWith(
+                          fontSize: 10.5,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],

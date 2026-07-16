@@ -140,6 +140,12 @@ void main() {
 
     expect(find.text('A quick follow-up'), findsOneWidget);
     expect(find.byKey(const Key('user-message-time')), findsOneWidget);
+    // The bubble stays pinned to the right edge of the row — regression for
+    // the shrink-wrapped column sitting at the start of its flex slot.
+    final bubbleRect =
+        tester.getRect(find.byKey(const Key('user-message-bubble')));
+    final rowWidth = tester.getSize(find.byType(Scaffold)).width;
+    expect(bubbleRect.right, greaterThan(rowWidth - 8));
     // The timestamp sits under the bubble on the canvas, not inside it.
     expect(
       find.descendant(

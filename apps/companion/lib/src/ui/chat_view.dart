@@ -19,11 +19,18 @@ class ChatView extends StatefulWidget {
   final bool showBack;
   final VoidCallback? onBack;
 
+  /// Phone presentation: no rounded card or canvas tint — the conversation
+  /// sits directly on the app backdrop edge to edge (like Settings), the
+  /// header pads itself under the status bar, and the composer respects the
+  /// bottom system inset.
+  final bool fullBleed;
+
   const ChatView({
     super.key,
     required this.state,
     required this.showBack,
     this.onBack,
+    this.fullBleed = false,
   });
 
   @override
@@ -139,49 +146,60 @@ class _ChatViewState extends State<ChatView> {
 
   @override
   Widget build(BuildContext context) {
+    final body = ListenableBuilder(
+      listenable: widget.state,
+      builder: (context, _) {
+        final chat = widget.state.selectedChat;
+        if (chat == null) return const _EmptyState();
+        _autoScroll(chat.id, widget.state.messagesFor(chat.id).length);
+        return Column(
+          children: [
+            _Header(
+              state: widget.state,
+              chat: chat,
+              showBack: widget.showBack,
+              onBack: widget.onBack,
+              extendIntoStatusBar: widget.fullBleed,
+            ),
+            if (widget.state.conn != ConnState.connected)
+              _ConnBanner(state: widget.state),
+            Expanded(child: _messages(chat.id)),
+            // top:false — only the bottom (and side) system insets matter
+            // here; in the card presentation the outer SafeArea has already
+            // consumed them and this collapses to a no-op.
+            SafeArea(
+              top: false,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: _columnMax),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _QueuedBar(state: widget.state, chatId: chat.id),
+                      Composer(
+                        onSend: widget.state.sendMessage,
+                        onUpload: widget.state.uploadImage,
+                        enabled: widget.state.conn == ConnState.connected,
+                        running: widget.state.isTurnRunning(chat.id),
+                        onStop: () => widget.state.interruptTurn(chat.id),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    // Full-bleed (phone): straight onto the app backdrop, like Settings.
+    if (widget.fullBleed) return body;
+    // Card (desktop/tablet pane): rounded clip over a quiet canvas tint.
     return ClipRRect(
       borderRadius: BorderRadius.circular(22),
       child: Container(
         color: TalonColors.void1.withValues(alpha: 0.55),
-        child: ListenableBuilder(
-          listenable: widget.state,
-          builder: (context, _) {
-            final chat = widget.state.selectedChat;
-            if (chat == null) return const _EmptyState();
-            _autoScroll(chat.id, widget.state.messagesFor(chat.id).length);
-            return Column(
-              children: [
-                _Header(
-                  state: widget.state,
-                  chat: chat,
-                  showBack: widget.showBack,
-                  onBack: widget.onBack,
-                ),
-                if (widget.state.conn != ConnState.connected)
-                  _ConnBanner(state: widget.state),
-                Expanded(child: _messages(chat.id)),
-                Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: _columnMax),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _QueuedBar(state: widget.state, chatId: chat.id),
-                        Composer(
-                          onSend: widget.state.sendMessage,
-                          onUpload: widget.state.uploadImage,
-                          enabled: widget.state.conn == ConnState.connected,
-                          running: widget.state.isTurnRunning(chat.id),
-                          onStop: () => widget.state.interruptTurn(chat.id),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
+        child: body,
       ),
     );
   }
@@ -457,19 +475,26 @@ class _Header extends StatelessWidget {
   final bool showBack;
   final VoidCallback? onBack;
 
+  /// Pad the bar by the top system inset so its surface runs up under the
+  /// status bar (full-bleed phone presentation, same as Settings' AppBar).
+  final bool extendIntoStatusBar;
+
   const _Header({
     required this.state,
     required this.chat,
     required this.showBack,
     this.onBack,
+    this.extendIntoStatusBar = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final model = chat.model ?? state.status.model;
     final effort = chat.effort ?? 'adaptive';
+    final topInset =
+        extendIntoStatusBar ? MediaQuery.of(context).padding.top : 0.0;
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      padding: EdgeInsets.fromLTRB(12, 10 + topInset, 8, 10),
       decoration: BoxDecoration(
         color: TalonColors.surface.withValues(
           alpha: TalonTheme.isDark ? 0.68 : 0.92,
