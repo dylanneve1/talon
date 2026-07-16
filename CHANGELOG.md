@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.52.0](https://github.com/dylanneve1/talon/compare/v1.51.0...v1.52.0) (2026-07-16)
+
+
+### Features
+
+* **bridge:** plugin & skill endpoints — list and toggle over the client bridge ([#563](https://github.com/dylanneve1/talon/issues/563)) ([34769df](https://github.com/dylanneve1/talon/commit/34769dffd70e48a49eb77a5af228453bf98b44da))
+* **core:** one-shot runs report token usage — talon ps accounts heartbeat/dream/cron burn ([#566](https://github.com/dylanneve1/talon/issues/566)) ([b8857e2](https://github.com/dylanneve1/talon/commit/b8857e2141c909760a8c007d3b9b6ab5c80d31db))
+
 ## [1.51.0](https://github.com/dylanneve1/talon/compare/v1.50.0...v1.51.0) (2026-07-16)
 
 
