@@ -22,6 +22,7 @@ import {
   initDispatcher,
   execute as dispatcherExecute,
 } from "./core/engine/dispatcher.js";
+import { bus } from "./core/bus/index.js";
 import { initPulse, resetPulseTimer } from "./core/background/pulse.js";
 import { initCron } from "./core/background/cron.js";
 import {
@@ -410,12 +411,13 @@ export async function initBackendAndDispatcher(
       resolveFrontendByNumericId(chatId, stringId, frontends).sendTyping(
         chatId,
       ),
-    onActivity: () => resetPulseTimer(),
-    // Turn-start hook: fire-and-forget dream (background memory
-    // consolidation) check. Wired here so the Weaver stays ignorant of
-    // the dream subsystem.
-    onTurnStart: maybeStartDream,
   });
+
+  // Cross-subsystem reactions ride the bus, so the Weaver stays ignorant of
+  // dream and pulse: a bound turn kicks the fire-and-forget dream check, a
+  // completed turn resets the pulse idle timer.
+  bus.subscribe("turn.started", () => maybeStartDream());
+  bus.subscribe("turn.completed", () => resetPulseTimer());
 
   initPulse();
   initCron({

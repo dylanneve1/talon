@@ -3,6 +3,7 @@ import type { RetrievedMemory } from "../core/agent-runtime/capabilities.js";
 import type { MemoryRetriever } from "../core/memory/retrieval.js";
 import type { QueryParams } from "../backend/shared/handler-types.js";
 import { Loom, Thread, Weaver } from "../core/weaver/index.js";
+import { bus } from "../core/bus/index.js";
 import { taskTable, type TaskRecord } from "../core/tasks/index.js";
 import type { ExecuteParams } from "../core/types.js";
 import { stubBackend, stubResolveActiveModel } from "./helpers/stub-backend.js";
@@ -89,7 +90,6 @@ describe("weaver", () => {
       resolveActiveModel: stubResolveActiveModel(),
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       sendTyping: vi.fn(async () => {}),
-      onActivity: vi.fn(),
     });
 
     const p1 = weaver.runTurn(params({ chatId: "same", prompt: "first" }));
@@ -141,7 +141,6 @@ describe("weaver", () => {
       resolveActiveModel: stubResolveActiveModel(),
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       sendTyping: vi.fn(async () => {}),
-      onActivity: vi.fn(),
     });
 
     const p1 = weaver.runTurn(params({ chatId: "a", prompt: "first" }));
@@ -173,7 +172,6 @@ describe("weaver task registration", () => {
       resolveActiveModel: stubResolveActiveModel(),
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       sendTyping: vi.fn(async () => {}),
-      onActivity: vi.fn(),
     });
   }
 
@@ -228,7 +226,6 @@ describe("weaver task registration", () => {
       }),
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       sendTyping: vi.fn(async () => {}),
-      onActivity: vi.fn(),
     });
 
     await weaver.runTurn(params({ chatId: "task-refused" }));
@@ -278,9 +275,12 @@ describe("weaver task registration", () => {
   });
 });
 
-describe("weaver turn-start hook", () => {
-  it("fires once per executed turn, but not on a no-model refusal", async () => {
-    const onTurnStart = vi.fn();
+describe("weaver turn.started event", () => {
+  it("publishes once per executed turn, but not on a no-model refusal", async () => {
+    const started = vi.fn();
+    const unsubscribe = bus.subscribe("turn.started", (event) => {
+      if (event.chatId === "hooked") started(event);
+    });
     const backend = stubBackend();
     let model: ReturnType<typeof stubResolveActiveModel> | null =
       stubResolveActiveModel();
@@ -290,17 +290,24 @@ describe("weaver turn-start hook", () => {
         model ? model() : { model: null, ref: null, backendId: "claude" },
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       sendTyping: vi.fn(async () => {}),
-      onActivity: vi.fn(),
-      onTurnStart,
     });
 
-    await weaver.runTurn(params({ chatId: "hooked" }));
-    expect(onTurnStart).toHaveBeenCalledTimes(1);
+    try {
+      await weaver.runTurn(params({ chatId: "hooked" }));
+      expect(started).toHaveBeenCalledTimes(1);
+      expect(started.mock.calls[0]![0]).toMatchObject({
+        model: "stub-model",
+        backendId: "claude",
+        source: "message",
+      });
 
-    model = null; // next resolution refuses the turn
-    const refused = await weaver.runTurn(params({ chatId: "hooked" }));
-    expect(refused.text).toContain("No model selected");
-    expect(onTurnStart).toHaveBeenCalledTimes(1);
+      model = null; // next resolution refuses the turn
+      const refused = await weaver.runTurn(params({ chatId: "hooked" }));
+      expect(refused.text).toContain("No model selected");
+      expect(started).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
   });
 });
 
@@ -436,7 +443,6 @@ describe("warp + snapshot", () => {
       resolveActiveModel: stubResolveActiveModel("claude", "stub-model"),
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       sendTyping: vi.fn(async () => {}),
-      onActivity: vi.fn(),
     });
 
     await weaver.runTurn(params({ chatId: "snap", numericChatId: 5 }));
@@ -484,7 +490,6 @@ describe("weaver memory pre-retrieval", () => {
       resolveActiveModel: opts.resolveActiveModel ?? stubResolveActiveModel(),
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       sendTyping: vi.fn(async () => {}),
-      onActivity: vi.fn(),
       retrieveMemory: opts.retrieveMemory,
     });
     return { weaver, query };

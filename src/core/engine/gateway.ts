@@ -27,6 +27,7 @@ import {
   HUB_PATH_PREFIX,
 } from "../mcp-hub/index.js";
 import { handlePluginAction } from "../plugin/index.js";
+import { bus } from "../bus/index.js";
 import { taskTable } from "../tasks/index.js";
 import type { FrontendActionHandler } from "../types.js";
 import { BOT_MESSAGE_ACTIONS, noteBotMessage } from "../soul/taps.js";
@@ -393,6 +394,23 @@ export class Gateway {
           res.end(JSON.stringify({ ok: true }));
           const handler = this.shutdownHandler;
           setImmediate(() => handler("gateway /shutdown"));
+          return;
+        }
+
+        if (req.method === "GET" && req.url?.startsWith("/events/recent")) {
+          // Bus tail — recent events, optionally after a cursor. Read by
+          // `talon events`. Same 127.0.0.1 trust boundary as /action.
+          const url = new URL(req.url, "http://gateway");
+          const since = Number(url.searchParams.get("since") ?? "0");
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: true,
+              events: bus.recent(
+                Number.isInteger(since) && since > 0 ? since : 0,
+              ),
+            }),
+          );
           return;
         }
 

@@ -56,6 +56,7 @@ vi.mock("write-file-atomic", () => ({
 }));
 
 import { Gateway } from "../core/engine/gateway.js";
+import { bus } from "../core/bus/index.js";
 import { taskTable } from "../core/tasks/index.js";
 
 let gateway: Gateway;
@@ -176,6 +177,36 @@ describe("gateway HTTP server", () => {
         body: JSON.stringify({ id: "7" }),
       });
       expect(nonIntegerId.status).toBe(400);
+    });
+  });
+
+  describe("event bus tail", () => {
+    it("GET /events/recent returns the ring, honouring the since cursor", async () => {
+      const published = bus.publish({
+        type: "turn.completed",
+        chatId: "tail-test",
+        source: "message",
+        durationMs: 1,
+        inputTokens: 0,
+        outputTokens: 0,
+      });
+
+      const all = await fetch(`http://127.0.0.1:${port}/events/recent`);
+      expect(all.status).toBe(200);
+      const allBody = (await all.json()) as {
+        ok: boolean;
+        events: Array<{ id: number; type: string }>;
+      };
+      expect(allBody.ok).toBe(true);
+      expect(allBody.events.some((e) => e.id === published.id)).toBe(true);
+
+      const after = await fetch(
+        `http://127.0.0.1:${port}/events/recent?since=${published.id}`,
+      );
+      const afterBody = (await after.json()) as {
+        events: Array<{ id: number }>;
+      };
+      expect(afterBody.events.every((e) => e.id > published.id)).toBe(true);
     });
   });
 
