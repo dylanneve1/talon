@@ -37,9 +37,9 @@ feeds, mesh presence transitions.
 
 ## Tail
 
-The bus keeps a bounded ring (200) of recent events with monotonic ids.
-In-memory only — events describe moments in a live process, so nothing is
-persisted.
+The bus keeps a bounded ring (200) of recent events with monotonic ids —
+the live-tail surface. Live state stays in-memory; history is the
+journal's job (below).
 
 - **HTTP (gateway, 127.0.0.1)** — `GET /events/recent?since=<id>` returns
   `{ ok, events }`, id-ascending; `since` is the follow cursor.
@@ -47,3 +47,28 @@ persisted.
 
 Event payloads are content-free (ids, kinds, labels, counts — never message
 text), same contract as the task table.
+
+## Journal — the durable tail
+
+> Status: **implemented** (`src/storage/journal.ts`). The bus's syslog.
+
+A bootstrap subscriber (`bus.subscribeAll`) appends every published event
+to the `journal` table in talon.db — one JSON document per row, type and
+timestamp lifted into columns, `seq` as the durable cursor (per-process
+bus ids restart with the daemon). Retention is bounded (20k rows, pruned
+opportunistically); appends never throw — a full disk must not break the
+bus or the publisher behind it.
+
+This is what makes history answerable across restarts, with or without a
+daemon:
+
+- `talon events --history [N]` — the last N journal entries, read
+  straight from talon.db.
+- `talon ps --all` — the live task table plus settled runs reconstructed
+  from `task.settled` events (deduped by `(id, queuedAt)`, since
+  per-process task ids repeat between daemon runs).
+
+The division of truth is deliberate: the task table and ring describe a
+live process and stay in-memory; the journal records what *happened* —
+and everything that happens already crosses the bus as a typed,
+content-free event, so one subscriber journals the entire runtime.

@@ -44,9 +44,11 @@ and never interrupts the same chat's currently running turn.
 
 The table is observational: it never schedules, retries, or times out a run.
 Those disciplines stay with the owning module (weaver, heartbeat scheduler,
-dream, job-oneshot). It is also in-memory only — a task is a live run, and a
-daemon restart ends every run, so there is nothing truthful to persist. The
-settled history is a bounded ring (50 entries).
+dream, job-oneshot). The live table is in-memory — a task is a live run, and
+a daemon restart ends every run — with a bounded settled ring (50 entries)
+for the recent past. Durable history lives in the event journal: every
+`task.settled` event is appended to talon.db (see `docs/bus.md`), so
+`talon ps --all` answers across restarts.
 
 ## Token accounting
 

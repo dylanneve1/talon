@@ -105,16 +105,23 @@ export async function runCli(): Promise<void> {
       runDoctor();
       break;
     case "ps":
-      await showTasks();
+      await showTasks(process.argv[3] === "--all" || process.argv[3] === "-a");
       break;
     case "kill":
       await killTask(process.argv[3]);
       break;
-    case "events":
-      await showEvents(
-        process.argv[3] === "-f" || process.argv[3] === "--follow",
-      );
+    case "events": {
+      const args = process.argv.slice(3);
+      const historyAt = args.findIndex((a) => a === "--history");
+      const next = historyAt >= 0 ? Number(args[historyAt + 1]) : NaN;
+      await showEvents({
+        follow: args.includes("-f") || args.includes("--follow"),
+        ...(historyAt >= 0
+          ? { history: Number.isInteger(next) && next > 0 ? next : 100 }
+          : {}),
+      });
       break;
+    }
     case "ls":
       await showLs(process.argv[3]);
       break;
@@ -138,10 +145,12 @@ export async function runCli(): Promise<void> {
       console.log(`    ${pc.cyan("run")}        Run in foreground (attached)`);
       console.log(`    ${pc.cyan("chat")}       Terminal chat mode`);
       console.log(`    ${pc.cyan("status")}     Show bot health`);
-      console.log(`    ${pc.cyan("ps")}         List agent tasks (task table)`);
+      console.log(
+        `    ${pc.cyan("ps")}         List agent tasks (--all includes journal history)`,
+      );
       console.log(`    ${pc.cyan("kill")}       Abort a killable task by id`);
       console.log(
-        `    ${pc.cyan("events")}     Tail the event bus (-f follows)`,
+        `    ${pc.cyan("events")}     Tail the event bus (-f follows, --history [N] reads the journal)`,
       );
       console.log(
         `    ${pc.cyan("ls")}         List the talon:// namespace (ls proc/tasks)`,

@@ -2,12 +2,14 @@
  * `talon ps` / `talon kill` — the task table from the outside.
  *
  * Data comes from the running daemon's gateway (`GET /tasks`,
- * `POST /tasks/kill`); discovery finds the instance the same way
- * `talon status` does. This module only renders — the table itself
- * lives in core/tasks/.
+ * `POST /tasks/kill`); `--all` also folds in settled runs from the
+ * durable journal in talon.db, which answers across restarts — with or
+ * without a daemon. This module only renders — the table lives in
+ * core/tasks/, the journal in storage/journal.ts.
  */
 
 import pc from "picocolors";
+import { findRunningInstance } from "../core/daemon/discovery.js";
 import { fetchGateway, requireGatewayPort } from "./daemon-api.js";
 import type {
   KillOutcome,
@@ -64,7 +66,12 @@ function displayOrder(tasks: TaskRecord[]): TaskRecord[] {
     (t) => t.state !== "running" && t.state !== "queued",
   );
   live.sort((a, b) => a.id - b.id);
-  settled.sort((a, b) => b.id - a.id);
+  // By time, not id: journal history spans daemon restarts, and per-process
+  // ids restart with the daemon.
+  settled.sort(
+    (a, b) =>
+      (b.endedAt ?? b.queuedAt) - (a.endedAt ?? a.queuedAt) || b.id - a.id,
+  );
   return [...live, ...settled];
 }
 
@@ -105,27 +112,85 @@ function renderTable(tasks: TaskRecord[], now: number): void {
   console.log();
 }
 
-export async function showTasks(): Promise<void> {
-  console.log();
-  const port = await requireGatewayPort();
-  if (port === null) return;
+/** Settled runs from the journal, minus any already in the live table. */
+async function journalTasks(
+  liveTasks: readonly TaskRecord[],
+  limit: number,
+): Promise<TaskRecord[]> {
+  const { readJournal } = await import("../storage/journal.js");
+  const seen = new Set(liveTasks.map((t) => `${t.id}:${t.queuedAt}`));
+  const historical: TaskRecord[] = [];
+  for (const entry of readJournal({ type: "task.settled", limit })) {
+    if (entry.event.type !== "task.settled") continue;
+    const task = entry.event.task;
+    // (id, queuedAt) identifies a run across surfaces — per-process ids
+    // repeat between daemon runs, enqueue times don't.
+    if (seen.has(`${task.id}:${task.queuedAt}`)) continue;
+    seen.add(`${task.id}:${task.queuedAt}`);
+    historical.push(task);
+  }
+  return historical;
+}
 
-  let tasks: TaskRecord[];
-  try {
-    const body = (await fetchGateway(port, "/tasks")) as {
-      tasks?: TaskRecord[];
-    };
-    tasks = body.tasks ?? [];
-  } catch (err) {
-    console.log(
-      `  ${pc.red("✖")} Could not read the task table: ${err instanceof Error ? err.message : err}\n`,
-    );
-    return;
+export async function showTasks(all = false): Promise<void> {
+  console.log();
+
+  let tasks: TaskRecord[] = [];
+  let daemonUp = true;
+  if (all) {
+    // History works without a daemon — fold in the live table only when
+    // one is actually running.
+    const instance = await findRunningInstance();
+    if (instance?.port) {
+      try {
+        const body = (await fetchGateway(instance.port, "/tasks")) as {
+          tasks?: TaskRecord[];
+        };
+        tasks = body.tasks ?? [];
+      } catch {
+        daemonUp = false;
+      }
+    } else {
+      daemonUp = false;
+    }
+  } else {
+    const port = await requireGatewayPort();
+    if (port === null) return;
+    try {
+      const body = (await fetchGateway(port, "/tasks")) as {
+        tasks?: TaskRecord[];
+      };
+      tasks = body.tasks ?? [];
+    } catch (err) {
+      console.log(
+        `  ${pc.red("✖")} Could not read the task table: ${err instanceof Error ? err.message : err}\n`,
+      );
+      return;
+    }
+  }
+
+  if (all) {
+    if (!daemonUp) {
+      console.log(
+        `  ${pc.dim("Talon is not running — journal history only.")}`,
+      );
+    }
+    try {
+      tasks = [...tasks, ...(await journalTasks(tasks, 200))];
+    } catch (err) {
+      console.log(
+        `  ${pc.red("✖")} Could not read the journal: ${err instanceof Error ? err.message : err}\n`,
+      );
+      process.exitCode = 1;
+      return;
+    }
   }
 
   if (tasks.length === 0) {
     console.log(
-      `  ${pc.dim("No tasks — the table starts empty on each daemon start.")}\n`,
+      all
+        ? `  ${pc.dim("No tasks — nothing live and the journal is empty.")}\n`
+        : `  ${pc.dim("No tasks — the table starts empty on each daemon start. Older runs: talon ps --all")}\n`,
     );
     return;
   }

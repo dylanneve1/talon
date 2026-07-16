@@ -25,6 +25,7 @@ export type LogComponent =
   | "bridge"
   | "bus"
   | "db"
+  | "journal"
   | "kv"
   | "media"
   | "agent"
