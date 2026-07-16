@@ -117,19 +117,19 @@ class _ConnectScreenState extends State<ConnectScreen> {
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.firstRun ? 'Welcome to Talon' : 'Connection',
-                          style: const TextStyle(
-                              fontSize: 20, fontWeight: FontWeight.w700),
-                        ),
-                        Text(
-                          'Connect your companion',
-                          style: TextStyle(
-                              color: TalonColors.textFaint, fontSize: 12.5),
-                        ),
-                      ],
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.firstRun ? 'Welcome to Talon' : 'Connection',
+                            style: const TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.w700),
+                          ),
+                          Text(
+                            'Connect your companion',
+                            style: TextStyle(
+                                color: TalonColors.textFaint, fontSize: 12.5),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -156,8 +156,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
                         const SizedBox(height: 14),
                         Text(
                           widget.state.connError!,
-                          style: TextStyle(
-                              color: TalonColors.bad, fontSize: 12.5),
+                          style:
+                              TextStyle(color: TalonColors.bad, fontSize: 12.5),
                         ),
                       ],
                     ],
@@ -319,7 +319,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
           keyboardType: number ? TextInputType.number : null,
           inputFormatters:
               number ? [FilteringTextInputFormatter.digitsOnly] : null,
-          style: TextStyle(fontSize: 14, fontFamily: mono ? 'JetBrains Mono' : null),
+          style: TextStyle(
+              fontSize: 14, fontFamily: mono ? 'JetBrains Mono' : null),
           decoration: InputDecoration(
             hintText: hint,
             filled: true,

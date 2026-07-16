@@ -161,7 +161,9 @@ class _LogsScreenState extends State<LogsScreen> {
                   if (_follow) _load(quiet: true);
                 },
                 icon: Icon(
-                  _follow ? Icons.pause_circle_outline : Icons.play_circle_outline,
+                  _follow
+                      ? Icons.pause_circle_outline
+                      : Icons.play_circle_outline,
                   color: _follow ? TalonColors.accent : null,
                 ),
               ),

@@ -150,7 +150,8 @@ class _SidebarState extends State<Sidebar> {
     }).toList();
 
     final searchingMessages = _query.trim().length >= 2;
-    if (chats.isEmpty && !(searchingMessages && (_searching || _hits.isNotEmpty))) {
+    if (chats.isEmpty &&
+        !(searchingMessages && (_searching || _hits.isNotEmpty))) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(TalonSpace.lg),
@@ -201,8 +202,7 @@ class _SidebarState extends State<Sidebar> {
                 // exist on a phone.
                 onLongPress: () =>
                     showChatActionsSheet(context, widget.state, chat),
-                onDelete: () =>
-                    confirmDeleteChat(context, widget.state, chat),
+                onDelete: () => confirmDeleteChat(context, widget.state, chat),
               );
               // Mobile: swipe a tile left to delete (with the usual confirm).
               // confirmDismiss always resolves false — deletion happens via
@@ -318,7 +318,6 @@ class _SidebarState extends State<Sidebar> {
         if (entry.value.isNotEmpty) _Group(entry.key, entry.value),
     ];
   }
-
 }
 
 class _Group {
@@ -385,8 +384,18 @@ String _relTime(DateTime t) {
   if (diff.inHours < 24) return '${diff.inHours}h';
   if (diff.inDays < 7) return '${diff.inDays}d';
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${t.day} ${months[t.month - 1]}';
 }
@@ -581,8 +590,8 @@ class _NewChatButtonState extends State<_NewChatButton> {
             ),
             boxShadow: [
               BoxShadow(
-                color: TalonColors.accent
-                    .withValues(alpha: _hover ? 0.45 : 0.28),
+                color:
+                    TalonColors.accent.withValues(alpha: _hover ? 0.45 : 0.28),
                 blurRadius: _hover ? 22 : 14,
                 offset: const Offset(0, 4),
               ),
@@ -621,8 +630,8 @@ class _HitTile extends StatelessWidget {
       onTap: onTap,
       borderRadius: TalonRadius.rSm,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-            horizontal: TalonSpace.sm, vertical: 7),
+        padding:
+            const EdgeInsets.symmetric(horizontal: TalonSpace.sm, vertical: 7),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

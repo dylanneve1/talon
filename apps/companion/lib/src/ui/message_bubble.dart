@@ -35,12 +35,22 @@ class MessageBubble extends StatelessWidget {
   /// Fully-resolved URL for an attached image (base URL + token), or null.
   final String? imageUrl;
 
+  /// False when this row is grouped under a previous assistant row from the
+  /// same run — the avatar + name header is skipped.
+  final bool showHeader;
+
+  /// False when a following user message in the same run carries the
+  /// timestamp — this row's external clock is skipped.
+  final bool showTime;
+
   const MessageBubble({
     super.key,
     required this.message,
     required this.botName,
     this.animateIn = false,
     this.imageUrl,
+    this.showHeader = true,
+    this.showTime = true,
   });
 
   @override
@@ -89,7 +99,9 @@ class MessageBubble extends StatelessWidget {
       );
 
   Widget _userRow() => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 9),
+        // Grouped bubbles (clock deferred to the run's last message) sit
+        // closer together so the run reads as one thought.
+        padding: EdgeInsets.only(top: 9, bottom: showTime ? 9 : 2),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -192,19 +204,22 @@ class MessageBubble extends StatelessWidget {
                         ),
                       ),
                     ),
-                    // Timestamp on the canvas under the bubble, not inside it —
-                    // same anatomy as the assistant row's external metadata.
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4, right: 4),
-                      child: Text(
-                        _clock(message.time),
-                        key: const Key('user-message-time'),
-                        style: TalonType.caption.copyWith(
-                          fontSize: 10.5,
-                          fontFeatures: const [FontFeature.tabularFigures()],
+                    // Timestamp on the canvas under the bubble, not inside
+                    // it — same anatomy as the assistant row's external
+                    // metadata. Skipped mid-run: the last bubble of a
+                    // consecutive group carries the clock for the whole run.
+                    if (showTime)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, right: 4),
+                        child: Text(
+                          _clock(message.time),
+                          key: const Key('user-message-time'),
+                          style: TalonType.caption.copyWith(
+                            fontSize: 10.5,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -219,6 +234,7 @@ class MessageBubble extends StatelessWidget {
   Widget _assistantRow() => AssistantSurface(
         botName: botName,
         surfaceKey: const Key('assistant-message-card'),
+        showHeader: showHeader,
         trailing: Text(
           _clock(message.time),
           style: TalonType.caption.copyWith(

@@ -105,6 +105,14 @@ class _ChatViewState extends State<ChatView> {
     );
   }
 
+  /// Whether [a] (earlier) and [b] (later) belong to the same visual run:
+  /// same author, close together in time.
+  static bool _grouped(ClientMessage? a, ClientMessage? b) {
+    if (a == null || b == null) return false;
+    return a.role == b.role &&
+        b.time.difference(a.time).abs() < const Duration(minutes: 3);
+  }
+
   /// A row animates in only the first time we see it AND when it's genuinely
   /// fresh (sent/received seconds ago) — so opening a chat's history doesn't
   /// trigger a cascade of animations.
@@ -272,10 +280,25 @@ class _ChatViewState extends State<ChatView> {
                   final row = rows[mi];
                   if (row is DateTime) return _DayDivider(day: row);
                   final m = row as ClientMessage;
+                  // Group consecutive same-role messages (day dividers break
+                  // runs naturally — the neighbor is a DateTime, not a
+                  // message): grouped assistant rows drop the repeated
+                  // avatar/name header, grouped user rows defer the clock to
+                  // the run's last bubble.
+                  final prev = mi > 0 && rows[mi - 1] is ClientMessage
+                      ? rows[mi - 1] as ClientMessage
+                      : null;
+                  final next =
+                      mi + 1 < rows.length && rows[mi + 1] is ClientMessage
+                          ? rows[mi + 1] as ClientMessage
+                          : null;
                   return MessageBubble(
                     message: m,
                     botName: widget.state.status.botName,
                     animateIn: _shouldAnimate(m),
+                    showHeader:
+                        !(m.role == Role.assistant && _grouped(prev, m)),
+                    showTime: !(m.role == Role.user && _grouped(m, next)),
                     // activeConfig, not config: in local auto-discover mode the
                     // saved config lacks the bridge's real port/token, and media
                     // fetched through it 404s or gets rejected.
@@ -346,35 +369,31 @@ class _DayDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A single quiet centered pill — no rule lines flanking it. The hairline
+    // dashes read as clutter against the open canvas (and doubly so now the
+    // conversation is full-bleed).
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: TalonSpace.md),
-      child: Row(
-        children: [
-          Expanded(child: Divider(color: TalonColors.glassStroke)),
-          const SizedBox(width: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: TalonSpace.md,
-              vertical: TalonSpace.xs,
-            ),
-            decoration: BoxDecoration(
-              color: TalonColors.glassFill,
-              borderRadius: TalonRadius.rPill,
-              border: Border.all(color: TalonColors.glassStroke),
-            ),
-            child: Text(
-              _label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.3,
-                color: TalonColors.textDim,
-              ),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: TalonSpace.md,
+            vertical: TalonSpace.xs,
+          ),
+          decoration: BoxDecoration(
+            color: TalonColors.glassFill,
+            borderRadius: TalonRadius.rPill,
+          ),
+          child: Text(
+            _label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
+              color: TalonColors.textDim,
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(child: Divider(color: TalonColors.glassStroke)),
-        ],
+        ),
       ),
     );
   }

@@ -250,7 +250,12 @@ void main() {
       addTearDown(client.dispose);
 
       expect(
-        () => client.uploadFile('bogus', Stream.fromIterable([<int>[1]]), 1),
+        () => client.uploadFile(
+            'bogus',
+            Stream.fromIterable([
+              <int>[1]
+            ]),
+            1),
         throwsA(isA<BridgeException>().having(
           (e) => e.message,
           'message',

@@ -109,8 +109,8 @@ class _QuickSwitcherState extends State<_QuickSwitcher> {
     }
     final entries = _entries();
     if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      setState(() =>
-          _highlighted = entries.isEmpty ? 0 : (_highlighted + 1) % entries.length);
+      setState(() => _highlighted =
+          entries.isEmpty ? 0 : (_highlighted + 1) % entries.length);
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
@@ -186,8 +186,7 @@ class _QuickSwitcherState extends State<_QuickSwitcher> {
                           _controller.text.trim().length >= 2 && !_searching
                               ? 'No matches.'
                               : 'Type to search chats and messages.',
-                          style:
-                              TextStyle(color: TalonColors.textFaint),
+                          style: TextStyle(color: TalonColors.textFaint),
                         ),
                       )
                     : ListView.builder(

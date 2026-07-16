@@ -135,7 +135,8 @@ class AmbientGlow extends StatelessWidget {
             bottom: -160,
             left: -200,
             child: _drift(
-              _blob(TalonColors.accentDeep.withValues(alpha: 0.09 * boost), 420),
+              _blob(
+                  TalonColors.accentDeep.withValues(alpha: 0.09 * boost), 420),
               reduceMotion,
               const Offset(28, -16),
               27000,

@@ -99,9 +99,8 @@ class _CodeBlockState extends State<CodeBlock> {
                         Icon(
                           _copied ? Icons.check : Icons.copy_rounded,
                           size: 13,
-                          color: _copied
-                              ? TalonColors.ok
-                              : TalonColors.textFaint,
+                          color:
+                              _copied ? TalonColors.ok : TalonColors.textFaint,
                         ),
                         const SizedBox(width: 5),
                         Text(

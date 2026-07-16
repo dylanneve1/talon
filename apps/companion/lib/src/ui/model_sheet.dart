@@ -358,8 +358,8 @@ class _ModelRow extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     model.provider,
-                    style: TextStyle(
-                        fontSize: 11.5, color: TalonColors.textFaint),
+                    style:
+                        TextStyle(fontSize: 11.5, color: TalonColors.textFaint),
                   ),
                 ],
               ),
@@ -371,8 +371,7 @@ class _ModelRow extends StatelessWidget {
                     size: 16, color: TalonColors.textFaint),
               ),
             if (selected)
-              Icon(Icons.check_circle,
-                  color: TalonColors.accent, size: 18),
+              Icon(Icons.check_circle, color: TalonColors.accent, size: 18),
           ],
         ),
       ),

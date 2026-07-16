@@ -156,6 +156,36 @@ void main() {
     );
   });
 
+  testWidgets('grouped rows drop the repeated header / defer the clock',
+      (tester) async {
+    ClientMessage msg(String id, Role role, String text) => ClientMessage(
+          id: id,
+          chatId: 'c1',
+          role: role,
+          text: text,
+          ts: DateTime(2026, 7, 16, 9, 30).millisecondsSinceEpoch,
+        );
+    await tester.pumpWidget(_host(Column(children: [
+      // Assistant run: second row is grouped → header suppressed.
+      MessageBubble(
+          message: msg('a1', Role.assistant, 'First'), botName: 'Talon'),
+      MessageBubble(
+          message: msg('a2', Role.assistant, 'Second'),
+          botName: 'Talon',
+          showHeader: false),
+      // User run: first row grouped-with-next → clock deferred to the last.
+      MessageBubble(
+          message: msg('u1', Role.user, 'One'),
+          botName: 'Talon',
+          showTime: false),
+      MessageBubble(message: msg('u2', Role.user, 'Two'), botName: 'Talon'),
+    ])));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Talon'), findsOneWidget);
+    expect(find.byKey(const Key('user-message-time')), findsOneWidget);
+  });
+
   testWidgets('EntranceFx plays through even when enabled flips to false',
       (tester) async {
     // Reproduces the streaming-rebuild bug: a parent rebuild flips the "fresh"

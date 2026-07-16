@@ -10,7 +10,8 @@ import 'package:talon_companion/src/ui/chat_view.dart';
 /// ChatView rendering contracts: day dividers appear where the calendar day
 /// changes (and only there), giving scrollback temporal landmarks.
 void main() {
-  Future<AppState> seededState(Map<String, List<ClientMessage>> messages) async {
+  Future<AppState> seededState(
+      Map<String, List<ClientMessage>> messages) async {
     SharedPreferences.setMockInitialValues({'onboarded.v1': true});
     final prefs = await Prefs.load();
     final state = AppState(prefs, narrowLayout: false);
@@ -56,9 +57,12 @@ void main() {
     final now = DateTime.now();
     final state = await seededState({
       'c1': [
-        msg('1', Role.user, 'old message', now.subtract(const Duration(days: 3))),
-        msg('2', Role.assistant, 'old reply', now.subtract(const Duration(days: 3))),
-        msg('3', Role.user, 'yesterday message', now.subtract(const Duration(days: 1))),
+        msg('1', Role.user, 'old message',
+            now.subtract(const Duration(days: 3))),
+        msg('2', Role.assistant, 'old reply',
+            now.subtract(const Duration(days: 3))),
+        msg('3', Role.user, 'yesterday message',
+            now.subtract(const Duration(days: 1))),
         msg('4', Role.user, 'today message', now),
       ],
     });

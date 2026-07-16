@@ -346,14 +346,14 @@ void main() {
         isTrue,
       );
       expect(
-        execCmds.any((c) =>
-            c.startsWith('sha256sum') && c.contains('/data/local/tmp/')),
+        execCmds.any(
+            (c) => c.startsWith('sha256sum') && c.contains('/data/local/tmp/')),
         isTrue,
       );
       // The install is detached (setsid + background) so the ack flushes and
       // the install survives the app being replaced.
-      final install =
-          execCmds.firstWhere((c) => c.contains('pm install'), orElse: () => '');
+      final install = execCmds.firstWhere((c) => c.contains('pm install'),
+          orElse: () => '');
       expect(install, contains('setsid'));
       expect(install, contains('pm install -r -d'));
       expect(install, contains('/data/local/tmp/talon-companion-update.apk'));
@@ -361,8 +361,7 @@ void main() {
       expect(install, contains('rm -f'));
     });
 
-    test('skips the copy when the APK is already in /data/local/tmp',
-        () async {
+    test('skips the copy when the APK is already in /data/local/tmp', () async {
       const channel = MethodChannel('talon/shizuku-install-tmp');
       final execCmds = <String>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -389,8 +388,8 @@ void main() {
       expect(r.ok, isTrue);
       expect(r.data!['stagedPath'], '/data/local/tmp/talon.apk');
       expect(execCmds.any((c) => c.startsWith('cp -f')), isFalse);
-      final install =
-          execCmds.firstWhere((c) => c.contains('pm install'), orElse: () => '');
+      final install = execCmds.firstWhere((c) => c.contains('pm install'),
+          orElse: () => '');
       expect(install, contains('/data/local/tmp/talon.apk'));
       // …but a pre-existing original is never deleted (retry without re-push).
       expect(install.contains('rm -f'), isFalse);

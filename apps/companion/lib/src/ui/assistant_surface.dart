@@ -32,6 +32,11 @@ class AssistantSurface extends StatelessWidget {
   /// Applied to the bubble container so tests/screenshots can find it.
   final Key? surfaceKey;
 
+  /// False for a turn grouped under the previous assistant row: the avatar +
+  /// name header is skipped (the run's first row already carries it) and the
+  /// content stays aligned by an avatar-width gutter.
+  final bool showHeader;
+
   const AssistantSurface({
     super.key,
     required this.botName,
@@ -40,46 +45,52 @@ class AssistantSurface extends StatelessWidget {
     this.bubble,
     this.belowBubble,
     this.surfaceKey,
+    this.showHeader = true,
   });
 
   @override
   Widget build(BuildContext context) {
     final dark = TalonTheme.isDark;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: EdgeInsets.only(top: showHeader ? 10 : 2, bottom: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 1),
-            child: BrandMark(size: 26),
-          ),
+          if (showHeader)
+            const Padding(
+              padding: EdgeInsets.only(top: 1),
+              child: BrandMark(size: 26),
+            )
+          else
+            const SizedBox(width: 26),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Identity header on the canvas, not in the bubble.
-                Padding(
-                  padding: const EdgeInsets.only(top: 3),
-                  child: Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          botName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TalonType.subtitle,
+                if (showHeader) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            botName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TalonType.subtitle,
+                          ),
                         ),
-                      ),
-                      if (trailing != null) ...[
-                        const SizedBox(width: TalonSpace.sm),
-                        trailing!,
+                        if (trailing != null) ...[
+                          const SizedBox(width: TalonSpace.sm),
+                          trailing!,
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 7),
+                  const SizedBox(height: 7),
+                ],
                 // Tool calls / reasoning live on the canvas above the reply.
                 if (aboveBubble != null) ...[
                   aboveBubble!,

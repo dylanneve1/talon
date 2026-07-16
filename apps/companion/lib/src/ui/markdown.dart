@@ -11,8 +11,7 @@ MarkdownStyleSheet talonMarkdownStyle() {
     p: TextStyle(color: TalonColors.text, fontSize: 14.5, height: 1.6),
     a: TextStyle(
         color: TalonColors.accent2, decoration: TextDecoration.underline),
-    strong:
-        TextStyle(color: TalonColors.text, fontWeight: FontWeight.w700),
+    strong: TextStyle(color: TalonColors.text, fontWeight: FontWeight.w700),
     em: TextStyle(color: TalonColors.text, fontStyle: FontStyle.italic),
     listBullet: TextStyle(color: TalonColors.textDim, fontSize: 14.5),
     h1: TextStyle(
