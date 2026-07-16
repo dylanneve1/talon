@@ -34,6 +34,7 @@ const pluginPathSchema = z
   .object({
     path: z.string(),
     config: z.record(z.string(), z.unknown()).optional(),
+    enabled: z.boolean().optional(),
   })
   .strict();
 
@@ -44,6 +45,7 @@ const pluginMcpSchema = z
     command: z.string(),
     args: z.array(z.string()).optional(),
     env: z.record(z.string(), z.string()).optional(),
+    enabled: z.boolean().optional(),
   })
   .strict();
 

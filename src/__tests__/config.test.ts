@@ -273,6 +273,24 @@ describe("config", () => {
       ]);
     });
 
+    it("parses the enabled flag on both plugin entry formats", async () => {
+      // Regression: `talon plugin disable` writes `enabled: false`; the
+      // strict piped schemas must accept the key or the daemon refuses to
+      // boot on a config the CLI itself wrote.
+      mockFs({
+        frontend: "terminal",
+        plugins: [
+          { path: "./plugins/my-plugin", enabled: false },
+          { name: "polymarket", command: "node", enabled: false },
+        ],
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.plugins).toHaveLength(2);
+      expect(config.plugins.map((p) => p.enabled)).toEqual([false, false]);
+    });
+
     it("rejects plugin entries that mix path and standalone MCP fields", async () => {
       mockFs({
         frontend: "terminal",
