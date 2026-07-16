@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -493,6 +494,18 @@ ThemeData buildTalonTheme() {
           ),
         ),
     splashFactory: InkSparkle.splashFactory,
+    // Predictive back on Android: route pops (conversation → chat list,
+    // Settings → home) track the back gesture and peel away with the system
+    // animation. Other platforms keep their native transition feel.
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.linux: ZoomPageTransitionsBuilder(),
+        TargetPlatform.windows: ZoomPageTransitionsBuilder(),
+      },
+    ),
     // Pushed routes (Settings, Connect) use transparent AppBars over the
     // backdrop gradient. M3's defaults tint them on scroll and let the bar
     // impose its own system-chrome style — pin both so the bars stay part of

@@ -2,17 +2,93 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../state/app_state.dart';
+import '../theme.dart';
 import 'chat_view.dart';
+import 'glass.dart';
 import 'quick_switcher.dart';
 import 'sidebar.dart';
 
-/// The main two-pane layout. Side-by-side on desktop/tablet; on a phone it
-/// collapses to one pane (chat list ⇄ conversation) driven by selection.
-class AppShell extends StatelessWidget {
+/// The main two-pane layout. Side-by-side on desktop/tablet; on a phone the
+/// chat list is the base screen and the conversation is a real pushed route —
+/// which is what makes Android's predictive back gesture animate properly
+/// (an in-place pane swap guarded by PopScope can't be peeled away by the
+/// system; a route can).
+class AppShell extends StatefulWidget {
   final AppState state;
   const AppShell({super.key, required this.state});
 
   static const double _wideBreakpoint = 820;
+
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
+  /// Last layout mode reported by the LayoutBuilder.
+  bool _narrow = false;
+
+  /// The pushed conversation route while one is open on the narrow layout.
+  Route<void>? _convRoute;
+
+  /// A sync is already scheduled for the end of this frame.
+  bool _syncScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.state.addListener(_scheduleSync);
+  }
+
+  @override
+  void dispose() {
+    widget.state.removeListener(_scheduleSync);
+    super.dispose();
+  }
+
+  /// Selection/layout changes can arrive mid-build — reconcile the navigator
+  /// after the frame settles. Idempotent, so over-scheduling is harmless.
+  void _scheduleSync() {
+    if (_syncScheduled) return;
+    _syncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncScheduled = false;
+      _syncConversationRoute();
+    });
+  }
+
+  /// Keep the navigator in step with the app state: a selected chat on the
+  /// narrow layout means a conversation route is open; no selection (or the
+  /// wide layout, where the pane shows it) means it isn't.
+  void _syncConversationRoute() {
+    if (!mounted) return;
+    final wantOpen = _narrow && widget.state.selectedChatId != null;
+    final route = _convRoute;
+    if (wantOpen && route == null) {
+      final newRoute = MaterialPageRoute<void>(
+        builder: (_) => _ConversationScreen(state: widget.state),
+      );
+      _convRoute = newRoute;
+      Navigator.of(context).push(newRoute).whenComplete(() {
+        _convRoute = null;
+        // Popped by the user (system back, predictive gesture, or the header
+        // back button): return the list to no-selection. Guarded so a
+        // programmatic pop after clearSelection doesn't double-clear.
+        if (_narrow && widget.state.selectedChatId != null) {
+          widget.state.clearSelection();
+        }
+      });
+    } else if (!wantOpen && route != null) {
+      // Selection vanished (chat deleted, layout went wide): close the
+      // conversation. pop() when it's on top for the animation; remove it
+      // in place if something (e.g. Settings) is stacked above.
+      final nav = Navigator.of(context);
+      if (route.isCurrent) {
+        nav.pop();
+      } else if (route.isActive) {
+        nav.removeRoute(route);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,25 +103,31 @@ class AppShell extends StatelessWidget {
       backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: true,
       // Global keyboard shortcuts: Cmd/Ctrl+K quick switcher, Cmd/Ctrl+N new
-      // chat, Esc back to the list on the narrow layout. CallbackShortcuts
-      // sees keys bubbling from any focused descendant (composer included).
+      // chat. CallbackShortcuts sees keys bubbling from any focused
+      // descendant (composer included).
       body: CallbackShortcuts(
         bindings: {
           const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
-              openQuickSwitcher(context, state),
+              openQuickSwitcher(context, widget.state),
           const SingleActivator(LogicalKeyboardKey.keyK, control: true): () =>
-              openQuickSwitcher(context, state),
+              openQuickSwitcher(context, widget.state),
           const SingleActivator(LogicalKeyboardKey.keyN, meta: true):
-              state.newChat,
+              widget.state.newChat,
           const SingleActivator(LogicalKeyboardKey.keyN, control: true):
-              state.newChat,
+              widget.state.newChat,
         },
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final wide = constraints.maxWidth >= _wideBreakpoint;
+            final wide = constraints.maxWidth >= AppShell._wideBreakpoint;
             // Let selection logic know which layout it's driving: narrow
             // treats the chat list as its own screen (no auto-selection).
-            state.setNarrowLayout(!wide);
+            widget.state.setNarrowLayout(!wide);
+            if (_narrow != !wide) {
+              _narrow = !wide;
+              // Crossing the breakpoint may need a route pushed or popped
+              // (e.g. resizing a desktop window with a chat selected).
+              _scheduleSync();
+            }
             if (wide) {
               // Desktop/tablet keeps the inset two-pane card look, safely
               // inside the system insets.
@@ -56,86 +138,66 @@ class AppShell extends StatelessWidget {
                     children: [
                       SizedBox(
                         width: 308,
-                        child: Sidebar(state: state, onSelect: null),
+                        child: Sidebar(state: widget.state, onSelect: null),
                       ),
                       const SizedBox(width: 10),
-                      Expanded(child: ChatView(state: state, showBack: false)),
+                      Expanded(
+                        child: ChatView(state: widget.state, showBack: false),
+                      ),
                     ],
                   ),
                 ),
               );
             }
 
-            // Narrow: list until a chat is chosen, then the conversation.
-            return ListenableBuilder(
-              listenable: state,
-              builder: (context, _) {
-                final showChat = state.selectedChatId != null;
-                // System back (button or predictive gesture) while a
-                // conversation is open returns to the chat list — it must
-                // never fall through and quit the app. From the list, back
-                // pops for real and the app backgrounds as expected.
-                return PopScope(
-                  canPop: !showChat,
-                  onPopInvokedWithResult: (didPop, _) {
-                    if (!didPop) state.clearSelection();
-                  },
-                  child: CallbackShortcuts(
-                    bindings: {
-                      const SingleActivator(LogicalKeyboardKey.escape): () {
-                        if (state.selectedChatId != null) {
-                          state.clearSelection();
-                        }
-                      },
-                    },
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 240),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeIn,
-                      // Shared-axis feel: the conversation slides in from the
-                      // right, the list from the left, so navigation reads as
-                      // moving through space instead of a flat cross-fade.
-                      transitionBuilder: (child, anim) {
-                        final fromRight = child.key == const ValueKey('chat');
-                        return FadeTransition(
-                          opacity: anim,
-                          child: SlideTransition(
-                            position: Tween(
-                              begin: Offset(fromRight ? 0.10 : -0.10, 0),
-                              end: Offset.zero,
-                            ).animate(anim),
-                            child: child,
-                          ),
-                        );
-                      },
-                      child: showChat
-                          // The phone conversation is full-bleed: no inset
-                          // padding or rounded card — the header extends into
-                          // the status bar and the backdrop runs edge to edge
-                          // (ChatView handles the system insets itself).
-                          ? ChatView(
-                              key: const ValueKey('chat'),
-                              state: state,
-                              showBack: true,
-                              onBack: state.clearSelection,
-                              fullBleed: true,
-                            )
-                          : SafeArea(
-                              key: const ValueKey('list'),
-                              child: Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Sidebar(
-                                  state: state,
-                                  onSelect: (id) => state.selectChat(id),
-                                ),
-                              ),
-                            ),
-                    ),
-                  ),
-                );
-              },
+            // Narrow: the chat list is the base screen. Selecting a chat
+            // pushes the conversation route (see _syncConversationRoute).
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Sidebar(
+                  state: widget.state,
+                  onSelect: (id) => widget.state.selectChat(id),
+                ),
+              ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// The phone conversation as its own route: full-bleed ChatView over the app
+/// backdrop (a pushed route covers RootView's, so it paints its own), with
+/// its own Scaffold for keyboard insets. Being a real route is what lets the
+/// predictive back gesture peel it away to reveal the chat list.
+class _ConversationScreen extends StatelessWidget {
+  final AppState state;
+  const _ConversationScreen({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    // Subscribe to palette changes like the Settings route — pushed routes
+    // sit outside the root's theme rebuild chain.
+    return ValueListenableBuilder<int>(
+      valueListenable: TalonTheme.revision,
+      builder: (context, _, __) => TalonBackdrop(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          resizeToAvoidBottomInset: true,
+          body: CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.escape): () =>
+                  Navigator.of(context).maybePop(),
+            },
+            child: ChatView(
+              state: state,
+              showBack: true,
+              onBack: () => Navigator.of(context).maybePop(),
+              fullBleed: true,
+            ),
+          ),
         ),
       ),
     );
