@@ -33,6 +33,8 @@ import { daemonStart, daemonStop, daemonRestart } from "./daemon.js";
 import { showTasks, killTask } from "./tasks.js";
 import { showEvents } from "./events.js";
 import { showLs, showCat } from "./fs.js";
+import { runPluginCommand } from "./plugin.js";
+import { runSkillCommand } from "./skill.js";
 import { mainMenu } from "./menu.js";
 
 export * from "./context.js";
@@ -63,6 +65,8 @@ const CLI_COMMANDS = [
   "events",
   "ls",
   "cat",
+  "plugin",
+  "skill",
 ];
 
 /** Route a `talon <command>` invocation. Called by the entry point. */
@@ -128,6 +132,12 @@ export async function runCli(): Promise<void> {
     case "cat":
       await showCat(process.argv[3]);
       break;
+    case "plugin":
+      await runPluginCommand(process.argv.slice(3));
+      break;
+    case "skill":
+      await runSkillCommand(process.argv.slice(3));
+      break;
     case "--version":
     case "-v": {
       console.log(pkg.version);
@@ -157,6 +167,12 @@ export async function runCli(): Promise<void> {
       );
       console.log(
         `    ${pc.cyan("cat")}        Read a talon:// file (cat proc/events)`,
+      );
+      console.log(
+        `    ${pc.cyan("plugin")}     Manage plugins (install/enable/disable)`,
+      );
+      console.log(
+        `    ${pc.cyan("skill")}      Manage skills (install/enable/disable)`,
       );
       console.log(`    ${pc.cyan("config")}     View/edit configuration`);
       console.log(`    ${pc.cyan("logs")}       Tail log file`);

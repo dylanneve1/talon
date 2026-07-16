@@ -55,6 +55,11 @@ const pluginEntrySchema = z
     command: z.string().optional(),
     args: z.array(z.string()).optional(),
     env: z.record(z.string(), z.string()).optional(),
+    /**
+     * `false` keeps the entry in config but skips loading it — the state
+     * behind `talon plugin enable/disable`. Valid on both entry formats.
+     */
+    enabled: z.boolean().optional(),
   })
   .strict()
   .superRefine((value, ctx) => {

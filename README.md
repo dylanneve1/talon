@@ -17,10 +17,10 @@ Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsof
 | **Multi-frontend**    | Telegram (Grammy + GramJS userbot), Discord (discord.js), Microsoft Teams (Bot Framework), Terminal with live tool visibility, and a **Desktop/Mobile app** (Flutter) over a local/remote bridge |
 | **Pluggable backend** | Claude Agent SDK, Kilo, OpenCode, Codex, OpenAI Agents — selectable per-process via `backend` config. Streaming, model fallback, context-overflow recovery. |
 | **MCP tools**         | Messaging, media, history, search, web fetch, cron jobs, triggers, goals, stickers, file system, admin controls                              |
-| **Plugins**           | Hot-reloadable plugin system. Built-in: GitHub, MemPalace, Playwright, Brave Search                                                          |
+| **Plugins**           | Hot-reloadable plugin system with `talon plugin install/enable/disable` (npm, git, or local sources). Built-in: GitHub, MemPalace, Playwright, Brave Search |
 | **Background agents** | Heartbeat (hourly by default — advances goals, proactively messages when something matters) and Dream (memory consolidation + diary)         |
 | **Goals**             | Persistent multi-day objectives the agent commits to in chat; every heartbeat run re-reads them, makes progress, and records what it did     |
-| **Skills**            | Agent-authored reusable scripts (bash/python/node) — procedures worked out once get saved and replayed locally at zero token cost            |
+| **Skills**            | SKILL.md workflow bundles the agent authors and reuses, with `talon skill install/enable/disable` (local folders, git, or `owner/repo` — the Anthropic skills ecosystem installs directly) |
 | **Triggers**          | Self-authored watcher scripts (bash/python/node) that wake the bot when conditions are met                                                   |
 | **Task table**        | Every unit of agent work — chat turns, heartbeat, dream, isolated cron/trigger jobs — registered live; `talon ps` / `talon kill`             |
 | **Event bus**         | Typed internal pub-sub spine (task + turn lifecycle events); subsystems subscribe instead of importing each other; `talon events -f`         |
@@ -168,6 +168,32 @@ The `desktop` frontend turns the daemon into a **client bridge** — a versioned
 The app provides multi-chat history, live streaming with reasoning + tool-call visibility, per-chat model/effort/pulse/reset, and **settings sync** — read and change the daemon's own config (default model, display name, timezone, pulse/heartbeat/dream) and restart it. See [apps/companion/README.md](apps/companion/README.md).
 
 ---
+
+## Managing plugins & skills
+
+Both stores are managed from the CLI; changes hot-reload into a running
+daemon (plugins) or apply on the next session (skills):
+
+```bash
+# Plugins — npm specs, git repos, or local paths
+talon plugin install @scope/my-talon-plugin        # npm → module plugin
+talon plugin install some-mcp-server --mcp         # npm → standalone MCP server (npx)
+talon plugin install owner/repo                    # git → module plugin
+talon plugin list                                  # built-ins + configured entries
+talon plugin disable github                        # also toggles built-ins
+talon plugin remove my-talon-plugin
+
+# Skills — SKILL.md folders from local paths, git URLs, or owner/repo[/subpath]
+talon skill install anthropics/skills/document-skills/pdf
+talon skill install ./my-skill --force
+talon skill list
+talon skill disable pdf                            # hidden from the prompt index, still readable
+talon skill remove pdf
+```
+
+Module plugins install under `~/.talon/plugins/`; standalone MCP servers are
+registered as `npx` entries in `config.json`. Disabling keeps the entry (or a
+`.disabled` marker in the skill folder) so enabling restores it unchanged.
 
 ## Built-in Plugins
 

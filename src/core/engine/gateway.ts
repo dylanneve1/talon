@@ -475,6 +475,31 @@ export class Gateway {
           return;
         }
 
+        if (req.method === "POST" && req.url === "/plugins/reload") {
+          // Hot-reload plugins from config — the transport for
+          // `talon plugin install/enable/disable`, which has no chat
+          // context and so cannot use the reload_plugins action. Same
+          // 127.0.0.1 trust boundary as /action.
+          try {
+            const { performPluginReload } = await import(
+              "./gateway-actions/plugins.js"
+            );
+            const { names } = await performPluginReload(this.backend);
+            log("gateway", `/plugins/reload: ${names.length} plugins loaded`);
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: true, loaded: names }));
+          } catch (err) {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: `Plugin reload failed: ${err instanceof Error ? err.message : err}`,
+              }),
+            );
+          }
+          return;
+        }
+
         if (req.url?.startsWith(HUB_PATH_PREFIX)) {
           // MCP hub — daemon-hosted MCP-over-HTTP endpoints for every
           // backend (see core/mcp-hub). Same 127.0.0.1 trust boundary

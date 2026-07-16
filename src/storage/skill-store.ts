@@ -15,12 +15,14 @@
  */
 
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { basename, resolve } from "node:path";
@@ -33,6 +35,12 @@ export type Skill = {
   body: string;
   path: string;
   updatedAt: number;
+  /**
+   * Disabled skills (a `.disabled` marker file in the folder) drop out of
+   * the prompt index and `find_skills`, but stay listable and readable —
+   * the toggle hides, it never restricts.
+   */
+  enabled: boolean;
   /** Relative filenames bundled in the skill folder (excludes SKILL.md). */
   resources: string[];
   /** Frontmatter keys beyond name/description, preserved on read. */
@@ -46,6 +54,12 @@ export type SkillSearchResult = {
 };
 
 const SKILL_FILE = "SKILL.md";
+/**
+ * Marker file for `talon skill disable`. Lives beside SKILL.md rather than
+ * in frontmatter because `save_skill` rewrites SKILL.md wholesale — a
+ * sibling file survives every update, and is visible in the filesystem.
+ */
+const DISABLED_FILE = ".disabled";
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 const DESCRIPTION_MAX_CHARS = 300;
 const BODY_MAX_BYTES = 128 * 1024;
@@ -109,7 +123,10 @@ function serializeSkill(input: {
   return ["---", yaml, "---", "", input.body.trimEnd(), ""].join("\n");
 }
 
-function parseSkill(path: string, raw: string): Omit<Skill, "resources"> {
+function parseSkill(
+  path: string,
+  raw: string,
+): Omit<Skill, "resources" | "enabled"> {
   const fallbackName = basename(resolve(path, ".."));
   if (!raw.startsWith("---\n")) {
     return {
@@ -174,7 +191,12 @@ function parseSkill(path: string, raw: string): Omit<Skill, "resources"> {
 function listResources(dir: string): string[] {
   try {
     return readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name !== SKILL_FILE)
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          entry.name !== SKILL_FILE &&
+          entry.name !== DISABLED_FILE,
+      )
       .map((entry) => entry.name)
       .sort((a, b) => a.localeCompare(b));
   } catch {
@@ -207,7 +229,11 @@ export function readSkill(name: string): Skill | undefined {
   if (!existsSync(path)) return undefined;
   const raw = readFileSync(path, "utf-8");
   const parsed = parseSkill(path, raw);
-  const skill: Skill = { ...parsed, resources: listResources(dir) };
+  const skill: Skill = {
+    ...parsed,
+    enabled: !existsSync(resolve(dir, DISABLED_FILE)),
+    resources: listResources(dir),
+  };
   try {
     skill.updatedAt = Math.floor(statSync(path).mtimeMs);
   } catch {
@@ -271,6 +297,7 @@ export function searchSkills(
   const tokens = tokenizeQuery(query);
   if (tokens.length === 0) return [];
   return listSkills()
+    .filter((skill) => skill.enabled)
     .map((skill) => ({
       skill,
       score: scoreSkill(skill, tokens),
@@ -281,6 +308,88 @@ export function searchSkills(
       (a, b) => b.score - a.score || a.skill.name.localeCompare(b.skill.name),
     )
     .slice(0, Math.max(1, Math.min(50, limit)));
+}
+
+/**
+ * Toggle a skill's enabled state via the `.disabled` marker. Idempotent.
+ * Returns false when the skill doesn't exist (or the name is invalid).
+ */
+export function setSkillEnabled(name: string, enabled: boolean): boolean {
+  if (validateSkillName(name)) return false;
+  if (!existsSync(skillFilePath(name))) return false;
+  const marker = resolve(skillDir(name), DISABLED_FILE);
+  if (enabled) {
+    if (existsSync(marker)) unlinkSync(marker);
+  } else {
+    writeFileSync(marker, "", { encoding: "utf-8", mode: 0o600 });
+  }
+  return true;
+}
+
+export type SkillInstallResult =
+  | { ok: true; skill: Skill }
+  | { ok: false; error: string };
+
+/**
+ * Install a skill from a folder containing SKILL.md (plus any bundled
+ * resources) — the store half of `talon skill install`. The target folder
+ * name is the frontmatter `name`, so a checkout's directory name never
+ * leaks into the store. Refuses to overwrite an existing skill unless
+ * `force`, in which case the old folder (including its `.disabled` marker)
+ * is replaced wholesale.
+ */
+export function installSkillFromDir(
+  sourceDir: string,
+  options: { force?: boolean } = {},
+): SkillInstallResult {
+  const sourceFile = resolve(sourceDir, SKILL_FILE);
+  if (!existsSync(sourceFile)) {
+    return { ok: false, error: `No ${SKILL_FILE} in ${sourceDir}` };
+  }
+
+  let raw: string;
+  try {
+    raw = readFileSync(sourceFile, "utf-8");
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Could not read ${sourceFile}: ${err instanceof Error ? err.message : err}`,
+    };
+  }
+
+  const parsed = parseSkill(sourceFile, raw);
+  const invalid =
+    validateSkillName(parsed.name) ??
+    validateSkillDescription(parsed.description) ??
+    validateSkillBody(parsed.body);
+  if (invalid) return { ok: false, error: `Invalid skill: ${invalid}` };
+
+  const target = skillDir(parsed.name);
+  // Installing the store's own folder onto itself would delete the source
+  // before the copy (rmSync + cpSync) — refuse rather than lose the skill.
+  if (resolve(sourceDir) === target) {
+    return {
+      ok: false,
+      error: `"${parsed.name}" is already the installed copy (${target})`,
+    };
+  }
+  if (existsSync(target)) {
+    if (!options.force) {
+      return {
+        ok: false,
+        error: `Skill "${parsed.name}" already exists (use --force to replace)`,
+      };
+    }
+    rmSync(target, { recursive: true, force: true });
+  }
+
+  mkdirSync(skillsDir(), { recursive: true });
+  cpSync(sourceDir, target, { recursive: true });
+  const skill = readSkill(parsed.name);
+  if (!skill) {
+    return { ok: false, error: `Install of "${parsed.name}" failed to read back` };
+  }
+  return { ok: true, skill };
 }
 
 export function deleteSkill(name: string): boolean {
@@ -297,7 +406,8 @@ export function formatSkill(skill: Skill): string {
   const updated = skill.updatedAt
     ? new Date(skill.updatedAt).toISOString().slice(0, 10)
     : "unknown";
-  return `- ${skill.name} (updated ${updated}) — ${skill.description}`;
+  const state = skill.enabled ? "" : " [disabled]";
+  return `- ${skill.name} (updated ${updated})${state} — ${skill.description}`;
 }
 
 export function formatSkillSearchResult(result: SkillSearchResult): string {
@@ -307,7 +417,8 @@ export function formatSkillSearchResult(result: SkillSearchResult): string {
 }
 
 export function renderSkillsPrompt(): string {
-  const skills = listSkills();
+  // Disabled skills stay out of the index; `list_skills` still shows them.
+  const skills = listSkills().filter((skill) => skill.enabled);
   if (skills.length === 0) return "";
   const visible = skills.slice(0, PROMPT_LIST_LIMIT);
   const hidden = skills.length - visible.length;
