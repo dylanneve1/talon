@@ -91,8 +91,7 @@ export function runTool(
 }
 
 export type CloneOutcome =
-  | { ok: true; dir: string; cleanup: () => void }
-  | { ok: false; error: string };
+  { ok: true; dir: string; cleanup: () => void } | { ok: false; error: string };
 
 /** Shallow-clone into a fresh temp directory. Caller must run `cleanup`. */
 export function cloneShallow(url: string): CloneOutcome {

@@ -145,7 +145,8 @@ function listRows(config: Config): Row[] {
   const builtins: Row[] = BUILTIN_PLUGINS.map((name) => ({
     name,
     kind: "built-in",
-    state: builtinSection(config, name)?.enabled === true ? "enabled" : "disabled",
+    state:
+      builtinSection(config, name)?.enabled === true ? "enabled" : "disabled",
     source: `config.${name}`,
   }));
   const configured: Row[] = entries(config).map((entry) => ({
@@ -202,8 +203,7 @@ function parseInstallArgs(
 }
 
 type EntryOutcome =
-  | { ok: true; entry: PluginEntryJson }
-  | { ok: false; error: string };
+  { ok: true; entry: PluginEntryJson } | { ok: false; error: string };
 
 function installFromLocalDir(dir: string): EntryOutcome {
   if (existsSync(resolve(dir, "SKILL.md"))) {
@@ -300,11 +300,9 @@ function installFromNpm(spec: string, flags: InstallFlags): EntryOutcome {
 
   mkdirSync(dirs.plugins, { recursive: true });
   console.log(`  ${pc.dim(`Installing ${spec} from npm…`)}`);
-  const install = runTool(
-    "npm",
-    ["install", "--prefix", dirs.plugins, spec],
-    { inherit: true },
-  );
+  const install = runTool("npm", ["install", "--prefix", dirs.plugins, spec], {
+    inherit: true,
+  });
   if (!install.ok) return { ok: false, error: install.error };
 
   const pkg = npmSpecName(spec);
@@ -407,9 +405,7 @@ async function cmdSetEnabled(
     const list = entries(config);
     const index = findEntryIndex(list, name);
     if (index < 0) {
-      fail(
-        `No plugin named "${name}" — see ${pc.cyan("talon plugin list")}.`,
-      );
+      fail(`No plugin named "${name}" — see ${pc.cyan("talon plugin list")}.`);
       process.exitCode = 1;
       return;
     }
