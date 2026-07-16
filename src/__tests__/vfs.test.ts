@@ -208,7 +208,10 @@ describe("locate — namespace → disk", () => {
   });
 
   it("answers undefined for synthetic nodes and the root", () => {
-    vfs.mount("plugins", createPluginsMount(() => []));
+    vfs.mount(
+      "plugins",
+      createPluginsMount(() => []),
+    );
     expect(vfs.locate("plugins/x")).toEqual({ ok: true, value: undefined });
     expect(vfs.locate("")).toEqual({ ok: true, value: undefined });
   });
@@ -423,7 +426,10 @@ describe("plugins mount", () => {
   ];
 
   beforeEach(() => {
-    vfs.mount("plugins", createPluginsMount(() => views));
+    vfs.mount(
+      "plugins",
+      createPluginsMount(() => views),
+    );
   });
 
   it("lists one file per registered plugin, sorted", () => {

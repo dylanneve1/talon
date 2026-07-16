@@ -7,7 +7,10 @@ import { getVfs, type VfsResult, type VfsStat } from "../../vfs/index.js";
 import { log } from "../../../util/log.js";
 import type { SharedActionHandlers } from "./types.js";
 
-function describeError(path: string, result: { error: string; detail?: string }): string {
+function describeError(
+  path: string,
+  result: { error: string; detail?: string },
+): string {
   return `talon://${path}: ${result.error}${result.detail ? ` — ${result.detail}` : ""}`;
 }
 

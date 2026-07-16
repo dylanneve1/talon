@@ -51,7 +51,10 @@ async function query(
   };
 }
 
-function printError(path: string, result: { error: string; detail?: string }): void {
+function printError(
+  path: string,
+  result: { error: string; detail?: string },
+): void {
   console.error(
     `  ${pc.red("✖")} talon://${path}: ${result.error}${result.detail ? ` — ${result.detail}` : ""}`,
   );
@@ -60,7 +63,10 @@ function printError(path: string, result: { error: string; detail?: string }): v
 
 function formatModified(entry: VfsStat): string {
   if (entry.modifiedAt === undefined) return "-";
-  return new Date(entry.modifiedAt).toISOString().slice(0, 16).replace("T", " ");
+  return new Date(entry.modifiedAt)
+    .toISOString()
+    .slice(0, 16)
+    .replace("T", " ");
 }
 
 export async function showLs(rawPath: string | undefined): Promise<void> {
@@ -106,7 +112,9 @@ export async function showLs(rawPath: string | undefined): Promise<void> {
       entry.osPath !== undefined && !entry.path.includes("/")
         ? pc.dim(`  → ${entry.osPath}`)
         : "";
-    console.log(`  ${padded[0]}  ${padded[1]}  ${padded[2]}  ${name}${mapping}`);
+    console.log(
+      `  ${padded[0]}  ${padded[1]}  ${padded[2]}  ${name}${mapping}`,
+    );
   });
   console.log();
 }

@@ -199,7 +199,10 @@ export class Vfs {
         best = {
           mount,
           prefix: name,
-          rel: offset.split(sep).filter((s) => s.length > 0).join("/"),
+          rel: offset
+            .split(sep)
+            .filter((s) => s.length > 0)
+            .join("/"),
           rootLength: mount.osRoot.length,
         };
       }

@@ -31,7 +31,11 @@ export function createFileMount(options: {
   function realPath(rel: string): string | undefined {
     const abs = resolve(root, ...rel.split("/"));
     const offset = relative(root, abs);
-    if (offset.startsWith(`..${sep}`) || offset === ".." || isAbsolute(offset)) {
+    if (
+      offset.startsWith(`..${sep}`) ||
+      offset === ".." ||
+      isAbsolute(offset)
+    ) {
       return undefined;
     }
     return abs;

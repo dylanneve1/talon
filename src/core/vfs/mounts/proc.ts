@@ -64,9 +64,7 @@ export function createProcMount(deps: ProcMountDeps): VfsMount {
     if (rel === "tasks") return vfsOk(DIR("tasks", "tasks"));
     if (rel === "events") {
       const events = deps.events();
-      return vfsOk(
-        fileStat("events", renderEvents(events), events.at(-1)?.at),
-      );
+      return vfsOk(fileStat("events", renderEvents(events), events.at(-1)?.at));
     }
     const taskId = rel.startsWith("tasks/") ? rel.slice("tasks/".length) : null;
     if (taskId !== null && !taskId.includes("/")) {

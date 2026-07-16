@@ -34,7 +34,9 @@ export const vfsTools: ToolDefinition[] = [
     schema: {
       path: z
         .string()
-        .describe('Namespace file path, e.g. "proc/events" or "logs/2026-07-16.md"'),
+        .describe(
+          'Namespace file path, e.g. "proc/events" or "logs/2026-07-16.md"',
+        ),
     },
     execute: (params, bridge) => bridge("vfs_read", params),
     tag: "vfs",
@@ -46,8 +48,12 @@ export const vfsTools: ToolDefinition[] = [
     schema: {
       path: z
         .string()
-        .describe('Namespace file path under a writable mount, e.g. "home/notes/ideas.md"'),
-      content: z.string().describe("Full file content (replaces any existing content)"),
+        .describe(
+          'Namespace file path under a writable mount, e.g. "home/notes/ideas.md"',
+        ),
+      content: z
+        .string()
+        .describe("Full file content (replaces any existing content)"),
     },
     execute: (params, bridge) => bridge("vfs_write", params),
     tag: "vfs",

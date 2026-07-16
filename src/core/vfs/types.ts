@@ -37,7 +37,11 @@ export type VfsErrorCode =
 
 export type VfsResult<T> =
   | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly error: VfsErrorCode; readonly detail?: string };
+  | {
+      readonly ok: false;
+      readonly error: VfsErrorCode;
+      readonly detail?: string;
+    };
 
 export function vfsOk<T>(value: T): VfsResult<T> {
   return { ok: true, value };

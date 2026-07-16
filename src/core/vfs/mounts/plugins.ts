@@ -44,7 +44,8 @@ export function createPluginsMount(
     writable: false,
 
     stat(rel): VfsResult<VfsStat> {
-      if (rel === "") return vfsOk({ path: "", name: "", kind: "dir", writable: false });
+      if (rel === "")
+        return vfsOk({ path: "", name: "", kind: "dir", writable: false });
       const view = byName(rel);
       return view ? vfsOk(fileStat(view)) : vfsError("not-found");
     },

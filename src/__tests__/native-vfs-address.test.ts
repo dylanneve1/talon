@@ -119,10 +119,7 @@ describe("native tools on talon:// addresses", () => {
   });
 
   it("surfaces address errors from the resolver", async () => {
-    const res = await nativeHandlers.native_read(
-      { path: "talon://nope/x" },
-      1,
-    );
+    const res = await nativeHandlers.native_read({ path: "talon://nope/x" }, 1);
     expect(res.ok).toBe(false);
     expect(res.text).toContain("not-found");
   });
