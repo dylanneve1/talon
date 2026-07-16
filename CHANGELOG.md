@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.53.0](https://github.com/dylanneve1/talon/compare/v1.52.0...v1.53.0) (2026-07-16)
+
+
+### Features
+
+* **companion:** light-indigo redesign — settings screen to concept ([#550](https://github.com/dylanneve1/talon/issues/550)) ([12600e1](https://github.com/dylanneve1/talon/commit/12600e1a508fa2fe6b6e865cd0ce49936a712af0))
+
 ## [1.52.0](https://github.com/dylanneve1/talon/compare/v1.51.0...v1.52.0) (2026-07-16)
 
 
