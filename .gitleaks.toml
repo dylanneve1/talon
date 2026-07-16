@@ -1,0 +1,14 @@
+# Gitleaks config — extends the default ruleset (this file REPLACES the
+# defaults unless [extend] pulls them back in, so keep that block).
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = """Throwaway TLS test fixtures. The companion's certificate-
+pinning tests handshake against a key/cert pair minted by the daemon's own
+generator (src/frontend/native/tls.ts) purely for tests — the key is
+trusted by nothing, signs nothing real, and can be regenerated at will.
+Real key material never belongs in the repo; the runtime bridge identity
+lives in ~/.talon/keys/."""
+paths = ['''apps/companion/test/fixtures/.*\.pem''']
