@@ -174,7 +174,7 @@ export async function killTask(rawId: string | undefined): Promise<void> {
       return;
     case "not-killable":
       console.log(
-        `  ${pc.yellow("!")} Task ${id} has no abort hook (chat turns run to completion) — it cannot be killed.\n`,
+        `  ${pc.yellow("!")} Task ${id} has no abort hook — its backend can't interrupt a running turn.\n`,
       );
       return;
   }
