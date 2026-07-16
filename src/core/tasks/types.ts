@@ -87,8 +87,12 @@ export interface TaskHandle {
   bind(binding: TaskBinding): void;
   /** Settle as `done`, optionally recording token usage. */
   succeed(usage?: TaskUsage): void;
-  /** Settle as `failed` — or `killed` when a kill was requested first. */
-  fail(error: unknown): void;
+  /**
+   * Settle as `failed` — or `killed` when a kill was requested first.
+   * Usage is recorded when the owner knows what the run burned before it
+   * died (an interrupted turn still spent real tokens).
+   */
+  fail(error: unknown, usage?: TaskUsage): void;
 }
 
 /** Result of `TaskTable.kill`. */

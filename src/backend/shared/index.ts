@@ -21,6 +21,8 @@
  *     (assembly itself lives in `core/prompt/`).
  *   - `model-retry` — session-expiry / context-overflow / fallback decisions.
  *   - `stream-state` — backend-agnostic accumulator for stream loops.
+ *   - `turn-interrupt` — user-driven mid-turn interrupt registry (the
+ *     shared `ChatBackend.interruptChatTurn` for callback backends).
  *
  * What's NOT here (intentionally):
  *   - SDK-specific event types — those live in each backend.
@@ -42,6 +44,8 @@ export {
   type FlowViolationInputs,
   type FlowViolationResult,
 } from "./flow-violation.js";
+
+export { registerTurnInterrupt, interruptChatTurn } from "./turn-interrupt.js";
 
 export {
   formatUserPrompt,

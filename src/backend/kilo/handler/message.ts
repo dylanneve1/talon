@@ -45,6 +45,7 @@ import {
   applyRetryDecision,
   recordTurnMetrics,
   recordFailedTurnAccounting,
+  registerTurnInterrupt,
 } from "../../shared/index.js";
 import { activeSessions } from "./state.js";
 import { runKiloTurn } from "./turn.js";
@@ -119,6 +120,14 @@ export async function handleMessage(
   // into the live-turn overlay — /status updates while the turn runs.
   const state = createStreamState(chatId);
   state.newSessionId = sessionId;
+  // A user interrupt is a synthetic turn terminator: marking the flag
+  // before aborting the session routes the close through the same clean
+  // path a model-fired end_turn takes (MessageAborted swallowed as the
+  // expected close, no retry), settling with whatever the turn produced.
+  const unregisterInterrupt = registerTurnInterrupt(chatId, async () => {
+    state.turnTerminated = true;
+    await oc.session.abort({ sessionID: sessionId });
+  });
   const promptStartedAt = Date.now();
   const seenQuestionIds = new Set<string>();
   const seenToolCallIds = new Set<string>();
@@ -185,6 +194,7 @@ export async function handleMessage(
     logError("agent", `[${chatId}] Kilo error: ${outcome.classified.message}`);
     throw outcome.classified;
   } finally {
+    unregisterInterrupt();
     if (activeSessions.get(chatId) === sessionId) {
       activeSessions.delete(chatId);
     }

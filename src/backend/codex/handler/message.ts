@@ -40,6 +40,7 @@ import {
   recordTurnMetrics,
   recordFailedTurnAccounting,
   pushLiveUsage,
+  registerTurnInterrupt,
 } from "../../shared/index.js";
 
 import {
@@ -322,6 +323,14 @@ export async function handleMessage(
   const codexToolMetrics = { count: 0 };
   const abortController = new AbortController();
   activeAborts.set(chatId, abortController);
+  // A user interrupt is a synthetic turn terminator: marking the flag
+  // before aborting routes the close through the same clean path a
+  // model-fired end_turn takes (abort swallowed, no retry, no flow
+  // violation), settling with the partial text and real usage.
+  const unregisterInterrupt = registerTurnInterrupt(chatId, () => {
+    streamState.turnTerminated = true;
+    abortController.abort();
+  });
 
   let usage: Usage | null = null;
   let turnFailedError: string | undefined;
@@ -539,6 +548,7 @@ export async function handleMessage(
       throw outcome.classified;
     }
   } finally {
+    unregisterInterrupt();
     if (activeAborts.get(chatId) === abortController) {
       activeAborts.delete(chatId);
     }

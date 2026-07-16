@@ -13,6 +13,7 @@ import { registerBackend } from "../../core/agent-runtime/backend-registry.js";
 import type { BackendFactory } from "../../core/agent-runtime/backend-registry.js";
 import { log } from "../../util/log.js";
 import { handlerToEvents } from "../shared/handler-to-events.js";
+import { interruptChatTurn } from "../shared/turn-interrupt.js";
 import {
   composeBackend,
   type ChatBackend,
@@ -47,6 +48,7 @@ const opencodeFactory: BackendFactory = {
     const chat: ChatBackend = {
       runChatTurn: (params) =>
         handlerToEvents((p) => ocHandleMessage(p), params),
+      interruptChatTurn: (chatId) => interruptChatTurn(chatId),
     };
 
     const background: BackgroundRunner = {

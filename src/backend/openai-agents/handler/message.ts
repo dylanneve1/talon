@@ -38,6 +38,7 @@ import {
   recordTurnMetrics,
   recordFailedTurnAccounting,
   recordFlowViolation,
+  registerTurnInterrupt,
 } from "../../shared/index.js";
 import {
   detectFlowViolation,
@@ -182,6 +183,14 @@ export async function handleMessage(
   const seenToolCallIds = new Set<string>();
   const abortController = new AbortController();
   activeAborts.set(chatId, abortController);
+  // A user interrupt is a synthetic turn terminator: marking the flag
+  // before aborting routes the close through the same clean path a
+  // model-fired end_turn takes (abort swallowed, no retry, no flow
+  // violation), settling with the partial text and real usage.
+  const unregisterInterrupt = registerTurnInterrupt(chatId, () => {
+    streamState.turnTerminated = true;
+    abortController.abort();
+  });
 
   const setupMs = Date.now() - t0;
   let turnMs = 0;
@@ -385,6 +394,7 @@ export async function handleMessage(
       throw classified;
     }
   } finally {
+    unregisterInterrupt();
     if (activeAborts.get(chatId) === abortController) {
       activeAborts.delete(chatId);
     }

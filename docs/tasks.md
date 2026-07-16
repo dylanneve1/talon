@@ -9,12 +9,12 @@
 A **task** is one bounded run of agent work. Four kinds exist today, one per
 place the runtime actually starts an agent:
 
-| Kind        | Registered by                        | Killable | Usage captured |
-| ----------- | ------------------------------------ | -------- | -------------- |
-| `turn`      | `core/weaver` (every chat turn)      | no       | yes            |
-| `heartbeat` | `core/background/heartbeat/agent.ts` | yes      | no             |
-| `dream`     | `core/background/dream.ts`           | yes      | no             |
-| `cron` / `trigger` | `core/background/job-oneshot.ts` (isolated query jobs) | yes | no |
+| Kind               | Registered by                                          | Killable | Usage captured |
+| ------------------ | ------------------------------------------------------ | -------- | -------------- |
+| `turn`             | `core/weaver` (every chat turn)                        | yes      | yes            |
+| `heartbeat`        | `core/background/heartbeat/agent.ts`                   | yes      | no             |
+| `dream`            | `core/background/dream.ts`                             | yes      | no             |
+| `cron` / `trigger` | `core/background/job-oneshot.ts` (isolated query jobs) | yes      | no             |
 
 Deliberately **not** tasks: trigger watcher scripts (long-lived OS processes
 the trigger store already tracks, pid and all), cron `message` jobs (a single
@@ -26,12 +26,21 @@ Settlement is idempotent — the first terminal state wins.
 
 ## Kill semantics
 
-A task is killable when its owner registered an abort hook (in practice: the
-run is driven by an `AbortController`). `kill` delivers the abort and returns
-immediately; the task settles as `killed` when the owner's failure path lands.
-A run that completes despite the abort settles as `done` — a kill only
-"takes" when the run actually dies. Chat turns have no abort path today, so
-they are honestly reported as not killable rather than pretending.
+A task is killable when its owner registered an abort hook. `kill` delivers
+the abort and returns immediately; the task settles as `killed` when the
+owner's failure path lands. A background run that completes despite the
+abort settles as `done` — a kill only "takes" when the run actually dies.
+
+Chat turns kill through `ChatBackend.interruptChatTurn` — the same
+capability behind the frontend stop affordance, implemented by every
+backend (the Claude SDK's native `Query.interrupt()`; the callback
+backends via the shared `backend/shared/turn-interrupt.ts` registry, where
+a user interrupt is a synthetic turn terminator: the stream closes as a
+normal completion carrying the partial text and real usage, never as an
+error or a retry). The weaver settles the killed turn's task as `killed`
+with that usage while the partial result flows back to the caller. A turn
+killed while still queued in its chat's FIFO never reaches the backend —
+and never interrupts the same chat's currently running turn.
 
 The table is observational: it never schedules, retries, or times out a run.
 Those disciplines stay with the owning module (weaver, heartbeat scheduler,

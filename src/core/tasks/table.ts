@@ -92,7 +92,7 @@ export class TaskTable {
       start: () => this.start(id),
       bind: (binding) => this.bind(id, binding),
       succeed: (usage) => this.settle(id, "done", undefined, usage),
-      fail: (error) => this.settle(id, "failed", error),
+      fail: (error, usage) => this.settle(id, "failed", error, usage),
     };
   }
 
