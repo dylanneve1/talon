@@ -9,11 +9,16 @@ class LocalBridge {
   final String? token;
   final String scheme;
 
+  /// Bridge certificate SHA-256 (lowercase hex) when [scheme] is https —
+  /// pins the connection without a first-use leap of faith.
+  final String? fingerprint;
+
   const LocalBridge({
     required this.host,
     required this.port,
     required this.scheme,
     this.token,
+    this.fingerprint,
   });
 }
 
@@ -36,10 +41,12 @@ Future<LocalBridge?> readLocalBridgeFromDirectory(Directory dir) async {
     final port = json['port'];
     final token = json['token'];
     final scheme = json['scheme'];
+    final fingerprint = json['fingerprint'];
     if (host is! String || host.trim().isEmpty) return null;
     if (port is! int || port < 1 || port > 65535) return null;
     if (token != null && token is! String) return null;
     if (scheme != null && scheme is! String) return null;
+    if (fingerprint != null && fingerprint is! String) return null;
     final normalizedScheme = scheme ?? 'http';
     if (normalizedScheme != 'http' && normalizedScheme != 'https') return null;
     return LocalBridge(
@@ -47,6 +54,7 @@ Future<LocalBridge?> readLocalBridgeFromDirectory(Directory dir) async {
       port: port,
       token: token,
       scheme: normalizedScheme,
+      fingerprint: fingerprint,
     );
   } catch (_) {
     return null;

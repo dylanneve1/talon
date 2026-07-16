@@ -24,6 +24,7 @@ Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsof
 | **Triggers**          | Self-authored watcher scripts (bash/python/node) that wake the bot when conditions are met                                                   |
 | **Task table**        | Every unit of agent work — chat turns, heartbeat, dream, isolated cron/trigger jobs — registered live; `talon ps` / `talon kill`             |
 | **Event bus**         | Typed internal pub-sub spine (task + turn lifecycle events); subsystems subscribe instead of importing each other; `talon events -f`         |
+| **VFS**               | Unified `talon://` namespace over workspace, skills, scripts, logs, plus /proc-style live views of the task table, event bus, and plugin registry; `talon ls` / `talon cat` |
 | **Per-chat settings** | Model, effort level, and pulse toggle per conversation via inline keyboard                                                                   |
 | **Model registry**    | Models discovered from the active backend at startup — new models appear in all pickers automatically                                        |
 
@@ -162,6 +163,7 @@ The `desktop` frontend turns the daemon into a **client bridge** — a versioned
 
 - **Local (desktop):** the app connects to a Talon on the same machine and launches one if needed (`TALON_FRONTEND_OVERRIDE=desktop`).
 - **Remote (mobile/LAN):** point the app at `host:port` + token; the bridge requires `Authorization: Bearer …` (or `?token=` on the SSE stream) whenever a token is set.
+- **Encryption:** off-loopback binds serve **HTTPS by default** with a persistent self-signed certificate (`~/.talon/keys/`); the companion pins its SHA-256 fingerprint on first connect and refuses any change afterwards. The daemon logs the fingerprint at startup and `/health` advertises it. Opt out (or in, on loopback) with `"tls": false` / `true` in the `desktop` section.
 
 The app provides multi-chat history, live streaming with reasoning + tool-call visibility, per-chat model/effort/pulse/reset, and **settings sync** — read and change the daemon's own config (default model, display name, timezone, pulse/heartbeat/dream) and restart it. See [apps/companion/README.md](apps/companion/README.md).
 

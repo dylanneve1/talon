@@ -236,7 +236,22 @@ CREATE TABLE IF NOT EXISTS turn_meta (
   msg_id  TEXT NOT NULL,
   meta    TEXT NOT NULL,
   PRIMARY KEY (chat_id, msg_id)
-);`;
+);
+
+-- The event journal: the bus's durable tail. A bootstrap subscriber
+-- appends every published event (one JSON document per row, with the
+-- type and timestamp lifted into columns for filtering) and prunes to a
+-- bounded retention — so \`talon events --history\` and \`talon ps --all\`
+-- can answer across daemon restarts. The in-memory ring in core/bus
+-- stays the live-tail surface; this is the daemon's syslog. \`seq\` is
+-- the durable cursor (per-process bus ids restart with the daemon).
+CREATE TABLE IF NOT EXISTS journal (
+  seq     INTEGER PRIMARY KEY AUTOINCREMENT,
+  at      INTEGER NOT NULL,
+  type    TEXT    NOT NULL,
+  payload TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_journal_type ON journal(type, seq);`;
 
 export const chatSettingsSql = {
   upsert: `INSERT OR REPLACE INTO chat_settings (chat_id, settings) VALUES (?, ?)`,
@@ -365,6 +380,14 @@ ORDER BY last_seen DESC`,
        COALESCE(MAX(timestamp), 0) AS newest
 FROM history_messages WHERE chat_id = ?`,
   distinctChatCount: `SELECT COUNT(DISTINCT chat_id) AS chats FROM history_messages`,
+} as const;
+
+export const journalSql = {
+  append: `INSERT INTO journal (at, type, payload) VALUES (?, ?, ?)`,
+  recent: `SELECT seq, at, type, payload FROM journal ORDER BY seq DESC LIMIT ?`,
+  recentByType: `SELECT seq, at, type, payload FROM journal WHERE type = ? ORDER BY seq DESC LIMIT ?`,
+  prune: `DELETE FROM journal WHERE seq NOT IN (SELECT seq FROM journal ORDER BY seq DESC LIMIT ?)`,
+  count: `SELECT COUNT(*) AS n FROM journal`,
 } as const;
 
 export const kvSql = {

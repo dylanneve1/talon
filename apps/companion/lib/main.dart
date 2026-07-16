@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
+import 'src/services/bridge_trust.dart';
 import 'src/services/haptics.dart';
 import 'src/services/mesh_background.dart';
 import 'src/services/prefs.dart';
@@ -11,6 +12,9 @@ import 'src/ui/root_view.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Certificate pinning for every implicitly-created HttpClient
+  // (Image.network) — BridgeClient carries its own pinned client.
+  BridgeTrust.install();
   // UI ↔ foreground-service isolate messaging (mesh reconfigure pokes).
   if (MeshForegroundController.isSupported) {
     FlutterForegroundTask.initCommunicationPort();

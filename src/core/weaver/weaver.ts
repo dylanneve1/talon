@@ -73,14 +73,32 @@ export class Weaver {
 
   runTurn(params: ExecuteParams): Promise<ExecuteResult> {
     const thread = this.loom.thread(params.chatId);
+    // A turn is killable when its backend can interrupt an in-flight
+    // chat turn. The abort hook tracks lifecycle through this closure:
+    // before the turn starts, a kill just marks it (run() then refuses to
+    // start); once running, the kill signals the backend — which stops
+    // the turn cleanly per the interruptChatTurn contract. The started
+    // guard matters in a queue: killing a queued turn must never
+    // interrupt the same chat's currently running one.
+    const chat = this.deps.getBackend(params.chatId).chat;
+    const interrupt = chat?.interruptChatTurn?.bind(chat);
+    const lifecycle = { started: false, killed: false };
     // Registered before enqueueing so a turn waiting in its chat's FIFO is
     // visible as `queued` in the task table, not invisible until it runs.
     const task = taskTable.enqueue({
       kind: "turn",
       label: params.source,
       chatId: params.chatId,
+      ...(interrupt
+        ? {
+            abort: () => {
+              lifecycle.killed = true;
+              if (lifecycle.started) void interrupt(params.chatId);
+            },
+          }
+        : {}),
     });
-    return thread.enqueue(() => this.run(thread, params, task));
+    return thread.enqueue(() => this.run(thread, params, task, lifecycle));
   }
 
   /** Number of turns currently running (not queued) across all chats. */
@@ -101,17 +119,36 @@ export class Weaver {
     thread: Thread,
     params: ExecuteParams,
     task: TaskHandle,
+    lifecycle: { started: boolean; killed: boolean },
   ): Promise<ExecuteResult> {
+    if (lifecycle.killed) {
+      // Killed while queued — the turn never reaches the backend. The
+      // caller still gets a resolved (empty) result; nothing is delivered
+      // to the chat, which is the point of the kill.
+      task.fail(new Error("killed while queued"));
+      return this.emptyResult("Turn killed before it started.", params);
+    }
+    lifecycle.started = true;
     this.activeCount++;
     task.start();
     try {
       const result = await this.executeInner(thread, params, task);
-      task.succeed({
+      const usage = {
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
         cacheRead: result.cacheRead,
         cacheWrite: result.cacheWrite,
-      });
+      };
+      if (lifecycle.killed) {
+        // The interrupt landed and the backend closed the turn early but
+        // cleanly — that IS the interrupt contract, so the stream ends as
+        // a completion, not an error. The task still settles as killed
+        // (the truthful outcome of `talon kill`), usage included; the
+        // partial result flows back to the caller for normal handling.
+        task.fail(new Error("interrupted by kill"), usage);
+      } else {
+        task.succeed(usage);
+      }
       return result;
     } catch (err) {
       task.fail(err);

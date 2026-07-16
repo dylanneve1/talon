@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart'
 import '../models/bridge_models.dart';
 import '../models/connection.dart';
 import '../services/bridge_client.dart';
+import '../services/bridge_trust.dart';
 import '../services/daemon_supervisor.dart';
 import '../services/local_discovery.dart';
 import '../services/log.dart';
@@ -161,8 +162,7 @@ class AppState extends ChangeNotifier {
   List<DeviceInfo> meshDevices = [];
   List<DeviceLocation> meshLocations = [];
   MeshForegroundHealth meshBackgroundHealth = evaluateMeshForegroundHealth(
-    supported:
-        MeshForegroundController.isSupported ||
+    supported: MeshForegroundController.isSupported ||
         MeshForegroundController.isResidentDesktop,
     sharingEnabled: false,
     serviceRunning: false,
@@ -204,12 +204,19 @@ class AppState extends ChangeNotifier {
         _scheduleReconnect();
         return;
       }
+      final discoveredPin =
+          ConnectionConfig.normalizeFingerprint(bridge.fingerprint);
       final effective = config.copyWith(
         host: '127.0.0.1',
         port: bridge.port,
         token: bridge.token,
         clearToken: bridge.token == null,
         tls: bridge.scheme == 'https',
+        // The discovery file carries the daemon's own fingerprint, so local
+        // mode pins without a first-use adoption; a plain-HTTP bridge clears
+        // any pin left over from an earlier profile.
+        fingerprint: discoveredPin,
+        clearFingerprint: bridge.scheme != 'https' || discoveredPin == null,
         manageLocalDaemon: false,
       );
       AppLog.info(
@@ -246,6 +253,9 @@ class AppState extends ChangeNotifier {
     if (epoch != _epoch) return;
     _client?.dispose();
     final cfg = effectiveConfig ?? config;
+    // Keep the process-wide pin (Image.network et al.) in step with the
+    // profile this attempt uses; TOFU below adopts one when none is set.
+    BridgeTrust.pin(cfg.tls ? cfg.fingerprint : null);
     final client = BridgeClient(cfg);
     _client = client;
     _activeConfig = cfg;
@@ -282,6 +292,7 @@ class AppState extends ChangeNotifier {
       }
 
       AppLog.info('app_state', 'connected');
+      await _adoptFingerprint(cfg, client, persist: effectiveConfig == null);
       _setConn(ConnState.connected, null);
       _backoffMs = 800;
       await _startMesh(client);
@@ -297,8 +308,36 @@ class AppState extends ChangeNotifier {
         _stopUnauthorized();
         return;
       }
+      if (e is BridgeException && e.certificateChanged) {
+        // A pin mismatch never heals by retrying — stop and tell the user.
+        AppLog.warn('app_state', 'pin-fatal stop');
+        _reconnect?.cancel();
+        _setConn(ConnState.error, e.message);
+        return;
+      }
       _setConn(ConnState.error, e.toString());
       _scheduleReconnect();
+    }
+  }
+
+  /// Trust-on-first-use: after the first successful TLS connect with no pin
+  /// yet, adopt the certificate the handshake presented. Remote profiles
+  /// persist the pin ([persist]); local-discovery ones re-read it from the
+  /// daemon's discovery file every connect instead.
+  Future<void> _adoptFingerprint(
+    ConnectionConfig cfg,
+    BridgeClient client, {
+    required bool persist,
+  }) async {
+    final seen = client.seenFingerprint;
+    if (!cfg.tls || cfg.fingerprint != null || seen == null) return;
+    BridgeTrust.pin(seen);
+    client.config = cfg.copyWith(fingerprint: seen);
+    _activeConfig = client.config;
+    if (persist) {
+      config = config.copyWith(fingerprint: seen);
+      await prefs.setConnection(config);
+      AppLog.info('app_state', 'pinned bridge certificate $seen');
     }
   }
 
@@ -779,6 +818,59 @@ class AppState extends ChangeNotifier {
     return result;
   }
 
+  /// Seeded extension lists for widget tests / the screenshot gallery —
+  /// [listPlugins]/[listSkills] serve these instead of hitting the bridge.
+  List<PluginInfo>? _debugPlugins;
+  List<SkillInfo>? _debugSkills;
+
+  /// Installed plugins for the settings sub-menu. Throws on transport
+  /// failure — the screen owns the error presentation.
+  Future<List<PluginInfo>> listPlugins() async {
+    final seeded = _debugPlugins;
+    if (seeded != null) return seeded;
+    final client = _client;
+    if (client == null) throw BridgeException('Not connected');
+    return client.listPlugins();
+  }
+
+  Future<({bool ok, String? error})> togglePlugin(
+    String name,
+    bool enabled,
+  ) async {
+    final client = _client;
+    if (client == null) return (ok: false, error: 'Not connected');
+    try {
+      return await client.togglePlugin(name, enabled);
+    } catch (e) {
+      AppLog.warn('app_state', 'plugin toggle failed', e);
+      return (ok: false, error: e.toString());
+    }
+  }
+
+  /// Installed skills for the settings sub-menu. Throws on transport
+  /// failure — the screen owns the error presentation.
+  Future<List<SkillInfo>> listSkills() async {
+    final seeded = _debugSkills;
+    if (seeded != null) return seeded;
+    final client = _client;
+    if (client == null) throw BridgeException('Not connected');
+    return client.listSkills();
+  }
+
+  Future<({bool ok, String? error})> toggleSkill(
+    String name,
+    bool enabled,
+  ) async {
+    final client = _client;
+    if (client == null) return (ok: false, error: 'Not connected');
+    try {
+      return await client.toggleSkill(name, enabled);
+    } catch (e) {
+      AppLog.warn('app_state', 'skill toggle failed', e);
+      return (ok: false, error: e.toString());
+    }
+  }
+
   /// Newest daemon log entries for the log viewer. Throws on transport
   /// failure — the screen owns the error presentation.
   Future<List<DaemonLogEntry>> daemonLogs({
@@ -1134,6 +1226,8 @@ class AppState extends ChangeNotifier {
     String? select,
     ConnState? connState,
     BridgeStatus? bridgeStatus,
+    List<PluginInfo>? plugins,
+    List<SkillInfo>? skills,
   }) {
     if (chats != null) {
       this.chats
@@ -1151,6 +1245,8 @@ class AppState extends ChangeNotifier {
     if (select != null) selectedChatId = select;
     if (connState != null) conn = connState;
     if (bridgeStatus != null) status = bridgeStatus;
+    if (plugins != null) _debugPlugins = plugins;
+    if (skills != null) _debugSkills = skills;
     notifyListeners();
   }
 

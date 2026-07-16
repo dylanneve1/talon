@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { RetrievedMemory } from "../core/agent-runtime/capabilities.js";
 import type { MemoryRetriever } from "../core/memory/retrieval.js";
 import type { QueryParams } from "../backend/shared/handler-types.js";
+import { handlerToEvents } from "../backend/shared/handler-to-events.js";
 import { Loom, Thread, Weaver } from "../core/weaver/index.js";
 import { bus } from "../core/bus/index.js";
 import { taskTable, type TaskRecord } from "../core/tasks/index.js";
@@ -272,6 +273,110 @@ describe("weaver task registration", () => {
       .filter((t) => t.chatId === "task-fifo")
       .map((t) => t.state);
     expect(states).toEqual(["done", "done"]);
+  });
+
+  it("kills a running turn through the backend interrupt, settling killed with usage", async () => {
+    const gate = deferred();
+    const query = vi.fn(async () => {
+      // The turn hangs until the interrupt fires, then closes cleanly
+      // with the partial result — the interruptChatTurn contract.
+      await gate.promise;
+      return {
+        text: "partial",
+        durationMs: 1,
+        inputTokens: 5,
+        outputTokens: 2,
+        cacheRead: 1,
+        cacheWrite: 0,
+      };
+    });
+    const interruptChatTurn = vi.fn(async () => {
+      gate.resolve();
+      return true;
+    });
+    const backend = stubBackend({
+      chat: {
+        runChatTurn: (p) => handlerToEvents(query, p),
+        interruptChatTurn,
+      },
+    });
+    const weaver = makeWeaver(backend);
+
+    const turn = weaver.runTurn(params({ chatId: "task-kill" }));
+    await vi.waitFor(() => {
+      expect(turnTask("task-kill")).toMatchObject({
+        state: "running",
+        killable: true,
+      });
+    });
+
+    expect(taskTable.kill(turnTask("task-kill")!.id)).toEqual({ ok: true });
+
+    const result = await turn;
+    expect(result.text).toBe("partial");
+    expect(interruptChatTurn).toHaveBeenCalledWith("task-kill");
+    expect(turnTask("task-kill")).toMatchObject({
+      state: "killed",
+      error: expect.stringContaining("interrupted"),
+      usage: { inputTokens: 5, outputTokens: 2, cacheRead: 1, cacheWrite: 0 },
+    });
+  });
+
+  it("kills a queued turn without starting it or interrupting the running one", async () => {
+    const gate = deferred();
+    const query = vi.fn(async (queryParams: QueryParams) => {
+      if (queryParams.text === "first") await gate.promise;
+      return {
+        text: queryParams.text,
+        durationMs: 1,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      };
+    });
+    const interruptChatTurn = vi.fn(async () => true);
+    const backend = stubBackend({
+      chat: {
+        runChatTurn: (p) => handlerToEvents(query, p),
+        interruptChatTurn,
+      },
+    });
+    const weaver = makeWeaver(backend);
+
+    const p1 = weaver.runTurn(
+      params({ chatId: "task-qkill", prompt: "first" }),
+    );
+    const p2 = weaver.runTurn(
+      params({ chatId: "task-qkill", prompt: "second" }),
+    );
+    await vi.waitFor(() => {
+      const states = taskTable
+        .list()
+        .filter((t) => t.chatId === "task-qkill")
+        .map((t) => t.state);
+      expect(states).toEqual(["running", "queued"]);
+    });
+
+    const queued = taskTable
+      .list()
+      .find((t) => t.chatId === "task-qkill" && t.state === "queued")!;
+    expect(taskTable.kill(queued.id)).toEqual({ ok: true });
+    // The started guard: a queued turn's kill must never signal the
+    // backend — that would interrupt the chat's currently running turn.
+    expect(interruptChatTurn).not.toHaveBeenCalled();
+
+    gate.resolve();
+    const [r1, r2] = await Promise.all([p1, p2]);
+    expect(r1.text).toBe("first");
+    expect(r2.text).toContain("killed before it started");
+    // The killed turn never reached the backend.
+    expect(query).toHaveBeenCalledTimes(1);
+    const states = taskTable
+      .list()
+      .filter((t) => t.chatId === "task-qkill")
+      .map((t) => t.state);
+    expect(states).toEqual(["done", "killed"]);
   });
 });
 

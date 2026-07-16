@@ -11,10 +11,18 @@ class ConnectionConfig {
   final int port;
   final String? token;
 
-  /// Use TLS (https) for the bridge. Needed when the daemon sits behind a
-  /// reverse proxy (Caddy/nginx/Tailscale Serve) that terminates HTTPS. The
-  /// bridge itself is plaintext, so this is off for direct connections.
+  /// Use TLS (https) for the bridge — either the bridge's own certificate
+  /// (`native.tls`, the default whenever the daemon binds off-loopback) or a
+  /// reverse proxy (Caddy/nginx/Tailscale Serve) that terminates HTTPS.
   final bool tls;
+
+  /// Pinned bridge certificate: SHA-256 of the certificate DER, lowercase
+  /// hex without separators. Captured on first connect (or from local
+  /// discovery) and required to match on every reconnect; null means no pin
+  /// yet — the next TLS connect adopts whatever certificate it sees.
+  /// Irrelevant for proxy setups whose certificates chain to a real CA (the
+  /// platform trust store accepts those before the pin is consulted).
+  final String? fingerprint;
 
   /// Desktop only: try to spawn/attach a local daemon instead of assuming one.
   final bool manageLocalDaemon;
@@ -33,11 +41,20 @@ class ConnectionConfig {
     this.port = 19880,
     this.token,
     this.tls = false,
+    this.fingerprint,
     this.manageLocalDaemon = true,
     this.localAutoDiscover = true,
     this.launchCommand = 'talon',
     this.launchArgs = const ['start'],
   });
+
+  /// Canonical fingerprint form: lowercase hex, no colons/spaces. Returns
+  /// null for anything that isn't plausibly a SHA-256 hex digest.
+  static String? normalizeFingerprint(String? raw) {
+    if (raw == null) return null;
+    final s = raw.replaceAll(RegExp(r'[\s:]'), '').toLowerCase();
+    return RegExp(r'^[0-9a-f]{64}$').hasMatch(s) ? s : null;
+  }
 
   bool get isLoopback =>
       host == '127.0.0.1' || host == 'localhost' || host == '::1';
@@ -84,6 +101,8 @@ class ConnectionConfig {
     String? token,
     bool clearToken = false,
     bool? tls,
+    String? fingerprint,
+    bool clearFingerprint = false,
     bool? manageLocalDaemon,
     bool? localAutoDiscover,
     String? launchCommand,
@@ -94,6 +113,8 @@ class ConnectionConfig {
         port: port ?? this.port,
         token: clearToken ? null : (token ?? this.token),
         tls: tls ?? this.tls,
+        fingerprint:
+            clearFingerprint ? null : (fingerprint ?? this.fingerprint),
         manageLocalDaemon: manageLocalDaemon ?? this.manageLocalDaemon,
         localAutoDiscover: localAutoDiscover ?? this.localAutoDiscover,
         launchCommand: launchCommand ?? this.launchCommand,
@@ -105,6 +126,7 @@ class ConnectionConfig {
         'port': port,
         'token': token,
         'tls': tls,
+        'fingerprint': fingerprint,
         'manageLocalDaemon': manageLocalDaemon,
         'localAutoDiscover': localAutoDiscover,
         'launchCommand': launchCommand,
@@ -116,6 +138,7 @@ class ConnectionConfig {
         port: (j['port'] ?? 19880) as int,
         token: j['token'] as String?,
         tls: (j['tls'] ?? false) as bool,
+        fingerprint: normalizeFingerprint(j['fingerprint'] as String?),
         manageLocalDaemon: (j['manageLocalDaemon'] ?? true) as bool,
         localAutoDiscover: (j['localAutoDiscover'] ?? true) as bool,
         launchCommand: (j['launchCommand'] ?? 'talon') as String,

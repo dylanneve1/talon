@@ -23,6 +23,7 @@ import {
   execute as dispatcherExecute,
 } from "./core/engine/dispatcher.js";
 import { bus } from "./core/bus/index.js";
+import { appendToJournal } from "./storage/journal.js";
 import { initPulse, resetPulseTimer } from "./core/background/pulse.js";
 import { initCron } from "./core/background/cron.js";
 import {
@@ -418,6 +419,10 @@ export async function initBackendAndDispatcher(
   // completed turn resets the pulse idle timer.
   bus.subscribe("turn.started", () => maybeStartDream());
   bus.subscribe("turn.completed", () => resetPulseTimer());
+  // The journal is the bus's durable tail: every published event lands in
+  // talon.db so history survives restarts (`talon events --history`,
+  // `talon ps --all`). Append failures are logged and swallowed inside.
+  bus.subscribeAll((event) => appendToJournal(event));
 
   initPulse();
   initCron({

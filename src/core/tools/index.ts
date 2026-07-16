@@ -23,6 +23,7 @@ import { adminTools } from "./admin.js";
 import { modelTools } from "./models.js";
 import { meshTools } from "./mesh.js";
 import { nativeTools } from "./native.js";
+import { vfsTools } from "./vfs.js";
 
 /** All built-in tool definitions. */
 export const ALL_TOOLS: readonly ToolDefinition[] = [
@@ -41,6 +42,7 @@ export const ALL_TOOLS: readonly ToolDefinition[] = [
   ...adminTools,
   ...modelTools,
   ...meshTools,
+  ...vfsTools,
 ];
 
 /**

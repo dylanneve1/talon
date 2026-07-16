@@ -17,6 +17,8 @@ dependencies:
     sdk: flutter
   # REST + Server-Sent Events transport to the Talon bridge.
   http: ^1.2.2
+  # SHA-256 for bridge certificate fingerprint pinning.
+  crypto: ^3.0.6
   # Persist the connection profile (host/port/token, local vs remote).
   shared_preferences: ^2.3.2
   # Markdown rendering for assistant replies (code blocks, tables, lists).

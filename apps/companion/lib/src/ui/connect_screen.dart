@@ -290,11 +290,32 @@ class _ConnectScreenState extends State<ConnectScreen> {
               s.contains(WidgetState.selected) ? TalonColors.accent : null),
           title: const Text('Use HTTPS / TLS', style: TextStyle(fontSize: 14)),
           subtitle: Text(
-              'Turn on if the bridge is behind a TLS reverse proxy (Caddy, '
-              'nginx, Tailscale Serve). Auto-detected from an https:// host.',
+              'On by default when the daemon binds off-loopback '
+              '(its own certificate, pinned on first connect) — or turn on '
+              'for a TLS reverse proxy. Auto-detected from an https:// host.',
               style: TextStyle(fontSize: 12, color: TalonColors.textFaint)),
         ),
+        if (_pinnedFingerprint != null) ...[
+          const SizedBox(height: 4),
+          _Hint(
+            'Pinned certificate ${_prettyFingerprint(_pinnedFingerprint!)}. '
+            'Connecting from this screen resets the pin, so the next '
+            'connect adopts the certificate the daemon presents.',
+          ),
+        ],
       ];
+
+  String? get _pinnedFingerprint => widget.state.config.fingerprint;
+
+  /// First bytes of the pin in AA:BB:… form — enough to eyeball against the
+  /// fingerprint the daemon logs, short enough for a settings row.
+  static String _prettyFingerprint(String fingerprint) {
+    final head = fingerprint.substring(0, 16).toUpperCase();
+    final pairs = <String>[
+      for (var i = 0; i < head.length; i += 2) head.substring(i, i + 2),
+    ];
+    return '${pairs.join(':')}…';
+  }
 
   Widget _field(
     TextEditingController c,

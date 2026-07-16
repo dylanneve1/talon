@@ -13,6 +13,7 @@ import '../services/mesh_background.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'connect_screen.dart';
+import 'extensions_screen.dart';
 import 'glass.dart';
 import 'logs_screen.dart';
 
@@ -209,6 +210,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _dreaming = true);
     await _runControl('dream');
     if (mounted) setState(() => _dreaming = false);
+  }
+
+  /// Plugins + Skills sub-menus. Gated on the daemon's `plugins-skills`
+  /// bridge capability — an older daemon simply doesn't show the card.
+  Widget _extensionsCard() {
+    return _Section(
+      title: 'Extensions',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ControlButton(
+            icon: Icons.extension_outlined,
+            label: 'Plugins',
+            subtitle:
+                'Built-ins, module plugins, and MCP servers — view & toggle',
+            pending: false,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => PluginsScreen(state: widget.state),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _ControlButton(
+            icon: Icons.menu_book_outlined,
+            label: 'Skills',
+            subtitle: 'SKILL.md workflow bundles — view & toggle',
+            pending: false,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => SkillsScreen(state: widget.state),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _controlsCard() {
@@ -430,6 +468,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          if (widget.state.status.hasCapability('plugins-skills')) ...[
+            _extensionsCard(),
+            const SizedBox(height: 16),
+          ],
           _meshCard(),
           const SizedBox(height: 16),
           _controlsCard(),
@@ -613,8 +655,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
     final seed = TalonTheme.accentSeed.value;
     final isPreset = seed != null &&
-        TalonAccents.presets
-            .any((p) => p.$2.toARGB32() == seed.toARGB32());
+        TalonAccents.presets.any((p) => p.$2.toARGB32() == seed.toARGB32());
     final isCustom = seed != null && !isPreset;
     final scale = TalonTheme.textScale.value;
     final mobile = defaultTargetPlatform == TargetPlatform.android ||
@@ -685,8 +726,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _AccentSwatch(
                   tooltip: label,
                   color: color,
-                  selected:
-                      seed != null && seed.toARGB32() == color.toARGB32(),
+                  selected: seed != null && seed.toARGB32() == color.toARGB32(),
                   onTap: () => _setAccent(color),
                 ),
               _AccentSwatch(
@@ -1490,8 +1530,7 @@ class _AccentSwatch extends StatelessWidget {
   Widget build(BuildContext context) {
     // Pick a glyph color that survives both light swatches (amber) and dark.
     final base = color ?? const Color(0xFF7C8CFF);
-    final glyph =
-        base.computeLuminance() > 0.6 ? Colors.black87 : Colors.white;
+    final glyph = base.computeLuminance() > 0.6 ? Colors.black87 : Colors.white;
     return Tooltip(
       message: tooltip,
       waitDuration: const Duration(milliseconds: 400),

@@ -2,13 +2,15 @@
  * `talon events` — tail the daemon's event bus.
  *
  * Renders the gateway's `/events/recent` ring; `--follow` (`-f`) keeps
- * polling with a since-cursor for a live tail. Rendering only — the bus
- * itself lives in core/bus/.
+ * polling with a since-cursor for a live tail; `--history [N]` reads the
+ * durable journal in talon.db instead (works across restarts, daemon up
+ * or down). Rendering only — the bus lives in core/bus/, the journal in
+ * storage/journal.ts.
  */
 
 import pc from "picocolors";
 import { fetchGateway, requireGatewayPort } from "./daemon-api.js";
-import type { PublishedEvent } from "../core/bus/index.js";
+import type { PublishedEvent, TalonEvent } from "../core/bus/index.js";
 
 const FOLLOW_POLL_MS = 1_000;
 
@@ -17,7 +19,7 @@ function timestamp(at: number): string {
 }
 
 /** One tail line of type-specific detail, content-free like the events. */
-function describe(event: PublishedEvent): string {
+function describe(event: TalonEvent): string {
   switch (event.type) {
     case "task.started":
       return (
@@ -36,10 +38,35 @@ function describe(event: PublishedEvent): string {
   }
 }
 
-function render(event: PublishedEvent): void {
+function render(event: TalonEvent, at: number): void {
   console.log(
-    `  ${pc.dim(timestamp(event.at))}  ${pc.cyan(event.type.padEnd(14))}  ${describe(event)}`,
+    `  ${pc.dim(timestamp(at))}  ${pc.cyan(event.type.padEnd(14))}  ${describe(event)}`,
   );
+}
+
+/**
+ * The journal path: read the durable tail from talon.db directly — no
+ * daemon required, and it answers across restarts (unlike the ring).
+ */
+async function showHistory(limit: number): Promise<void> {
+  const { readJournal } = await import("../storage/journal.js");
+  let entries;
+  try {
+    entries = readJournal({ limit });
+  } catch (err) {
+    console.log(
+      `  ${pc.red("✖")} Could not read the journal: ${err instanceof Error ? err.message : err}\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (entries.length === 0) {
+    console.log(`  ${pc.dim("Journal is empty — no events recorded yet.")}\n`);
+    return;
+  }
+  // readJournal returns newest-first; a tail reads oldest-to-newest.
+  for (const entry of entries.reverse()) render(entry.event, entry.at);
+  console.log();
 }
 
 async function fetchEvents(
@@ -57,21 +84,29 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function showEvents(follow: boolean): Promise<void> {
+export async function showEvents(options: {
+  follow: boolean;
+  history?: number;
+}): Promise<void> {
   console.log();
+  if (options.history !== undefined) {
+    await showHistory(options.history);
+    return;
+  }
+
   const port = await requireGatewayPort();
   if (port === null) return;
 
   let cursor = 0;
   try {
     const events = await fetchEvents(port, cursor);
-    if (events.length === 0 && !follow) {
+    if (events.length === 0 && !options.follow) {
       console.log(
-        `  ${pc.dim("No events yet — the bus ring starts empty on each daemon start.")}\n`,
+        `  ${pc.dim("No events yet — the ring starts empty on each daemon start. Older events: talon events --history")}\n`,
       );
       return;
     }
-    for (const event of events) render(event);
+    for (const event of events) render(event, event.at);
     cursor = events.at(-1)?.id ?? 0;
   } catch (err) {
     console.log(
@@ -80,7 +115,7 @@ export async function showEvents(follow: boolean): Promise<void> {
     return;
   }
 
-  if (!follow) {
+  if (!options.follow) {
     console.log();
     return;
   }
@@ -89,7 +124,7 @@ export async function showEvents(follow: boolean): Promise<void> {
     await sleep(FOLLOW_POLL_MS);
     try {
       const events = await fetchEvents(port, cursor);
-      for (const event of events) render(event);
+      for (const event of events) render(event, event.at);
       if (events.length > 0) cursor = events.at(-1)!.id;
     } catch {
       // Transient gateway hiccup (restart mid-follow) — keep polling.

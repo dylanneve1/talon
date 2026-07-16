@@ -101,6 +101,24 @@ describe("task table", () => {
     });
   });
 
+  it("fail records usage when the owner reports what the run burned", () => {
+    const table = new TaskTable();
+    const task = table.begin({ kind: "turn", label: "message" });
+
+    task.fail(new Error("interrupted by kill"), {
+      inputTokens: 9,
+      outputTokens: 4,
+      cacheRead: 2,
+      cacheWrite: 1,
+    });
+
+    expect(table.list()[0]).toMatchObject({
+      state: "failed",
+      error: "interrupted by kill",
+      usage: { inputTokens: 9, outputTokens: 4, cacheRead: 2, cacheWrite: 1 },
+    });
+  });
+
   it("settlement is idempotent — the first terminal state wins", () => {
     const table = new TaskTable();
     const task = table.begin({ kind: "turn", label: "message" });

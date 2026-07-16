@@ -33,6 +33,7 @@ import {
   setTeleport,
   setTeleportCwd,
 } from "../../mesh/teleport.js";
+import { getVfs } from "../../vfs/index.js";
 import {
   clampExecOutput,
   createOutputCapture,
@@ -447,6 +448,65 @@ async function bashTeleported(
   };
 }
 
+// ── talon:// address resolution ─────────────────────────────────────────────
+
+const NAMESPACE_SCHEME = "talon://";
+
+type AddressResolution =
+  | { kind: "disk"; path: string }
+  | { kind: "virtual" }
+  | { kind: "error"; text: string };
+
+/**
+ * Native fs tools accept talon:// addresses: `Vfs.locate` maps them to the
+ * disk location the address names, and the tool then operates on the real
+ * file. Synthetic nodes (proc/, plugins/) have no disk location — reads are
+ * served straight from the namespace, mutation refuses honestly. Teleport
+ * can't cross address spaces: talon:// names daemon state, and a teleported
+ * chat's paths belong to the device, so the combination is refused rather
+ * than resolved against the wrong filesystem.
+ */
+function resolveNamespaceAddress(
+  address: string,
+  teleportedTo: string | undefined,
+): AddressResolution {
+  if (teleportedTo !== undefined) {
+    return {
+      kind: "error",
+      text:
+        `${address} names the daemon's namespace, but native tools are ` +
+        `teleported onto ${teleportedTo} — teleport_back first, or use a device path.`,
+    };
+  }
+  const located = getVfs().locate(address);
+  if (!located.ok) {
+    return {
+      kind: "error",
+      text: `Cannot resolve ${address}: ${located.error}${located.detail ? ` — ${located.detail}` : ""}`,
+    };
+  }
+  return located.value === undefined
+    ? { kind: "virtual" }
+    : { kind: "disk", path: located.value };
+}
+
+/** glob/search root: a talon:// address must name a disk-backed directory. */
+function resolveSearchRoot(
+  path: string | undefined,
+  teleportedTo: string | undefined,
+): { root: string } | { error: string } {
+  const root = path ?? ".";
+  if (!root.startsWith(NAMESPACE_SCHEME)) return { root };
+  const resolved = resolveNamespaceAddress(root, teleportedTo);
+  if (resolved.kind === "error") return { error: resolved.text };
+  if (resolved.kind === "virtual") {
+    return {
+      error: `${root} is a synthetic view with no files on disk — browse it with vfs_list instead.`,
+    };
+  }
+  return { root: resolved.path };
+}
+
 // ── read / write / edit ─────────────────────────────────────────────────────
 
 async function read(
@@ -455,15 +515,38 @@ async function read(
   offset: unknown,
   limit: unknown,
 ): Promise<Result> {
-  const p = str(path);
-  if (!p) return { ok: false, text: "A file path is required." };
+  const address = str(path);
+  if (!address) return { ok: false, text: "A file path is required." };
   const active = await getTeleport(chatId);
   const where = active ? active.deviceName : "local";
+
+  let p = address;
+  let virtualContent: string | undefined;
+  if (address.startsWith(NAMESPACE_SCHEME)) {
+    const resolved = resolveNamespaceAddress(address, active?.deviceName);
+    if (resolved.kind === "error") return { ok: false, text: resolved.text };
+    if (resolved.kind === "disk") {
+      p = resolved.path;
+    } else {
+      const served = getVfs().read(address);
+      if (!served.ok) {
+        return {
+          ok: false,
+          text: `Cannot read ${address}: ${served.error}${served.detail ? ` — ${served.detail}` : ""}`,
+        };
+      }
+      virtualContent = served.value;
+    }
+  }
+  const shown = p === address ? p : `${address} → ${p}`;
 
   // Image files: return a viewable image block, not the raw bytes decoded as
   // UTF-8. Without this, `read`ing a photo/screenshot/design hands the model
   // mojibake and it can't see the picture at all.
-  const mime = IMAGE_MIME[extname(p).toLowerCase()];
+  const mime =
+    virtualContent === undefined
+      ? IMAGE_MIME[extname(p).toLowerCase()]
+      : undefined;
   if (mime) {
     let bytes: Buffer;
     if (active) {
@@ -476,7 +559,7 @@ async function read(
       } catch (err) {
         return {
           ok: false,
-          text: `Cannot read ${p}: ${(err as Error).message}`,
+          text: `Cannot read ${shown}: ${(err as Error).message}`,
         };
       }
     }
@@ -484,14 +567,14 @@ async function read(
       return {
         ok: false,
         text:
-          `${p} [${where}] is ${(bytes.length / 1_048_576).toFixed(1)}MB — over the ` +
+          `${shown} [${where}] is ${(bytes.length / 1_048_576).toFixed(1)}MB — over the ` +
           `${MAX_IMAGE_BYTES / 1_048_576}MB image limit. Downscale it first ` +
           `(e.g. \`convert '${p}' -resize 1568x /tmp/small.jpg\`) and read that.`,
       };
     }
     return {
       ok: true,
-      text: `${p} [${where}] — image (${mime}, ${bytes.length} bytes)`,
+      text: `${shown} [${where}] — image (${mime}, ${bytes.length} bytes)`,
       image: { data: bytes.toString("base64"), mimeType: mime },
     };
   }
@@ -499,7 +582,9 @@ async function read(
   const start = num(offset) ?? 0;
   const max = Math.min(num(limit) ?? MAX_READ_LINES, MAX_READ_LINES);
   let content: string;
-  if (active) {
+  if (virtualContent !== undefined) {
+    content = virtualContent;
+  } else if (active) {
     const res = await getMeshService().readFileBytes(active.deviceId, p);
     if ("error" in res) return { ok: false, text: res.error };
     content = res.data.toString("utf8");
@@ -507,7 +592,10 @@ async function read(
     try {
       content = await readFile(p, "utf8");
     } catch (err) {
-      return { ok: false, text: `Cannot read ${p}: ${(err as Error).message}` };
+      return {
+        ok: false,
+        text: `Cannot read ${shown}: ${(err as Error).message}`,
+      };
     }
   }
   const lines = content.split("\n");
@@ -521,7 +609,7 @@ async function read(
       : "";
   return {
     ok: true,
-    text: `${p} [${where}] — ${lines.length} lines\n${numbered}${more}`,
+    text: `${shown} [${where}] — ${lines.length} lines\n${numbered}${more}`,
   };
 }
 
@@ -530,10 +618,23 @@ async function write(
   path: unknown,
   content: unknown,
 ): Promise<Result> {
-  const p = str(path);
-  if (!p) return { ok: false, text: "A file path is required." };
+  const address = str(path);
+  if (!address) return { ok: false, text: "A file path is required." };
   const body = typeof content === "string" ? content : "";
   const active = await getTeleport(chatId);
+  let p = address;
+  if (address.startsWith(NAMESPACE_SCHEME)) {
+    const resolved = resolveNamespaceAddress(address, active?.deviceName);
+    if (resolved.kind === "error") return { ok: false, text: resolved.text };
+    if (resolved.kind === "virtual") {
+      return {
+        ok: false,
+        text: `${address} is a synthetic view — there is no file on disk to write. Writable mounts: vfs_list "" shows where each lives.`,
+      };
+    }
+    p = resolved.path;
+  }
+  const shown = p === address ? p : `${address} → ${p}`;
   if (active) {
     return getMeshService().writeFileToDevice(active.deviceId, p, body);
   }
@@ -541,9 +642,12 @@ async function write(
     await mkdir(dirname(p), { recursive: true });
     await writeFile(p, body);
   } catch (err) {
-    return { ok: false, text: `Cannot write ${p}: ${(err as Error).message}` };
+    return {
+      ok: false,
+      text: `Cannot write ${shown}: ${(err as Error).message}`,
+    };
   }
-  return { ok: true, text: `Wrote ${body.length} bytes to ${p} [local].` };
+  return { ok: true, text: `Wrote ${body.length} bytes to ${shown} [local].` };
 }
 
 async function edit(
@@ -553,13 +657,26 @@ async function edit(
   newString: unknown,
   replaceAll: unknown,
 ): Promise<Result> {
-  const p = str(path);
-  if (!p) return { ok: false, text: "A file path is required." };
+  const address = str(path);
+  if (!address) return { ok: false, text: "A file path is required." };
   const from = typeof oldString === "string" ? oldString : "";
   const to = typeof newString === "string" ? newString : "";
   if (from === to)
     return { ok: false, text: "old_string and new_string are identical." };
   const active = await getTeleport(chatId);
+  let p = address;
+  if (address.startsWith(NAMESPACE_SCHEME)) {
+    const resolved = resolveNamespaceAddress(address, active?.deviceName);
+    if (resolved.kind === "error") return { ok: false, text: resolved.text };
+    if (resolved.kind === "virtual") {
+      return {
+        ok: false,
+        text: `${address} is a synthetic view — there is no file on disk to edit. Read it with vfs_read instead.`,
+      };
+    }
+    p = resolved.path;
+  }
+  const shown = p === address ? p : `${address} → ${p}`;
   const svc = getMeshService();
 
   let content: string;
@@ -571,7 +688,10 @@ async function edit(
     try {
       content = await readFile(p, "utf8");
     } catch (err) {
-      return { ok: false, text: `Cannot read ${p}: ${(err as Error).message}` };
+      return {
+        ok: false,
+        text: `Cannot read ${shown}: ${(err as Error).message}`,
+      };
     }
   }
 
@@ -579,13 +699,13 @@ async function edit(
   if (count === 0) {
     return {
       ok: false,
-      text: `old_string not found in ${p}.${nearMissHint(content, from)}`,
+      text: `old_string not found in ${shown}.${nearMissHint(content, from)}`,
     };
   }
   if (count > 1 && replaceAll !== true) {
     return {
       ok: false,
-      text: `old_string appears ${count}× in ${p}; pass replace_all or make it unique.`,
+      text: `old_string appears ${count}× in ${shown}; pass replace_all or make it unique.`,
     };
   }
   const updated =
@@ -598,18 +718,21 @@ async function edit(
     return res.ok
       ? {
           ok: true,
-          text: `Edited ${p} [${active.deviceName}] (${count} replacement${count === 1 ? "" : "s"}).`,
+          text: `Edited ${shown} [${active.deviceName}] (${count} replacement${count === 1 ? "" : "s"}).`,
         }
       : res;
   }
   try {
     await writeFile(p, updated);
   } catch (err) {
-    return { ok: false, text: `Cannot write ${p}: ${(err as Error).message}` };
+    return {
+      ok: false,
+      text: `Cannot write ${shown}: ${(err as Error).message}`,
+    };
   }
   return {
     ok: true,
-    text: `Edited ${p} [local] (${count} replacement${count === 1 ? "" : "s"}).`,
+    text: `Edited ${shown} [local] (${count} replacement${count === 1 ? "" : "s"}).`,
   };
 }
 
@@ -622,8 +745,10 @@ async function glob(
 ): Promise<Result> {
   const pat = str(pattern);
   if (!pat) return { ok: false, text: "A glob pattern is required." };
-  const root = str(path) ?? ".";
   const active = await getTeleport(chatId);
+  const rooted = resolveSearchRoot(str(path), active?.deviceName);
+  if ("error" in rooted) return { ok: false, text: rooted.error };
+  const root = rooted.root;
   if (active) {
     // Prefer rg on the device; fall back to find (basename patterns via
     // -name, path patterns via -path). `command -v` gates the choice so a
@@ -669,7 +794,10 @@ async function search(
 ): Promise<Result> {
   const pat = str(pattern);
   if (!pat) return { ok: false, text: "A search pattern is required." };
-  const root = str(path) ?? ".";
+  const active = await getTeleport(chatId);
+  const rooted = resolveSearchRoot(str(path), active?.deviceName);
+  if ("error" in rooted) return { ok: false, text: rooted.error };
+  const root = rooted.root;
   const g = str(globPat);
   const ci = caseInsensitive === true;
   // `-e` keeps a pattern that starts with "-" from being parsed as a flag
@@ -680,7 +808,6 @@ async function search(
     ...(ci ? ["-i"] : []),
     ...(g ? ["-g", g] : []),
   ];
-  const active = await getTeleport(chatId);
   if (active) {
     // Prefer rg on the device, fall back to grep (Android toybox has grep
     // but rarely rg). --include is grep's closest analogue of -g.

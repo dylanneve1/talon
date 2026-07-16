@@ -90,6 +90,15 @@ For remote access, run the daemon with a reachable bridge:
 }
 ```
 
+An off-loopback bridge serves **HTTPS by default** with a certificate the
+daemon mints and keeps under `~/.talon/keys/` (`"tls": false` opts out). The
+app pins the certificate's SHA-256 fingerprint on the first successful
+connect — compare it against the one the daemon logs at startup — and
+refuses to connect if it ever changes; reconnecting from the connection
+screen resets the pin. Local zero-config discovery reads the fingerprint
+from `native-bridge.json` directly, so no first-use adoption is needed
+there.
+
 ## Protocol
 
 The wire contract lives on the daemon side in
