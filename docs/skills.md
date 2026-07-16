@@ -47,6 +47,29 @@ templates, references) alongside `SKILL.md`. `save_skill` overwrites only
 resources. `read_skill` enumerates them and tells the agent to open them with
 the normal Read tool. Deleting a skill removes the whole folder.
 
+## CLI management
+
+`talon skill` manages the store from the outside — the agent-facing tools
+(`save_skill`, `find_skills`, `read_skill`) are unchanged:
+
+- `talon skill install <source>` — install from a local folder, a git URL, or
+  `owner/repo[/subpath]` GitHub shorthand (so
+  `talon skill install anthropics/skills/document-skills/pdf` works). The
+  source either **is** a skill (has `SKILL.md`) or is a collection whose
+  immediate children are skills — collections install every child. The target
+  folder name is the frontmatter `name`; existing skills are only replaced
+  with `--force`.
+- `talon skill list` — every skill with its enabled state.
+- `talon skill enable/disable <name>` — toggle via a `.disabled` marker file
+  in the skill folder. The marker survives `save_skill` updates (which only
+  rewrite `SKILL.md`). Disabled skills drop out of the prompt index and
+  `find_skills`, but stay listable via `list_skills` (shown `[disabled]`) and
+  readable via `read_skill` — the toggle hides, it never restricts.
+- `talon skill remove <name>` — delete the skill folder.
+
+Installs and toggles need no daemon restart: the prompt index re-reads the
+store on the next prompt assembly.
+
 ## Loading Policy
 
 The system prompt injects only a capped skill index: name, description, and

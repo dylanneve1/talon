@@ -13,10 +13,11 @@ export async function fetchGateway(
   port: number,
   path: string,
   init?: RequestInit,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Promise<unknown> {
   const response = await fetch(`http://127.0.0.1:${port}${path}`, {
     ...init,
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) throw new Error(`gateway answered ${response.status}`);
   return response.json();

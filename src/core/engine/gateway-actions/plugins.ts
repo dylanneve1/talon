@@ -5,30 +5,47 @@
  */
 
 import { log, logWarn } from "../../../util/log.js";
+import type { Backend } from "../../agent-runtime/capabilities.js";
 import type { SharedActionHandlers } from "./types.js";
+
+/**
+ * The chat-independent half of a plugin reload: re-read config, reload
+ * plugins, rebuild the system prompt, and drop per-session prompt
+ * snapshots. Shared by the `reload_plugins` action (which additionally
+ * hot-swaps MCP servers on the caller's chat) and the gateway's
+ * `POST /plugins/reload` endpoint, which has no chat context. Throws on
+ * failure — each caller renders errors its own way.
+ */
+export async function performPluginReload(
+  backend?: Backend | null,
+): Promise<{ names: string[] }> {
+  const { reloadPlugins, getPluginPromptAdditions } =
+    await import("../../plugin/index.js");
+  const { rebuildSystemPrompt } = await import("../../../util/config.js");
+  const { clearSystemPromptSnapshots } =
+    await import("../../../backend/shared/system-prompt.js");
+
+  // reloadPlugins reads + validates config internally — no double read.
+  // Frontends are derived from config if not explicitly provided.
+  const { names, config: freshConfig } = await reloadPlugins();
+
+  // Rebuild system prompt on the freshConfig, then update the backend's
+  // live config reference so subsequent messages use the new prompt
+  rebuildSystemPrompt(freshConfig, getPluginPromptAdditions());
+  backend?.control?.updateSystemPrompt?.(freshConfig.systemPrompt);
+
+  // Plugin prompt additions changed — drop per-session prompt
+  // snapshots so every chat's next turn picks up the new prompt
+  // (deliberate one-time cache re-write per live session).
+  clearSystemPromptSnapshots();
+
+  return { names };
+}
 
 export const pluginHandlers: SharedActionHandlers = {
   reload_plugins: async (body, chatId, backend) => {
     try {
-      const { reloadPlugins, getPluginPromptAdditions } =
-        await import("../../plugin/index.js");
-      const { rebuildSystemPrompt } = await import("../../../util/config.js");
-      const { clearSystemPromptSnapshots } =
-        await import("../../../backend/shared/system-prompt.js");
-
-      // reloadPlugins reads + validates config internally — no double read.
-      // Frontends are derived from config if not explicitly provided.
-      const { names, config: freshConfig } = await reloadPlugins();
-
-      // Rebuild system prompt on the freshConfig, then update the backend's
-      // live config reference so subsequent messages use the new prompt
-      rebuildSystemPrompt(freshConfig, getPluginPromptAdditions());
-      backend?.control?.updateSystemPrompt?.(freshConfig.systemPrompt);
-
-      // Plugin prompt additions changed — drop per-session prompt
-      // snapshots so every chat's next turn picks up the new prompt
-      // (deliberate one-time cache re-write per live session).
-      clearSystemPromptSnapshots();
+      const { names } = await performPluginReload(backend);
 
       // Hot-swap MCP servers on the active query so new plugin tools
       // are available immediately (not just on the next message)

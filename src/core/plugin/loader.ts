@@ -16,8 +16,11 @@ import type {
 import { isMcpPlugin } from "./types.js";
 import { registry, _deps } from "./registry.js";
 
-/** Candidate entry point paths, checked in order. */
-const ENTRY_CANDIDATES = [
+/**
+ * Candidate entry point paths, checked in order. Exported for
+ * `talon plugin install`, which verifies a module before adding it.
+ */
+export const ENTRY_CANDIDATES = [
   "src/index.ts",
   "dist/index.js",
   "index.ts",
@@ -35,6 +38,15 @@ export async function loadPlugins(
   activeFrontends?: string[],
 ): Promise<void> {
   for (const entry of pluginConfigs) {
+    // Disabled entries stay in config (so `talon plugin enable` can restore
+    // them) but are never loaded or registered.
+    if (entry.enabled === false) {
+      log(
+        "plugin",
+        `Skipped disabled plugin: ${isMcpPlugin(entry) ? entry.name : entry.path}`,
+      );
+      continue;
+    }
     // Standalone MCP servers are registered for getPluginMcpServers, not loaded as modules
     if (isMcpPlugin(entry)) {
       if (registry.registerMcpEntry(entry)) {

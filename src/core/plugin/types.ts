@@ -8,6 +8,8 @@ import type { ActionResult } from "../types.js";
 export interface PluginPathEntry {
   path: string;
   config?: Record<string, unknown>;
+  /** `false` keeps the entry in config but skips loading it. Default true. */
+  enabled?: boolean;
 }
 
 /** Standalone MCP server entry (command + args, not a loadable module). */
@@ -16,6 +18,8 @@ export interface PluginMcpEntry {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  /** `false` keeps the entry in config but skips registering it. Default true. */
+  enabled?: boolean;
 }
 
 /** Configuration entry for a plugin in config.json. */

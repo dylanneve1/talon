@@ -200,6 +200,37 @@ describe("plugin system", () => {
     });
   });
 
+  describe("disabled entries", () => {
+    it("skips a disabled path plugin", async () => {
+      const plugin = createMockPlugin();
+      const { loadPlugins, getPluginCount } = await setup(plugin);
+      await loadPlugins([{ path: "/fake/plugin", enabled: false }]);
+      expect(getPluginCount()).toBe(0);
+    });
+
+    it("loads a path plugin with explicit enabled: true", async () => {
+      const plugin = createMockPlugin();
+      const { loadPlugins, getPluginCount } = await setup(plugin);
+      await loadPlugins([{ path: "/fake/plugin", enabled: true }]);
+      expect(getPluginCount()).toBe(1);
+    });
+
+    it("skips a disabled standalone MCP entry", async () => {
+      const plugin = createMockPlugin();
+      const { loadPlugins, getPluginMcpServers } = await setup(plugin);
+      await loadPlugins([
+        {
+          name: "srv",
+          command: "npx",
+          args: ["-y", "some-server"],
+          enabled: false,
+        },
+      ]);
+      const servers = getPluginMcpServers("http://localhost:19876", "chat1");
+      expect(Object.keys(servers)).toHaveLength(0);
+    });
+  });
+
   describe("MCP server config", () => {
     it("builds MCP server entries for plugins with mcpServerPath", async () => {
       const plugin = createMockPlugin({

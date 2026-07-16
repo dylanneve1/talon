@@ -7,6 +7,7 @@
  * Layout:
  *   ~/.talon/
  *     config.json              Main configuration
+ *     plugins/                 CLI-installed plugins (npm prefix / git clones)
  *     data/                    Internal state
  *       talon.db               SQLite — all structured state (sessions,
  *                              history, settings, media, goals, scripts,
@@ -69,6 +70,8 @@ export const dirs = {
   scripts: resolve(TALON_ROOT, "workspace", "scripts"),
   /** Skill folders: ~/.talon/workspace/skills/ */
   skills: resolve(TALON_ROOT, "workspace", "skills"),
+  /** CLI-installed plugins (`talon plugin install`): ~/.talon/plugins/ */
+  plugins: resolve(TALON_ROOT, "plugins"),
 } as const;
 
 // ── Files ──────────────────────────────────────────────────────────────────
