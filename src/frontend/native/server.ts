@@ -35,7 +35,10 @@ import {
   type LogEntry,
   type LogLevel,
   type ModelOption,
+  type PluginItem,
   type SearchResult,
+  type SkillItem,
+  type ToggleResult,
 } from "./protocol.js";
 import type { ConfigSnapshot } from "./settings.js";
 
@@ -95,6 +98,14 @@ export type BridgeServerHandlers = {
   getConfig(): ConfigSnapshot;
   /** Change daemon settings; returns the fresh snapshot. */
   setConfig(update: Record<string, unknown>): ConfigSnapshot;
+  /** Installed plugins (built-ins + configured entries) with state. */
+  listPlugins(): PluginItem[];
+  /** Enable/disable a plugin; persists + hot-reloads. */
+  setPluginEnabled(name: string, enabled: boolean): Promise<ToggleResult>;
+  /** Installed skills with state. */
+  listSkills(): SkillItem[];
+  /** Enable/disable a skill; rebuilds the prompt index. */
+  setSkillEnabled(name: string, enabled: boolean): ToggleResult;
   /** Fire a daemon-level control action (e.g. "restart", "dream"). */
   control(action: string): Promise<{ ok: boolean; message: string }>;
   /** Newest daemon log entries (for the client's log viewer). */
@@ -507,6 +518,32 @@ export class BridgeServer {
             component,
           }),
         });
+      }
+
+      if (method === "GET" && path === "/plugins")
+        return this.json(res, 200, { plugins: this.handlers.listPlugins() });
+
+      if (method === "POST" && path === "/plugins/toggle") {
+        const body = await this.readJson(req);
+        // Always 200: ok/error is an application result the client renders,
+        // not an HTTP-level failure (mirrors /backend).
+        const result = await this.handlers.setPluginEnabled(
+          asString(body.name) ?? "",
+          body.enabled === true,
+        );
+        return this.json(res, 200, result);
+      }
+
+      if (method === "GET" && path === "/skills")
+        return this.json(res, 200, { skills: this.handlers.listSkills() });
+
+      if (method === "POST" && path === "/skills/toggle") {
+        const body = await this.readJson(req);
+        const result = this.handlers.setSkillEnabled(
+          asString(body.name) ?? "",
+          body.enabled === true,
+        );
+        return this.json(res, 200, result);
       }
 
       if (method === "GET" && path === "/config")

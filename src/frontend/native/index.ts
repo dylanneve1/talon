@@ -52,6 +52,12 @@ import {
 import { resetSession } from "../../storage/sessions.js";
 import { resetPulseCheckpoint } from "../../core/background/pulse.js";
 import { configSnapshot, applyConfigUpdate } from "./settings.js";
+import {
+  pluginItems,
+  skillItems,
+  togglePlugin,
+  toggleSkill,
+} from "./extensions.js";
 import { resolveModel } from "../../core/models/catalog.js";
 import {
   getBackendForChat,
@@ -742,7 +748,7 @@ export function createNativeFrontend(
     return {
       app: "talon-bridge",
       protocol: BRIDGE_PROTOCOL_VERSION,
-      capabilities: ["mesh", "mesh-commands"],
+      capabilities: ["mesh", "mesh-commands", "plugins-skills"],
       botName,
       backend: config.backend,
       model: resolveModel(config.model)?.displayName ?? config.model,
@@ -1167,6 +1173,12 @@ export function createNativeFrontend(
       broadcast({ kind: "status", status: status() });
       return snap;
     },
+    listPlugins: () => pluginItems(config),
+    setPluginEnabled: (name, enabled) =>
+      togglePlugin(config, getPooledBackend(config.backend), name, enabled),
+    listSkills: () => skillItems(),
+    setSkillEnabled: (name, enabled) =>
+      toggleSkill(config, getPooledBackend(config.backend), name, enabled),
     control,
     logs: ({ lines, minLevel, component }) =>
       readLogEntries(files.log, { limit: lines, minLevel, component }),

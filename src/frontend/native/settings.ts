@@ -175,15 +175,19 @@ export function applyConfigUpdate(
   }
 
   if (Object.keys(persist).length > 0) {
-    persistToFile(persist);
+    persistConfigPatch(persist);
     log("native", `Config updated: ${Object.keys(persist).join(", ")}`);
   }
 
   return configSnapshot(config);
 }
 
-/** Merge a partial update into talon.json on disk, preserving everything else. */
-function persistToFile(update: Record<string, unknown>): void {
+/**
+ * Merge a partial update into talon.json on disk, preserving everything
+ * else. Shared by every bridge surface that persists config changes
+ * (settings sync here, plugin toggles in extensions.ts).
+ */
+export function persistConfigPatch(update: Record<string, unknown>): void {
   const file = pathFiles.config;
   let current: Record<string, unknown> = {};
   try {

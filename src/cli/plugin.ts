@@ -38,7 +38,7 @@ import {
   npmSpecName,
   withEnabled,
   type PluginEntryJson,
-} from "./plugin-entries.js";
+} from "../core/plugin/entries.js";
 
 /** Plugin init can legitimately take ~30s (MemPalace) — outlive it. */
 const RELOAD_TIMEOUT_MS = 60_000;

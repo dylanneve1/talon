@@ -197,6 +197,39 @@ export type BackendOption = {
   label: string;
 };
 
+/**
+ * One installed plugin, as `GET /plugins` lists it. Toggled via
+ * `POST /plugins/toggle` (`{ name, enabled }` → `ToggleResult`). Additive
+ * in v1 behind the `plugins-skills` capability — older clients never call
+ * these endpoints.
+ */
+export type PluginItem = {
+  name: string;
+  /** Built-in (config-section) plugin, module plugin, or MCP server. */
+  kind: "builtin" | "module" | "mcp";
+  enabled: boolean;
+  /** Where it comes from: a config section, module path, or MCP command. */
+  source: string;
+};
+
+/**
+ * One installed skill, as `GET /skills` lists it. Toggled via
+ * `POST /skills/toggle` — a disabled skill drops out of the model's
+ * prompt index but stays installed.
+ */
+export type SkillItem = {
+  name: string;
+  description: string;
+  enabled: boolean;
+};
+
+/**
+ * Application-level outcome of a toggle, always carried in an HTTP 200
+ * body (mirrors `/backend`: the client renders ok/error, HTTP-level
+ * failures stay transport errors).
+ */
+export type ToggleResult = { ok: boolean; error?: string };
+
 // Mesh device shapes are canonical in core (the mesh is daemon-wide state,
 // readable from every frontend); re-exported here so bridge clients keep
 // depending on the protocol module alone.

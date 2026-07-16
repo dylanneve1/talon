@@ -15,7 +15,7 @@ import {
   npmSpecName,
   withEnabled,
   type PluginEntryJson,
-} from "../cli/plugin-entries.js";
+} from "../core/plugin/entries.js";
 import { resolveSource } from "../cli/install-sources.js";
 
 describe("entryDisplayName", () => {

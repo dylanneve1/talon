@@ -1,8 +1,9 @@
 /**
- * Pure helpers over the config `plugins` array for the `talon plugin`
- * command group. The CLI edits config.json as JSON — entries here are the
- * on-disk shape (`core/plugin/types.ts` PluginEntry), not loaded plugins.
- * No filesystem or process access — everything is testable data-in/data-out.
+ * Pure helpers over the config `plugins` array, shared by every surface
+ * that lists or toggles plugins (the `talon plugin` command group, the
+ * client bridge's plugin endpoints). Entries here are the on-disk shape
+ * (`core/plugin/types.ts` PluginEntry), not loaded plugins. No filesystem
+ * or process access — everything is testable data-in/data-out.
  */
 
 /** On-disk plugin entry — path-based module or standalone MCP server. */
@@ -61,7 +62,7 @@ export function entryMatches(entry: PluginEntryJson, token: string): boolean {
 }
 
 export function findEntryIndex(
-  entries: PluginEntryJson[],
+  entries: readonly PluginEntryJson[],
   token: string,
 ): number {
   return entries.findIndex((entry) => entryMatches(entry, token));
