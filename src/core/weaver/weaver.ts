@@ -24,6 +24,7 @@ import type { AgentResult } from "../agent-runtime/events.js";
 import type { ModelRef } from "../agent-runtime/model-ref.js";
 import type { MemoryRetriever } from "../memory/retrieval.js";
 import type { ContextManager, ExecuteParams, ExecuteResult } from "../types.js";
+import { bus } from "../bus/index.js";
 import { taskTable, type TaskHandle } from "../tasks/index.js";
 import { log, logDebug, logWarn } from "../../util/log.js";
 import { Loom } from "./loom.js";
@@ -51,15 +52,6 @@ export type WeaverDeps = {
   ) => Promise<ModelRef | null>;
   context: ContextManager;
   sendTyping: (chatId: number, stringId?: string) => Promise<void>;
-  onActivity: () => void;
-  /**
-   * Optional fire-and-forget hook invoked at the start of every turn,
-   * after the warp is bound and before the backend is called. The
-   * composition root wires background work here (e.g. dream memory
-   * consolidation) so the Weaver stays ignorant of those subsystems.
-   * Must not throw and must not block — it is called synchronously.
-   */
-  onTurnStart?: () => void;
   /**
    * Optional memory pre-retrieval (Phase B). Called for `source: "message"`
    * turns after model/backend resolution and context acquisition, before
@@ -134,7 +126,7 @@ export class Weaver {
     params: ExecuteParams,
     task: TaskHandle,
   ): Promise<ExecuteResult> {
-    const { context, onActivity, retrieveMemory } = this.deps;
+    const { context, retrieveMemory } = this.deps;
     const backend = this.deps.getBackend(params.chatId);
     const reqId = randomBytes(4).toString("hex");
 
@@ -180,7 +172,16 @@ export class Weaver {
       );
     }
 
-    this.deps.onTurnStart?.();
+    // Turn-start signal — dream (and anything else the composition root
+    // subscribes) keys off this. Fires only for turns that actually reach
+    // the backend: the no-model refusal above returns before this point.
+    bus.publish({
+      type: "turn.started",
+      chatId: params.chatId,
+      source: params.source,
+      model: warp.ref.id,
+      backendId: warp.backendId,
+    });
 
     logDebug(
       "dispatcher",
@@ -221,7 +222,16 @@ export class Weaver {
       });
       const agentResult = await carryTurnEvents(stream, params.onEvent);
 
-      onActivity();
+      // Completion signal — pulse (and any other liveness subscriber) keys
+      // off this. Failures throw past it; refusals never get this far.
+      bus.publish({
+        type: "turn.completed",
+        chatId: params.chatId,
+        source: params.source,
+        durationMs: agentResult?.durationMs ?? 0,
+        inputTokens: agentResult?.usage.inputTokens ?? 0,
+        outputTokens: agentResult?.usage.outputTokens ?? 0,
+      });
       logDebug(
         "dispatcher",
         `[${reqId}] completed in ${agentResult?.durationMs ?? 0}ms ` +

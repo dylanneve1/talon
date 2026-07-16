@@ -23,6 +23,7 @@ import { dirs, files } from "./paths.js";
 export type LogComponent =
   | "bot"
   | "bridge"
+  | "bus"
   | "db"
   | "kv"
   | "media"

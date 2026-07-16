@@ -11,6 +11,7 @@ import {
   stubResolveActiveModel,
 } from "./helpers/stub-backend.js";
 import { makeBareModelRef } from "../core/agent-runtime/model-ref.js";
+import { bus } from "../core/bus/index.js";
 
 function createMockDeps() {
   const acquired: number[] = [];
@@ -36,7 +37,6 @@ function createMockDeps() {
   };
 
   const sendTyping = vi.fn(async () => {});
-  const onActivity = vi.fn();
 
   return {
     backend,
@@ -45,7 +45,6 @@ function createMockDeps() {
     resolveActiveModel: stubResolveActiveModel(),
     context,
     sendTyping,
-    onActivity,
     acquired,
     released,
   };
@@ -219,41 +218,54 @@ describe("dispatcher", () => {
     expect(deps.sendTyping).toHaveBeenCalledWith(111, "111");
   });
 
-  it("calls onActivity after successful query", async () => {
+  it("publishes turn.completed after a successful query", async () => {
     const deps = createMockDeps();
     initDispatcher(deps);
+    const completed = vi.fn();
+    const unsubscribe = bus.subscribe("turn.completed", completed);
 
-    await execute({
-      chatId: "222",
-      numericChatId: 222,
-      prompt: "hi",
-      senderName: "User",
-      isGroup: false,
-      source: "message",
-    });
+    try {
+      await execute({
+        chatId: "222",
+        numericChatId: 222,
+        prompt: "hi",
+        senderName: "User",
+        isGroup: false,
+        source: "message",
+      });
+    } finally {
+      unsubscribe();
+    }
 
-    expect(deps.onActivity).toHaveBeenCalled();
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(completed.mock.calls[0]![0]).toMatchObject({ chatId: "222" });
   });
 
-  it("does not call onActivity on error", async () => {
+  it("does not publish turn.completed on error", async () => {
     const deps = createMockDeps();
     (deps.query as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error("fail"),
     );
     initDispatcher(deps);
+    const completed = vi.fn();
+    const unsubscribe = bus.subscribe("turn.completed", completed);
 
-    await expect(
-      execute({
-        chatId: "333",
-        numericChatId: 333,
-        prompt: "fail",
-        senderName: "User",
-        isGroup: false,
-        source: "message",
-      }),
-    ).rejects.toThrow();
+    try {
+      await expect(
+        execute({
+          chatId: "333",
+          numericChatId: 333,
+          prompt: "fail",
+          senderName: "User",
+          isGroup: false,
+          source: "message",
+        }),
+      ).rejects.toThrow();
+    } finally {
+      unsubscribe();
+    }
 
-    expect(deps.onActivity).not.toHaveBeenCalled();
+    expect(completed).not.toHaveBeenCalled();
   });
 
   it("forwards the backend's event stream to the caller's onEvent sink", async () => {
@@ -474,7 +486,6 @@ describe("dispatcher", () => {
         getMessageCount: () => 0,
       },
       sendTyping: async () => {},
-      onActivity: () => {},
     });
 
     // Execute queries for two different chats
@@ -564,7 +575,6 @@ describe("dispatcher", () => {
       sendTyping: vi.fn(async () => {
         throw new Error("typing API error");
       }),
-      onActivity: vi.fn(),
     });
 
     // sendTyping rejecting must not blow up the dispatcher — the
@@ -621,7 +631,6 @@ describe("typing indicator — non-Error throws", () => {
       sendTyping: vi.fn(async () => {
         throw "plain string typing error";
       }), // eslint-disable-line @typescript-eslint/no-throw-literal
-      onActivity: vi.fn(),
     });
 
     await execute({
@@ -685,7 +694,6 @@ describe("typing indicator — non-Error throws", () => {
         callCount++;
         if (callCount > 1) throw "non-error interval typing failure"; // eslint-disable-line @typescript-eslint/no-throw-literal
       }),
-      onActivity: vi.fn(),
     });
 
     const p = execute({

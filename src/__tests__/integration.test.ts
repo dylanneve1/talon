@@ -5,9 +5,17 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { initDispatcher, execute } from "../core/engine/dispatcher.js";
+import { bus } from "../core/bus/index.js";
 import type { ContextManager } from "../core/types.js";
 import { stubBackend, stubResolveActiveModel } from "./helpers/stub-backend.js";
 import { TalonError } from "../core/errors.js";
+
+// Successful turns announce themselves on the bus (turn.completed) instead
+// of an onActivity callback — one file-wide subscription, reset per setup.
+let activityCount = 0;
+bus.subscribe("turn.completed", () => {
+  activityCount++;
+});
 
 function setup(
   overrides: { queryResult?: Record<string, unknown>; queryError?: Error } = {},
@@ -15,7 +23,7 @@ function setup(
   const acquired: number[] = [];
   const released: number[] = [];
   const typingCalls: number[] = [];
-  let activityCount = 0;
+  activityCount = 0;
 
   const query = vi.fn(async () => {
     if (overrides.queryError) throw overrides.queryError;
@@ -43,9 +51,6 @@ function setup(
     context,
     sendTyping: vi.fn(async (id: number) => {
       typingCalls.push(id);
-    }),
-    onActivity: vi.fn(() => {
-      activityCount++;
     }),
   });
 
@@ -177,7 +182,6 @@ describe("integration: dispatcher lifecycle", () => {
         getMessageCount: () => 0,
       },
       sendTyping: async () => {},
-      onActivity: () => {},
     });
 
     // Fire two queries simultaneously
