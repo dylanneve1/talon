@@ -481,9 +481,8 @@ export class Gateway {
           // context and so cannot use the reload_plugins action. Same
           // 127.0.0.1 trust boundary as /action.
           try {
-            const { performPluginReload } = await import(
-              "./gateway-actions/plugins.js"
-            );
+            const { performPluginReload } =
+              await import("./gateway-actions/plugins.js");
             const { names } = await performPluginReload(this.backend);
             log("gateway", `/plugins/reload: ${names.length} plugins loaded`);
             res.writeHead(200, { "Content-Type": "application/json" });

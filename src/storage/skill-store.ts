@@ -327,8 +327,7 @@ export function setSkillEnabled(name: string, enabled: boolean): boolean {
 }
 
 export type SkillInstallResult =
-  | { ok: true; skill: Skill }
-  | { ok: false; error: string };
+  { ok: true; skill: Skill } | { ok: false; error: string };
 
 /**
  * Install a skill from a folder containing SKILL.md (plus any bundled
@@ -387,7 +386,10 @@ export function installSkillFromDir(
   cpSync(sourceDir, target, { recursive: true });
   const skill = readSkill(parsed.name);
   if (!skill) {
-    return { ok: false, error: `Install of "${parsed.name}" failed to read back` };
+    return {
+      ok: false,
+      error: `Install of "${parsed.name}" failed to read back`,
+    };
   }
   return { ok: true, skill };
 }

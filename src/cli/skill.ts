@@ -109,7 +109,9 @@ function installAll(dirs: string[], force: boolean): Skill[] {
     const outcome = installSkillFromDir(dir, { force });
     if (outcome.ok) {
       installed.push(outcome.skill);
-      ok(`Installed ${pc.bold(outcome.skill.name)} — ${outcome.skill.description}`);
+      ok(
+        `Installed ${pc.bold(outcome.skill.name)} — ${outcome.skill.description}`,
+      );
     } else {
       fail(outcome.error);
     }
