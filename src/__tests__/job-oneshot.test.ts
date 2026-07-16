@@ -84,7 +84,7 @@ function params(): OneShotAgentParams {
 }
 
 function fakeBackground(
-  run: (p: OneShotAgentParams) => Promise<void>,
+  run: BackgroundRunner["runOneShotAgent"],
   evict?: BackgroundRunner["evictOrphanSubprocesses"],
 ): BackgroundRunner {
   return { runOneShotAgent: run, evictOrphanSubprocesses: evict };
