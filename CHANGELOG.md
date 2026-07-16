@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.51.0](https://github.com/dylanneve1/talon/compare/v1.50.0...v1.51.0) (2026-07-16)
+
+
+### Features
+
+* **cli:** plugin & skill managers — install/enable/disable from npm, git, and local sources ([#559](https://github.com/dylanneve1/talon/issues/559)) ([bee5bc7](https://github.com/dylanneve1/talon/commit/bee5bc72edc0726b7ec652d88f6546b3c9236ff1))
+* **companion:** Plugins & Skills settings sub-menus ([#565](https://github.com/dylanneve1/talon/issues/565)) ([d7adf48](https://github.com/dylanneve1/talon/commit/d7adf48af3c37befcec00623b0b3eb0d84197d3a))
+
 ## [1.50.0](https://github.com/dylanneve1/talon/compare/v1.49.0...v1.50.0) (2026-07-16)
 
 
