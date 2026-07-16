@@ -160,23 +160,35 @@ describe("package functional smoke tests", () => {
       // registry staleness checks that pushed Windows installs past even
       // the 15-minute ceiling (run 29149502496 ETIMEDOUT at 900s after
       // three successive timeout bumps; stop the arms race at the cause).
-      expectExitOk(
-        runNpm(
-          [
-            "install",
-            "--ignore-scripts",
-            "--no-audit",
-            "--no-fund",
-            "--prefer-offline",
-            "--no-progress",
-            tarball,
-          ],
-          {
-            cwd: installDir,
-            timeoutMs: FUNCTIONAL_TIMEOUT_MS,
-          },
-        ),
-      );
+      const installArgs = (freshness: string) => [
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        freshness,
+        "--no-progress",
+        tarball,
+      ];
+      let install = runNpm(installArgs("--prefer-offline"), {
+        cwd: installDir,
+        timeoutMs: FUNCTIONAL_TIMEOUT_MS,
+      });
+      // Stale-cache escape hatch: a restored CI cache can hold
+      // mixed-freshness registry metadata after an upstream publish — a
+      // fresh packument resolves a version whose own dependencies aren't in
+      // the cached packuments yet, and --prefer-offline never revalidates,
+      // so npm fails with ETARGET "No matching version found" on every
+      // rerun (run 29479512086: @openai/codex-sdk@0.144.5 resolved from
+      // fresh metadata, its dep @openai/codex@0.144.5 missing from the
+      // cached one). Retry once with --prefer-online, which revalidates
+      // metadata but still serves warmed tarballs from the cache.
+      if (install.code !== 0 && /notarget|ETARGET/i.test(install.stderr)) {
+        install = runNpm(installArgs("--prefer-online"), {
+          cwd: installDir,
+          timeoutMs: FUNCTIONAL_TIMEOUT_MS,
+        });
+      }
+      expectExitOk(install);
 
       const cli = join(
         installDir,
