@@ -107,11 +107,12 @@ function expectOk(result: RunResult): void {
 }
 
 function expectExitOk(result: RunResult): void {
-  expect(
-    result.stderr,
-    `process exited with ${result.code}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
-  ).not.toContain("spawnSync");
-  expect(result.code).toBe(0);
+  const detail = `process exited with ${result.code}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`;
+  expect(result.stderr, detail).not.toContain("spawnSync");
+  // Attach the child's output to the exit-code assertion too — otherwise a
+  // non-zero exit reports only "expected 1 to be +0" and the actual npm/CLI
+  // error is unrecoverable from the CI log.
+  expect(result.code, detail).toBe(0);
 }
 
 function packInto(dir: string): string {
