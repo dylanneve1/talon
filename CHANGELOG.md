@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.50.0](https://github.com/dylanneve1/talon/compare/v1.49.0...v1.50.0) (2026-07-16)
+
+
+### Features
+
+* **core:** event journal — durable bus tail in talon.db ([#562](https://github.com/dylanneve1/talon/issues/562)) ([d505af6](https://github.com/dylanneve1/talon/commit/d505af6e9c5ebc26c98a7cccc9edb3e0976ad2d0))
+* **core:** killable turns — talon kill interrupts a running chat turn on every backend ([#561](https://github.com/dylanneve1/talon/issues/561)) ([8771566](https://github.com/dylanneve1/talon/commit/8771566bf03b9b7f56e0561eba2e4ac2878e4c35))
+* **core:** VFS — unified talon:// namespace with /proc-style live mounts ([#560](https://github.com/dylanneve1/talon/issues/560)) ([b0c72a6](https://github.com/dylanneve1/talon/commit/b0c72a69509a6c538cd98a977c23bd38b9b985cc))
+* **native:** TLS for the client bridge — pinned self-signed certificate, encrypted companion transport ([#554](https://github.com/dylanneve1/talon/issues/554)) ([af788b7](https://github.com/dylanneve1/talon/commit/af788b778dd8431f3f520bbefc5b08398d936cf7))
+
 ## [1.49.0](https://github.com/dylanneve1/talon/compare/v1.48.0...v1.49.0) (2026-07-16)
 
 
