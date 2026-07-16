@@ -9,6 +9,8 @@ export type BridgeDiscoveryInfo = {
   port: number;
   token?: string;
   scheme?: string;
+  /** Certificate SHA-256 (hex) when the bridge serves HTTPS. */
+  fingerprint?: string;
   startedAt?: number;
 };
 
@@ -24,6 +26,7 @@ export async function writeBridgeDiscovery(
       port: info.port,
       token: info.token ?? null,
       scheme: info.scheme ?? "http",
+      fingerprint: info.fingerprint ?? null,
       pid: process.pid,
       protocol: BRIDGE_PROTOCOL_VERSION,
       startedAt: info.startedAt ?? now,

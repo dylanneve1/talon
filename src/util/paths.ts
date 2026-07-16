@@ -69,6 +69,8 @@ export const dirs = {
   scripts: resolve(TALON_ROOT, "workspace", "scripts"),
   /** Skill folders: ~/.talon/workspace/skills/ */
   skills: resolve(TALON_ROOT, "workspace", "skills"),
+  /** Key material (bridge TLS identity, release keys): ~/.talon/keys/ */
+  keys: resolve(TALON_ROOT, "keys"),
 } as const;
 
 // ── Files ──────────────────────────────────────────────────────────────────

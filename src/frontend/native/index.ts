@@ -68,6 +68,7 @@ import { BridgeServer, type BridgeServerHandlers } from "./server.js";
 import { createNativeActionHandler } from "./actions.js";
 import { getMeshService } from "../../core/mesh/index.js";
 import { removeBridgeDiscovery, writeBridgeDiscovery } from "./discovery.js";
+import { isLoopbackHost, loadOrCreateBridgeTlsIdentity } from "./tls.js";
 import { readLogEntries } from "./logs.js";
 import {
   BRIDGE_PROTOCOL_VERSION,
@@ -1183,12 +1184,17 @@ export function createNativeFrontend(
   };
 
   const nativeCfg = config.native ?? { port: 19880, host: "127.0.0.1" };
+  const bridgeHost = nativeCfg.host ?? "127.0.0.1";
+  // Encrypted by default the moment the bridge leaves the machine; loopback
+  // stays plain HTTP unless explicitly opted in (`native.tls`).
+  const bridgeTls = nativeCfg.tls ?? !isLoopbackHost(bridgeHost);
   const server = new BridgeServer(
     {
-      host: nativeCfg.host ?? "127.0.0.1",
+      host: bridgeHost,
       port: nativeCfg.port ?? 19880,
       token: nativeCfg.token,
       startedAt,
+      ...(bridgeTls ? { tls: () => loadOrCreateBridgeTlsIdentity() } : {}),
     },
     handlers,
   );
@@ -1253,9 +1259,12 @@ export function createNativeFrontend(
       log("native", `Gateway on :${gatewayPort}`);
       chats.restore();
       await server.start();
+      const fingerprint = server.getFingerprint();
       await writeBridgeDiscovery({
         port: server.getPort(),
         token: nativeCfg.token,
+        scheme: server.getScheme(),
+        ...(fingerprint ? { fingerprint } : {}),
         startedAt: Date.parse(startedAt),
       });
     },

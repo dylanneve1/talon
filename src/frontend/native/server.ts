@@ -9,7 +9,9 @@
  * curl one-liner identically.
  *
  * Binds `host` (loopback by default) with the gateway's EADDRINUSE +1..+5
- * fallback so two daemons on one machine don't collide.
+ * fallback so two daemons on one machine don't collide. With a TLS identity
+ * injected (see tls.ts) the same server speaks HTTPS instead — clients pin
+ * the certificate fingerprint surfaced on `/health`.
  */
 
 import {
@@ -18,10 +20,13 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { createServer as createTlsServer } from "node:https";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { extname } from "node:path";
 import { log, logError, logDebug } from "../../util/log.js";
+import { formatFingerprint, type BridgeTlsIdentity } from "./tls.js";
 import {
   BRIDGE_PROTOCOL_VERSION,
   isLogLevel,
@@ -138,6 +143,7 @@ export class BridgeServer {
   private clients = new Set<ServerResponse>();
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private port = 0;
+  private tlsIdentity: BridgeTlsIdentity | null = null;
 
   constructor(
     private readonly opts: {
@@ -145,12 +151,28 @@ export class BridgeServer {
       port: number;
       token?: string;
       startedAt: string;
+      /**
+       * When present, the bridge serves HTTPS with this identity. A provider
+       * (not the identity itself) so the transport stays free of key-file
+       * I/O — it resolves once, inside `start()`.
+       */
+      tls?: () => Promise<BridgeTlsIdentity>;
     },
     private readonly handlers: BridgeServerHandlers,
   ) {}
 
   getPort(): number {
     return this.port;
+  }
+
+  /** "https" once started with a TLS identity, else "http". */
+  getScheme(): "http" | "https" {
+    return this.tlsIdentity ? "https" : "http";
+  }
+
+  /** The served certificate's SHA-256 fingerprint (hex), or null over HTTP. */
+  getFingerprint(): string | null {
+    return this.tlsIdentity?.fingerprint ?? null;
   }
 
   /** Push an event to every connected SSE client. */
@@ -168,7 +190,8 @@ export class BridgeServer {
 
   async start(): Promise<number> {
     if (this.server) return this.port;
-    const server = createServer((req, res) => {
+    this.tlsIdentity = this.opts.tls ? await this.opts.tls() : null;
+    const onRequest = (req: IncomingMessage, res: ServerResponse): void => {
       this.handle(req, res).catch((err) => {
         logError("native", "Bridge request handler threw", err);
         if (!res.headersSent) {
@@ -176,7 +199,15 @@ export class BridgeServer {
           res.end(JSON.stringify({ ok: false, error: "Internal error" }));
         }
       });
-    });
+    };
+    // https.Server extends http.Server's request/lifecycle surface — one
+    // `Server`-typed field serves both transports.
+    const server: Server = this.tlsIdentity
+      ? createTlsServer(
+          { key: this.tlsIdentity.keyPem, cert: this.tlsIdentity.certPem },
+          onRequest,
+        )
+      : createServer(onRequest);
 
     this.pingTimer = setInterval(() => {
       for (const res of this.clients) {
@@ -215,9 +246,17 @@ export class BridgeServer {
           );
           log(
             "native",
-            `Bridge listening on ${this.opts.host}:${this.port}` +
+            `Bridge listening on ${this.getScheme()}://${this.opts.host}:${this.port}` +
               (this.opts.token ? " (token required)" : ""),
           );
+          if (this.tlsIdentity) {
+            // The pairing datum: clients confirm this fingerprint on first
+            // connect, so it belongs in the log where the operator looks.
+            log(
+              "native",
+              `Bridge certificate fingerprint ${formatFingerprint(this.tlsIdentity.fingerprint)}`,
+            );
+          }
           resolve(this.port);
         });
       };
@@ -271,6 +310,10 @@ export class BridgeServer {
         protocol: BRIDGE_PROTOCOL_VERSION,
         host: this.opts.host,
         port: this.port,
+        scheme: this.getScheme(),
+        // The certificate's own hash — public by definition (any TLS client
+        // sees the certificate), surfaced so pairing UIs can display it.
+        fingerprint: this.getFingerprint(),
         authRequired: Boolean(this.opts.token),
         startedAt: this.opts.startedAt,
         botName: s.botName,
@@ -600,10 +643,26 @@ export class BridgeServer {
   private authOk(req: IncomingMessage, url: URL): boolean {
     if (!this.opts.token) return true;
     const header = req.headers["authorization"];
-    if (typeof header === "string" && header === `Bearer ${this.opts.token}`)
+    if (
+      typeof header === "string" &&
+      header.startsWith("Bearer ") &&
+      this.tokenMatches(header.slice("Bearer ".length))
+    )
       return true;
     // EventSource can't set headers, so SSE clients pass ?token=… instead.
-    return url.searchParams.get("token") === this.opts.token;
+    return this.tokenMatches(url.searchParams.get("token"));
+  }
+
+  /**
+   * Constant-time token comparison. Hashing both sides first equalizes
+   * lengths (timingSafeEqual demands it) without leaking the real length.
+   */
+  private tokenMatches(candidate: string | null): boolean {
+    if (candidate === null || !this.opts.token) return false;
+    return timingSafeEqual(
+      createHash("sha256").update(candidate).digest(),
+      createHash("sha256").update(this.opts.token).digest(),
+    );
   }
 
   private corsHeaders(): Record<string, string> {

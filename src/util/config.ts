@@ -147,6 +147,15 @@ const nativeConfigSchema = z
      * practice whenever `host` is not loopback.
      */
     token: z.string().optional(),
+    /**
+     * Serve the bridge over TLS with a persistent self-signed certificate
+     * (~/.talon/keys/); clients pin its SHA-256 fingerprint on first
+     * connect. Defaults to true whenever `host` is not loopback, so remote
+     * traffic is encrypted unless explicitly disabled; loopback defaults to
+     * plain HTTP (nothing leaves the machine, and curl/local tools keep
+     * working zero-config).
+     */
+    tls: z.boolean().optional(),
   })
   .strict();
 

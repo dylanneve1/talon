@@ -27,6 +27,23 @@ void main() {
       expect(bridge.port, 19901);
       expect(bridge.token, 'secret');
       expect(bridge.scheme, 'https');
+      expect(bridge.fingerprint, isNull);
+    });
+
+    test('carries the daemon certificate fingerprint when present', () async {
+      final dir = await Directory.systemTemp.createTemp('talon-discovery-');
+      addTearDown(() => dir.delete(recursive: true));
+      final fp = 'ef' * 32;
+      await File('${dir.path}${Platform.pathSeparator}native-bridge.json')
+          .writeAsString(
+        '{"host":"127.0.0.1","port":19901,"scheme":"https",'
+        '"fingerprint":"$fp"}',
+      );
+
+      final bridge = await readLocalBridgeFromDirectory(dir);
+
+      expect(bridge, isNotNull);
+      expect(bridge!.fingerprint, fp);
     });
 
     test('returns null for missing or malformed files', () async {

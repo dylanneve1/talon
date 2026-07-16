@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show HttpClient, X509Certificate;
 
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import '../models/bridge_models.dart';
 import '../models/connection.dart';
+import 'bridge_trust.dart';
 import 'log.dart';
 
 /// Client for the Talon Client Bridge Protocol (v1).
@@ -13,16 +16,56 @@ import 'log.dart';
 /// daemon pushes. Transport-only: it parses frames and exposes typed futures +
 /// a broadcast [events] stream. Reconnection/backoff lives in the caller
 /// (AppState) so UI can reflect connection state.
+///
+/// TLS connections pin the bridge's certificate: the first connect adopts
+/// whatever certificate it sees (the caller persists [seenFingerprint]);
+/// every later connect requires the same one and fails with
+/// [BridgeException.certificateChanged] otherwise.
 class BridgeClient {
   ConnectionConfig config;
-  final http.Client _http = http.Client();
+  late final http.Client _http = _newClient();
 
   final _events = StreamController<Map<String, dynamic>>.broadcast();
   StreamSubscription<String>? _sseSub;
   http.Client? _sseClient;
   bool _closed = false;
 
+  String? _seenFingerprint;
+  bool _pinRejected = false;
+
   BridgeClient(this.config);
+
+  /// Fingerprint of the certificate seen on the most recent TLS handshake —
+  /// the pin candidate the caller persists after a successful first connect.
+  String? get seenFingerprint => _seenFingerprint;
+
+  http.Client _newClient() {
+    if (!config.tls) return http.Client();
+    final inner = HttpClient()
+      ..badCertificateCallback = (cert, host, port) => _evaluate(cert);
+    return IOClient(inner);
+  }
+
+  /// Fires only for certificates the platform doesn't already trust (so
+  /// CA-backed reverse proxies bypass it). No pin yet ⇒ trust on first use;
+  /// pinned ⇒ exact fingerprint match or the handshake is refused.
+  bool _evaluate(X509Certificate cert) {
+    final seen = BridgeTrust.fingerprintOf(cert);
+    _seenFingerprint = seen;
+    final pinned = config.fingerprint;
+    if (pinned == null || seen == pinned) return true;
+    _pinRejected = true;
+    return false;
+  }
+
+  /// Convert a refused-pin transport error into its real diagnosis.
+  Never _rethrow(Object error, String fallback) {
+    if (_pinRejected) {
+      _pinRejected = false;
+      throw BridgeException.certificateChanged();
+    }
+    throw BridgeException('$fallback: $error');
+  }
 
   /// Decoded SSE payloads (`{kind: ...}` objects).
   Stream<Map<String, dynamic>> get events => _events.stream;
@@ -45,6 +88,10 @@ class BridgeClient {
       return body['app'] == 'talon-bridge' ? body : null;
     } catch (e) {
       AppLog.warn('bridge', 'health probe failed', e);
+      if (_pinRejected) {
+        _pinRejected = false;
+        throw BridgeException.certificateChanged();
+      }
       return null;
     }
   }
@@ -56,7 +103,7 @@ class BridgeClient {
   Future<void> connect({Duration timeout = const Duration(seconds: 10)}) async {
     await _sseSub?.cancel();
     _sseClient?.close();
-    final client = http.Client();
+    final client = _newClient();
     _sseClient = client;
 
     final req = http.Request('GET', Uri.parse(config.eventsUrl()))
@@ -78,7 +125,7 @@ class BridgeClient {
       client.close();
       if (identical(_sseClient, client)) _sseClient = null;
       AppLog.warn('bridge', 'event stream connect failed', e);
-      throw BridgeException('Could not connect to event stream: $e');
+      _rethrow(e, 'Could not connect to event stream');
     }
     if (res.statusCode != 200) {
       client.close();
@@ -481,10 +528,20 @@ class BridgeClient {
 class BridgeException implements Exception {
   final String message;
   final bool unauthorized;
-  BridgeException(this.message) : unauthorized = false;
+  final bool certificateChanged;
+  BridgeException(this.message)
+      : unauthorized = false,
+        certificateChanged = false;
   BridgeException.unauthorized()
       : message = 'Unauthorized — check your token',
-        unauthorized = true;
+        unauthorized = true,
+        certificateChanged = false;
+  BridgeException.certificateChanged()
+      : message = "The bridge's certificate no longer matches the pinned "
+            'fingerprint. If Talon was reinstalled, clear the pinned '
+            'fingerprint in connection settings and reconnect.',
+        unauthorized = false,
+        certificateChanged = true;
   @override
   String toString() => message;
 }

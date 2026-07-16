@@ -52,6 +52,38 @@ void main() {
       expect(c.tls, isFalse);
       expect(c.baseUrl, 'http://h:5');
     });
+
+    test('fingerprint round-trips through json, normalized', () {
+      final fp = 'ab' * 32;
+      final c = ConnectionConfig(host: 'h', tls: true, fingerprint: fp);
+      expect(ConnectionConfig.fromJson(c.toJson()).fingerprint, fp);
+
+      final display = ConnectionConfig.fromJson({
+        'host': 'h',
+        'port': 5,
+        'fingerprint': ('AB:' * 32).substring(0, 95), // AA:BB display form
+      });
+      expect(display.fingerprint, 'ab' * 32);
+    });
+
+    test('normalizeFingerprint rejects everything but a sha-256 digest', () {
+      expect(ConnectionConfig.normalizeFingerprint(null), isNull);
+      expect(ConnectionConfig.normalizeFingerprint('not hex'), isNull);
+      expect(ConnectionConfig.normalizeFingerprint('abcd'), isNull);
+      expect(
+        ConnectionConfig.normalizeFingerprint(('AB:' * 32).substring(0, 95)),
+        'ab' * 32,
+      );
+    });
+
+    test('copyWith carries, replaces, and clears the fingerprint', () {
+      final fp = 'cd' * 32;
+      final pinned = const ConnectionConfig(tls: true)
+          .copyWith(fingerprint: fp);
+      expect(pinned.fingerprint, fp);
+      expect(pinned.copyWith(host: 'other').fingerprint, fp);
+      expect(pinned.copyWith(clearFingerprint: true).fingerprint, isNull);
+    });
   });
 
   group('ConnectionConfig.parseHostInput', () {
