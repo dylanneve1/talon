@@ -14,7 +14,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { OneShotAgentParams } from "../../core/types.js";
+import type { OneShotAgentParams, OneShotUsage } from "../../core/types.js";
 import { log } from "../../util/log.js";
 import { ALLOWED_TOOLS_BACKGROUND } from "../../core/constants.js";
 import { buildMcpServers, buildPluginMcpServers } from "./options.js";
@@ -53,7 +53,7 @@ export function initClaudeOneShot(cfg: OneShotConfig): void {
 
 export async function runOneShotAgent(
   params: OneShotAgentParams,
-): Promise<void> {
+): Promise<OneShotUsage | void> {
   const {
     prompt,
     systemPrompt,
@@ -86,9 +86,22 @@ export async function runOneShotAgent(
     options: options as Parameters<typeof query>[0]["options"],
   });
 
+  // The final `result` message carries the run's total token usage — the
+  // settlement figure the task table records.
+  let usage: OneShotUsage | undefined;
   for await (const msg of qi) {
     await formatAndAppendMessage(appendLog, msg);
+    if (msg.type === "result") {
+      const u = msg.usage;
+      usage = {
+        inputTokens: u.input_tokens ?? 0,
+        outputTokens: u.output_tokens ?? 0,
+        cacheRead: u.cache_read_input_tokens ?? 0,
+        cacheWrite: u.cache_creation_input_tokens ?? 0,
+      };
+    }
   }
+  return usage;
 }
 
 /**

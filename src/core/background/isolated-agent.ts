@@ -15,7 +15,7 @@
  */
 
 import type { BackgroundRunner } from "../agent-runtime/capabilities.js";
-import type { OneShotAgentParams } from "../types.js";
+import type { OneShotAgentParams, OneShotUsage } from "../types.js";
 import { logWarn, logError } from "../../util/log.js";
 
 /** Default bounded grace after an abort before giving up on the backend. */
@@ -55,11 +55,12 @@ async function raceWithTimeout<T>(
 
 /**
  * Run the one-shot under a hard timeout. Throws on timeout (after the grace
- * window) and re-throws any agent error.
+ * window) and re-throws any agent error. Resolves with the run's token
+ * usage when the backend reports it.
  */
 export async function runIsolatedAgent(
   opts: IsolatedRunOptions,
-): Promise<void> {
+): Promise<OneShotUsage | void> {
   const { background, params, timeoutMs } = opts;
   const graceMs = opts.abortGraceMs ?? DEFAULT_ABORT_GRACE_MS;
 
@@ -81,7 +82,7 @@ export async function runIsolatedAgent(
   });
 
   try {
-    await Promise.race([agentPromise, timeoutPromise]);
+    return await Promise.race([agentPromise, timeoutPromise]);
   } catch (err) {
     // Snapshot + clear before any await so a late timer can't reclassify a
     // non-timeout failure as a timeout (heartbeat learned this the hard way).

@@ -120,6 +120,18 @@ export interface ModelPickerResult {
  * fire-and-forget agent invocation: spawn an agent with a prompt, let it run
  * tools, log everything to a file, return when it finishes (or when aborted).
  */
+/**
+ * Token usage a one-shot run reports at settlement, when the backend's SDK
+ * surfaces it. Shape-compatible with the task table's `TaskUsage`, so the
+ * background callers can hand it straight to `TaskHandle.succeed`.
+ */
+export type OneShotUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheRead: number;
+  cacheWrite: number;
+};
+
 export type OneShotAgentParams = {
   /** The user prompt the agent should execute. */
   prompt: string;

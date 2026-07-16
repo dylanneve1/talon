@@ -26,8 +26,12 @@
  * model stops spending tokens once the timeout fires.
  */
 
-import type { OneShotAgentParams } from "../../core/types.js";
+import type { OneShotAgentParams, OneShotUsage } from "../../core/types.js";
 import { logWarn } from "../../util/log.js";
+import {
+  extractAssistantUsage,
+  type RemoteAssistantInfo,
+} from "./session-helpers.js";
 import { appendBackendSuffix } from "../shared/index.js";
 
 // ── Client surface ──────────────────────────────────────────────────────────
@@ -86,7 +90,7 @@ export async function runRemoteOneShotAgent<
 >(
   bindings: RemoteOneShotBindings<TClient>,
   params: OneShotAgentParams,
-): Promise<void> {
+): Promise<OneShotUsage | void> {
   const {
     prompt,
     systemPrompt,
@@ -161,6 +165,21 @@ export async function runRemoteOneShotAgent<
 
     for (const part of parts) {
       await appendResponsePart(appendLog, part);
+    }
+
+    // The prompt response's assistant info carries the run's token usage —
+    // the settlement figure the task table records.
+    const info = data?.info as RemoteAssistantInfo | undefined;
+    if (info) {
+      const u = extractAssistantUsage(info);
+      if (u.inputTokens > 0 || u.outputTokens > 0) {
+        return {
+          inputTokens: u.inputTokens,
+          outputTokens: u.outputTokens,
+          cacheRead: u.cacheRead,
+          cacheWrite: u.cacheWrite,
+        };
+      }
     }
   } finally {
     abortController.signal.removeEventListener("abort", onAbort);

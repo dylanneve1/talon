@@ -133,6 +133,21 @@ describe("runIsolatedAgent", () => {
     expect(run).toHaveBeenCalledOnce();
   });
 
+  it("resolves with the usage the backend reports", async () => {
+    const usage = {
+      inputTokens: 120,
+      outputTokens: 45,
+      cacheRead: 30,
+      cacheWrite: 5,
+    };
+    const result = await runIsolatedAgent({
+      background: fakeBackground(async () => usage),
+      params: params(),
+      timeoutMs: 1000,
+    });
+    expect(result).toEqual(usage);
+  });
+
   it("propagates an agent error without aborting", async () => {
     const p = params();
     const abortSpy = vi.spyOn(p.abortController, "abort");

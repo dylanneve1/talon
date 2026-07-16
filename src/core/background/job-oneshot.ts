@@ -157,7 +157,7 @@ export async function runJobOneShot(
     };
 
     try {
-      await runIsolatedAgent({
+      const usage = await runIsolatedAgent({
         background,
         params: oneShot,
         timeoutMs: params.timeoutMs ?? DEFAULT_JOB_TIMEOUT_MS,
@@ -165,7 +165,7 @@ export async function runJobOneShot(
         // sweep here could kill a concurrent heartbeat's subprocess. Bounded
         // abort-grace is enough.
       });
-      task.succeed();
+      task.succeed(usage ?? undefined);
     } catch (err) {
       task.fail(err);
       throw err;

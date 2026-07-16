@@ -17,7 +17,7 @@
  * fires — no orphan process handling needed.
  */
 
-import type { OneShotAgentParams } from "../../core/types.js";
+import type { OneShotAgentParams, OneShotUsage } from "../../core/types.js";
 import { log, logWarn } from "../../util/log.js";
 import { appendBackendSuffix } from "../shared/index.js";
 import { ensureCodex, getCodexAuthInfo } from "./init.js";
@@ -69,7 +69,7 @@ function resolveOneShotModel(requested: string): {
 
 export async function runOneShotAgent(
   params: OneShotAgentParams,
-): Promise<void> {
+): Promise<OneShotUsage | void> {
   const {
     prompt,
     systemPrompt,
@@ -118,10 +118,25 @@ export async function runOneShotAgent(
       signal: abortController.signal,
     });
 
+    // `turn.completed.usage` is cumulative across the run — the last one
+    // seen is the settlement figure the task table records.
+    let usage: OneShotUsage | undefined;
     for await (const event of events) {
       if (abortController.signal.aborted) break;
       await appendCodexEvent(appendLog, event);
+      if (event.type === "turn.completed") {
+        const u = (event as { usage?: Record<string, number> }).usage;
+        if (u) {
+          usage = {
+            inputTokens: u.input_tokens ?? 0,
+            outputTokens: u.output_tokens ?? 0,
+            cacheRead: u.cached_input_tokens ?? 0,
+            cacheWrite: 0, // Codex doesn't report cache writes
+          };
+        }
+      }
     }
+    return usage;
   } catch (err) {
     if (
       abortController.signal.aborted ||

@@ -51,9 +51,13 @@ settled history is a bounded ring (50 entries).
 ## Token accounting
 
 `turn` tasks record `usage` (input/output/cache tokens) from the turn result.
-Isolated one-shots run through `runOneShotAgent`, which reports no usage, so
-their tasks settle without it. When the background capability grows usage
-reporting, the wiring point is already there (`TaskHandle.succeed(usage)`).
+One-shots report usage too: `runOneShotAgent` resolves with the run's token
+usage when the backend's SDK surfaces it (Claude's final result message,
+Codex's cumulative `turn.completed`, the remote-server family's prompt
+response), and heartbeat / dream / job-oneshot hand it to
+`TaskHandle.succeed(usage)` — so background runs show real spend in
+`talon ps` instead of a dash. A backend that can't report simply settles
+without usage.
 
 ## Surfaces
 

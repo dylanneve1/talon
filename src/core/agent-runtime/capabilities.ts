@@ -27,6 +27,7 @@ import type {
   ModelPickerOptions,
   ModelPickerResult,
   OneShotAgentParams,
+  OneShotUsage,
   UnifiedModelInfo,
   UnifiedModelResolution,
   UnifiedProviderInfo,
@@ -131,12 +132,14 @@ export interface ChatBackend {
  *   - `runOneShotAgent(params)` — accepts `OneShotAgentParams`
  *     (with its `appendLog` callback) so the heartbeat / dream /
  *     trigger log-file producers keep their direct write path.
+ *     Resolves with the run's token usage when the SDK reports it
+ *     (the task table records it at settlement); void otherwise.
  *   - `evictOrphanSubprocesses(label)` — backends that spawn
  *     per-run subprocesses (Claude SDK) implement this so a hung
  *     run can be force-cleaned after the abort grace window.
  */
 export interface BackgroundRunner {
-  runOneShotAgent(params: OneShotAgentParams): Promise<void>;
+  runOneShotAgent(params: OneShotAgentParams): Promise<OneShotUsage | void>;
   evictOrphanSubprocesses?(contextLabel: string): Promise<{
     found: number;
     termed: number;

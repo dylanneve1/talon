@@ -296,15 +296,17 @@ If commands fail, log the error and continue — this stage is optional.`
   });
 
   const agentPromise = (async () => {
-    await background.runOneShotAgent(oneShotParams);
+    const usage = await background.runOneShotAgent(oneShotParams);
     appendDreamLog(
       dreamLogFile,
       `\n---\n**Dream completed at ${new Date().toISOString()}**\n`,
     );
+    return usage;
   })();
 
+  let usage: Awaited<typeof agentPromise>;
   try {
-    await Promise.race([agentPromise, timeoutPromise]);
+    usage = await Promise.race([agentPromise, timeoutPromise]);
   } catch (err) {
     task.fail(err);
     appendDreamLog(
@@ -332,7 +334,7 @@ If commands fail, log the error and continue — this stage is optional.`
     if (timeoutHandle) clearTimeout(timeoutHandle);
   }
 
-  task.succeed();
+  task.succeed(usage ?? undefined);
   return dreamLogFile;
 }
 

@@ -7,7 +7,7 @@
  * suffix; everything else is the shared lifecycle.
  */
 
-import type { OneShotAgentParams } from "../../core/types.js";
+import type { OneShotAgentParams, OneShotUsage } from "../../core/types.js";
 import { runRemoteOneShotAgent } from "../remote-server/one-shot.js";
 import {
   ensureServer,
@@ -21,7 +21,9 @@ import {
   errMsg,
 } from "./server.js";
 
-export function runOneShotAgent(params: OneShotAgentParams): Promise<void> {
+export function runOneShotAgent(
+  params: OneShotAgentParams,
+): Promise<OneShotUsage | void> {
   return runRemoteOneShotAgent(
     {
       label: "OpenCode",

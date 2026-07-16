@@ -220,15 +220,17 @@ export async function runHeartbeatAgent(
   });
 
   const agentPromise = (async () => {
-    await background.runOneShotAgent(oneShotParams);
+    const usage = await background.runOneShotAgent(oneShotParams);
     await appendHeartbeatLog(
       heartbeatLogFile,
       `\n---\n**Heartbeat #${runCount} completed at ${new Date().toISOString()}**\n`,
     );
+    return usage;
   })();
 
+  let usage: Awaited<typeof agentPromise>;
   try {
-    await Promise.race([agentPromise, timeoutPromise]);
+    usage = await Promise.race([agentPromise, timeoutPromise]);
   } catch (err) {
     // Snapshot timeout state and clear the timer immediately, BEFORE any awaits
     // in the error-handling path. Otherwise the timer can fire during the async
@@ -278,7 +280,7 @@ export async function runHeartbeatAgent(
     if (timeoutHandle) clearTimeout(timeoutHandle);
   }
 
-  task.succeed();
+  task.succeed(usage ?? undefined);
   return heartbeatLogFile;
 }
 
