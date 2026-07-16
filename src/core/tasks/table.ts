@@ -12,6 +12,8 @@
  * work that no longer exists.
  */
 
+import { bus } from "../bus/index.js";
+import type { TaskSettledEvent, TaskStartedEvent } from "../bus/events.js";
 import type {
   KillOutcome,
   TaskBinding,
@@ -24,6 +26,17 @@ import type {
 
 /** Settled tasks kept for `list()` after they leave the live map. */
 const DEFAULT_HISTORY_LIMIT = 50;
+
+export interface TaskTableOptions {
+  /** Settled tasks kept for `list()` (default 50). */
+  readonly historyLimit?: number;
+  /**
+   * Sink for `task.*` lifecycle events — the singleton wires the bus here.
+   * Injected (rather than imported at the emit sites) so unit-constructed
+   * tables stay silent.
+   */
+  readonly publish?: (event: TaskStartedEvent | TaskSettledEvent) => void;
+}
 
 type MutableTaskRecord = {
   -readonly [K in keyof TaskRecord]: TaskRecord[K];
@@ -39,10 +52,14 @@ export class TaskTable {
   private readonly live = new Map<number, LiveTask>();
   private readonly history: TaskRecord[] = [];
   private readonly historyLimit: number;
+  private readonly publish?: (
+    event: TaskStartedEvent | TaskSettledEvent,
+  ) => void;
   private nextId = 1;
 
-  constructor(historyLimit = DEFAULT_HISTORY_LIMIT) {
-    this.historyLimit = historyLimit;
+  constructor(options: TaskTableOptions = {}) {
+    this.historyLimit = options.historyLimit ?? DEFAULT_HISTORY_LIMIT;
+    if (options.publish) this.publish = options.publish;
   }
 
   /** Register a run that starts immediately. */
@@ -122,6 +139,7 @@ export class TaskTable {
     if (!task || task.record.state !== "queued") return;
     task.record.state = "running";
     task.record.startedAt = Date.now();
+    this.publish?.({ type: "task.started", task: { ...task.record } });
   }
 
   private bind(id: number, binding: TaskBinding): void {
@@ -154,8 +172,11 @@ export class TaskTable {
     if (this.history.length > this.historyLimit) {
       this.history.splice(0, this.history.length - this.historyLimit);
     }
+    this.publish?.({ type: "task.settled", task: { ...record } });
   }
 }
 
 /** The daemon-wide table. Tests needing isolation construct their own. */
-export const taskTable = new TaskTable();
+export const taskTable = new TaskTable({
+  publish: (event) => bus.publish(event),
+});

@@ -23,6 +23,7 @@ Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsof
 | **Skills**            | Agent-authored reusable scripts (bash/python/node) — procedures worked out once get saved and replayed locally at zero token cost            |
 | **Triggers**          | Self-authored watcher scripts (bash/python/node) that wake the bot when conditions are met                                                   |
 | **Task table**        | Every unit of agent work — chat turns, heartbeat, dream, isolated cron/trigger jobs — registered live; `talon ps` / `talon kill`             |
+| **Event bus**         | Typed internal pub-sub spine (task + turn lifecycle events); subsystems subscribe instead of importing each other; `talon events -f`         |
 | **Per-chat settings** | Model, effort level, and pulse toggle per conversation via inline keyboard                                                                   |
 | **Model registry**    | Models discovered from the active backend at startup — new models appear in all pickers automatically                                        |
 

@@ -196,7 +196,7 @@ describe("task table", () => {
   });
 
   it("keeps settled history bounded while live tasks are never evicted", () => {
-    const table = new TaskTable(3);
+    const table = new TaskTable({ historyLimit: 3 });
 
     const live = table.begin({ kind: "turn", label: "live" });
     for (let i = 0; i < 5; i++) {

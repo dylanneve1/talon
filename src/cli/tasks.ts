@@ -8,14 +8,12 @@
  */
 
 import pc from "picocolors";
-import { findRunningInstance } from "../core/daemon/discovery.js";
+import { fetchGateway, requireGatewayPort } from "./daemon-api.js";
 import type {
   KillOutcome,
   TaskRecord,
   TaskState,
 } from "../core/tasks/index.js";
-
-const REQUEST_TIMEOUT_MS = 3_000;
 
 function formatDuration(ms: number): string {
   const seconds = Math.floor(ms / 1000);
@@ -105,35 +103,6 @@ function renderTable(tasks: TaskRecord[], now: number): void {
     console.log(`  ${cells.join("  ")}`);
   });
   console.log();
-}
-
-async function fetchGateway(
-  port: number,
-  path: string,
-  init?: RequestInit,
-): Promise<unknown> {
-  const response = await fetch(`http://127.0.0.1:${port}${path}`, {
-    ...init,
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`gateway answered ${response.status}`);
-  return response.json();
-}
-
-/** Find the daemon and return its gateway port, or render why not. */
-async function requireGatewayPort(): Promise<number | null> {
-  const instance = await findRunningInstance();
-  if (!instance) {
-    console.log(`  ${pc.red("●")} Talon is not running\n`);
-    return null;
-  }
-  if (!instance.port) {
-    console.log(
-      `  ${pc.yellow("●")} Talon is running (PID ${instance.pid}) but its gateway port is unknown — possibly still starting.\n`,
-    );
-    return null;
-  }
-  return instance.port;
 }
 
 export async function showTasks(): Promise<void> {
