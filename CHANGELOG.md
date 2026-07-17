@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/dylanneve1/talon/compare/v2.0.1...v2.0.2) (2026-07-17)
+
+
+### Bug Fixes
+
+* **codex:** per-turn token accounting — rollout delta over cumulative SDK usage ([#575](https://github.com/dylanneve1/talon/issues/575)) ([b707d5d](https://github.com/dylanneve1/talon/commit/b707d5d8f37e9748c87a375a2320b5c9e7958dfd))
+
 ## [2.0.1](https://github.com/dylanneve1/talon/compare/v2.0.0...v2.0.1) (2026-07-17)
 
 
