@@ -78,12 +78,7 @@ describe("resolveNamespacePath", () => {
   it("propagates resolver errors for unknown mounts and traversal", () => {
     const unknown = resolveNamespacePath("talon://nope/x", vfs, false, NS);
     expect(unknown).toMatchObject({ ok: false });
-    const traversal = resolveNamespacePath(
-      "talon://home/../x",
-      vfs,
-      false,
-      NS,
-    );
+    const traversal = resolveNamespacePath("talon://home/../x", vfs, false, NS);
     expect(traversal).toMatchObject({ ok: false });
   });
 });
@@ -122,10 +117,7 @@ describe("rewriteNamespaceRefs", () => {
     expect(rewritten).toEqual({
       ok: true,
       command: `grep -r needle ${SKILLS} ${WORKSPACE}/notes`,
-      mappings: [
-        `talon://skills → ${SKILLS}`,
-        `talon://home → ${WORKSPACE}`,
-      ],
+      mappings: [`talon://skills → ${SKILLS}`, `talon://home → ${WORKSPACE}`],
     });
   });
 
@@ -150,12 +142,7 @@ describe("rewriteNamespaceRefs", () => {
   });
 
   it("names unknown mounts with the mount table", () => {
-    const rewritten = rewriteNamespaceRefs(
-      "ls talon://nope/x",
-      vfs,
-      false,
-      NS,
-    );
+    const rewritten = rewriteNamespaceRefs("ls talon://nope/x", vfs, false, NS);
     expect(rewritten.ok).toBe(false);
     if (rewritten.ok) return;
     expect(rewritten.error).toContain('"nope"');

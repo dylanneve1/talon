@@ -15,8 +15,21 @@
 
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { execFile as execFileCb, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
-import { lstat, readFile, readdir, readlink, stat, writeFile } from "node:fs/promises";
+import {
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  mkdirSync,
+} from "node:fs";
+import {
+  lstat,
+  readFile,
+  readdir,
+  readlink,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";

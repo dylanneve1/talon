@@ -61,10 +61,7 @@ beforeEach(() => {
       writable: true,
     }),
   );
-  vfs.mount(
-    "proc",
-    createProcMount({ tasks: () => [task], events: () => [] }),
-  );
+  vfs.mount("proc", createProcMount({ tasks: () => [task], events: () => [] }));
 });
 
 afterEach(async () => {
@@ -76,9 +73,9 @@ afterEach(async () => {
 
 describe("serveNamespaceRequest", () => {
   it("serves stat / list / read for synthetic nodes", () => {
-    expect(JSON.parse(serveNamespaceRequest(vfs, "stat", "proc"))).toMatchObject(
-      { ok: true, kind: "dir" },
-    );
+    expect(
+      JSON.parse(serveNamespaceRequest(vfs, "stat", "proc")),
+    ).toMatchObject({ ok: true, kind: "dir" });
     expect(
       JSON.parse(serveNamespaceRequest(vfs, "list", "proc/tasks")),
     ).toEqual({ ok: true, entries: [{ name: "3", kind: "file" }] });

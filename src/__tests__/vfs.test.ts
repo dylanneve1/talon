@@ -144,7 +144,8 @@ describe("resolver", () => {
       },
       {
         name: "plugins",
-        description: "Loaded plugins and registered MCP servers (registry view)",
+        description:
+          "Loaded plugins and registered MCP servers (registry view)",
         writable: false,
       },
     ]);

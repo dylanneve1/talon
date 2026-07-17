@@ -178,7 +178,11 @@ async function bash(
   // shell ever sees them — teleported they can't (wrong address space).
   let mappings: string[] = [];
   if (cmd.includes("talon:") && !active) {
-    const rewritten = rewriteNamespaceRefs(cmd, getVfs(), isNamespaceFsMounted());
+    const rewritten = rewriteNamespaceRefs(
+      cmd,
+      getVfs(),
+      isNamespaceFsMounted(),
+    );
     if (!rewritten.ok) return { ok: false, text: rewritten.error };
     cmd = rewritten.command;
     mappings = rewritten.mappings;

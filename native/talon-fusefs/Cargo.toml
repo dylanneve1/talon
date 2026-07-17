@@ -17,7 +17,7 @@ crate-type = ["cdylib"]
 # session needs nothing at build time and shells out to
 # fusermount3/fusermount at runtime — which is why the addon is
 # Linux-only for now.
-fuser = { version = "0.14", default-features = false }
+fuser = { version = "0.16", default-features = false }
 libc = "0.2"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }

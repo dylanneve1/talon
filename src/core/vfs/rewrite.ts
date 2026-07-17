@@ -27,8 +27,7 @@ const SCHEME = "talon://";
 const MOUNT_NAME = /^[a-z0-9-]+/;
 
 export type PathResolution =
-  | { ok: true; path: string }
-  | { ok: false; error: string };
+  { ok: true; path: string } | { ok: false; error: string };
 
 export type CommandRewrite =
   | { ok: true; command: string; mappings: string[] }

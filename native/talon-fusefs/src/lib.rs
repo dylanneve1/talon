@@ -280,7 +280,7 @@ impl Filesystem for TalonFs {
         }
     }
 
-    fn getattr(&mut self, _req: &Request<'_>, ino: u64, reply: ReplyAttr) {
+    fn getattr(&mut self, _req: &Request<'_>, ino: u64, _fh: Option<u64>, reply: ReplyAttr) {
         let Some(path) = self.path_of(ino).map(str::to_string) else {
             reply.error(libc::ENOENT);
             return;
