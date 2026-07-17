@@ -1,0 +1,35 @@
+# talon-fusefs — the talon:// namespace as a real FUSE filesystem,
+# delivered as an in-process napi-rs addon (bin/talon-fusefs.node).
+# Same optional-binary contract as blake3-napi: per-arch artifact,
+# never committed, absent = the FUSE layer stays off and the namespace
+# degrades to the symlink farm (src/core/vfs/fusefs.ts).
+[package]
+name = "talon-fusefs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# default-features = false drops the libfuse link: fuser's pure-Rust
+# session needs nothing at build time and shells out to
+# fusermount3/fusermount at runtime — which is why the addon is
+# Linux-only for now.
+fuser = { version = "0.14", default-features = false }
+libc = "0.2"
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+napi = { version = "2.16", default-features = false, features = ["napi8"] }
+napi-derive = "2.16"
+
+[build-dependencies]
+napi-build = "2.1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = "symbols"

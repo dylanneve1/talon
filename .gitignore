@@ -51,3 +51,11 @@ bin/talon-blake3.node
 native/blake3-napi/target/
 native/blake3-napi/dist/
 src/plugins/npuw/
+
+
+# talon-fusefs addon — per-arch .node library like blake3-napi: built
+# by packaging/CI/source installs, never committed. Without it the
+# talon:// namespace at ~/.talon/ns is the symlink farm (no live views).
+bin/talon-fusefs.node
+native/talon-fusefs/target/
+native/talon-fusefs/dist/

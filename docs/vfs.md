@@ -54,7 +54,8 @@ The namespace is not an API you query; it is a place on the filesystem.
   mounts are served as symlinks — the kernel follows them, so heavy file
   I/O never crosses FUSE. Synthetic subtrees are answered live from the
   JS `Vfs` over a threadsafe callback bridge. Read-only, `direct_io` (live
-  content has no stable size), auto-unmounts if the daemon dies.
+  content has no stable size). A daemon that dies uncleanly leaves a stale
+  mount; the next boot detects it (ENOTCONN) and lazy-unmounts first.
 
 Like `/proc`, the live views exist only while the daemon (with FUSE) is
 up. Config: `fuse: "auto" | "off"` (default auto). `"auto"` degrades —

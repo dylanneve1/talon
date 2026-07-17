@@ -558,6 +558,61 @@ jobs:
             src/__tests__/blake3-wasm.test.ts \
             src/__tests__/media-index.test.ts
 
+  # ── Namespace FUSE addon ───────────────────────────────────────
+  # talon-fusefs (native/talon-fusefs) is a per-arch .node library like
+  # blake3-napi — nothing to drift-check. Build it with the pinned
+  # toolchain, run its unit tests, then drive the REAL artifact through
+  # a live kernel mount: symlink serving, live synthetic reads from
+  # this process and from child processes, EROFS/ENOENT, and clean
+  # unmount. TALON_REQUIRE_FUSE_LIVE=1 turns a silent capability skip
+  # into a failure, so this job can never go green without mounting.
+  # Linux only — the addon mounts through fusermount, a Linux facility;
+  # every other host runs the (also tested) fuseless degradation path.
+  fusefs:
+    name: Namespace FUSE (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/talon-fusefs
+
+      - name: Host can mount (fail loudly, never skip silently)
+        run: |
+          test -e /dev/fuse
+          fusermount3 --version || fusermount --version
+
+      - name: Unit tests (pinned toolchain via rust-toolchain.toml)
+        run: cargo test --locked
+        working-directory: native/talon-fusefs
+
+      - name: Build the addon
+        run: npm run build:fusefs
+
+      - name: Live mount + degradation + namespace suites
+        env:
+          TALON_REQUIRE_FUSE_LIVE: "1"
+        run: |
+          npm ci
+          npx vitest run --pool=forks --no-file-parallelism --maxWorkers=1 \
+            src/__tests__/fusefs-live.test.ts \
+            src/__tests__/vfs-fusefs.test.ts \
+            src/__tests__/vfs.test.ts \
+            src/__tests__/vfs-rewrite.test.ts \
+            src/__tests__/vfs-nsdir.test.ts \
+            src/__tests__/native-vfs-address.test.ts
+
   # ── Real backend live integration tier ───────────────────────
   # Installs the real backend CLI, then exercises the deployed backend surface
   # that fixture tests cannot fully represent: Kilo/OpenCode live HTTP model

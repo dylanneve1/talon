@@ -62,3 +62,17 @@ wasm module does the hashing. Build per arch the same way:
 npm run build:napi                                        # host arch → bin/talon-blake3.node
 node native/blake3-napi/build.mjs --target=<rust-triple>  # cross (Linux targets) → dist/
 ```
+
+## Namespace FUSE addon (`talon-fusefs.node`)
+
+Optional and Linux-only: ship
+([`native/talon-fusefs`](../native/talon-fusefs/)) as
+`bin/talon-fusefs.node` (override: `TALON_FUSEFS_NODE`) and the daemon
+mounts the talon:// namespace at `~/.talon/ns` with live `proc/` and
+`plugins/` views; without it the namespace is the plain symlink farm.
+Build per arch the same way:
+
+```sh
+npm run build:fusefs                                        # host arch → bin/talon-fusefs.node
+node native/talon-fusefs/build.mjs --target=<rust-triple>   # cross (Linux targets) → dist/
+```

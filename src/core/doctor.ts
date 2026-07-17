@@ -395,6 +395,26 @@ export async function collectDoctorReport(opts: {
     );
   }
 
+  // Same optional contract for the namespace FUSE addon: absent means
+  // ~/.talon/ns is the symlink farm only (file mounts fine, no live
+  // proc//plugins views), so it's informational, not an issue.
+  {
+    const { nativeFuseFs } = await import("../native/fusefs.js");
+    const addon = nativeFuseFs();
+    checks.push(
+      addon
+        ? {
+            label: `Namespace FUSE: talon-fusefs addon v${addon.version()}`,
+            status: "ok",
+          }
+        : {
+            label: "Namespace FUSE: symlink farm only (no addon)",
+            status: "info",
+            detail: "npm run build:fusefs",
+          },
+    );
+  }
+
   // Package-owned prompt templates must be loadable. On a standalone
   // `bun build --compile` binary these are embedded file assets (no
   // source tree on disk); a failure here means the embed manifest is
