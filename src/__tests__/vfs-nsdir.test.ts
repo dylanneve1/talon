@@ -96,4 +96,29 @@ describe("syncNamespaceDir", () => {
     expect(lstatSync(join(nsRoot, "home")).isDirectory()).toBe(true);
     expect(lstatSync(join(nsRoot, "home")).isSymbolicLink()).toBe(false);
   });
+
+  it("prunes and retargets links whose targets EXIST, target untouched", () => {
+    // The real-world shape: mount roots exist on disk (unlike the
+    // dangling links above), and on Windows the farm's own links are
+    // directory-symlinks — removal must go through the rmdir fallback.
+    syncNamespaceDir(vfs, nsRoot);
+    const movedTo = join(base, "workspace-moved");
+    const rehomed = new Vfs();
+    rehomed.mount(
+      "home",
+      createFileMount({ root: movedTo, description: "ws2", writable: true }),
+    );
+
+    const result = syncNamespaceDir(rehomed, nsRoot);
+    expect(result.linked).toEqual(["home"]);
+    expect(readlinkSync(join(nsRoot, "home"))).toBe(movedTo);
+    // The old target directory itself was never touched.
+    expect(existsSync(join(base, "workspace"))).toBe(true);
+
+    // Prune: no mounts at all → the farm empties, targets survive.
+    const bare = syncNamespaceDir(new Vfs(), nsRoot);
+    expect(bare.pruned).toEqual(["home"]);
+    expect(existsSync(join(nsRoot, "home"))).toBe(false);
+    expect(existsSync(movedTo)).toBe(true);
+  });
 });

@@ -77,11 +77,10 @@ if (target) {
   outPath = join(repoRoot, "bin", "talon-blake3.node");
 }
 // Install atomically. copyFileSync truncates and rewrites the destination
-// IN PLACE — if a live process has this artifact loaded (the daemon holds
-// the fusefs addon dlopen'd for the whole mount lifetime), rewriting its
-// pages underneath it takes that process down with SIGBUS. A rename swaps
-// the directory entry instead: the old inode stays mapped until the
-// process exits, and readers see the old or the new file, never a torn one.
+// IN PLACE — a running daemon holds this addon dlopen'd (mmap'd), and
+// rewriting its pages underneath it takes the daemon down with SIGBUS.
+// A rename swaps the directory entry instead: the old inode stays mapped
+// until the process exits, and readers see old or new, never a torn one.
 const stagePath = `${outPath}.tmp-${process.pid}`;
 copyFileSync(built, stagePath);
 renameSync(stagePath, outPath);

@@ -330,11 +330,14 @@ function stopHealthWatchdog(): void {
  * a second teardown/remount on top of one in flight. Never throws.
  */
 async function checkNamespaceFsHealth(): Promise<void> {
-  if (healing || live === null) return;
+  // Snapshot the mount facts: a concurrent shutdown nulls `live` between
+  // our awaits, and a tick must finish against one consistent view.
+  const mount = live;
+  if (healing || mount === null) return;
   healing = true;
   try {
     if (status.mounted) {
-      const healthy = await probeMount(live.nsRoot, live.probe);
+      const healthy = await probeMount(mount.nsRoot, mount.probe);
       if (healthy === true) return;
       logWarn(
         "fusefs",
@@ -348,7 +351,7 @@ async function checkNamespaceFsHealth(): Promise<void> {
       // The dead mount may still shadow the mountpoint — restore the farm
       // so file-backed paths survive the fuseless window.
       try {
-        syncNamespaceDir(live.vfs, live.nsRoot);
+        syncNamespaceDir(mount.vfs, mount.nsRoot);
       } catch {
         // best effort; the warning above already carries the real failure
       }
@@ -357,6 +360,9 @@ async function checkNamespaceFsHealth(): Promise<void> {
         reason: "mount went unhealthy — degraded to fuseless",
       };
     }
+
+    // Shutdown raced this tick — nothing to reconnect to.
+    if (live === null) return;
 
     // Already fuseless (just degraded, or a prior reconnect failed): try
     // to bring the mount back, up to the cap.
@@ -371,10 +377,10 @@ async function checkNamespaceFsHealth(): Promise<void> {
     }
     reconnectAttempts += 1;
     const result = await mountNamespaceFs({
-      mode: live.mode,
-      vfs: live.vfs,
-      nsRoot: live.nsRoot,
-      addon: live.addon,
+      mode: mount.mode,
+      vfs: mount.vfs,
+      nsRoot: mount.nsRoot,
+      addon: mount.addon,
     });
     if (result.mounted) {
       log("fusefs", "reconnected — live views restored");

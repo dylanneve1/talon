@@ -18,6 +18,7 @@ import {
   mkdirSync,
   readdirSync,
   readlinkSync,
+  rmdirSync,
   symlinkSync,
   unlinkSync,
 } from "node:fs";
@@ -69,12 +70,16 @@ export function syncNamespaceDir(
       desired.delete(entry); // already correct
       continue;
     }
-    // unlinkSync, not rmSync: every entry here is a symlink (checked
-    // above), and rmSync follows it — on Node >=24 that throws EISDIR
-    // when the link points at a directory (the common retarget case),
-    // wedging the whole sync. unlink removes the link itself and never
-    // touches its target.
-    unlinkSync(path);
+    // Remove the LINK, never its target. unlink is the precise
+    // primitive for that everywhere except Windows, where a
+    // directory-symlink is removed with rmdir instead — hence the
+    // fallback. (rmSync's contract on symlinks is murkier; these two
+    // never touch the target by definition.)
+    try {
+      unlinkSync(path);
+    } catch {
+      rmdirSync(path);
+    }
     if (target === undefined) pruned.push(entry);
   }
 

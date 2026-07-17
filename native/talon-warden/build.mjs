@@ -68,11 +68,10 @@ if (target) {
   outPath = join(repoRoot, "bin", `talon-warden${ext}`);
 }
 // Install atomically. copyFileSync truncates and rewrites the destination
-// IN PLACE — if a live process has this artifact loaded (the daemon holds
-// the fusefs addon dlopen'd for the whole mount lifetime), rewriting its
-// pages underneath it takes that process down with SIGBUS. A rename swaps
-// the directory entry instead: the old inode stays mapped until the
-// process exits, and readers see the old or the new file, never a torn one.
+// IN PLACE — while a warden child is running that's ETXTBSY (build fails
+// mid-write, possibly leaving a torn binary for the next trigger). A
+// rename swaps the directory entry instead: running children keep the
+// old inode, and the next spawn sees old or new, never a torn one.
 const stagePath = `${outPath}.tmp-${process.pid}`;
 copyFileSync(built, stagePath);
 renameSync(stagePath, outPath);
