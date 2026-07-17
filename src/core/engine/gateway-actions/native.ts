@@ -34,12 +34,6 @@ import {
   setTeleportCwd,
 } from "../../mesh/teleport.js";
 import {
-  getVfs,
-  isNamespaceFsMounted,
-  resolveNamespacePath,
-  rewriteNamespaceRefs,
-} from "../../vfs/index.js";
-import {
   clampExecOutput,
   createOutputCapture,
 } from "../../../util/exec-output.js";
@@ -169,32 +163,10 @@ async function bash(
   timeoutSec: unknown,
   background?: unknown,
 ): Promise<Result> {
-  let cmd = typeof command === "string" ? command : "";
+  const cmd = typeof command === "string" ? command : "";
   if (!cmd.trim()) return { ok: false, text: "No command given." };
   const timeoutMs = clampTimeout(timeoutSec);
   const active = await getTeleport(chatId);
-
-  // talon:// references in the command translate to real paths before the
-  // shell ever sees them — teleported they can't (wrong address space).
-  let mappings: string[] = [];
-  if (cmd.includes("talon:") && !active) {
-    const rewritten = rewriteNamespaceRefs(
-      cmd,
-      getVfs(),
-      isNamespaceFsMounted(),
-    );
-    if (!rewritten.ok) return { ok: false, text: rewritten.error };
-    cmd = rewritten.command;
-    mappings = rewritten.mappings;
-  }
-  if (cmd.includes(NAMESPACE_SCHEME) && active) {
-    return {
-      ok: false,
-      text:
-        `talon:// names the daemon's namespace, but native tools are ` +
-        `teleported onto ${active.deviceName} — teleport_back first, or use a device path.`,
-    };
-  }
 
   let dir = typeof cwd === "string" && cwd.trim() ? cwd.trim() : undefined;
   if (dir !== undefined && !active) {
@@ -219,10 +191,6 @@ async function bash(
     if (active) return bashTeleported(chatId, active.deviceId, cmd, timeoutMs);
     return bashLocal(cmd, dir, timeoutMs);
   })();
-  // Surface the translation so it's visible, never silent.
-  if (mappings.length > 0) {
-    return { ...result, text: `↪ ${mappings.join("  ")}\n${result.text}` };
-  }
   return result;
 }
 
@@ -490,38 +458,7 @@ async function bashTeleported(
   };
 }
 
-// ── talon:// address resolution ─────────────────────────────────────────────
-
-const NAMESPACE_SCHEME = "talon://";
-
-/**
- * talon:// addresses translate to real host paths (core/vfs/rewrite.ts)
- * and then flow through the exact same fs code as any other path — no
- * virtual nodes, no special branches. With the FUSE layer mounted even
- * proc/ and plugins/ are ordinary files; without it they are refused at
- * resolution. Teleport can't cross address spaces: talon:// names
- * daemon state, and a teleported chat's paths belong to the device, so
- * the combination is refused rather than resolved against the wrong
- * filesystem.
- */
-function resolveAddress(
-  address: string,
-  teleportedTo: string | undefined,
-): { path: string } | { error: string } {
-  if (teleportedTo !== undefined) {
-    return {
-      error:
-        `${address} names the daemon's namespace, but native tools are ` +
-        `teleported onto ${teleportedTo} — teleport_back first, or use a device path.`,
-    };
-  }
-  const resolved = resolveNamespacePath(
-    address,
-    getVfs(),
-    isNamespaceFsMounted(),
-  );
-  return resolved.ok ? { path: resolved.path } : { error: resolved.error };
-}
+// ── path parameter resolution ───────────────────────────────────────────────
 
 /** Expand a leading `~` — local runs only; a device's home is not ours. */
 function expandHome(path: string): string {
@@ -531,16 +468,23 @@ function expandHome(path: string): string {
 }
 
 /**
- * One rule for every path parameter: talon:// translates, `~` expands
- * (locally), everything else passes through untouched.
+ * One rule for every path parameter: `~` expands (local runs only),
+ * everything else passes through untouched.
+ *
+ * The namespace has no tool-facing address scheme — its nodes are reached
+ * by their real paths (`~/.talon/ns/…`, kept real by the symlink farm in
+ * nsdir.ts and the FUSE layer in fusefs.ts). Real paths need no
+ * translation and behave identically here, in a bare shell, in another
+ * backend's built-in shell (Codex), and in any spawned child process.
+ * Teleported, paths belong to the device and pass through verbatim.
+ *
+ * The `| { error }` arm is retained for the call sites' uniform shape;
+ * expansion itself cannot fail.
  */
 function resolvePathParam(
   path: string,
   teleportedTo: string | undefined,
 ): { path: string } | { error: string } {
-  if (path.startsWith(NAMESPACE_SCHEME)) {
-    return resolveAddress(path, teleportedTo);
-  }
   return { path: teleportedTo !== undefined ? path : expandHome(path) };
 }
 

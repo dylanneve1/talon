@@ -10,16 +10,18 @@ import type { ToolDefinition } from "./types.js";
  * Their extra power over the built-ins: every one honours the active
  * `teleport` target, so with a teleport engaged they run ON a companion
  * device (via the mesh exec/fs channel) instead of on the daemon host.
- * And every one speaks talon:// — Talon's own namespace, which is a real
- * filesystem location, so addresses translate to legitimate paths.
+ * Talon's namespace (~/.talon/ns) is a real filesystem location — its
+ * files are reached by their ordinary real paths, with no address scheme
+ * to translate, so the same path works here, in a bare shell, and in any
+ * spawned process.
  */
 
 /** One shared description of the namespace, stated once. */
 const NAMESPACE_DOC =
-  "talon:// is Talon's namespace, on disk at ~/.talon/ns: home/ (the workspace), " +
-  "skills/, scripts/, logs/, and — while the FUSE layer is mounted — the live views " +
-  "proc/ (task table at proc/tasks/<id>, event ring at proc/events, both JSON) and " +
-  "plugins/ (registry).";
+  "Talon's namespace lives on disk at ~/.talon/ns — home/ (the workspace), skills/, " +
+  "scripts/, logs/, and, while the FUSE layer is mounted, the live views proc/ (task " +
+  "table at proc/tasks/<id>, event ring at proc/events, both JSON) and plugins/ " +
+  "(registry). These are real paths: address them directly as ~/.talon/ns/<mount>/….";
 export const nativeTools: ToolDefinition[] = [
   {
     name: "teleport",
@@ -49,14 +51,14 @@ export const nativeTools: ToolDefinition[] = [
     description:
       "Run a shell command. Runs on the daemon host, or ON the active teleport device if one is engaged. On a teleported device, `cd` persists across calls (a real working-directory session). " +
       "Foreground runs are killed at timeout_sec — for streaming/never-ending commands (adb logcat, tail -f, dev servers, watchers) set background:true instead: the command is launched detached in its own process group with stdout+stderr captured to a log file, and the tool returns immediately with the pid + log path so you can poll the log and kill it when done. " +
-      `${NAMESPACE_DOC} talon:// references in the command are translated to real paths before the shell runs (local only), so \`ls talon://home\` or \`cat talon://proc/events | jq\` just work.`,
+      `${NAMESPACE_DOC} Reach them by real path, e.g. \`ls ~/.talon/ns/home\` or \`cat ~/.talon/ns/proc/events | jq\` (proc/ and plugins/ need the FUSE layer mounted).`,
     schema: {
       command: z.string().describe("The shell command to run."),
       cwd: z
         .string()
         .optional()
         .describe(
-          "Working directory (local runs only; teleport tracks its own cwd). talon:// accepted.",
+          "Working directory (local runs only; teleport tracks its own cwd). A real path, e.g. ~/.talon/ns/home.",
         ),
       timeout_sec: z
         .number()
@@ -81,7 +83,7 @@ export const nativeTools: ToolDefinition[] = [
       path: z
         .string()
         .describe(
-          "Absolute file path, ~ path, or a talon:// address (translated on the daemon host).",
+          "Absolute file path or ~ path (namespace files live under ~/.talon/ns, e.g. ~/.talon/ns/home/notes.md).",
         ),
       offset: z.number().optional().describe("0-based line to start from."),
       limit: z
@@ -95,12 +97,12 @@ export const nativeTools: ToolDefinition[] = [
   {
     name: "write",
     description:
-      "Write (create/overwrite) a file with the given content. Runs on the daemon host or the active teleport device. Writable talon:// mounts: home/, skills/, scripts/ (live views are read-only).",
+      "Write (create/overwrite) a file with the given content. Runs on the daemon host or the active teleport device. Under ~/.talon/ns the writable mounts are home/, skills/, scripts/ (logs/, proc/, plugins/ are read-only).",
     schema: {
       path: z
         .string()
         .describe(
-          "Absolute file path, ~ path, or a talon:// address (translated on the daemon host).",
+          "Absolute file path or ~ path (namespace files live under ~/.talon/ns, e.g. ~/.talon/ns/home/notes.md).",
         ),
       content: z.string().describe("Full file content to write."),
     },
@@ -115,7 +117,7 @@ export const nativeTools: ToolDefinition[] = [
       path: z
         .string()
         .describe(
-          "Absolute file path, ~ path, or a talon:// address (translated on the daemon host).",
+          "Absolute file path or ~ path (namespace files live under ~/.talon/ns, e.g. ~/.talon/ns/home/notes.md).",
         ),
       old_string: z.string().describe("Exact text to replace."),
       new_string: z.string().describe("Replacement text."),
@@ -136,7 +138,7 @@ export const nativeTools: ToolDefinition[] = [
       path: z
         .string()
         .optional()
-        .describe("Root directory to search (default cwd; talon:// accepted)."),
+        .describe("Root directory to search (default cwd; a real path e.g. ~/.talon/ns/home)."),
     },
     execute: (params, bridge) => bridge("native_glob", params),
     tag: "native",
@@ -150,7 +152,7 @@ export const nativeTools: ToolDefinition[] = [
       path: z
         .string()
         .optional()
-        .describe("Root directory or file (default cwd; talon:// accepted)."),
+        .describe("Root directory or file (default cwd; a real path e.g. ~/.talon/ns/home)."),
       glob: z
         .string()
         .optional()

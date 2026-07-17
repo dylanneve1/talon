@@ -18,8 +18,11 @@
  * The namespace IS the filesystem: it lives at ~/.talon/ns (symlink
  * farm via nsdir.ts, live synthetic mounts via fusefs.ts when FUSE is
  * available), and every consumer — native tools, shell commands, the
- * user's own terminal — reaches it through real paths. Address
- * translation for tools lives in rewrite.ts.
+ * user's own terminal, other backends' shells (Codex), spawned
+ * processes — reaches it through the same real paths. There is no
+ * tool-facing address scheme to translate: `~/.talon/ns/home/…` is the
+ * address. (`talon://` survives only as the VFS's internal mount
+ * grammar in vfs.ts / fusefs.ts; consumers never see it.)
  */
 
 import { dirs } from "../../util/paths.js";
@@ -36,12 +39,6 @@ export { createFileMount } from "./mounts/files.js";
 export { createProcMount, type ProcMountDeps } from "./mounts/proc.js";
 export { createPluginsMount, type PluginView } from "./mounts/plugins.js";
 export { syncNamespaceDir, type NsDirSync } from "./nsdir.js";
-export {
-  resolveNamespacePath,
-  rewriteNamespaceRefs,
-  type CommandRewrite,
-  type PathResolution,
-} from "./rewrite.js";
 export {
   isNamespaceFsMounted,
   mountNamespaceFs,

@@ -1,4 +1,4 @@
-# VFS — the `talon://` namespace
+# VFS — the `~/.talon/ns` namespace
 
 > Status: **implemented** (`src/core/vfs/`). One rooted, mountable
 > namespace over everything the daemon owns — real file stores and
@@ -68,55 +68,56 @@ under `~/.talon/ns` — sync blocks the one JS thread that answers the FUSE
 bridge. Async fs and child processes are always safe; tools resolve
 addresses accordingly.
 
-## The address grammar
+## Addressing — real paths, no scheme
 
-An address is one of exactly **two** spellings, resolved by one grammar
-(`Vfs.#parse`) — total, so a spelling can never silently route to the
-wrong tree:
+The namespace is reached by its **real path**: `~/.talon/ns/<mount>/…`.
+That path is real in every configuration — a symlink into the store when
+fuseless, a FUSE view when mounted — so it works everywhere a path works:
+the native tools, a bare shell, another backend's built-in shell (e.g.
+Codex), your own terminal, any spawned child process. There is **no
+tool-facing address scheme and nothing to translate** — the real path is
+the address.
 
-| Spelling    | Example                 | Interpretation |
-| ----------- | ----------------------- | -------------- |
-| scheme      | `talon://home/notes.md` | always namespace |
-| OS-absolute | `<workspace>/notes.md`  | routed through the mount table by containment (longest disk root wins), exactly like a kernel resolving through its mounts |
-
-Bare relative paths, the old mount-relative form, and near-miss schemes
-(`talon:/x`) are refused with the correction, never guessed at.
-
-File-backed mounts carry their disk root (`VfsMount.osRoot`) — the fact
-that makes addresses bidirectional:
-
-- **OS → namespace**: an absolute path inside a mounted directory is the
-  same node as its `talon://` spelling and resolves to it. Outside every
-  mount, the resolver refuses (`not-found`) and names the mounted disk
-  roots — it never guesses.
-- **Namespace → OS**: `core/vfs/rewrite.ts` translates addresses to real
-  host paths. With FUSE mounted, `talon://` → `~/.talon/ns/` is one total
-  prefix substitution (correct inside quotes, pipelines, anywhere);
-  fuseless, file mounts map to their disk roots and live views are
-  refused with the reason.
-
-There are **no dedicated namespace tools**. The native tools speak
-`talon://` natively and then run ordinary fs code on the translated path:
-
-- `bash` — references in the command translate before the shell runs, so
-  `ls talon://home` and `cat talon://proc/events | jq .` just work; the
-  applied mapping is reported in the result (`↪ talon://home → …`).
-- `read` / `write` / `edit` / `glob` / `search` — the path parameter
-  translates the same way (`~` also expands, as the shell would).
+- `bash` — `ls ~/.talon/ns/home`, `cat ~/.talon/ns/proc/events | jq .`.
+- `read` / `write` / `edit` / `glob` / `search` — the path parameter is an
+  ordinary real path (`~` expands, as the shell would).
 - Your own terminal — `ls ~/.talon/ns/proc/tasks` works in any shell on
   the host while the daemon runs with FUSE.
 
-Writes to live views fail with the kernel's own `EROFS` — honest errno,
-no hand-rolled refusal. Teleported chats refuse `talon://` outright: the
-namespace names daemon state, and a teleported tool's paths belong to the
-device.
+Internally the `Vfs` resolver (`Vfs.#parse`) still understands two
+spellings, so the FUSE layer and OS→namespace routing have a grammar to
+work in — but these are **implementation details, never tool inputs**:
+
+| Spelling    | Example                 | Interpretation |
+| ----------- | ----------------------- | -------------- |
+| scheme      | `talon://home/notes.md` | namespace-interpreted — internal to the resolver / FUSE bridge only |
+| OS-absolute | `<workspace>/notes.md`  | routed through the mount table by containment (longest disk root wins), exactly like a kernel resolving through its mounts |
+
+File-backed mounts carry their disk root (`VfsMount.osRoot`), which is
+what lets an absolute path inside a mounted directory resolve to the same
+node (the OS→namespace direction, used by the FUSE layer). Outside every
+mount the resolver refuses (`not-found`) and names the mounted disk roots.
+
+Live views (`proc/`, `plugins/`) exist only while FUSE is mounted;
+fuseless, those paths simply don't exist (ENOENT), exactly like `/proc`
+before it is mounted. Writes to live views fail with the kernel's own
+`EROFS` — honest errno, no hand-rolled refusal. Teleported chats address
+the device's own filesystem by its real paths.
+
+> **History:** a `talon://` URI scheme was once a first-class tool input,
+> translated to real paths by a `core/vfs/rewrite.ts` seam. Once the
+> symlink farm made `~/.talon/ns/<mount>` a real path in *every* config,
+> that translation became redundant with the real path — and it only ever
+> worked inside Talon's own native tools (it broke in other backends'
+> shells and any spawned process). The scheme was removed as a consumer
+> address; it survives only as the resolver's internal grammar.
 
 ## Reads are bounded (namespace API only)
 
 `Vfs.read` serves UTF-8 text up to 256 KB and refuses binaries (null-byte
 sniff) — a namespace read is a context payload, not a file transfer. This
 cap applies to the `Vfs` API (and thus the FUSE bridge's synthetic
-content); real files reached through translated paths read at native
+content); real files reached through their real paths read at native
 speed with no cap.
 
 ## Growing the namespace
