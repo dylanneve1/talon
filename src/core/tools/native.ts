@@ -138,7 +138,9 @@ export const nativeTools: ToolDefinition[] = [
       path: z
         .string()
         .optional()
-        .describe("Root directory to search (default cwd; a real path e.g. ~/.talon/ns/home)."),
+        .describe(
+          "Root directory to search (default cwd; a real path e.g. ~/.talon/ns/home).",
+        ),
     },
     execute: (params, bridge) => bridge("native_glob", params),
     tag: "native",
@@ -152,7 +154,9 @@ export const nativeTools: ToolDefinition[] = [
       path: z
         .string()
         .optional()
-        .describe("Root directory or file (default cwd; a real path e.g. ~/.talon/ns/home)."),
+        .describe(
+          "Root directory or file (default cwd; a real path e.g. ~/.talon/ns/home).",
+        ),
       glob: z
         .string()
         .optional()
