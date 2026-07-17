@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/dylanneve1/talon/compare/v1.53.0...v2.0.0) (2026-07-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **vfs:** vfs_list/vfs_read/vfs_write tools, GET /vfs/* gateway routes, and the talon ls/cat CLI commands are gone — the namespace is served through ~/.talon/ns and the native tools' talon:// support.
+
+### Features
+
+* **vfs:** unified talon:// namespace — strict grammar, real mountpoint, FUSE live views ([#571](https://github.com/dylanneve1/talon/issues/571)) ([a8f0f7c](https://github.com/dylanneve1/talon/commit/a8f0f7cbcb84ed2d25b07d4ddc6f9caa7ee34fb6))
+
 ## [1.53.0](https://github.com/dylanneve1/talon/compare/v1.52.0...v1.53.0) (2026-07-16)
 
 
