@@ -703,6 +703,51 @@ describe("codex / handleMessage — context tokens wiring", () => {
     expect(result.outputTokens).toBe(0);
     expect(result.cacheRead).toBe(0);
   });
+
+  it("prefers the rollout delta over turn.completed's CUMULATIVE usage", async () => {
+    // Codex's SDK Usage on turn.completed sums input across every API
+    // call in the turn — a ~20-call turn reports ~20× the real context
+    // fill. The regression: that figure was recorded as the turn's
+    // input whenever turn.completed fired, so the companion UI showed
+    // 812k-token "small conversations". The rollout delta is the only
+    // per-turn source of truth; the SDK figure is unreliable.
+    setupHandler();
+    writeRolloutWithTotals("thr_cumulative", {
+      input: 40_000,
+      cached: 30_000,
+      output: 900,
+    });
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_cumulative" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "done" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 812_000, // cumulative across ~20 calls — wrong units
+          output_tokens: 4_000,
+          cached_input_tokens: 700_000,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ] as never;
+
+    const result = await handleMessage({
+      chatId: "test-chat",
+      text: "hi",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    // Fresh thread → zero baseline → this turn's usage IS the rollout
+    // totals, never the SDK's cumulative figure.
+    expect(result.inputTokens).toBe(40_000);
+    expect(result.cacheRead).toBe(30_000);
+    expect(result.outputTokens).toBe(900);
+  });
 });
 
 describe("codex / handleMessage — error paths", () => {

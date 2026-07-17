@@ -388,42 +388,39 @@ export async function handleMessage(
 
   // Final authoritative usage settlement — shared by the success post-loop
   // and the terminal-failure path so failed turns account for the tokens
-  // they burned too. Codex's `turn.completed.usage` is CUMULATIVE, so we
-  // read the per-call `token_count` event from the rollout JSONL for an
-  // accurate /status display, falling back silently when unavailable.
+  // they burned too. Codex's `turn.completed.usage` is CUMULATIVE across
+  // every API call in the turn — never in the per-turn units the shared
+  // stream state (and everything downstream: /status, the companion's
+  // per-message counts) speaks. The rollout JSONL's totals diffed against
+  // the pre-turn baseline are this turn's real usage; that is the ONLY
+  // authoritative source. The SDK figure is a last-resort fallback when
+  // the rollout can't be read, and it overstates multi-call turns.
   const settleUsageAccounting = async (): Promise<void> => {
-    if (usage) {
-      recordTokens(streamState, {
-        inputTokens: usage.input_tokens,
-        outputTokens: usage.output_tokens,
-        cacheRead: usage.cached_input_tokens,
-        cacheWrite: 0, // Codex doesn't report cache writes
-      });
-    }
-    if (!resolvedThreadId) return;
-    const last = await readLastRolloutSnapshot(resolvedThreadId).catch(
-      () => null,
-    );
-    if (!last) return;
-    if (last.usage) {
+    const last = resolvedThreadId
+      ? await readLastRolloutSnapshot(resolvedThreadId).catch(() => null)
+      : null;
+    if (last?.usage) {
       streamState.contextTokens = last.usage.contextTokens;
       if (last.usage.contextWindow) {
         streamState.contextWindow = last.usage.contextWindow;
       }
     }
-    if (typeof last.numApiCalls === "number") {
+    if (typeof last?.numApiCalls === "number") {
       streamState.numApiCalls = last.numApiCalls;
     }
-    // Terminator-driven turns abort the stream before `turn.completed`
-    // fires, so the SDK-side `usage` capture above is null on almost
-    // every Talon turn. Recover this turn's real usage by diffing the
-    // rollout's cumulative totals against the pre-turn baseline.
-    if (!usage && last.totals && baselineTotals) {
+    if (last?.totals && baselineTotals) {
       recordTokens(streamState, {
         inputTokens: last.totals.inputTokens - baselineTotals.inputTokens,
         outputTokens: last.totals.outputTokens - baselineTotals.outputTokens,
         cacheRead:
           last.totals.cachedInputTokens - baselineTotals.cachedInputTokens,
+        cacheWrite: 0, // Codex doesn't report cache writes
+      });
+    } else if (usage) {
+      recordTokens(streamState, {
+        inputTokens: usage.input_tokens,
+        outputTokens: usage.output_tokens,
+        cacheRead: usage.cached_input_tokens,
         cacheWrite: 0, // Codex doesn't report cache writes
       });
     }
