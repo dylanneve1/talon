@@ -24,7 +24,7 @@ import {
   stat as fsStat,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, extname, join } from "node:path";
 import { getMeshService } from "../../mesh/index.js";
 import {
@@ -33,7 +33,12 @@ import {
   setTeleport,
   setTeleportCwd,
 } from "../../mesh/teleport.js";
-import { getVfs } from "../../vfs/index.js";
+import {
+  getVfs,
+  isNamespaceFsMounted,
+  resolveNamespacePath,
+  rewriteNamespaceRefs,
+} from "../../vfs/index.js";
 import {
   clampExecOutput,
   createOutputCapture,
@@ -164,24 +169,57 @@ async function bash(
   timeoutSec: unknown,
   background?: unknown,
 ): Promise<Result> {
-  const cmd = typeof command === "string" ? command : "";
+  let cmd = typeof command === "string" ? command : "";
   if (!cmd.trim()) return { ok: false, text: "No command given." };
   const timeoutMs = clampTimeout(timeoutSec);
   const active = await getTeleport(chatId);
-  if (background === true) {
-    if (active) {
-      return {
-        ok: false,
-        text:
-          "background:true runs on the daemon host only. On a teleported device, " +
-          "background it in-shell instead: `cmd > /tmp/out.log 2>&1 &`, then poll " +
-          "the log with read.",
-      };
-    }
-    return bashBackground(cmd, typeof cwd === "string" ? cwd : undefined);
+
+  // talon:// references in the command translate to real paths before the
+  // shell ever sees them — teleported they can't (wrong address space).
+  let mappings: string[] = [];
+  if (cmd.includes("talon:") && !active) {
+    const rewritten = rewriteNamespaceRefs(cmd, getVfs(), isNamespaceFsMounted());
+    if (!rewritten.ok) return { ok: false, text: rewritten.error };
+    cmd = rewritten.command;
+    mappings = rewritten.mappings;
   }
-  if (active) return bashTeleported(chatId, active.deviceId, cmd, timeoutMs);
-  return bashLocal(cmd, typeof cwd === "string" ? cwd : undefined, timeoutMs);
+  if (cmd.includes(NAMESPACE_SCHEME) && active) {
+    return {
+      ok: false,
+      text:
+        `talon:// names the daemon's namespace, but native tools are ` +
+        `teleported onto ${active.deviceName} — teleport_back first, or use a device path.`,
+    };
+  }
+
+  let dir = typeof cwd === "string" && cwd.trim() ? cwd.trim() : undefined;
+  if (dir !== undefined && !active) {
+    const resolved = resolvePathParam(dir, undefined);
+    if ("error" in resolved) return { ok: false, text: resolved.error };
+    dir = resolved.path;
+  }
+
+  const result = await (async () => {
+    if (background === true) {
+      if (active) {
+        return {
+          ok: false,
+          text:
+            "background:true runs on the daemon host only. On a teleported device, " +
+            "background it in-shell instead: `cmd > /tmp/out.log 2>&1 &`, then poll " +
+            "the log with read.",
+        };
+      }
+      return bashBackground(cmd, dir);
+    }
+    if (active) return bashTeleported(chatId, active.deviceId, cmd, timeoutMs);
+    return bashLocal(cmd, dir, timeoutMs);
+  })();
+  // Surface the translation so it's visible, never silent.
+  if (mappings.length > 0) {
+    return { ...result, text: `↪ ${mappings.join("  ")}\n${result.text}` };
+  }
+  return result;
 }
 
 /**
@@ -452,59 +490,63 @@ async function bashTeleported(
 
 const NAMESPACE_SCHEME = "talon://";
 
-type AddressResolution =
-  | { kind: "disk"; path: string }
-  | { kind: "virtual" }
-  | { kind: "error"; text: string };
-
 /**
- * Native fs tools accept talon:// addresses: `Vfs.locate` maps them to the
- * disk location the address names, and the tool then operates on the real
- * file. Synthetic nodes (proc/, plugins/) have no disk location — reads are
- * served straight from the namespace, mutation refuses honestly. Teleport
- * can't cross address spaces: talon:// names daemon state, and a teleported
- * chat's paths belong to the device, so the combination is refused rather
- * than resolved against the wrong filesystem.
+ * talon:// addresses translate to real host paths (core/vfs/rewrite.ts)
+ * and then flow through the exact same fs code as any other path — no
+ * virtual nodes, no special branches. With the FUSE layer mounted even
+ * proc/ and plugins/ are ordinary files; without it they are refused at
+ * resolution. Teleport can't cross address spaces: talon:// names
+ * daemon state, and a teleported chat's paths belong to the device, so
+ * the combination is refused rather than resolved against the wrong
+ * filesystem.
  */
-function resolveNamespaceAddress(
+function resolveAddress(
   address: string,
   teleportedTo: string | undefined,
-): AddressResolution {
+): { path: string } | { error: string } {
   if (teleportedTo !== undefined) {
     return {
-      kind: "error",
-      text:
+      error:
         `${address} names the daemon's namespace, but native tools are ` +
         `teleported onto ${teleportedTo} — teleport_back first, or use a device path.`,
     };
   }
-  const located = getVfs().locate(address);
-  if (!located.ok) {
-    return {
-      kind: "error",
-      text: `Cannot resolve ${address}: ${located.error}${located.detail ? ` — ${located.detail}` : ""}`,
-    };
-  }
-  return located.value === undefined
-    ? { kind: "virtual" }
-    : { kind: "disk", path: located.value };
+  const resolved = resolveNamespacePath(
+    address,
+    getVfs(),
+    isNamespaceFsMounted(),
+  );
+  return resolved.ok ? { path: resolved.path } : { error: resolved.error };
 }
 
-/** glob/search root: a talon:// address must name a disk-backed directory. */
+/** Expand a leading `~` — local runs only; a device's home is not ours. */
+function expandHome(path: string): string {
+  if (path === "~") return homedir();
+  if (path.startsWith("~/")) return join(homedir(), path.slice(2));
+  return path;
+}
+
+/**
+ * One rule for every path parameter: talon:// translates, `~` expands
+ * (locally), everything else passes through untouched.
+ */
+function resolvePathParam(
+  path: string,
+  teleportedTo: string | undefined,
+): { path: string } | { error: string } {
+  if (path.startsWith(NAMESPACE_SCHEME)) {
+    return resolveAddress(path, teleportedTo);
+  }
+  return { path: teleportedTo !== undefined ? path : expandHome(path) };
+}
+
+/** glob/search root — same rule, defaulting to the working directory. */
 function resolveSearchRoot(
   path: string | undefined,
   teleportedTo: string | undefined,
 ): { root: string } | { error: string } {
-  const root = path ?? ".";
-  if (!root.startsWith(NAMESPACE_SCHEME)) return { root };
-  const resolved = resolveNamespaceAddress(root, teleportedTo);
-  if (resolved.kind === "error") return { error: resolved.text };
-  if (resolved.kind === "virtual") {
-    return {
-      error: `${root} is a synthetic view with no files on disk — browse it with vfs_list instead.`,
-    };
-  }
-  return { root: resolved.path };
+  const resolved = resolvePathParam(path ?? ".", teleportedTo);
+  return "error" in resolved ? resolved : { root: resolved.path };
 }
 
 // ── read / write / edit ─────────────────────────────────────────────────────
@@ -520,33 +562,15 @@ async function read(
   const active = await getTeleport(chatId);
   const where = active ? active.deviceName : "local";
 
-  let p = address;
-  let virtualContent: string | undefined;
-  if (address.startsWith(NAMESPACE_SCHEME)) {
-    const resolved = resolveNamespaceAddress(address, active?.deviceName);
-    if (resolved.kind === "error") return { ok: false, text: resolved.text };
-    if (resolved.kind === "disk") {
-      p = resolved.path;
-    } else {
-      const served = getVfs().read(address);
-      if (!served.ok) {
-        return {
-          ok: false,
-          text: `Cannot read ${address}: ${served.error}${served.detail ? ` — ${served.detail}` : ""}`,
-        };
-      }
-      virtualContent = served.value;
-    }
-  }
+  const resolved = resolvePathParam(address, active?.deviceName);
+  if ("error" in resolved) return { ok: false, text: resolved.error };
+  const p = resolved.path;
   const shown = p === address ? p : `${address} → ${p}`;
 
   // Image files: return a viewable image block, not the raw bytes decoded as
   // UTF-8. Without this, `read`ing a photo/screenshot/design hands the model
   // mojibake and it can't see the picture at all.
-  const mime =
-    virtualContent === undefined
-      ? IMAGE_MIME[extname(p).toLowerCase()]
-      : undefined;
+  const mime = IMAGE_MIME[extname(p).toLowerCase()];
   if (mime) {
     let bytes: Buffer;
     if (active) {
@@ -582,9 +606,7 @@ async function read(
   const start = num(offset) ?? 0;
   const max = Math.min(num(limit) ?? MAX_READ_LINES, MAX_READ_LINES);
   let content: string;
-  if (virtualContent !== undefined) {
-    content = virtualContent;
-  } else if (active) {
+  if (active) {
     const res = await getMeshService().readFileBytes(active.deviceId, p);
     if ("error" in res) return { ok: false, text: res.error };
     content = res.data.toString("utf8");
@@ -622,18 +644,9 @@ async function write(
   if (!address) return { ok: false, text: "A file path is required." };
   const body = typeof content === "string" ? content : "";
   const active = await getTeleport(chatId);
-  let p = address;
-  if (address.startsWith(NAMESPACE_SCHEME)) {
-    const resolved = resolveNamespaceAddress(address, active?.deviceName);
-    if (resolved.kind === "error") return { ok: false, text: resolved.text };
-    if (resolved.kind === "virtual") {
-      return {
-        ok: false,
-        text: `${address} is a synthetic view — there is no file on disk to write. Writable mounts: vfs_list "" shows where each lives.`,
-      };
-    }
-    p = resolved.path;
-  }
+  const resolved = resolvePathParam(address, active?.deviceName);
+  if ("error" in resolved) return { ok: false, text: resolved.error };
+  const p = resolved.path;
   const shown = p === address ? p : `${address} → ${p}`;
   if (active) {
     return getMeshService().writeFileToDevice(active.deviceId, p, body);
@@ -664,18 +677,9 @@ async function edit(
   if (from === to)
     return { ok: false, text: "old_string and new_string are identical." };
   const active = await getTeleport(chatId);
-  let p = address;
-  if (address.startsWith(NAMESPACE_SCHEME)) {
-    const resolved = resolveNamespaceAddress(address, active?.deviceName);
-    if (resolved.kind === "error") return { ok: false, text: resolved.text };
-    if (resolved.kind === "virtual") {
-      return {
-        ok: false,
-        text: `${address} is a synthetic view — there is no file on disk to edit. Read it with vfs_read instead.`,
-      };
-    }
-    p = resolved.path;
-  }
+  const resolved = resolvePathParam(address, active?.deviceName);
+  if ("error" in resolved) return { ok: false, text: resolved.error };
+  const p = resolved.path;
   const shown = p === address ? p : `${address} → ${p}`;
   const svc = getMeshService();
 

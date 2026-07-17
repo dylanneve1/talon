@@ -479,6 +479,14 @@ const configSchema = z.object({
   // and restart), with an instant rollback by flipping back to false.
   nativeTools: z.boolean().default(false),
 
+  // FUSE layer for the talon:// namespace (~/.talon/ns). "auto" mounts the
+  // live views (proc/, plugins/) when the host can (Linux, /dev/fuse, the
+  // talon-fusefs addon present) and degrades to the plain symlink farm with a
+  // logged reason when it can't — fuseless hosts get the identical namespace
+  // minus live views. "off" never mounts. There is no "force": a mount that
+  // can't come up healthy is always rolled back rather than half-served.
+  fuse: z.enum(["auto", "off"]).default("auto"),
+
   // Display name shown in terminal UI (defaults to "Talon")
   botDisplayName: z.string().default("Talon"),
 

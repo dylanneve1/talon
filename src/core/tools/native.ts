@@ -10,7 +10,16 @@ import type { ToolDefinition } from "./types.js";
  * Their extra power over the built-ins: every one honours the active
  * `teleport` target, so with a teleport engaged they run ON a companion
  * device (via the mesh exec/fs channel) instead of on the daemon host.
+ * And every one speaks talon:// — Talon's own namespace, which is a real
+ * filesystem location, so addresses translate to legitimate paths.
  */
+
+/** One shared description of the namespace, stated once. */
+const NAMESPACE_DOC =
+  "talon:// is Talon's namespace, on disk at ~/.talon/ns: home/ (the workspace), " +
+  "skills/, scripts/, logs/, and — while the FUSE layer is mounted — the live views " +
+  "proc/ (task table at proc/tasks/<id>, event ring at proc/events, both JSON) and " +
+  "plugins/ (registry).";
 export const nativeTools: ToolDefinition[] = [
   {
     name: "teleport",
@@ -40,14 +49,14 @@ export const nativeTools: ToolDefinition[] = [
     description:
       "Run a shell command. Runs on the daemon host, or ON the active teleport device if one is engaged. On a teleported device, `cd` persists across calls (a real working-directory session). " +
       "Foreground runs are killed at timeout_sec — for streaming/never-ending commands (adb logcat, tail -f, dev servers, watchers) set background:true instead: the command is launched detached in its own process group with stdout+stderr captured to a log file, and the tool returns immediately with the pid + log path so you can poll the log and kill it when done. " +
-      "talon:// addresses are not OS paths — the shell needs the disk locations the namespace root listing shows (vfs_list).",
+      `${NAMESPACE_DOC} talon:// references in the command are translated to real paths before the shell runs (local only), so \`ls talon://home\` or \`cat talon://proc/events | jq\` just work.`,
     schema: {
       command: z.string().describe("The shell command to run."),
       cwd: z
         .string()
         .optional()
         .describe(
-          "Working directory (local runs only; teleport tracks its own cwd).",
+          "Working directory (local runs only; teleport tracks its own cwd). talon:// accepted.",
         ),
       timeout_sec: z
         .number()
@@ -67,13 +76,12 @@ export const nativeTools: ToolDefinition[] = [
   },
   {
     name: "read",
-    description:
-      "Read a file (with line numbers). Runs on the daemon host or the active teleport device. Supports offset/limit for large files.",
+    description: `Read a file (with line numbers). Runs on the daemon host or the active teleport device. Supports offset/limit for large files. ${NAMESPACE_DOC}`,
     schema: {
       path: z
         .string()
         .describe(
-          "Absolute file path, or a talon:// namespace address (resolved on the daemon host).",
+          "Absolute file path, ~ path, or a talon:// address (translated on the daemon host).",
         ),
       offset: z.number().optional().describe("0-based line to start from."),
       limit: z
@@ -87,12 +95,12 @@ export const nativeTools: ToolDefinition[] = [
   {
     name: "write",
     description:
-      "Write (create/overwrite) a file with the given content. Runs on the daemon host or the active teleport device.",
+      "Write (create/overwrite) a file with the given content. Runs on the daemon host or the active teleport device. Writable talon:// mounts: home/, skills/, scripts/ (live views are read-only).",
     schema: {
       path: z
         .string()
         .describe(
-          "Absolute file path, or a talon:// namespace address (resolved on the daemon host).",
+          "Absolute file path, ~ path, or a talon:// address (translated on the daemon host).",
         ),
       content: z.string().describe("Full file content to write."),
     },
@@ -107,7 +115,7 @@ export const nativeTools: ToolDefinition[] = [
       path: z
         .string()
         .describe(
-          "Absolute file path, or a talon:// namespace address (resolved on the daemon host).",
+          "Absolute file path, ~ path, or a talon:// address (translated on the daemon host).",
         ),
       old_string: z.string().describe("Exact text to replace."),
       new_string: z.string().describe("Replacement text."),

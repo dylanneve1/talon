@@ -1,9 +1,11 @@
 /**
- * Native fs tools × talon:// addresses — the OS side of the address
- * grammar. read/write/edit/glob/search accept namespace addresses:
- * disk-backed nodes translate to their real location, synthetic nodes are
- * served (reads) or refused (mutation), and teleport refuses the
- * combination outright rather than resolving against the wrong filesystem.
+ * Native tools × talon:// addresses — the OS side of the address
+ * grammar. Every path parameter and shell command translates to a real
+ * host path (core/vfs/rewrite.ts) and flows through ordinary fs code:
+ * disk-backed nodes translate to their real location, live views are
+ * refused while the FUSE layer is down (these tests run fuseless), and
+ * teleport refuses the combination outright rather than resolving
+ * against the wrong filesystem.
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
@@ -14,7 +16,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 vi.mock("../util/log.js", () => ({
@@ -38,6 +40,7 @@ vi.mock("../util/paths.js", async () => {
         if (prop === "skills") return join(workspaceDir, "skills");
         if (prop === "scripts") return join(workspaceDir, "scripts");
         if (prop === "logs") return join(workspaceDir, "logs");
+        if (prop === "ns") return join(workspaceDir, "ns");
         return target[prop as keyof typeof target];
       },
     }),
@@ -95,27 +98,34 @@ describe("native tools on talon:// addresses", () => {
     );
   });
 
-  it("serves synthetic reads from the namespace and refuses mutation", async () => {
+  it("refuses live views on every surface while the FUSE layer is down", async () => {
     const read = await nativeHandlers.native_read(
       { path: "talon://proc/events" },
       1,
     );
-    expect(read.ok).toBe(true);
-    expect(read.text).toContain("talon://proc/events [local]");
+    expect(read.ok).toBe(false);
+    expect(read.text).toContain("FUSE");
 
     const write = await nativeHandlers.native_write(
       { path: "talon://proc/events", content: "x" },
       1,
     );
     expect(write.ok).toBe(false);
-    expect(write.text).toContain("synthetic");
+    expect(write.text).toContain("FUSE");
 
     const edit = await nativeHandlers.native_edit(
       { path: "talon://plugins/x", old_string: "a", new_string: "b" },
       1,
     );
     expect(edit.ok).toBe(false);
-    expect(edit.text).toContain("synthetic");
+    expect(edit.text).toContain("FUSE");
+
+    const searched = await nativeHandlers.native_search(
+      { pattern: "x", path: "talon://proc" },
+      1,
+    );
+    expect(searched.ok).toBe(false);
+    expect(searched.text).toContain("FUSE");
   });
 
   it("surfaces address errors from the resolver", async () => {
@@ -139,13 +149,19 @@ describe("native tools on talon:// addresses", () => {
     );
     expect(searched.ok).toBe(true);
     expect(searched.text).toContain("findme.ts");
+  });
 
-    const synthetic = await nativeHandlers.native_search(
-      { pattern: "x", path: "talon://proc" },
+  it("expands ~ in path parameters like the shell would", async () => {
+    const res = await nativeHandlers.native_read(
+      { path: "~/talon-definitely-not-here-4242" },
       1,
     );
-    expect(synthetic.ok).toBe(false);
-    expect(synthetic.text).toContain("vfs_list");
+    expect(res.ok).toBe(false);
+    // The mapping is shown (`~/x → /home/…/x`) and the fs error names the
+    // real path, proving the tool operated on the expansion.
+    expect(res.text).toContain(
+      `→ ${join(homedir(), "talon-definitely-not-here-4242")}`,
+    );
   });
 
   it("refuses namespace addresses while teleported", async () => {
@@ -163,3 +179,79 @@ describe("native tools on talon:// addresses", () => {
     }
   });
 });
+
+describe.runIf(process.platform !== "win32")(
+  "bash on talon:// references",
+  () => {
+    it("translates references to real paths and reports the mapping", async () => {
+      writeFileSync(join(workspaceDir, "hello.txt"), "from-bash\n");
+      const res = await nativeHandlers.native_bash(
+        { command: "cat talon://home/hello.txt" },
+        1,
+      );
+      expect(res.ok).toBe(true);
+      expect(res.text).toContain(`↪ talon://home → ${workspaceDir}`);
+      expect(res.text).toContain("from-bash");
+    });
+
+    it("translates references inside quotes and pipelines", async () => {
+      const res = await nativeHandlers.native_bash(
+        { command: `ls "talon://home" | head -n 50` },
+        1,
+      );
+      expect(res.ok).toBe(true);
+      expect(res.text).toContain("hello.txt");
+    });
+
+    it("accepts a talon:// cwd", async () => {
+      const res = await nativeHandlers.native_bash(
+        { command: "pwd", cwd: "talon://home" },
+        1,
+      );
+      expect(res.ok).toBe(true);
+      expect(res.text).toContain(workspaceDir);
+    });
+
+    it("refuses live views fuseless, with the reason", async () => {
+      const res = await nativeHandlers.native_bash(
+        { command: "cat talon://proc/events" },
+        1,
+      );
+      expect(res.ok).toBe(false);
+      expect(res.text).toContain("FUSE");
+    });
+
+    it("corrects near-miss scheme typos", async () => {
+      const res = await nativeHandlers.native_bash(
+        { command: "cat talon:/home/hello.txt" },
+        1,
+      );
+      expect(res.ok).toBe(false);
+      expect(res.text).toContain("talon://home");
+    });
+
+    it("names unknown mounts instead of handing the shell a dead path", async () => {
+      const res = await nativeHandlers.native_bash(
+        { command: "ls talon://bogus" },
+        1,
+      );
+      expect(res.ok).toBe(false);
+      expect(res.text).toContain('"bogus"');
+    });
+
+    it("refuses namespace references while teleported", async () => {
+      await setTeleport(9, "device-1", "Pixel");
+      try {
+        const res = await nativeHandlers.native_bash(
+          { command: "ls talon://home" },
+          9,
+        );
+        expect(res.ok).toBe(false);
+        expect(res.text).toContain("teleport_back");
+      } finally {
+        await clearTeleport(9);
+        resetTeleportCache();
+      }
+    });
+  },
+);

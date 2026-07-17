@@ -24,6 +24,11 @@ import {
 import { shutdownTriggers } from "./core/background/triggers/index.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
+import {
+  getVfs,
+  mountNamespaceFs,
+  unmountNamespaceFs,
+} from "./core/vfs/index.js";
 import { bootstrap, initBackendAndDispatcher } from "./bootstrap.js";
 import { Gateway } from "./core/engine/gateway.js";
 import type { Frontend } from "./bootstrap.js";
@@ -179,6 +184,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
       await destroyPlugins();
     });
   }
+  await shutdownStep("fuse layer", unmountNamespaceFs);
   await shutdownStep("pulse timer", stopPulseTimer);
   await shutdownStep("heartbeat", async () => {
     stopHeartbeatTimer();
@@ -230,6 +236,11 @@ process.on("unhandledRejection", (reason) => {
 // ── Start ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Namespace on disk first: symlink farm always, live views (proc/,
+  // plugins/) via FUSE when the host can. Bounded and never-throwing —
+  // a host without FUSE boots identically, minus live views.
+  await mountNamespaceFs({ mode: config.fuse, vfs: getVfs() });
+
   await Promise.all(frontends.map((frontend) => frontend.init()));
   log("bot", "Starting Talon...");
 

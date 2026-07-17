@@ -15,8 +15,11 @@
  *     proc/       task table + event bus ring (synthetic, read-only)
  *     plugins/    plugin registry view (synthetic, read-only)
  *
- * Read surfaces: gateway `GET /vfs/list` / `GET /vfs/read` and the
- * vfs_* MCP tools (via gateway actions); CLI `talon ls` / `talon cat`.
+ * The namespace IS the filesystem: it lives at ~/.talon/ns (symlink
+ * farm via nsdir.ts, live synthetic mounts via fusefs.ts when FUSE is
+ * available), and every consumer — native tools, shell commands, the
+ * user's own terminal — reaches it through real paths. Address
+ * translation for tools lives in rewrite.ts.
  */
 
 import { dirs } from "../../util/paths.js";
@@ -32,6 +35,22 @@ export { Vfs } from "./vfs.js";
 export { createFileMount } from "./mounts/files.js";
 export { createProcMount, type ProcMountDeps } from "./mounts/proc.js";
 export { createPluginsMount, type PluginView } from "./mounts/plugins.js";
+export { syncNamespaceDir, type NsDirSync } from "./nsdir.js";
+export {
+  resolveNamespacePath,
+  rewriteNamespaceRefs,
+  type CommandRewrite,
+  type PathResolution,
+} from "./rewrite.js";
+export {
+  isNamespaceFsMounted,
+  mountNamespaceFs,
+  namespaceFsStatus,
+  serveNamespaceRequest,
+  unmountNamespaceFs,
+  type FuseStatus,
+  type MountOptions,
+} from "./fusefs.js";
 export type {
   VfsErrorCode,
   VfsMount,

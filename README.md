@@ -24,7 +24,7 @@ Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsof
 | **Triggers**          | Self-authored watcher scripts (bash/python/node) that wake the bot when conditions are met                                                   |
 | **Task table**        | Every unit of agent work — chat turns, heartbeat, dream, isolated cron/trigger jobs — registered live; `talon ps` / `talon kill`             |
 | **Event bus**         | Typed internal pub-sub spine (task + turn lifecycle events); subsystems subscribe instead of importing each other; `talon events -f`         |
-| **VFS**               | Unified `talon://` namespace over workspace, skills, scripts, logs, plus /proc-style live views of the task table, event bus, and plugin registry; `talon ls` / `talon cat` |
+| **VFS**               | Unified `talon://` namespace over workspace, skills, scripts, logs, plus /proc-style live views of the task table, event bus, and plugin registry — a real filesystem at `~/.talon/ns` (FUSE-backed live views), so plain `ls`/`cat` and every tool just work |
 | **Per-chat settings** | Model, effort level, and pulse toggle per conversation via inline keyboard                                                                   |
 | **Model registry**    | Models discovered from the active backend at startup — new models appear in all pickers automatically                                        |
 

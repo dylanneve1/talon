@@ -32,7 +32,6 @@ import { startChat } from "./chat.js";
 import { daemonStart, daemonStop, daemonRestart } from "./daemon.js";
 import { showTasks, killTask } from "./tasks.js";
 import { showEvents } from "./events.js";
-import { showLs, showCat } from "./fs.js";
 import { runPluginCommand } from "./plugin.js";
 import { runSkillCommand } from "./skill.js";
 import { mainMenu } from "./menu.js";
@@ -63,8 +62,6 @@ const CLI_COMMANDS = [
   "ps",
   "kill",
   "events",
-  "ls",
-  "cat",
   "plugin",
   "skill",
 ];
@@ -126,12 +123,6 @@ export async function runCli(): Promise<void> {
       });
       break;
     }
-    case "ls":
-      await showLs(process.argv[3]);
-      break;
-    case "cat":
-      await showCat(process.argv[3]);
-      break;
     case "plugin":
       await runPluginCommand(process.argv.slice(3));
       break;
@@ -161,12 +152,6 @@ export async function runCli(): Promise<void> {
       console.log(`    ${pc.cyan("kill")}       Abort a killable task by id`);
       console.log(
         `    ${pc.cyan("events")}     Tail the event bus (-f follows, --history [N] reads the journal)`,
-      );
-      console.log(
-        `    ${pc.cyan("ls")}         List the talon:// namespace (ls proc/tasks)`,
-      );
-      console.log(
-        `    ${pc.cyan("cat")}        Read a talon:// file (cat proc/events)`,
       );
       console.log(
         `    ${pc.cyan("plugin")}     Manage plugins (install/enable/disable)`,

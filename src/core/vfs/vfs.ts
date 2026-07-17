@@ -6,18 +6,18 @@
  * re-prefixing the mount-relative stats that come back. Mounts therefore
  * only ever see clean relative paths.
  *
- * An address is one of three spellings of the same node:
+ * An address is one of exactly two spellings of the same node:
  *
  *   talon://home/notes.md   scheme form — always namespace-interpreted
- *   home/notes.md           mount-relative form
  *   <workspace>/notes.md    OS-absolute form — routed through the mount
  *                           table by containment, exactly like a kernel
  *                           resolving a path through its mounts
  *
- * The grammar is total: an unschemed address starting with a separator or
- * drive prefix is always an OS path, never mount-relative — so an OS path
- * can't silently misroute into a like-named mount, and a namespace path
- * can't be mistaken for disk.
+ * Nothing else is an address. Bare relative paths and `~` spellings are
+ * refused with the correction rather than guessed at — the old
+ * mount-relative form (`home/notes.md`) was ambiguous with a relative OS
+ * path and is gone. The empty string (and bare separators) still name the
+ * namespace root for internal callers.
  */
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
@@ -121,31 +121,46 @@ export class Vfs {
     );
   }
 
-  /** Mount names + descriptions, for docs/tool output. */
-  describeMounts(): { name: string; description: string; writable: boolean }[] {
+  /**
+   * The mount table as data: name, description, writability, and — for
+   * file-backed mounts — the disk root. Consumed by the namespace dir
+   * builder (symlink farm), the command rewriter, and docs/tool output.
+   */
+  describeMounts(): {
+    name: string;
+    description: string;
+    writable: boolean;
+    osRoot?: string;
+  }[] {
     return [...this.#mounts.entries()].map(([name, mount]) => ({
       name,
       description: mount.description,
       writable: mount.writable,
+      ...(mount.osRoot !== undefined ? { osRoot: mount.osRoot } : {}),
     }));
   }
 
   /** null = the namespace root. */
   #parse(raw: string): VfsResult<Resolved | null> {
     let path = raw.trim();
-    const schemed = path.startsWith(SCHEME);
-    if (schemed) {
+    if (path.startsWith(SCHEME)) {
       path = path.slice(SCHEME.length);
+    } else if (path === "" || /^[\\/]+$/.test(path)) {
+      // Internal callers address the namespace root as "" or bare separators.
+      return vfsOk(null);
+    } else if (OS_ABSOLUTE.test(path)) {
+      return this.#parseOsPath(path);
+    } else if (/^talon:/.test(path)) {
+      // A near-miss scheme (talon:/x, talon:x) is always a typo, never a path.
+      return vfsError(
+        "invalid-path",
+        `Did you mean "${SCHEME}${path.replace(/^talon:\/{0,2}/, "")}"?`,
+      );
     } else {
-      // Bare separators address the namespace root ("talon ls /").
-      if (/^[\\/]+$/.test(path)) return vfsOk(null);
-      if (OS_ABSOLUTE.test(path)) return this.#parseOsPath(path);
-      if (path.startsWith("~")) {
-        return vfsError(
-          "invalid-path",
-          '"~" is not expanded — use an absolute path or a talon:// address',
-        );
-      }
+      return vfsError(
+        "invalid-path",
+        `Not an address — use ${SCHEME}<mount>/… or an absolute OS path`,
+      );
     }
     if (path.includes("\\")) {
       return vfsError(

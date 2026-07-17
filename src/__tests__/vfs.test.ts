@@ -1,5 +1,5 @@
 /**
- * VFS — resolver path discipline, file mounts, and the synthetic
+ * VFS — resolver address grammar, file mounts, and the synthetic
  * proc/plugins mounts.
  */
 
@@ -50,26 +50,48 @@ describe("resolver", () => {
     });
   });
 
-  it("strips the talon:// scheme and tolerates slash noise", () => {
+  it("resolves talon:// addresses and tolerates slash noise", () => {
     writeFileSync(join(root, "a.txt"), "hi");
     expect(vfs.read("talon://home/a.txt")).toEqual({ ok: true, value: "hi" });
-    expect(vfs.read("home//a.txt/")).toEqual({ ok: true, value: "hi" });
     expect(vfs.read("talon://home//a.txt/")).toEqual({ ok: true, value: "hi" });
+    expect(vfs.list("talon://")).toMatchObject({ ok: true });
+  });
+
+  it("refuses the old bare mount-relative spelling with the correction", () => {
+    writeFileSync(join(root, "a.txt"), "hi");
+    expect(vfs.read("home/a.txt")).toMatchObject({
+      ok: false,
+      error: "invalid-path",
+      detail: expect.stringContaining("talon://"),
+    });
+  });
+
+  it("corrects near-miss scheme spellings", () => {
+    expect(vfs.read("talon:/home/a.txt")).toMatchObject({
+      ok: false,
+      error: "invalid-path",
+      detail: expect.stringContaining('"talon://home/a.txt"'),
+    });
+    expect(vfs.read("talon:home")).toMatchObject({
+      ok: false,
+      error: "invalid-path",
+      detail: expect.stringContaining('"talon://home"'),
+    });
   });
 
   it("rejects traversal segments and backslashes", () => {
-    expect(vfs.read("home/../etc/passwd")).toMatchObject({
+    expect(vfs.read("talon://home/../etc/passwd")).toMatchObject({
       ok: false,
       error: "invalid-path",
     });
-    expect(vfs.list("home\\x")).toMatchObject({
+    expect(vfs.list("talon://home\\x")).toMatchObject({
       ok: false,
       error: "invalid-path",
     });
   });
 
   it("names the missing mount on unknown roots", () => {
-    expect(vfs.list("nope/x")).toMatchObject({
+    expect(vfs.list("talon://nope/x")).toMatchObject({
       ok: false,
       error: "not-found",
     });
@@ -80,7 +102,7 @@ describe("resolver", () => {
       "ro",
       createFileMount({ root, description: "ro", writable: false }),
     );
-    expect(vfs.write("ro/a.txt", "x")).toMatchObject({
+    expect(vfs.write("talon://ro/a.txt", "x")).toMatchObject({
       ok: false,
       error: "not-writable",
     });
@@ -107,6 +129,26 @@ describe("resolver", () => {
       ),
     ).toThrow(/Invalid mount name/);
   });
+
+  it("describes the mount table with disk roots", () => {
+    vfs.mount(
+      "plugins",
+      createPluginsMount(() => []),
+    );
+    expect(vfs.describeMounts()).toEqual([
+      {
+        name: "home",
+        description: "workspace",
+        writable: true,
+        osRoot: root,
+      },
+      {
+        name: "plugins",
+        description: "Loaded plugins and registered MCP servers (registry view)",
+        writable: false,
+      },
+    ]);
+  });
 });
 
 describe("address grammar — OS-absolute spellings", () => {
@@ -125,7 +167,7 @@ describe("address grammar — OS-absolute spellings", () => {
       ok: true,
       value: { path: "home/notes/new.md" },
     });
-    expect(vfs.read("home/notes/new.md")).toEqual({
+    expect(vfs.read("talon://home/notes/new.md")).toEqual({
       ok: true,
       value: "content",
     });
@@ -178,12 +220,14 @@ describe("address grammar — OS-absolute spellings", () => {
     expect(result.detail).toContain('did you mean "talon://home/nope.txt"');
   });
 
-  it("refuses unexpanded tildes with guidance", () => {
-    expect(vfs.read("~/notes.md")).toMatchObject({
-      ok: false,
-      error: "invalid-path",
-      detail: expect.stringContaining("not expanded"),
-    });
+  it("refuses relative and ~ spellings with the address grammar", () => {
+    for (const path of ["~/notes.md", "notes.md", "./notes.md"]) {
+      expect(vfs.read(path)).toMatchObject({
+        ok: false,
+        error: "invalid-path",
+        detail: expect.stringContaining("talon://"),
+      });
+    }
   });
 
   it("never routes a foreign drive spelling against this host", () => {
@@ -196,7 +240,7 @@ describe("address grammar — OS-absolute spellings", () => {
 
 describe("locate — namespace → disk", () => {
   it("maps file-mount addresses to absolute paths, existing or not", () => {
-    expect(vfs.locate("home/a.txt")).toEqual({
+    expect(vfs.locate("talon://home/a.txt")).toEqual({
       ok: true,
       value: join(root, "a.txt"),
     });
@@ -204,7 +248,7 @@ describe("locate — namespace → disk", () => {
       ok: true,
       value: join(root, "deep", "unborn.md"),
     });
-    expect(vfs.locate("home")).toEqual({ ok: true, value: root });
+    expect(vfs.locate("talon://home")).toEqual({ ok: true, value: root });
   });
 
   it("answers undefined for synthetic nodes and the root", () => {
@@ -212,16 +256,19 @@ describe("locate — namespace → disk", () => {
       "plugins",
       createPluginsMount(() => []),
     );
-    expect(vfs.locate("plugins/x")).toEqual({ ok: true, value: undefined });
+    expect(vfs.locate("talon://plugins/x")).toEqual({
+      ok: true,
+      value: undefined,
+    });
     expect(vfs.locate("")).toEqual({ ok: true, value: undefined });
   });
 
   it("propagates address errors", () => {
-    expect(vfs.locate("home/../etc")).toMatchObject({
+    expect(vfs.locate("talon://home/../etc")).toMatchObject({
       ok: false,
       error: "invalid-path",
     });
-    expect(vfs.locate("nope/x")).toMatchObject({
+    expect(vfs.locate("talon://nope/x")).toMatchObject({
       ok: false,
       error: "not-found",
     });
@@ -234,7 +281,7 @@ describe("file mount", () => {
     writeFileSync(join(root, "a.txt"), "12345");
     writeFileSync(join(root, "notes", "b.md"), "x");
 
-    const listed = vfs.list("home");
+    const listed = vfs.list("talon://home");
     expect(listed.ok).toBe(true);
     if (!listed.ok) return;
     expect(listed.value.map((entry) => entry.path)).toEqual([
@@ -246,7 +293,7 @@ describe("file mount", () => {
 
   it("stats files with size and mtime", () => {
     writeFileSync(join(root, "a.txt"), "12345");
-    const stat = vfs.stat("home/a.txt");
+    const stat = vfs.stat("talon://home/a.txt");
     expect(stat.ok).toBe(true);
     if (!stat.ok) return;
     expect(stat.value).toMatchObject({
@@ -262,21 +309,24 @@ describe("file mount", () => {
 
   it("reads UTF-8 text and refuses directories, binaries, oversize", () => {
     writeFileSync(join(root, "ok.txt"), "héllo");
-    expect(vfs.read("home/ok.txt")).toEqual({ ok: true, value: "héllo" });
+    expect(vfs.read("talon://home/ok.txt")).toEqual({
+      ok: true,
+      value: "héllo",
+    });
 
-    expect(vfs.read("home")).toMatchObject({
+    expect(vfs.read("talon://home")).toMatchObject({
       ok: false,
       error: "is-a-directory",
     });
 
     writeFileSync(join(root, "bin"), Buffer.from([1, 0, 2]));
-    expect(vfs.read("home/bin")).toMatchObject({
+    expect(vfs.read("talon://home/bin")).toMatchObject({
       ok: false,
       error: "binary-file",
     });
 
     writeFileSync(join(root, "big"), "x".repeat(VFS_MAX_READ_BYTES + 1));
-    expect(vfs.read("home/big")).toMatchObject({
+    expect(vfs.read("talon://home/big")).toMatchObject({
       ok: false,
       error: "too-large",
       // The disk location is the escape hatch: OS tools can read what the
@@ -286,7 +336,7 @@ describe("file mount", () => {
   });
 
   it("writes files, creating parents, and reports the new stat", () => {
-    const written = vfs.write("home/deep/nested/file.md", "content");
+    const written = vfs.write("talon://home/deep/nested/file.md", "content");
     expect(written.ok).toBe(true);
     if (!written.ok) return;
     expect(written.value).toMatchObject({
@@ -294,7 +344,7 @@ describe("file mount", () => {
       kind: "file",
       size: 7,
     });
-    expect(vfs.read("home/deep/nested/file.md")).toEqual({
+    expect(vfs.read("talon://home/deep/nested/file.md")).toEqual({
       ok: true,
       value: "content",
     });
@@ -302,7 +352,7 @@ describe("file mount", () => {
 
   it("refuses to write over a directory", () => {
     mkdirSync(join(root, "dir"));
-    expect(vfs.write("home/dir", "x")).toMatchObject({
+    expect(vfs.write("talon://home/dir", "x")).toMatchObject({
       ok: false,
       error: "is-a-directory",
     });
@@ -317,8 +367,8 @@ describe("file mount", () => {
         writable: true,
       }),
     );
-    expect(vfs.list("ghost")).toEqual({ ok: true, value: [] });
-    expect(vfs.stat("ghost")).toMatchObject({
+    expect(vfs.list("talon://ghost")).toEqual({ ok: true, value: [] });
+    expect(vfs.stat("talon://ghost")).toMatchObject({
       ok: true,
       value: { kind: "dir" },
     });
@@ -363,7 +413,7 @@ describe("proc mount", () => {
   });
 
   it("exposes tasks/ and events at the mount root", () => {
-    const listed = vfs.list("proc");
+    const listed = vfs.list("talon://proc");
     expect(listed.ok).toBe(true);
     if (!listed.ok) return;
     expect(listed.value.map((entry) => entry.path)).toEqual([
@@ -373,19 +423,19 @@ describe("proc mount", () => {
   });
 
   it("serves one JSON file per task", () => {
-    const listed = vfs.list("proc/tasks");
+    const listed = vfs.list("talon://proc/tasks");
     expect(listed.ok).toBe(true);
     if (!listed.ok) return;
     expect(listed.value.map((entry) => entry.path)).toEqual(["proc/tasks/7"]);
 
-    const read = vfs.read("proc/tasks/7");
+    const read = vfs.read("talon://proc/tasks/7");
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(JSON.parse(read.value)).toMatchObject({ id: 7, kind: "turn" });
   });
 
   it("serves the event ring as JSON Lines with the last event's mtime", () => {
-    const read = vfs.read("proc/events");
+    const read = vfs.read("talon://proc/events");
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(JSON.parse(read.value.trim())).toMatchObject({
@@ -393,26 +443,26 @@ describe("proc mount", () => {
       id: 1,
     });
 
-    const stat = vfs.stat("proc/events");
+    const stat = vfs.stat("talon://proc/events");
     expect(stat.ok).toBe(true);
     if (!stat.ok) return;
     expect(stat.value.modifiedAt).toBe(3000);
   });
 
   it("errors honestly on missing tasks, wrong node kinds, and writes", () => {
-    expect(vfs.read("proc/tasks/99")).toMatchObject({
+    expect(vfs.read("talon://proc/tasks/99")).toMatchObject({
       ok: false,
       error: "not-found",
     });
-    expect(vfs.list("proc/events")).toMatchObject({
+    expect(vfs.list("talon://proc/events")).toMatchObject({
       ok: false,
       error: "not-a-directory",
     });
-    expect(vfs.read("proc/tasks")).toMatchObject({
+    expect(vfs.read("talon://proc/tasks")).toMatchObject({
       ok: false,
       error: "is-a-directory",
     });
-    expect(vfs.write("proc/tasks/7", "x")).toMatchObject({
+    expect(vfs.write("talon://proc/tasks/7", "x")).toMatchObject({
       ok: false,
       error: "not-writable",
     });
@@ -433,7 +483,7 @@ describe("plugins mount", () => {
   });
 
   it("lists one file per registered plugin, sorted", () => {
-    const listed = vfs.list("plugins");
+    const listed = vfs.list("talon://plugins");
     expect(listed.ok).toBe(true);
     if (!listed.ok) return;
     expect(listed.value.map((entry) => entry.name)).toEqual([
@@ -443,7 +493,7 @@ describe("plugins mount", () => {
   });
 
   it("reads a plugin as its registry view in JSON", () => {
-    const read = vfs.read("plugins/github");
+    const read = vfs.read("talon://plugins/github");
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(JSON.parse(read.value)).toEqual({
@@ -455,7 +505,7 @@ describe("plugins mount", () => {
   });
 
   it("reports unknown plugins as not-found", () => {
-    expect(vfs.read("plugins/nope")).toMatchObject({
+    expect(vfs.read("talon://plugins/nope")).toMatchObject({
       ok: false,
       error: "not-found",
     });

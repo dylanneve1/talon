@@ -48,6 +48,7 @@ export type LogComponent =
   | "heartbeat"
   | "dispatcher"
   | "gateway"
+  | "fusefs"
   | "plugin"
   | "teams"
   | "discord"

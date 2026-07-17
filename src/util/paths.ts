@@ -72,6 +72,13 @@ export const dirs = {
   skills: resolve(TALON_ROOT, "workspace", "skills"),
   /** Key material (bridge TLS identity, release keys): ~/.talon/keys/ */
   keys: resolve(TALON_ROOT, "keys"),
+  /**
+   * The talon:// namespace on disk: ~/.talon/ns/. Holds one symlink per
+   * file-backed mount (home → workspace/, skills/, …); while the daemon
+   * runs with FUSE the synthetic mounts (proc/, plugins/) appear here too.
+   * `talon://x` and `~/.talon/ns/x` are the same address in two spellings.
+   */
+  ns: resolve(TALON_ROOT, "ns"),
   /** CLI-installed plugins (`talon plugin install`): ~/.talon/plugins/ */
   plugins: resolve(TALON_ROOT, "plugins"),
 } as const;

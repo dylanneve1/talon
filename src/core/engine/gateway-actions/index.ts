@@ -17,7 +17,6 @@
  *   - `plugins`   — plugin hot-reload
  *   - `models`    — model / backend discovery
  *   - `mesh`      — companion device mesh (presence + location)
- *   - `vfs`       — the unified talon:// namespace (list/read/write)
  */
 
 import type { ActionResult } from "../../types.js";
@@ -34,7 +33,6 @@ import { pluginHandlers } from "./plugins.js";
 import { modelHandlers } from "./models.js";
 import { meshHandlers } from "./mesh.js";
 import { nativeHandlers } from "./native.js";
-import { vfsHandlers } from "./vfs.js";
 
 // Null-prototype so a request `action` of "toString" / "constructor" / etc.
 // can't resolve an inherited Object.prototype method — `handlers[action]` only
@@ -51,7 +49,6 @@ const handlers: SharedActionHandlers = Object.assign(Object.create(null), {
   ...modelHandlers,
   ...meshHandlers,
   ...nativeHandlers,
-  ...vfsHandlers,
 });
 
 export async function handleSharedAction(
