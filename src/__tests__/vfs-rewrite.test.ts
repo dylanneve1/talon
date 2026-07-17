@@ -186,12 +186,24 @@ describe("rewriteNamespaceRefs", () => {
     expect(rewritten.error).toContain("talon://home");
   });
 
-  it("leaves an unrelated talon: token alone", () => {
-    const cmd = `grep "talon:" src/file.ts`;
-    expect(rewriteNamespaceRefs(cmd, vfs, false, NS)).toEqual({
-      ok: true,
-      command: cmd,
-      mappings: [],
-    });
+  it("corrects talon:<mount> only for real mount names", () => {
+    const known = rewriteNamespaceRefs("ls talon:home/x", vfs, false, NS);
+    expect(known.ok).toBe(false);
+    if (known.ok) return;
+    expect(known.error).toContain("talon://home");
+  });
+
+  it("leaves unrelated talon: tokens alone", () => {
+    for (const cmd of [
+      `grep "talon:" src/file.ts`,
+      "echo talon:2024-review",
+      "git log --grep talon:xyz",
+    ]) {
+      expect(rewriteNamespaceRefs(cmd, vfs, false, NS)).toEqual({
+        ok: true,
+        command: cmd,
+        mappings: [],
+      });
+    }
   });
 });

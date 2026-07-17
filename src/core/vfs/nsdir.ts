@@ -59,6 +59,9 @@ export function syncNamespaceDir(
     const path = `${nsRoot}/${entry}`;
     if (!lstatSync(path).isSymbolicLink()) {
       foreign.push(entry);
+      // A foreign entry shadowing a mount name wins — we never delete
+      // what we didn't create, so don't try to link over it either.
+      desired.delete(entry);
       continue;
     }
     const target = desired.get(entry);

@@ -150,7 +150,7 @@ export class Vfs {
       return vfsOk(null);
     } else if (OS_ABSOLUTE.test(path)) {
       return this.#parseOsPath(path);
-    } else if (/^talon:/.test(path)) {
+    } else if (path.startsWith("talon:")) {
       // A near-miss scheme (talon:/x, talon:x) is always a typo, never a path.
       return vfsError(
         "invalid-path",

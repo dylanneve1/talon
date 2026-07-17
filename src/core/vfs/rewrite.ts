@@ -106,14 +106,24 @@ export function rewriteNamespaceRefs(
   if (!command.includes("talon:")) {
     return { ok: true, command, mappings: [] };
   }
-  // A near-miss scheme (talon:/x, talon:x/...) is always a typo — correct
-  // it rather than letting the shell chase a path that never existed.
-  const nearMiss = /talon:(?!\/\/)(\/?[a-z0-9-]+)/.exec(command);
+  // Near-miss schemes that are unambiguously typos get corrected rather
+  // than letting the shell chase a path that never existed: the
+  // single-slash form (talon:/x), and talon:<name> when <name> is a real
+  // mount. Anything else containing "talon:" (a grep pattern, a log tag)
+  // passes through untouched.
+  const nearMiss =
+    /talon:\/(?!\/)([a-z0-9-][^\s'"`]*)/.exec(command) ??
+    /talon:(?!\/)([a-z0-9-]+)/.exec(command);
   if (nearMiss) {
-    return {
-      ok: false,
-      error: `"${nearMiss[0]}" is not an address — spell it ${SCHEME}${nearMiss[1]!.replace(/^\//, "")}`,
-    };
+    const rest = nearMiss[1]!;
+    const name = MOUNT_NAME.exec(rest)?.[0] ?? "";
+    const known = vfs.describeMounts().some((mount) => mount.name === name);
+    if (nearMiss[0].startsWith("talon:/") || known) {
+      return {
+        ok: false,
+        error: `"${nearMiss[0]}" is not an address — spell it ${SCHEME}${rest}`,
+      };
+    }
   }
   if (!command.includes(SCHEME)) {
     return { ok: true, command, mappings: [] };

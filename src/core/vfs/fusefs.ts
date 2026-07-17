@@ -226,16 +226,20 @@ export async function unmountNamespaceFs(): Promise<void> {
 /**
  * A daemon that died without unmounting leaves the mountpoint wedged —
  * every syscall answers ENOTCONN ("transport endpoint is not
- * connected") until someone detaches it. Detect and lazy-unmount before
- * touching the directory.
+ * connected") until someone detaches it. A predecessor that is alive
+ * but not answering is worse: its mount HANGS syscalls instead, so the
+ * probe itself carries a timeout and a hang counts as stale. Detect
+ * and lazy-unmount before touching the directory.
  */
 async function recoverStaleMount(nsRoot: string): Promise<void> {
-  try {
-    await stat(nsRoot);
-    return;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOTCONN") return;
-  }
+  const probe = await withTimeout(
+    stat(nsRoot).then(
+      () => "ok" as const,
+      (err) => (err as NodeJS.ErrnoException).code ?? "error",
+    ),
+    SANITY_TIMEOUT_MS,
+  );
+  if (probe !== "ENOTCONN" && probe !== "timeout") return;
   logWarn("fusefs", `stale mount at ${nsRoot} — detaching`);
   for (const bin of ["fusermount3", "fusermount"]) {
     const result = spawnSync(bin, ["-uz", nsRoot], { stdio: "ignore" });

@@ -84,4 +84,16 @@ describe("syncNamespaceDir", () => {
     expect(lstatSync(join(nsRoot, "user-file.txt")).isFile()).toBe(true);
     expect(lstatSync(join(nsRoot, "user-dir")).isDirectory()).toBe(true);
   });
+
+  it("lets a foreign entry shadow a mount name without throwing", () => {
+    mkdirSync(join(nsRoot, "home"), { recursive: true });
+    writeFileSync(join(nsRoot, "home", "keep.txt"), "mine");
+
+    const result = syncNamespaceDir(vfs, nsRoot);
+    expect(result.foreign).toEqual(["home"]);
+    expect(result.linked).toEqual([]);
+    // The user's dir wins; we never link over what we didn't create.
+    expect(lstatSync(join(nsRoot, "home")).isDirectory()).toBe(true);
+    expect(lstatSync(join(nsRoot, "home")).isSymbolicLink()).toBe(false);
+  });
 });
