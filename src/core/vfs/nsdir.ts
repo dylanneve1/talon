@@ -18,8 +18,8 @@ import {
   mkdirSync,
   readdirSync,
   readlinkSync,
-  rmSync,
   symlinkSync,
+  unlinkSync,
 } from "node:fs";
 import { dirs } from "../../util/paths.js";
 import type { Vfs } from "./vfs.js";
@@ -69,7 +69,12 @@ export function syncNamespaceDir(
       desired.delete(entry); // already correct
       continue;
     }
-    rmSync(path);
+    // unlinkSync, not rmSync: every entry here is a symlink (checked
+    // above), and rmSync follows it — on Node >=24 that throws EISDIR
+    // when the link points at a directory (the common retarget case),
+    // wedging the whole sync. unlink removes the link itself and never
+    // touches its target.
+    unlinkSync(path);
     if (target === undefined) pruned.push(entry);
   }
 

@@ -131,6 +131,15 @@ fn errno_code(name: &Option<String>) -> i32 {
     }
 }
 
+/// Parent of a namespace-relative path. Depth-1 paths and the root
+/// itself parent to the root ("" — the ino table's FUSE_ROOT_ID).
+fn parent_path(path: &str) -> &str {
+    match path.rsplit_once('/') {
+        Some((parent, _)) => parent,
+        None => "",
+    }
+}
+
 // ── The filesystem ───────────────────────────────────────────────────────────
 
 struct TalonFs {
@@ -419,9 +428,15 @@ impl Filesystem for TalonFs {
                 .collect()
         };
 
+        // ".." is the real parent, not the root: a d_ino of the wrong
+        // directory is visible to anything that reads dirents directly
+        // (getcwd fallbacks, fts loop detection) rather than re-looking
+        // the name up.
+        let parent_ino = self.ino_for(parent_path(&path));
+
         let mut all: Vec<(u64, FileType, String)> = Vec::with_capacity(children.len() + 2);
         all.push((ino, FileType::Directory, ".".to_string()));
-        all.push((FUSE_ROOT_ID, FileType::Directory, "..".to_string()));
+        all.push((parent_ino, FileType::Directory, "..".to_string()));
         for (name, kind) in children {
             let child_path = if path.is_empty() {
                 name.clone()
@@ -513,10 +528,13 @@ pub fn reply(id: u32, json: String) {
 #[napi]
 pub fn unmount() {
     let taken = session().lock().unwrap().take();
-    drop(taken);
-    // Wake anything still parked on the bridge so the session thread
-    // can't be held hostage by a reply that will never come.
+    // Wake anything still parked on the bridge FIRST: dropping the
+    // senders disconnects the channels, so a parked FUSE thread returns
+    // immediately instead of sitting out BRIDGE_TIMEOUT. Order matters —
+    // dropping the session joins that thread, and the reply it waits for
+    // can only come from the JS thread that is currently in this call.
     pending().lock().unwrap().clear();
+    drop(taken);
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -555,6 +573,17 @@ mod tests {
         let err: StatReply = serde_json::from_str(r#"{"ok":false,"errno":"ENOENT"}"#).unwrap();
         assert!(!err.ok);
         assert_eq!(errno_code(&err.errno), libc::ENOENT);
+    }
+
+    #[test]
+    fn parent_path_walks_up_one_level() {
+        // Regression: readdir once reported FUSE_ROOT_ID as ".." at every
+        // depth, so `proc/tasks/..` pointed at the mount root instead of
+        // `proc` for anything reading dirents raw.
+        assert_eq!(parent_path("proc/tasks"), "proc");
+        assert_eq!(parent_path("proc/tasks/7"), "proc/tasks");
+        assert_eq!(parent_path("proc"), "");
+        assert_eq!(parent_path(""), "");
     }
 
     #[test]

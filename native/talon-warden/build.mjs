@@ -20,7 +20,7 @@
 // Uses only node builtins so it runs on the bare runner node in CI
 // without an `npm ci`.
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, renameSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
@@ -67,5 +67,13 @@ if (target) {
 } else {
   outPath = join(repoRoot, "bin", `talon-warden${ext}`);
 }
-copyFileSync(built, outPath);
+// Install atomically. copyFileSync truncates and rewrites the destination
+// IN PLACE — if a live process has this artifact loaded (the daemon holds
+// the fusefs addon dlopen'd for the whole mount lifetime), rewriting its
+// pages underneath it takes that process down with SIGBUS. A rename swaps
+// the directory entry instead: the old inode stays mapped until the
+// process exits, and readers see the old or the new file, never a torn one.
+const stagePath = `${outPath}.tmp-${process.pid}`;
+copyFileSync(built, stagePath);
+renameSync(stagePath, outPath);
 console.log(`built ${outPath}${target ? ` (${target})` : " (host)"}`);

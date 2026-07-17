@@ -10,6 +10,16 @@
  * and records why: fuseless hosts get the identical experience minus
  * live views, never an error at boot.
  *
+ * The degradation is not just a boot-time decision. Once mounted, a
+ * health watchdog re-probes the live views on an interval; if the mount
+ * goes unhealthy at runtime — the classic case being a `bin/*.node`
+ * rebuilt out from under the running daemon, or the mountpoint wedged to
+ * ENOTCONN — it tears the dead mount down, restores the symlink farm so
+ * file-backed paths keep working, and tries a bounded number of
+ * reconnects. A mount that can't come back settles into fuseless for
+ * the rest of the run. A broken FUSE layer must never take the daemon
+ * down with it; the worst outcome is losing the live views.
+ *
  * Deadlock rule: the daemon must never do SYNCHRONOUS fs I/O under
  * ~/.talon/ns — a sync call blocks the one JS thread that answers the
  * bridge, wedging both sides. Async fs is safe (libuv worker blocks,
@@ -38,8 +48,37 @@ export type FuseStatus = {
 /** How long a post-mount sanity probe may take before we bail out. */
 const SANITY_TIMEOUT_MS = 3_000;
 
+/** How often the health watchdog re-probes a live mount. */
+const HEALTH_CHECK_INTERVAL_MS = 30_000;
+
+/**
+ * How many times the watchdog will try to remount after the mount goes
+ * unhealthy before giving up and staying fuseless for the rest of the
+ * run. Bounded so a permanently-broken FUSE setup doesn't thrash
+ * remount attempts every interval forever.
+ */
+const MAX_RECONNECT_ATTEMPTS = 5;
+
 let status: FuseStatus = { mounted: false, reason: "not started" };
 let activeAddon: NativeFuseFs | null = null;
+
+/**
+ * Everything the watchdog needs to re-probe and reconnect the mount,
+ * captured on the last successful mount. `null` until then and after a
+ * clean shutdown — the watchdog is a no-op without it.
+ */
+type LiveMount = {
+  readonly mode: "auto" | "off";
+  readonly vfs: Vfs;
+  readonly nsRoot: string;
+  readonly addon: NativeFuseFs;
+  /** First synthetic mount — what the probe reads to prove liveness. */
+  readonly probe: string | undefined;
+};
+let live: LiveMount | null = null;
+let healthTimer: ReturnType<typeof setInterval> | null = null;
+let healing = false;
+let reconnectAttempts = 0;
 
 /** Is the FUSE layer live? Consulted by the address/command resolvers. */
 export function isNamespaceFsMounted(): boolean {
@@ -54,6 +93,16 @@ export function namespaceFsStatus(): FuseStatus {
 /** Test seam — force a status without a real mount. */
 export function _setNamespaceFsStatusForTesting(next: FuseStatus): void {
   status = next;
+}
+
+/** Test seam — drive one watchdog tick synchronously (no interval wait). */
+export async function _checkNamespaceFsHealthForTesting(): Promise<void> {
+  await checkNamespaceFsHealth();
+}
+
+/** Test seam — the watchdog's current reconnect-attempt counter. */
+export function _reconnectAttemptsForTesting(): number {
+  return reconnectAttempts;
 }
 
 // ── Bridge: FUSE thread → JS Vfs ─────────────────────────────────────────────
@@ -179,19 +228,9 @@ export async function mountNamespaceFs(
   // Sanity: the mount must actually answer before we advertise it.
   // Async fs only — see the deadlock rule in the module doc.
   const probe = synthetic[0];
-  const healthy = await withTimeout(
-    (async () => {
-      const entries = await readdir(nsRoot);
-      if (probe !== undefined && !entries.includes(probe)) return false;
-      if (probe !== undefined) {
-        if (!(await stat(`${nsRoot}/${probe}`)).isDirectory()) return false;
-      }
-      return true;
-    })(),
-    SANITY_TIMEOUT_MS,
-  );
+  const healthy = await probeMount(nsRoot, probe);
   if (healthy !== true) {
-    await unmountNamespaceFs();
+    await teardownAddon();
     // The failed mount may have shadowed the symlink farm — restore it.
     try {
       syncNamespaceDir(options.vfs, nsRoot);
@@ -206,12 +245,43 @@ export async function mountNamespaceFs(
   }
 
   status = { mounted: true };
+  live = { mode: options.mode, vfs: options.vfs, nsRoot, addon, probe };
+  reconnectAttempts = 0;
+  startHealthWatchdog();
   log("fusefs", `talon:// namespace mounted at ${nsRoot}`);
   return status;
 }
 
-/** Tear the layer down (daemon shutdown). Never throws, idempotent. */
-export async function unmountNamespaceFs(): Promise<void> {
+/**
+ * Probe a live mount: read the root and confirm the first synthetic
+ * subtree is a directory the bridge answers. `false` = mounted but not
+ * serving live views, `"timeout"` = the mount hangs syscalls (a wedged
+ * predecessor). Async fs only — a sync call under nsRoot would block the
+ * one JS thread that answers the bridge (see the deadlock rule).
+ */
+async function probeMount(
+  nsRoot: string,
+  probe: string | undefined,
+): Promise<boolean | "timeout"> {
+  return withTimeout(
+    (async () => {
+      const entries = await readdir(nsRoot);
+      if (probe !== undefined && !entries.includes(probe)) return false;
+      if (probe !== undefined) {
+        if (!(await stat(`${nsRoot}/${probe}`)).isDirectory()) return false;
+      }
+      return true;
+    })(),
+    SANITY_TIMEOUT_MS,
+  );
+}
+
+/**
+ * Tear the addon's mount down without touching the watchdog. Shared by
+ * the sanity-rollback path, the self-heal path, and public unmount.
+ * Never throws, idempotent.
+ */
+async function teardownAddon(): Promise<void> {
   const addon = activeAddon;
   activeAddon = null;
   if (status.mounted) status = { mounted: false, reason: "unmounted" };
@@ -220,6 +290,99 @@ export async function unmountNamespaceFs(): Promise<void> {
     addon.unmount();
   } catch (err) {
     logWarn("fusefs", `unmount failed: ${message(err)}`);
+  }
+}
+
+/**
+ * Tear the layer down for good (daemon shutdown). Stops the watchdog so
+ * it can't resurrect the mount mid-shutdown, then unmounts. Never
+ * throws, idempotent.
+ */
+export async function unmountNamespaceFs(): Promise<void> {
+  stopHealthWatchdog();
+  live = null;
+  await teardownAddon();
+}
+
+// ── Health watchdog: reconnect or degrade, never die ─────────────────────────
+
+function startHealthWatchdog(): void {
+  if (healthTimer) return;
+  healthTimer = setInterval(() => {
+    void checkNamespaceFsHealth();
+  }, HEALTH_CHECK_INTERVAL_MS);
+  // The daemon owns the lifecycle; the probe must not keep the loop alive.
+  healthTimer.unref();
+}
+
+function stopHealthWatchdog(): void {
+  if (healthTimer) {
+    clearInterval(healthTimer);
+    healthTimer = null;
+  }
+}
+
+/**
+ * One watchdog tick. When the live mount stops answering, drop to
+ * fuseless immediately (the safe state — file-backed paths keep working
+ * via the symlink farm) and then try to reconnect, bounded. Runs to
+ * completion under a re-entrancy guard so overlapping ticks can't stack
+ * a second teardown/remount on top of one in flight. Never throws.
+ */
+async function checkNamespaceFsHealth(): Promise<void> {
+  if (healing || live === null) return;
+  healing = true;
+  try {
+    if (status.mounted) {
+      const healthy = await probeMount(live.nsRoot, live.probe);
+      if (healthy === true) return;
+      logWarn(
+        "fusefs",
+        `mount went unhealthy (${
+          healthy === false ? "live views vanished" : "probe timed out"
+        }) — degrading to fuseless${
+          reconnectAttempts < MAX_RECONNECT_ATTEMPTS ? " and reconnecting" : ""
+        }`,
+      );
+      await teardownAddon();
+      // The dead mount may still shadow the mountpoint — restore the farm
+      // so file-backed paths survive the fuseless window.
+      try {
+        syncNamespaceDir(live.vfs, live.nsRoot);
+      } catch {
+        // best effort; the warning above already carries the real failure
+      }
+      status = {
+        mounted: false,
+        reason: "mount went unhealthy — degraded to fuseless",
+      };
+    }
+
+    // Already fuseless (just degraded, or a prior reconnect failed): try
+    // to bring the mount back, up to the cap.
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      stopHealthWatchdog();
+      status = {
+        mounted: false,
+        reason: `mount unhealthy; gave up after ${MAX_RECONNECT_ATTEMPTS} reconnect attempts — staying fuseless`,
+      };
+      logWarn("fusefs", status.reason!);
+      return;
+    }
+    reconnectAttempts += 1;
+    const result = await mountNamespaceFs({
+      mode: live.mode,
+      vfs: live.vfs,
+      nsRoot: live.nsRoot,
+      addon: live.addon,
+    });
+    if (result.mounted) {
+      log("fusefs", "reconnected — live views restored");
+    }
+  } catch (err) {
+    logWarn("fusefs", `health check failed: ${message(err)}`);
+  } finally {
+    healing = false;
   }
 }
 

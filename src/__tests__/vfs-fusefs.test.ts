@@ -25,6 +25,8 @@ import { Vfs } from "../core/vfs/vfs.js";
 import { createFileMount } from "../core/vfs/mounts/files.js";
 import { createProcMount } from "../core/vfs/mounts/proc.js";
 import {
+  _checkNamespaceFsHealthForTesting,
+  _reconnectAttemptsForTesting,
   isNamespaceFsMounted,
   mountNamespaceFs,
   namespaceFsStatus,
@@ -196,6 +198,72 @@ describe.runIf(process.platform === "linux" && existsSync("/dev/fuse"))(
       // Idempotent.
       await unmountNamespaceFs();
       expect(addon.unmountCalls).toBe(1);
+    });
+  },
+);
+
+// ── Runtime resilience — the health watchdog ─────────────────────────────────
+//
+// A `bin/*.node` rebuilt under the running daemon, or a wedged
+// mountpoint, must never take the daemon down: the watchdog degrades to
+// fuseless (farm intact) and then reconnects, bounded. Same linux+fuse
+// gate as the lifecycle suite — a real mount only happens there.
+
+describe.runIf(process.platform === "linux" && existsSync("/dev/fuse"))(
+  "namespace fs health watchdog",
+  () => {
+    it("degrades to fuseless and reconnects when the mount goes unhealthy", async () => {
+      // Mount hook re-creates the synthetic dirs every time, so both the
+      // initial mount and the reconnect pass their sanity checks.
+      const addon = fakeAddon({
+        mount: (mountpoint, _symlinks, synthetic) => {
+          for (const name of synthetic) {
+            mkdirSync(join(mountpoint, name), { recursive: true });
+          }
+        },
+      });
+      expect(
+        (await mountNamespaceFs({ mode: "auto", vfs, nsRoot, addon })).mounted,
+      ).toBe(true);
+
+      // The mount stops serving live views — proc/ vanishes.
+      rmSync(join(nsRoot, "proc"), { recursive: true, force: true });
+
+      await _checkNamespaceFsHealthForTesting();
+
+      // Reconnected: live views back, farm never lost, counter reset.
+      expect(isNamespaceFsMounted()).toBe(true);
+      expect(addon.mountCalls).toHaveLength(2);
+      expect(addon.unmountCalls).toBe(1); // one teardown before the remount
+      expect(existsSync(join(nsRoot, "home"))).toBe(true);
+      expect(_reconnectAttemptsForTesting()).toBe(0);
+    });
+
+    it("gives up into fuseless after the reconnect cap, never throwing", async () => {
+      // Empty mount hook: the initial sanity passes only because we
+      // pre-create proc/ by hand; every remount then fails its sanity.
+      mkdirSync(join(nsRoot, "proc"), { recursive: true });
+      const addon = fakeAddon({});
+      expect(
+        (await mountNamespaceFs({ mode: "auto", vfs, nsRoot, addon })).mounted,
+      ).toBe(true);
+
+      // Break it: proc/ gone, and the hook won't recreate it.
+      rmSync(join(nsRoot, "proc"), { recursive: true, force: true });
+
+      // Drive ticks until the watchdog gives up (cap + 1). It must never
+      // throw and must always leave the farm intact.
+      for (let i = 0; i < 7; i++) {
+        await _checkNamespaceFsHealthForTesting();
+        expect(isNamespaceFsMounted()).toBe(false);
+        expect(existsSync(join(nsRoot, "home"))).toBe(true);
+      }
+
+      expect(namespaceFsStatus().reason).toContain("gave up");
+      // Timer stopped — a further tick is a no-op, no more remount attempts.
+      const mountsAtGiveUp = addon.mountCalls.length;
+      await _checkNamespaceFsHealthForTesting();
+      expect(addon.mountCalls.length).toBe(mountsAtGiveUp);
     });
   },
 );
