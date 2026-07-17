@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
+import { join, resolve } from "node:path";
 import { Vfs } from "../core/vfs/vfs.js";
 import { createFileMount } from "../core/vfs/mounts/files.js";
 import { createProcMount } from "../core/vfs/mounts/proc.js";
@@ -13,8 +14,10 @@ import {
 } from "../core/vfs/rewrite.js";
 
 const NS = "/tmp/fake-ns";
-const WORKSPACE = "/tmp/fake-workspace";
-const SKILLS = "/tmp/fake-skills";
+// resolve() so expectations match the mount table's normalized roots on
+// every platform (C:\tmp\… on Windows).
+const WORKSPACE = resolve("/tmp/fake-workspace");
+const SKILLS = resolve("/tmp/fake-skills");
 
 let vfs: Vfs;
 
@@ -50,7 +53,7 @@ describe("resolveNamespacePath", () => {
   it("maps file mounts to their disk roots when fuseless", () => {
     expect(resolveNamespacePath("talon://home/a.md", vfs, false, NS)).toEqual({
       ok: true,
-      path: `${WORKSPACE}/a.md`,
+      path: join(WORKSPACE, "a.md"),
     });
     expect(resolveNamespacePath("talon://home", vfs, false, NS)).toEqual({
       ok: true,
