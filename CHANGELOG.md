@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/dylanneve1/talon/compare/v2.0.0...v2.0.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* **vfs:** rebuilding native addons no longer SIGBUS-kills the daemon; FUSE self-heals ([#573](https://github.com/dylanneve1/talon/issues/573)) ([4a57b90](https://github.com/dylanneve1/talon/commit/4a57b90cec60d769bd205b492e121e77ff48f02d))
+
 ## [2.0.0](https://github.com/dylanneve1/talon/compare/v1.53.0...v2.0.0) (2026-07-17)
 
 
