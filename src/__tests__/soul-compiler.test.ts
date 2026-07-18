@@ -93,7 +93,7 @@ describe("correction signals", () => {
     expect(res.evidenceAdded).toBeDefined();
     const ev = dag.getNode(res.evidenceAdded!);
     expect(ev?.payload.kind).toBe("evidence");
-    expect((ev?.payload as EvidencePayload).text).toBe(
+    expect((ev!.payload as EvidencePayload).text).toBe(
       "just be grounded and talk naturally",
     );
     expect(res.spineAdded).toBeDefined();

@@ -98,9 +98,9 @@ export function createGitHubPlugin(config: { token?: string }): TalonPlugin {
     },
 
     getEnvVars() {
-      return {
-        ...(token ? { GITHUB_PERSONAL_ACCESS_TOKEN: token } : {}),
-      };
+      const vars: Record<string, string> = {};
+      if (token) vars.GITHUB_PERSONAL_ACCESS_TOKEN = token;
+      return vars;
     },
   };
 }

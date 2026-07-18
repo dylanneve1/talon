@@ -67,7 +67,7 @@ export class TalonEmbedder implements Embedder {
       }
     }
 
-    const vec = new Array<number>(this.dim).fill(0);
+    const vec = Array.from({ length: this.dim }, () => 0);
     for (const [feature, count] of counts) {
       const h = createHash("md5").update(feature).digest();
       const idx = ((h[0]! << 16) | (h[1]! << 8) | h[2]!) % this.dim;

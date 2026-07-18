@@ -259,7 +259,8 @@ export async function startFakeRemoteServer(
       res.write(": connected\n\n");
       sseClients.add(res);
       // Wake anything waiting for a live stream (see whenSseClient).
-      for (const w of [...sseWaiters]) w();
+      // Snapshot: woken waiters remove themselves mid-iteration.
+      for (const w of Array.from(sseWaiters)) w();
       req.on("close", () => sseClients.delete(res));
       return;
     }

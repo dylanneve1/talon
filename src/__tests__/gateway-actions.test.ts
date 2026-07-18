@@ -2220,7 +2220,7 @@ describe("per-job model override + discovery actions", () => {
       const result = await handleSharedAction({ action: "list_models" }, 42);
       expect(result?.ok).toBe(true);
       expect(result?.backend).toBe("claude");
-      const ids = (result?.models as { id: string }[]).map((m) => m.id);
+      const ids = (result!.models as { id: string }[]).map((m) => m.id);
       expect(ids).toEqual(["claude-opus-4-8", "claude-haiku-4-5"]); // non-selectable dropped
       expect(result?.text).toContain("claude-haiku-4-5");
     });
@@ -2269,7 +2269,7 @@ describe("per-job model override + discovery actions", () => {
       );
       expect(result?.ok).toBe(true);
       expect(result?.backend).toBe("codex");
-      expect((result?.models as { id: string }[]).map((m) => m.id)).toEqual([
+      expect((result!.models as { id: string }[]).map((m) => m.id)).toEqual([
         "gpt-5.5",
       ]);
       expect(result?.text).toContain("not this chat's backend");

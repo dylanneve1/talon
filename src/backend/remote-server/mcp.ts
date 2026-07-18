@@ -133,7 +133,8 @@ export async function ensureChatMcpServer<TClient extends RemoteAgentClient>(
   // Rotate out other chat servers BEFORE registering this one. The
   // heartbeat sentinel server is exempt (it has no real chat to leak
   // into and stays connected for cron / trigger paths).
-  for (const other of [...state.registeredMcpServers]) {
+  // Snapshot: rotation removes entries from the live set mid-iteration.
+  for (const other of Array.from(state.registeredMcpServers)) {
     if (
       !other.startsWith(`${TALON_MCP_SERVER_NAME}-`) ||
       other === serverName ||

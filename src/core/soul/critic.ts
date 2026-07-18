@@ -66,7 +66,10 @@ const SYCOPHANCY = [
 
 // Emoji detection without a heavy dependency: pictographic + symbol ranges.
 const EMOJI_RE =
-  /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{1F000}-\u{1F0FF}]/gu;
+  // Variation selectors are combining marks — alternated separately so the
+  // character class holds only standalone pictographic ranges
+  // (no-misleading-character-class).
+  /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{1F000}-\u{1F0FF}]|[\u{FE00}-\u{FE0F}]/gu;
 
 function countOccurrences(
   haystack: string,

@@ -63,7 +63,7 @@ export function cosineDistance(
 export function centroid(vectors: readonly (readonly number[])[]): number[] {
   if (vectors.length === 0) return [];
   const dim = vectors[0]!.length;
-  const acc = new Array<number>(dim).fill(0);
+  const acc = Array.from({ length: dim }, () => 0);
   for (const v of vectors) {
     for (let i = 0; i < dim; i++) acc[i]! += v[i]!;
   }
@@ -110,7 +110,7 @@ export class HashingEmbedder implements Embedder {
   }
 
   private embedOne(text: string): number[] {
-    const vec = new Array<number>(this.dim).fill(0);
+    const vec = Array.from({ length: this.dim }, () => 0);
     const lower = text.toLowerCase();
     const add = (feature: string): void => {
       const h = createHash("md5").update(feature).digest();

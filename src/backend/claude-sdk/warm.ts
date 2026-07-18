@@ -43,6 +43,10 @@ export async function warmSession(chatId: string): Promise<void> {
           reject(new Error("aborted")),
         );
       });
+      // Unreachable — the promise above only ever rejects. The yield* both
+      // satisfies require-yield and documents that this stream produces
+      // nothing by design (streaming-input mode with no user message).
+      yield* [] as never[];
     };
 
     const q = query({

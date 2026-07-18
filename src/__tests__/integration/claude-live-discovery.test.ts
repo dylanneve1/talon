@@ -50,6 +50,9 @@ async function* neverPrompt(signal: AbortSignal): AsyncGenerator<never> {
       once: true,
     });
   });
+  // Unreachable — the promise above only ever rejects; documents the
+  // produce-nothing contract while satisfying require-yield.
+  yield* [] as never[];
 }
 
 async function discoverSupportedModels(): Promise<SdkModelInfo[]> {

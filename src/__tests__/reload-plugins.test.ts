@@ -17,7 +17,7 @@ vi.mock("write-file-atomic", () => ({
 // Mock cheerio (required by gateway-actions via extractText)
 vi.mock("cheerio", () => ({
   load: vi.fn(() => {
-    const $ = (sel: string) => ({
+    const $ = (_sel: string) => ({
       remove: vi.fn(),
       text: () => "",
     });

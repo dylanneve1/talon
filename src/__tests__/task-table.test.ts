@@ -241,7 +241,7 @@ describe("task table", () => {
 
     const records = table.list();
     expect(records.map((r) => r.id)).toEqual(
-      [...records.map((r) => r.id)].sort((a, b) => a - b),
+      records.map((r) => r.id).sort((a, b) => a - b),
     );
 
     (records[0] as { label: string }).label = "tampered";

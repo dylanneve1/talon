@@ -77,7 +77,7 @@ export function setPluginEnabled(
   if (!name) return { ok: false, error: "A plugin name is required." };
 
   if (isBuiltinPlugin(name)) {
-    const section = { ...(builtinSection(config, name) ?? {}), enabled };
+    const section = { ...builtinSection(config, name), enabled };
     (config as unknown as Record<string, unknown>)[name] = section;
     return { ok: true, name, persist: { [name]: section } };
   }

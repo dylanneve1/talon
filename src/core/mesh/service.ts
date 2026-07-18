@@ -193,7 +193,9 @@ export class MeshService {
     // Stamp arrival against our own clock so waitForFreshLocation is immune
     // to device clock skew.
     this.receivedAt.set(loc.deviceId, Date.now());
-    for (const notify of [...this.waiters]) notify();
+    // Snapshot: a notified waiter removes itself (and new waiters may be
+    // added) mid-iteration — iterate a copy, not the live set.
+    for (const notify of Array.from(this.waiters)) notify();
     return loc;
   }
 
@@ -372,11 +374,11 @@ export class MeshService {
 
   /** `ring_device`: make the device sound/vibrate so it can be found. */
   ringDevice(query?: unknown, message?: unknown): Promise<MeshToolResult> {
-    return this.commandTool(query, "ring", {
-      ...(typeof message === "string" && message.trim()
-        ? { message: message.trim().slice(0, 200) }
-        : {}),
-    });
+    const note =
+      typeof message === "string" && message.trim()
+        ? message.trim().slice(0, 200)
+        : undefined;
+    return this.commandTool(query, "ring", note ? { message: note } : {});
   }
 
   /**

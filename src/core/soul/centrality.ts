@@ -48,7 +48,7 @@ export function pagerank(
   const idx = new Map(nodes.map((h, i) => [h, i]));
 
   // Weighted out-adjacency over coactivation edges (only among value nodes).
-  const outWeight = new Array<number>(n).fill(0);
+  const outWeight = Array.from({ length: n }, () => 0);
   const edges: { from: number; to: number; w: number }[] = [];
   for (const from of nodes) {
     for (const e of dag.edgesFrom(from, "coactivation")) {
@@ -61,7 +61,7 @@ export function pagerank(
   }
 
   // Teleport / personalization vector.
-  const teleport = new Array<number>(n).fill(1 / n);
+  const teleport = Array.from({ length: n }, () => 1 / n);
   if (opts.personalization && opts.personalization.size > 0) {
     let total = 0;
     for (const [, w] of opts.personalization) total += Math.max(0, w);
@@ -74,7 +74,7 @@ export function pagerank(
     }
   }
 
-  let rank = new Array<number>(n).fill(1 / n);
+  let rank = Array.from({ length: n }, () => 1 / n);
   for (let it = 0; it < iterations; it++) {
     const next = teleport.map((t) => (1 - damping) * t);
 
