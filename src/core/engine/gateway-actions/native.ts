@@ -672,6 +672,16 @@ async function edit(
     }
   }
 
+  // Binary guard: decoding binary as UTF-8 is lossy (invalid sequences
+  // become U+FFFD), so a read→replace→write round-trip would corrupt every
+  // non-text byte — even when old_string matches a clean region.
+  if (content.includes("\0")) {
+    return {
+      ok: false,
+      text: `${shown} looks binary — refusing a text edit that would corrupt it. Use bash for byte-level changes.`,
+    };
+  }
+
   const count = from ? content.split(from).length - 1 : 0;
   if (count === 0) {
     return {
@@ -693,13 +703,14 @@ async function edit(
     replaceAll === true
       ? content.split(from).join(to)
       : spliceOnce(content, from, to);
+  const firstLine = content.slice(0, content.indexOf(from)).split("\n").length;
 
   if (active) {
     const res = await svc.writeFileToDevice(active.deviceId, p, updated);
     return res.ok
       ? {
           ok: true,
-          text: `Edited ${shown} [${active.deviceName}] (${count} replacement${count === 1 ? "" : "s"}).`,
+          text: `Edited ${shown} [${active.deviceName}] (${count} replacement${count === 1 ? "" : "s"}, first at line ${firstLine}).`,
         }
       : res;
   }
@@ -713,7 +724,7 @@ async function edit(
   }
   return {
     ok: true,
-    text: `Edited ${shown} [local] (${count} replacement${count === 1 ? "" : "s"}).`,
+    text: `Edited ${shown} [local] (${count} replacement${count === 1 ? "" : "s"}, first at line ${firstLine}).`,
   };
 }
 
@@ -733,8 +744,8 @@ async function glob(
     // -name, path patterns via -path). `command -v` gates the choice so a
     // no-match rg exit (1) isn't misread as "rg missing, run find too".
     const findExpr = pat.includes("/")
-      ? `-path ${shellQuote(`*${pat}`)}`
-      : `-name ${shellQuote(pat)}`;
+      ? `-type f -path ${shellQuote(`*${pat}`)}`
+      : `-type f -name ${shellQuote(pat)}`;
     const cmd =
       `if command -v rg >/dev/null 2>&1; ` +
       `then rg --files -g ${shellQuote(pat)} ${shellQuote(root)}; ` +

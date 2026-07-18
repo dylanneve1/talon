@@ -456,6 +456,31 @@ describe("native tools — local execution", () => {
     expect(notDir.text).toContain("not a directory");
   });
 
+  it("edit refuses binary files instead of corrupting them", async () => {
+    const f = join(workdir, "edit-blob.bin");
+    await writeFile(f, Buffer.from([0x00, 0x41, 0x42, 0x43, 0x00, 0xff]));
+    const res = await nativeHandlers.native_edit(
+      { action: "native_edit", path: f, old_string: "ABC", new_string: "XYZ" },
+      1,
+    );
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("binary");
+    // The file must be untouched.
+    const bytes = await readFile(f);
+    expect([...bytes]).toEqual([0x00, 0x41, 0x42, 0x43, 0x00, 0xff]);
+  });
+
+  it("edit reports the line the replacement landed on", async () => {
+    const f = join(workdir, "edit-line.txt");
+    await writeFile(f, "one\ntwo\nthree\nfour\n");
+    const res = await nativeHandlers.native_edit(
+      { action: "native_edit", path: f, old_string: "three", new_string: "3" },
+      1,
+    );
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain("first at line 3");
+  });
+
   it("glob returns deterministically sorted results", async () => {
     const dir = join(workdir, "glob-sort");
     await mkdir(dir, { recursive: true });
@@ -622,6 +647,41 @@ describe("native tools — teleport routing", () => {
     expect(remote.ok).toBe(true);
     expect(remote.text).toContain("[Pixel 9] exit 0");
     expect(sentCmds).toHaveLength(1);
+  });
+
+  it("teleported glob's find fallback matches only files, like rg --files", async () => {
+    const service = freshMesh();
+    setMeshService(service);
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["exec"],
+    });
+    const sentCmds: string[] = [];
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(() => {
+          sentCmds.push(String(cmd.params.cmd));
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: true,
+            data: { stdout: "", stderr: "", exitCode: 0 },
+          });
+        }),
+    });
+    await nativeHandlers.teleport({ action: "teleport", device: "phone" }, 1);
+    await nativeHandlers.native_glob(
+      { action: "native_glob", pattern: "*.apk", path: "/sdcard" },
+      1,
+    );
+    expect(sentCmds.length).toBe(1);
+    // rg --files never lists directories; the find fallback must agree.
+    expect(sentCmds[0]).toContain("-type f -name");
+    expect(sentCmds[0]).toContain("rg --files");
   });
 
   it("refuses to teleport onto a device that lacks exec", async () => {
