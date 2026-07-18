@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.4](https://github.com/dylanneve1/talon/compare/v3.0.3...v3.0.4) (2026-07-18)
+
+
+### Bug Fixes
+
+* **native:** edit binary guard, edit line report, find fallback -type f ([#588](https://github.com/dylanneve1/talon/issues/588)) ([5252ff5](https://github.com/dylanneve1/talon/commit/5252ff59399a319d26341d2b3d6d8a526e5397a0))
+
 ## [3.0.3](https://github.com/dylanneve1/talon/compare/v3.0.2...v3.0.3) (2026-07-18)
 
 
