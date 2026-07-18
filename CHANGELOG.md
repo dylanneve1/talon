@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.5](https://github.com/dylanneve1/talon/compare/v3.0.4...v3.0.5) (2026-07-18)
+
+
+### Bug Fixes
+
+* **telegram:** literal placeholder restore + single-escape link hrefs ([#590](https://github.com/dylanneve1/talon/issues/590)) ([80b5bbb](https://github.com/dylanneve1/talon/commit/80b5bbb0887c00466f6e3574a8df0d9e45f48336))
+
 ## [3.0.4](https://github.com/dylanneve1/talon/compare/v3.0.3...v3.0.4) (2026-07-18)
 
 
