@@ -239,43 +239,6 @@ describe("address grammar — OS-absolute spellings", () => {
   });
 });
 
-describe("locate — namespace → disk", () => {
-  it("maps file-mount addresses to absolute paths, existing or not", () => {
-    expect(vfs.locate("talon://home/a.txt")).toEqual({
-      ok: true,
-      value: join(root, "a.txt"),
-    });
-    expect(vfs.locate("talon://home/deep/unborn.md")).toEqual({
-      ok: true,
-      value: join(root, "deep", "unborn.md"),
-    });
-    expect(vfs.locate("talon://home")).toEqual({ ok: true, value: root });
-  });
-
-  it("answers undefined for synthetic nodes and the root", () => {
-    vfs.mount(
-      "plugins",
-      createPluginsMount(() => []),
-    );
-    expect(vfs.locate("talon://plugins/x")).toEqual({
-      ok: true,
-      value: undefined,
-    });
-    expect(vfs.locate("")).toEqual({ ok: true, value: undefined });
-  });
-
-  it("propagates address errors", () => {
-    expect(vfs.locate("talon://home/../etc")).toMatchObject({
-      ok: false,
-      error: "invalid-path",
-    });
-    expect(vfs.locate("talon://nope/x")).toMatchObject({
-      ok: false,
-      error: "not-found",
-    });
-  });
-});
-
 describe("file mount", () => {
   it("lists directories first with sizes and prefixed paths", () => {
     mkdirSync(join(root, "notes"));

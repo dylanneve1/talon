@@ -103,28 +103,9 @@ export class Vfs {
   }
 
   /**
-   * Where an address lives on disk: the absolute path for nodes of
-   * file-backed mounts (whether or not the node exists yet), `undefined`
-   * for addresses with no disk representation (the root, synthetic
-   * mounts). This is the namespace→OS direction of the address grammar —
-   * OS-level tools call it to run real file operations on a talon://
-   * address.
-   */
-  locate(path: string): VfsResult<string | undefined> {
-    const parsed = this.#parse(path);
-    if (!parsed.ok) return parsed;
-    if (parsed.value === null) return vfsOk(undefined);
-    const { mount, rel } = parsed.value;
-    if (mount.osRoot === undefined) return vfsOk(undefined);
-    return vfsOk(
-      rel === "" ? mount.osRoot : resolve(mount.osRoot, ...rel.split("/")),
-    );
-  }
-
-  /**
    * The mount table as data: name, description, writability, and — for
    * file-backed mounts — the disk root. Consumed by the namespace dir
-   * builder (symlink farm), the command rewriter, and docs/tool output.
+   * builder (symlink farm), the FUSE layer, and docs/tool output.
    */
   describeMounts(): {
     name: string;

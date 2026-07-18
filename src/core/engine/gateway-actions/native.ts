@@ -169,11 +169,7 @@ async function bash(
   const active = await getTeleport(chatId);
 
   let dir = typeof cwd === "string" && cwd.trim() ? cwd.trim() : undefined;
-  if (dir !== undefined && !active) {
-    const resolved = resolvePathParam(dir, undefined);
-    if ("error" in resolved) return { ok: false, text: resolved.error };
-    dir = resolved.path;
-  }
+  if (dir !== undefined && !active) dir = resolvePathParam(dir, undefined);
 
   const result = await (async () => {
     if (background === true) {
@@ -477,24 +473,12 @@ function expandHome(path: string): string {
  * translation and behave identically here, in a bare shell, in another
  * backend's built-in shell (Codex), and in any spawned child process.
  * Teleported, paths belong to the device and pass through verbatim.
- *
- * The `| { error }` arm is retained for the call sites' uniform shape;
- * expansion itself cannot fail.
  */
 function resolvePathParam(
   path: string,
   teleportedTo: string | undefined,
-): { path: string } | { error: string } {
-  return { path: teleportedTo !== undefined ? path : expandHome(path) };
-}
-
-/** glob/search root — same rule, defaulting to the working directory. */
-function resolveSearchRoot(
-  path: string | undefined,
-  teleportedTo: string | undefined,
-): { root: string } | { error: string } {
-  const resolved = resolvePathParam(path ?? ".", teleportedTo);
-  return "error" in resolved ? resolved : { root: resolved.path };
+): string {
+  return teleportedTo !== undefined ? path : expandHome(path);
 }
 
 // ── read / write / edit ─────────────────────────────────────────────────────
@@ -510,9 +494,7 @@ async function read(
   const active = await getTeleport(chatId);
   const where = active ? active.deviceName : "local";
 
-  const resolved = resolvePathParam(address, active?.deviceName);
-  if ("error" in resolved) return { ok: false, text: resolved.error };
-  const p = resolved.path;
+  const p = resolvePathParam(address, active?.deviceName);
   const shown = p === address ? p : `${address} → ${p}`;
 
   // Image files: return a viewable image block, not the raw bytes decoded as
@@ -592,9 +574,7 @@ async function write(
   if (!address) return { ok: false, text: "A file path is required." };
   const body = typeof content === "string" ? content : "";
   const active = await getTeleport(chatId);
-  const resolved = resolvePathParam(address, active?.deviceName);
-  if ("error" in resolved) return { ok: false, text: resolved.error };
-  const p = resolved.path;
+  const p = resolvePathParam(address, active?.deviceName);
   const shown = p === address ? p : `${address} → ${p}`;
   if (active) {
     return getMeshService().writeFileToDevice(active.deviceId, p, body);
@@ -625,9 +605,7 @@ async function edit(
   if (from === to)
     return { ok: false, text: "old_string and new_string are identical." };
   const active = await getTeleport(chatId);
-  const resolved = resolvePathParam(address, active?.deviceName);
-  if ("error" in resolved) return { ok: false, text: resolved.error };
-  const p = resolved.path;
+  const p = resolvePathParam(address, active?.deviceName);
   const shown = p === address ? p : `${address} → ${p}`;
   const svc = getMeshService();
 
@@ -698,9 +676,7 @@ async function glob(
   const pat = str(pattern);
   if (!pat) return { ok: false, text: "A glob pattern is required." };
   const active = await getTeleport(chatId);
-  const rooted = resolveSearchRoot(str(path), active?.deviceName);
-  if ("error" in rooted) return { ok: false, text: rooted.error };
-  const root = rooted.root;
+  const root = resolvePathParam(str(path) ?? ".", active?.deviceName);
   if (active) {
     // Prefer rg on the device; fall back to find (basename patterns via
     // -name, path patterns via -path). `command -v` gates the choice so a
@@ -747,9 +723,7 @@ async function search(
   const pat = str(pattern);
   if (!pat) return { ok: false, text: "A search pattern is required." };
   const active = await getTeleport(chatId);
-  const rooted = resolveSearchRoot(str(path), active?.deviceName);
-  if ("error" in rooted) return { ok: false, text: rooted.error };
-  const root = rooted.root;
+  const root = resolvePathParam(str(path) ?? ".", active?.deviceName);
   const g = str(globPat);
   const ci = caseInsensitive === true;
   // `-e` keeps a pattern that starts with "-" from being parsed as a flag

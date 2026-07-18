@@ -86,10 +86,10 @@ export interface VfsMount {
   /** Can write() ever succeed here? Synthetic views say false. */
   readonly writable: boolean;
   /**
-   * Absolute disk root, for file-backed mounts. The single fact that makes
-   * addresses bidirectional: the resolver routes OS-absolute addresses into
-   * the mount by containment, and `Vfs.locate` maps namespace addresses
-   * back to disk. Synthetic mounts omit it.
+   * Absolute disk root, for file-backed mounts. The resolver routes
+   * OS-absolute addresses into the mount by containment, and the symlink
+   * farm / FUSE layer expose the mount at its real path on disk.
+   * Synthetic mounts omit it.
    */
   readonly osRoot?: string;
   stat(rel: string): VfsResult<VfsStat>;
