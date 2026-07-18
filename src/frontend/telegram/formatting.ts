@@ -69,24 +69,29 @@ export function markdownToTelegramHtml(text: string): string {
   );
   // Italic: _text_ (surrounded by non-word or start/end)
   processed = processed.replace(/(?<!\w)_(.+?)_(?!\w)/g, "<i>$1</i>");
-  // Links: [text](url) — only allow safe URL schemes; escape the URL to
-  // prevent HTML attribute injection (e.g. href="url" onmouseover="x")
+  // Links: [text](url) — only safe URL schemes become anchors. Both text
+  // and url were already HTML-escaped by step 3 (quotes included, so the
+  // href attribute can't be broken out of); escaping again here corrupted
+  // every & in a query string into &amp;amp;.
   processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) =>
-    /^https?:\/\//i.test(url)
-      ? `<a href="${escapeHtml(url)}">${escapeHtml(text)}</a>`
-      : text,
+    /^https?:\/\//i.test(url) ? `<a href="${url}">${text}</a>` : text,
   );
   // Strikethrough: ~~text~~
   processed = processed.replace(/~~(.+?)~~/g, "<s>$1</s>");
 
-  // Step 5: Restore inline code spans.
+  // Steps 5+6: Restore code spans and fenced blocks. The replacement MUST
+  // go through a function: with a string, String.replace interprets $-
+  // substitution patterns in the *code content* ($& re-inserts the
+  // placeholder, $\` splices the whole preceding message), which is how
+  // \`$&\` in a code span used to leak a stranded INLINECODEn into chat.
   for (let i = 0; i < inlineCode.length; i++) {
-    processed = processed.replace(`\x00INLINECODE${i}\x00`, inlineCode[i]);
+    processed = processed.replace(
+      `\x00INLINECODE${i}\x00`,
+      () => inlineCode[i],
+    );
   }
-
-  // Step 6: Restore fenced code blocks.
   for (let i = 0; i < codeBlocks.length; i++) {
-    processed = processed.replace(`\x00CODEBLOCK${i}\x00`, codeBlocks[i]);
+    processed = processed.replace(`\x00CODEBLOCK${i}\x00`, () => codeBlocks[i]);
   }
 
   return processed;

@@ -54,6 +54,35 @@ describe("markdownToTelegramHtml", () => {
   });
 });
 
+describe("markdownToTelegramHtml — $-substitution and escaping regressions", () => {
+  it("keeps $-substitution patterns in inline code literal", () => {
+    // String.replace treats $&, $', $`, $$ in a string replacement as
+    // substitution directives — code spans containing them used to leak
+    // stranded INLINECODEn placeholders into the rendered message.
+    const out = markdownToTelegramHtml("use `$&` and `$'` and `$$PID`");
+    expect(out).toBe(
+      "use <code>$&amp;</code> and <code>$&#39;</code> and <code>$$PID</code>",
+    );
+    expect(out).not.toContain("INLINECODE");
+  });
+
+  it("keeps $-substitution patterns in fenced blocks literal", () => {
+    const out = markdownToTelegramHtml('```\necho "$\' $&"\n```');
+    expect(out).toBe("<pre><code>echo &quot;$&#39; $&amp;&quot;</code></pre>");
+    expect(out).not.toContain("CODEBLOCK");
+  });
+
+  it("escapes link href ampersands exactly once", () => {
+    const out = markdownToTelegramHtml("[q](https://e.com/?a=1&b=2)");
+    expect(out).toBe('<a href="https://e.com/?a=1&amp;b=2">q</a>');
+  });
+
+  it("escapes link text exactly once", () => {
+    const out = markdownToTelegramHtml("[a & b](https://e.com/)");
+    expect(out).toBe('<a href="https://e.com/">a &amp; b</a>');
+  });
+});
+
 describe("splitMessage", () => {
   it("returns single chunk for short messages", () => {
     const chunks = splitMessage("Hello", 100);
