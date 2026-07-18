@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.0.3](https://github.com/dylanneve1/talon/compare/v3.0.2...v3.0.3) (2026-07-18)
+
+
+### Bug Fixes
+
+* **companion:** clean up code block rendering ([#585](https://github.com/dylanneve1/talon/issues/585)) ([70e83fd](https://github.com/dylanneve1/talon/commit/70e83fd8ac2cb46ea46d10df1195165c9793c994))
+* **native:** make edit literal, guard reads, validate cwd, sort glob ([#584](https://github.com/dylanneve1/talon/issues/584)) ([6469fe0](https://github.com/dylanneve1/talon/commit/6469fe050db8262aced02d460f66cb1a624ece2a))
+
 ## [3.0.2](https://github.com/dylanneve1/talon/compare/v3.0.1...v3.0.2) (2026-07-18)
 
 
