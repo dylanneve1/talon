@@ -465,7 +465,8 @@ describe("native tools — local execution", () => {
       1,
     );
     expect(res.ok).toBe(true);
-    const idx = ["aa", "mm", "zz"].map((n) => res.text.indexOf(`${n}.sorted`));
+    const text = res.text ?? "";
+    const idx = ["aa", "mm", "zz"].map((n) => text.indexOf(`${n}.sorted`));
     expect(idx.every((i) => i !== -1)).toBe(true);
     expect([...idx].sort((a, b) => a - b)).toEqual(idx);
   });
