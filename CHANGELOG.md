@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.2](https://github.com/dylanneve1/talon/compare/v3.0.1...v3.0.2) (2026-07-18)
+
+
+### Bug Fixes
+
+* **repo:** untrack the node_modules symlink that shipped in [#578](https://github.com/dylanneve1/talon/issues/578) ([#582](https://github.com/dylanneve1/talon/issues/582)) ([c150c19](https://github.com/dylanneve1/talon/commit/c150c199040a0758cad067299c9f61fae0575f8d))
+
 ## [3.0.1](https://github.com/dylanneve1/talon/compare/v3.0.0...v3.0.1) (2026-07-18)
 
 
