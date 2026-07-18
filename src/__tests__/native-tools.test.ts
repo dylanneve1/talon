@@ -362,13 +362,13 @@ describe("native tools — local execution", () => {
         action: "native_edit",
         path: f,
         old_string: "REPLACE_ME",
-        new_string: "echo \"$& $' $` $$PID\"",
+        new_string: 'echo "$& $\' $` $$PID"',
       },
       1,
     );
     expect(res.ok).toBe(true);
     const content = await readFile(f, "utf8");
-    expect(content).toBe("prefix-line\necho \"$& $' $` $$PID\"\nsuffix-line\n");
+    expect(content).toBe('prefix-line\necho "$& $\' $` $$PID"\nsuffix-line\n');
   });
 
   it("write reports UTF-8 bytes, not UTF-16 code units", async () => {
@@ -379,7 +379,9 @@ describe("native tools — local execution", () => {
       1,
     );
     expect(res.ok).toBe(true);
-    expect(res.text).toContain(`Wrote ${Buffer.byteLength(body, "utf8")} bytes`);
+    expect(res.text).toContain(
+      `Wrote ${Buffer.byteLength(body, "utf8")} bytes`,
+    );
   });
 
   it("read clamps a negative offset and a zero limit instead of lying", async () => {
