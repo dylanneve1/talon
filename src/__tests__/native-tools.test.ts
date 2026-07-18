@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, afterEach, beforeAll } from "vitest";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -343,6 +343,131 @@ describe("native tools — local execution", () => {
     } finally {
       delete process.env.TALON_NATIVE_RG;
     }
+  });
+
+  it("edit keeps $-substitution patterns in new_string literal", async () => {
+    const f = join(workdir, "dollar.mk");
+    await nativeHandlers.native_write(
+      {
+        action: "native_write",
+        path: f,
+        content: "prefix-line\nREPLACE_ME\nsuffix-line\n",
+      },
+      1,
+    );
+    // $&, $', $`, $$ are String.replace substitution directives — a literal
+    // edit must write them through untouched, not expand them.
+    const res = await nativeHandlers.native_edit(
+      {
+        action: "native_edit",
+        path: f,
+        old_string: "REPLACE_ME",
+        new_string: "echo \"$& $' $` $$PID\"",
+      },
+      1,
+    );
+    expect(res.ok).toBe(true);
+    const content = await readFile(f, "utf8");
+    expect(content).toBe("prefix-line\necho \"$& $' $` $$PID\"\nsuffix-line\n");
+  });
+
+  it("write reports UTF-8 bytes, not UTF-16 code units", async () => {
+    const f = join(workdir, "utf8-count.txt");
+    const body = "h\u00e9llo \u20ac";
+    const res = await nativeHandlers.native_write(
+      { action: "native_write", path: f, content: body },
+      1,
+    );
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain(`Wrote ${Buffer.byteLength(body, "utf8")} bytes`);
+  });
+
+  it("read clamps a negative offset and a zero limit instead of lying", async () => {
+    const f = join(workdir, "clamp.txt");
+    await writeFile(f, "alpha\nbravo\ncharlie\n");
+    const neg = await nativeHandlers.native_read(
+      { action: "native_read", path: f, offset: -5, limit: 2 },
+      1,
+    );
+    expect(neg.ok).toBe(true);
+    expect(neg.text).toContain("1\talpha"); // top of file, numbered from 1
+    const zero = await nativeHandlers.native_read(
+      { action: "native_read", path: f, offset: 0, limit: 0 },
+      1,
+    );
+    expect(zero.ok).toBe(true);
+    expect(zero.text).toContain("alpha"); // at least one line, not a fake-empty read
+  });
+
+  it("read reports an offset past the end instead of returning nothing", async () => {
+    const f = join(workdir, "short.txt");
+    await writeFile(f, "only\n");
+    const res = await nativeHandlers.native_read(
+      { action: "native_read", path: f, offset: 50 },
+      1,
+    );
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("past the end");
+  });
+
+  it("read refuses binary files with a shell-tool hint", async () => {
+    const f = join(workdir, "blob.bin");
+    await writeFile(f, Buffer.from([0x89, 0x50, 0x00, 0x01, 0x02]));
+    const res = await nativeHandlers.native_read(
+      { action: "native_read", path: f },
+      1,
+    );
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("binary");
+  });
+
+  it("read refuses an oversized file with a bash hint", async () => {
+    const f = join(workdir, "big.log");
+    await writeFile(f, Buffer.alloc(32 * 1024 * 1024 + 1, 0x61));
+    const res = await nativeHandlers.native_read(
+      { action: "native_read", path: f },
+      1,
+    );
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("read limit");
+  });
+
+  it("bash names a bad cwd instead of a misleading spawn error", async () => {
+    const missing = await nativeHandlers.native_bash(
+      {
+        action: "native_bash",
+        command: "echo hi",
+        cwd: join(workdir, "no-such-dir"),
+      },
+      1,
+    );
+    expect(missing.ok).toBe(false);
+    expect(missing.text).toContain("Working directory does not exist");
+
+    const f = join(workdir, "cwd-file.txt");
+    await writeFile(f, "x");
+    const notDir = await nativeHandlers.native_bash(
+      { action: "native_bash", command: "echo hi", cwd: f },
+      1,
+    );
+    expect(notDir.ok).toBe(false);
+    expect(notDir.text).toContain("not a directory");
+  });
+
+  it("glob returns deterministically sorted results", async () => {
+    const dir = join(workdir, "glob-sort");
+    await mkdir(dir, { recursive: true });
+    for (const name of ["zz.sorted", "aa.sorted", "mm.sorted"]) {
+      await writeFile(join(dir, name), "");
+    }
+    const res = await nativeHandlers.native_glob(
+      { action: "native_glob", pattern: "*.sorted", path: dir },
+      1,
+    );
+    expect(res.ok).toBe(true);
+    const idx = ["aa", "mm", "zz"].map((n) => res.text.indexOf(`${n}.sorted`));
+    expect(idx.every((i) => i !== -1)).toBe(true);
+    expect([...idx].sort((a, b) => a - b)).toEqual(idx);
   });
 });
 

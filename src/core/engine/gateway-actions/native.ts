@@ -76,6 +76,12 @@ const TELEPORT_TIMEOUT_HINT =
   "with read, or bound the command itself: `logcat -d`, `timeout 30 …`, `head -n 200`.)";
 const MAX_READ_LINES = 2_000;
 /**
+ * Refuse to slurp huge files into memory: `read` loads the whole file to
+ * slice lines, so an unbounded readFile of a multi-GB log balloons RSS.
+ * Past this, bash is the right tool (`sed -n`, `tail`, `head`).
+ */
+const MAX_READ_FILE_BYTES = 32 * 1024 * 1024;
+/**
  * Image extensions the model can actually view, mapped to their MIME type.
  * Reading one returns an image content block instead of the file's raw bytes
  * decoded as (garbage) UTF-8 — so `read`ing a photo/screenshot/design shows
@@ -169,7 +175,19 @@ async function bash(
   const active = await getTeleport(chatId);
 
   let dir = typeof cwd === "string" && cwd.trim() ? cwd.trim() : undefined;
-  if (dir !== undefined && !active) dir = resolvePathParam(dir, undefined);
+  if (dir !== undefined && !active) {
+    dir = resolvePathParam(dir, undefined);
+    // Validate here: a bad cwd makes spawn fail with "spawn bash ENOENT",
+    // which reads as "bash is missing" and sends the model down the wrong
+    // path. Name the actual problem instead.
+    try {
+      const st = await fsStat(dir);
+      if (!st.isDirectory())
+        return { ok: false, text: `cwd is not a directory: ${dir}` };
+    } catch {
+      return { ok: false, text: `Working directory does not exist: ${dir}` };
+    }
+  }
 
   const result = await (async () => {
     if (background === true) {
@@ -509,6 +527,10 @@ async function read(
       bytes = res.data;
     } else {
       try {
+        // stat first — no point slurping a 40MB photo just to refuse it.
+        const st = await fsStat(p);
+        if (st.size > MAX_IMAGE_BYTES)
+          return oversizeImageResult(shown, where, st.size, p);
         bytes = await readFile(p);
       } catch (err) {
         return {
@@ -518,13 +540,7 @@ async function read(
       }
     }
     if (bytes.length > MAX_IMAGE_BYTES) {
-      return {
-        ok: false,
-        text:
-          `${shown} [${where}] is ${(bytes.length / 1_048_576).toFixed(1)}MB — over the ` +
-          `${MAX_IMAGE_BYTES / 1_048_576}MB image limit. Downscale it first ` +
-          `(e.g. \`convert '${p}' -resize 1568x /tmp/small.jpg\`) and read that.`,
-      };
+      return oversizeImageResult(shown, where, bytes.length, p);
     }
     return {
       ok: true,
@@ -533,15 +549,26 @@ async function read(
     };
   }
 
-  const start = num(offset) ?? 0;
-  const max = Math.min(num(limit) ?? MAX_READ_LINES, MAX_READ_LINES);
+  // Clamp: a negative offset would silently flip slice() into
+  // count-from-the-end (with line numbers that lie), and a zero/negative
+  // limit would return an empty read that looks like an empty file.
+  const start = Math.max(0, Math.trunc(num(offset) ?? 0));
+  const max = Math.min(
+    Math.max(1, Math.trunc(num(limit) ?? MAX_READ_LINES)),
+    MAX_READ_LINES,
+  );
   let content: string;
   if (active) {
     const res = await getMeshService().readFileBytes(active.deviceId, p);
     if ("error" in res) return { ok: false, text: res.error };
+    if (res.data.length > MAX_READ_FILE_BYTES)
+      return oversizeReadResult(shown, where, res.data.length, p);
     content = res.data.toString("utf8");
   } else {
     try {
+      const st = await fsStat(p);
+      if (st.isFile() && st.size > MAX_READ_FILE_BYTES)
+        return oversizeReadResult(shown, where, st.size, p);
       content = await readFile(p, "utf8");
     } catch (err) {
       return {
@@ -550,7 +577,24 @@ async function read(
       };
     }
   }
+  // Binary files decoded as UTF-8 are mojibake the model can't use — same
+  // rationale as the image branch, but with no viewable representation to
+  // return. Point at the shell tools that can actually inspect the bytes.
+  if (content.includes("\0")) {
+    return {
+      ok: false,
+      text:
+        `${shown} [${where}] looks binary — refusing to render it as text. ` +
+        `Inspect it with bash instead: \`file '${p}'\`, \`xxd '${p}' | head\`, \`strings '${p}'\`.`,
+    };
+  }
   const lines = content.split("\n");
+  if (start >= lines.length) {
+    return {
+      ok: false,
+      text: `${shown} [${where}] has ${lines.length} lines — offset ${start} is past the end.`,
+    };
+  }
   const slice = lines.slice(start, start + max);
   const numbered = slice
     .map((line, i) => `${String(start + i + 1).padStart(6)}\t${line}`)
@@ -588,7 +632,10 @@ async function write(
       text: `Cannot write ${shown}: ${(err as Error).message}`,
     };
   }
-  return { ok: true, text: `Wrote ${body.length} bytes to ${shown} [local].` };
+  return {
+    ok: true,
+    text: `Wrote ${Buffer.byteLength(body, "utf8")} bytes to ${shown} [local].`,
+  };
 }
 
 async function edit(
@@ -638,10 +685,14 @@ async function edit(
       text: `old_string appears ${count}× in ${shown}; pass replace_all or make it unique.`,
     };
   }
+  // Splice, not String.replace: replace() treats dollar-sign substitution
+  // patterns ($&, $', $BACKTICK, $$) in the replacement as directives, silently
+  // corrupting any new_string that contains them (shell snippets, regexes,
+  // Makefiles...). split/join and index-splice are both literal.
   const updated =
     replaceAll === true
       ? content.split(from).join(to)
-      : content.replace(from, to);
+      : spliceOnce(content, from, to);
 
   if (active) {
     const res = await svc.writeFileToDevice(active.deviceId, p, updated);
@@ -705,6 +756,9 @@ async function glob(
   } else {
     files = res.stdout.trim().split("\n").filter(Boolean);
   }
+  // rg's parallel directory walk (and the JS fallback's) emit in
+  // nondeterministic order — sort so identical calls render identically.
+  files.sort();
   return {
     ok: true,
     text: files.length
@@ -840,6 +894,36 @@ async function searchJs(
   return lines;
 }
 
+function oversizeReadResult(
+  shown: string,
+  where: string,
+  size: number,
+  p: string,
+): Result {
+  return {
+    ok: false,
+    text:
+      `${shown} [${where}] is ${(size / 1_048_576).toFixed(1)}MB — over the ` +
+      `${MAX_READ_FILE_BYTES / 1_048_576}MB read limit. Slice it with bash instead: ` +
+      `\`sed -n '1,200p' '${p}'\`, \`tail -n 200 '${p}'\`, or \`grep\` for what you need.`,
+  };
+}
+
+function oversizeImageResult(
+  shown: string,
+  where: string,
+  size: number,
+  p: string,
+): Result {
+  return {
+    ok: false,
+    text:
+      `${shown} [${where}] is ${(size / 1_048_576).toFixed(1)}MB — over the ` +
+      `${MAX_IMAGE_BYTES / 1_048_576}MB image limit. Downscale it first ` +
+      `(e.g. \`convert '${p}' -resize 1568x /tmp/small.jpg\`) and read that.`,
+  };
+}
+
 /**
  * When an edit's old_string doesn't match verbatim, the cause is almost
  * always invisible: indentation, tabs vs spaces, or a trailing space. Point
@@ -860,6 +944,13 @@ function nearMissHint(content: string, from: string): string {
     `\nLine ${idx + 1} looks close — whitespace/indentation must match the file byte-for-byte. ` +
     `Re-read that region before retrying:\n${String(idx + 1).padStart(6)}\t${lines[idx]}`
   );
+}
+
+/** Replace the first occurrence of `from` with `to`, both taken literally. */
+function spliceOnce(content: string, from: string, to: string): string {
+  const idx = content.indexOf(from);
+  if (idx === -1) return content;
+  return content.slice(0, idx) + to + content.slice(idx + from.length);
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
