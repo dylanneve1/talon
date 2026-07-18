@@ -182,6 +182,54 @@ Map<String, List<ClientMessage>> _demoMessages() => {
           tokensOut: 220,
         ),
       ],
+      'c2': [
+        ClientMessage(
+          id: 'n1',
+          chatId: 'c2',
+          role: Role.user,
+          text: 'Disk is at 94% — what can we prune safely?',
+          ts: _ts(52),
+        ),
+        ClientMessage(
+          id: 'n2',
+          chatId: 'c2',
+          role: Role.assistant,
+          text: 'Old build artifacts are the bulk of it. Preview first:\n\n'
+              '```bash\n'
+              'du -sh ~/.talon/workspace/builds/* | sort -rh | head -n 5\n'
+              'find ~/.talon/workspace/builds -mtime +30 -name "*.apk"\n'
+              '```\n\n'
+              'Then prune anything older than 30 days with `-delete`. '
+              'Current usage:\n\n'
+              '```\n'
+              'Filesystem      Size  Used Avail Use%\n'
+              '/dev/sda1        75G   70G  4.9G  94%\n'
+              '```\n\n'
+              'Want me to run the cleanup?',
+          ts: _ts(50),
+          durationMs: 6200,
+          tokensIn: 1400,
+          tokensOut: 310,
+        ),
+        ClientMessage(
+          id: 'n3',
+          chatId: 'c2',
+          role: Role.user,
+          text: 'Yes, prune it.',
+          ts: _ts(40),
+        ),
+        ClientMessage(
+          id: 'n4',
+          chatId: 'c2',
+          role: Role.assistant,
+          text: 'Freed 3.1G by pruning old builds.',
+          ts: _ts(38),
+          reactions: ['🔥'],
+          durationMs: 12800,
+          tokensIn: 2100,
+          tokensOut: 90,
+        ),
+      ],
     };
 
 List<PluginInfo> _demoPlugins() => const [
@@ -409,6 +457,24 @@ void main() {
     addTearDown(state.dispose);
     await tester.pumpWidget(_app(RootView(state: state)));
     await _shoot(tester, 'phone_chat_accent');
+  });
+
+  testWidgets('phone · conversation (code blocks)', (tester) async {
+    _phone(tester);
+    final state = _demoState(narrow: true, select: 'c2');
+    addTearDown(state.dispose);
+    await tester.pumpWidget(_app(RootView(state: state)));
+    await _shoot(tester, 'phone_chat_code');
+  });
+
+  testWidgets('phone · conversation (code blocks, light)', (tester) async {
+    _phone(tester);
+    TalonTheme.mode.value = ThemeMode.light;
+    TalonTheme.apply(Brightness.light);
+    final state = _demoState(narrow: true, select: 'c2');
+    addTearDown(state.dispose);
+    await tester.pumpWidget(_app(RootView(state: state)));
+    await _shoot(tester, 'phone_chat_code_light');
   });
 
   testWidgets('phone · connect (first run)', (tester) async {

@@ -5,6 +5,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'assistant_surface.dart';
+import 'code_block.dart';
 import 'markdown.dart';
 import 'tool_timeline.dart';
 
@@ -127,6 +128,10 @@ class _StreamingText extends StatelessWidget {
         Flexible(
           child: MarkdownBody(
             data: text,
+            // Same builder as finalized messages — without it, a code block
+            // renders as a bare grey slab while streaming and then jumps to
+            // the framed panel on finalize.
+            builders: {'code': CodeElementBuilder()},
             styleSheet: talonMarkdownStyle(),
           ),
         ),

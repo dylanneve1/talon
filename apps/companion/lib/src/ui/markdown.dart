@@ -30,17 +30,14 @@ MarkdownStyleSheet talonMarkdownStyle() {
       fontFamily: 'JetBrains Mono',
       fontSize: 13.2,
     ),
-    // Fenced blocks are rendered by CodeElementBuilder (its own framed panel);
-    // this decoration only backs the rare block that falls through. Keep it
-    // frameless on light so it doesn't paint a grey slab behind the code.
-    codeblockDecoration: BoxDecoration(
-      color: TalonTheme.isDark
-          ? TalonColors.void0.withValues(alpha: 0.72)
-          : Colors.transparent,
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: TalonColors.glassStroke),
-    ),
-    codeblockPadding: const EdgeInsets.all(14),
+    // Fenced code chrome lives entirely in CodeElementBuilder's framed panel.
+    // flutter_markdown ALSO wraps the pre element in a Container carrying
+    // this decoration — a visible one here double-frames every code block
+    // (border inside border, slab behind panel). Empty, not null: the
+    // wrapping Container clips with Clip.hardEdge, which asserts a non-null
+    // decoration.
+    codeblockDecoration: const BoxDecoration(),
+    codeblockPadding: EdgeInsets.zero,
     blockquoteDecoration: BoxDecoration(
       color: TalonColors.glassFill,
       borderRadius: BorderRadius.circular(8),

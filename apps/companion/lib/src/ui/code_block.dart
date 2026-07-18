@@ -40,6 +40,10 @@ class CodeBlock extends StatefulWidget {
 class _CodeBlockState extends State<CodeBlock> {
   bool _copied = false;
 
+  /// Tabs render as a single space-ish advance in Flutter text, collapsing
+  /// indentation — expand for display. The clipboard keeps the original.
+  String get _display => widget.code.replaceAll('\t', '    ');
+
   Future<void> _copy() async {
     await Clipboard.setData(ClipboardData(text: widget.code));
     if (!mounted) return;
@@ -119,32 +123,125 @@ class _CodeBlockState extends State<CodeBlock> {
               ],
             ),
           ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          _FadingHScroll(
             padding: const EdgeInsets.all(12),
-            child: widget.language.isEmpty
-                ? SelectableText(
-                    widget.code,
-                    style: TalonType.mono.copyWith(fontSize: 12.5, height: 1.5),
-                  )
-                : Builder(builder: (context) {
-                    final base = TalonTheme.isDark
-                        ? atomOneDarkTheme
-                        : atomOneLightTheme;
-                    return HighlightView(
-                      widget.code,
-                      language: widget.language,
-                      theme: {
-                        ...base,
-                        'root': (base['root'] ?? const TextStyle())
-                            .copyWith(backgroundColor: Colors.transparent),
-                      },
-                      textStyle:
+            // SelectionArea makes both branches selectable — HighlightView
+            // is a plain RichText, so without it highlighted code (unlike
+            // the plain branch) couldn't be selected at all.
+            child: SelectionArea(
+              child: widget.language.isEmpty
+                  ? Text(
+                      _display,
+                      style:
                           TalonType.mono.copyWith(fontSize: 12.5, height: 1.5),
-                    );
-                  }),
+                    )
+                  : Builder(builder: (context) {
+                      final base = TalonTheme.isDark
+                          ? atomOneDarkTheme
+                          : atomOneLightTheme;
+                      return HighlightView(
+                        _display,
+                        language: widget.language,
+                        theme: {
+                          ...base,
+                          'root': (base['root'] ?? const TextStyle())
+                              .copyWith(backgroundColor: Colors.transparent),
+                        },
+                        textStyle: TalonType.mono
+                            .copyWith(fontSize: 12.5, height: 1.5),
+                      );
+                    }),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+
+/// Horizontal code scroller whose overflowing edge fades out — the cue that
+/// there's more off-screen. A hard clip at the panel border reads as
+/// truncated output, not scrollable code.
+class _FadingHScroll extends StatefulWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  const _FadingHScroll({required this.child, required this.padding});
+
+  @override
+  State<_FadingHScroll> createState() => _FadingHScrollState();
+}
+
+class _FadingHScrollState extends State<_FadingHScroll> {
+  final ScrollController _controller = ScrollController();
+  bool _fadeStart = false;
+  bool _fadeEnd = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_update);
+    // Extents aren't known until after the first layout.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _update());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _update() {
+    if (!mounted || !_controller.hasClients) return;
+    final pos = _controller.position;
+    final start = pos.extentBefore > 1;
+    final end = pos.extentAfter > 1;
+    if (start != _fadeStart || end != _fadeEnd) {
+      setState(() {
+        _fadeStart = start;
+        _fadeEnd = end;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<ScrollMetricsNotification>(
+      // Fires when content/viewport size changes (e.g. streaming appends a
+      // longer line) — scroll offsets go through the controller listener.
+      onNotification: (_) {
+        _update();
+        return false;
+      },
+      child: ShaderMask(
+        shaderCallback: (rect) {
+          // dstIn: the gradient's alpha masks the child, so the fade works
+          // over any panel/bubble background without color-matching it.
+          final fade = (24.0 / rect.width).clamp(0.0, 0.35);
+          return LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: const [
+              Colors.transparent,
+              Colors.white,
+              Colors.white,
+              Colors.transparent,
+            ],
+            stops: [
+              0,
+              _fadeStart ? fade : 0,
+              _fadeEnd ? 1 - fade : 1,
+              1,
+            ],
+          ).createShader(rect);
+        },
+        blendMode: BlendMode.dstIn,
+        child: SingleChildScrollView(
+          controller: _controller,
+          scrollDirection: Axis.horizontal,
+          padding: widget.padding,
+          child: widget.child,
+        ),
       ),
     );
   }
