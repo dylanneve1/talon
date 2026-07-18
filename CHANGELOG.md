@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.1](https://github.com/dylanneve1/talon/compare/v3.0.0...v3.0.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **cli:** native frontend no longer fail-closes setup & doctor; doctor probes the ns mountpoint ([#580](https://github.com/dylanneve1/talon/issues/580)) ([7c39090](https://github.com/dylanneve1/talon/commit/7c39090af0d6b3492bda2e87e608ee882822b774))
+
 ## [3.0.0](https://github.com/dylanneve1/talon/compare/v2.0.2...v3.0.0) (2026-07-18)
 
 
