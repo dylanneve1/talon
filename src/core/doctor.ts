@@ -12,6 +12,7 @@
  */
 
 import { existsSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { NATIVE_MODULES } from "../native/registry.js";
 import { dirs } from "../util/paths.js";
@@ -103,18 +104,105 @@ export async function checkNativeModules(): Promise<NativeModuleCheck[]> {
   return results;
 }
 
-/** Whether every configured frontend has its required credentials. */
-function frontendConfigured(config: DoctorConfigSlice): boolean {
+/**
+ * The configured frontends that are missing their required credentials.
+ * `terminal` (stdio) and `native` (the client bridge) carry none, so they
+ * are always configured; a name doctor doesn't recognize stays a failure
+ * (fail-closed) so a typo'd frontend is surfaced instead of blessed —
+ * but it is *named* in the report either way, never a bare "not fully
+ * configured" that leaves the operator guessing which entry is at fault.
+ */
+function unconfiguredFrontends(config: DoctorConfigSlice): string[] {
   const fes = Array.isArray(config.frontend)
     ? config.frontend
     : [config.frontend];
-  return fes.every((fe) => {
-    if (fe === "telegram") return Boolean(config.botToken);
-    if (fe === "terminal") return true;
-    if (fe === "teams") return Boolean(config.teamsWebhookUrl);
-    if (fe === "discord") return Boolean(config.discord?.botToken);
-    return false;
+  return fes.filter((fe) => {
+    if (fe === "telegram") return !config.botToken;
+    if (fe === "teams") return !config.teamsWebhookUrl;
+    if (fe === "discord") return !config.discord?.botToken;
+    return fe !== "terminal" && fe !== "native";
   });
+}
+
+/** How long a namespace probe may take before the mount counts as wedged. */
+const NS_PROBE_TIMEOUT_MS = 3_000;
+
+/**
+ * Probe one path without trusting it to answer: a healthy dir stats in
+ * microseconds, a stale FUSE mount from a dead daemon answers ENOTCONN,
+ * and a live-but-stuck daemon's mount HANGS the syscall — so the probe
+ * races a timeout and a hang counts as wedged rather than wedging
+ * doctor itself.
+ */
+async function probeNsPath(
+  path: string,
+): Promise<"ok" | "missing" | "hang" | string> {
+  const result = await Promise.race([
+    stat(path).then(
+      () => "ok" as const,
+      (err) => {
+        const code = (err as NodeJS.ErrnoException).code;
+        return code === "ENOENT" ? ("missing" as const) : (code ?? "error");
+      },
+    ),
+    new Promise<"hang">((resolve) => {
+      setTimeout(() => resolve("hang"), NS_PROBE_TIMEOUT_MS).unref();
+    }),
+  ]);
+  return result;
+}
+
+/**
+ * The namespace mountpoint (~/.talon/ns) from the outside. Doctor runs
+ * in its own process, so it can't read the daemon's in-memory FUSE
+ * status — but every failure mode shows up in the filesystem itself:
+ * missing means no daemon has booted yet, ENOTCONN or a hanging syscall
+ * means a FUSE mount wedged by a dead or stuck daemon (every consumer
+ * of the namespace is broken until it's detached), and a healthy root
+ * either has live views (proc/ answers) or is the plain symlink farm.
+ */
+async function checkNamespaceDir(): Promise<DoctorCheck> {
+  const root = await probeNsPath(dirs.ns);
+  if (root === "missing") {
+    return {
+      label: "Namespace dir not built yet",
+      status: "info",
+      detail: `${dirs.ns} appears at first daemon boot`,
+    };
+  }
+  if (root !== "ok") {
+    return {
+      label:
+        root === "hang"
+          ? "Namespace dir wedged (syscalls hang)"
+          : `Namespace dir wedged (${root})`,
+      status: "fail",
+      detail: `stale FUSE mount at ${dirs.ns} — detach with: fusermount3 -uz ${dirs.ns} (or: umount -l ${dirs.ns})`,
+    };
+  }
+  // Root answers. proc/ is served over the FUSE bridge, so it gets its
+  // own hang-guarded probe: present = live views, absent = symlink farm.
+  const proc = await probeNsPath(`${dirs.ns}/proc`);
+  if (proc === "ok") {
+    return {
+      label: `Namespace dir: ${dirs.ns}`,
+      status: "ok",
+      detail: "live views mounted (proc/ answering)",
+    };
+  }
+  if (proc === "missing") {
+    return {
+      label: `Namespace dir: ${dirs.ns}`,
+      status: "ok",
+      detail: "symlink farm (no live views — daemon off or FUSE not mounted)",
+    };
+  }
+  return {
+    label: `Namespace live views unhealthy (proc/ ${proc === "hang" ? "hangs" : proc})`,
+    status: "warn",
+    detail: `file mounts still work; detach the mount with: fusermount3 -uz ${dirs.ns}`,
+    issue: true,
+  };
 }
 
 function binaryOnPath(name: string): boolean {
@@ -327,14 +415,19 @@ export async function collectDoctorReport(opts: {
     const fes = Array.isArray(opts.config.frontend)
       ? opts.config.frontend
       : [opts.config.frontend];
+    const missing = unconfiguredFrontends(opts.config);
     checks.push(
-      frontendConfigured(opts.config)
+      missing.length === 0
         ? {
             label: `Frontend: ${fes.join(", ")}`,
             status: "ok",
             detail: "configured",
           }
-        : { label: "Frontend not fully configured", status: "fail" },
+        : {
+            label: `Frontend not fully configured: ${missing.join(", ")}`,
+            status: "fail",
+            detail: "missing credentials in talon.json (or unknown frontend)",
+          },
     );
   } else {
     checks.push({ label: "No config file", status: "fail" });
@@ -345,6 +438,8 @@ export async function collectDoctorReport(opts: {
       ? { label: "Workspace", status: "ok", detail: dirs.root }
       : { label: "Workspace missing", status: "warn" },
   );
+
+  checks.push(await checkNamespaceDir());
 
   // The warden is optional by design (built per-arch, absent on plain
   // npm installs), so a missing binary is informational — triggers run

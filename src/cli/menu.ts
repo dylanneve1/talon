@@ -21,7 +21,7 @@ export async function mainMenu(): Promise<void> {
   if (!existsSync(CONFIG_FILE) || !isConfigured(loadConfig())) {
     p.intro(pc.inverse(" Welcome to Talon "));
     p.note(
-      "Talon is an agentic AI harness.\nSupports Telegram and Terminal.\nLet's get you set up.",
+      "Talon is an agentic AI harness.\nRuns on Telegram, Discord, Teams, Terminal,\nand the native client bridge.\nLet's get you set up.",
       "First time?",
     );
     await runSetup();
@@ -44,7 +44,9 @@ export async function mainMenu(): Promise<void> {
           ? "Teams"
           : f === "discord"
             ? "Discord"
-            : "Terminal",
+            : f === "native"
+              ? "Native"
+              : "Terminal",
     )
     .join(" + ");
 

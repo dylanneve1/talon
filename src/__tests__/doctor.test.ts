@@ -66,14 +66,54 @@ describe("collectDoctorReport", () => {
     expect(report.native.every((m) => m.ok)).toBe(true);
   });
 
-  it("flags an unconfigured telegram frontend", async () => {
+  it("flags an unconfigured telegram frontend by name", async () => {
     const report = await collectDoctorReport({
       hasConfigFile: true,
       config: { frontend: "telegram", backend: "opencode" },
     });
     const labels = report.checks.map((c) => c.label);
-    expect(labels).toContain("Frontend not fully configured");
+    expect(labels).toContain("Frontend not fully configured: telegram");
     expect(report.issues).toBeGreaterThanOrEqual(1);
+  });
+
+  it("treats the credential-free native frontend as configured", async () => {
+    const report = await collectDoctorReport({
+      hasConfigFile: true,
+      config: { frontend: ["terminal", "native"], backend: "kilo" },
+    });
+    const labels = report.checks.map((c) => c.label);
+    expect(labels).toContain("Frontend: terminal, native");
+    expect(labels.some((l) => l.startsWith("Frontend not fully"))).toBe(false);
+  });
+
+  it("names only the offending frontend in a mixed config", async () => {
+    const report = await collectDoctorReport({
+      hasConfigFile: true,
+      config: { frontend: ["native", "telegram"], backend: "kilo" },
+    });
+    const labels = report.checks.map((c) => c.label);
+    expect(labels).toContain("Frontend not fully configured: telegram");
+  });
+
+  it("fail-closes on an unknown frontend name, and names it", async () => {
+    const report = await collectDoctorReport({
+      hasConfigFile: true,
+      config: { frontend: ["native", "carrier-pigeon"], backend: "kilo" },
+    });
+    const labels = report.checks.map((c) => c.label);
+    expect(labels).toContain("Frontend not fully configured: carrier-pigeon");
+  });
+
+  it("reports the namespace dir state (ok or not built, never absent)", async () => {
+    const report = await collectDoctorReport({
+      hasConfigFile: true,
+      config: { frontend: "terminal", backend: "kilo" },
+    });
+    const ns = report.checks.find((c) => c.label.startsWith("Namespace dir"));
+    expect(ns).toBeDefined();
+    // Whatever this machine's state, a plain dir or absent dir is never
+    // an issue — only a wedged FUSE mount may fail, and CI has none.
+    expect(["ok", "info"]).toContain(ns!.status);
   });
 
   it("counts warn checks marked as issues (missing openai-agents auth)", async () => {

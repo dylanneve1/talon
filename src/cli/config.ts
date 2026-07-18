@@ -97,9 +97,11 @@ export function isConfigured(config: Config): boolean {
     : [config.frontend];
   return fes.every((fe) => {
     if (fe === "telegram") return !!config.botToken;
-    if (fe === "terminal") return true;
     if (fe === "teams") return !!config.teamsWebhookUrl;
     if (fe === "discord") return !!config.discord?.botToken;
-    return false;
+    // terminal (stdio) and native (the client bridge) carry no
+    // credentials; unknown names fail closed so a typo'd frontend sends
+    // the user to setup instead of a daemon that can't start.
+    return fe === "terminal" || fe === "native";
   });
 }
