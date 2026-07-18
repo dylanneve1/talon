@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/dylanneve1/talon/compare/v2.0.2...v3.0.0) (2026-07-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **vfs:** remove the talon:// address scheme; reach the namespace by real path ([#578](https://github.com/dylanneve1/talon/issues/578))
+
+### Code Refactoring
+
+* **vfs:** remove the talon:// address scheme; reach the namespace by real path ([#578](https://github.com/dylanneve1/talon/issues/578)) ([e0c477a](https://github.com/dylanneve1/talon/commit/e0c477ab52bb7e40870a662140af9ce587333c1e))
+
 ## [2.0.2](https://github.com/dylanneve1/talon/compare/v2.0.1...v2.0.2) (2026-07-17)
 
 
