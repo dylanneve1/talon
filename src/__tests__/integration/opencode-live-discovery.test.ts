@@ -52,6 +52,7 @@ vi.mock("../../backend/opencode/server.js", () => {
       }
       return testClient;
     }),
+    onServerStop: vi.fn(),
   };
 });
 

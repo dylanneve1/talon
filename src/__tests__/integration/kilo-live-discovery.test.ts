@@ -96,6 +96,7 @@ vi.mock("../../backend/kilo/server.js", () => {
       }
       return testClient;
     }),
+    onServerStop: vi.fn(),
   };
 });
 
