@@ -34,6 +34,7 @@ vi.mock("../util/log.js", () => ({
 }));
 
 vi.mock("../backend/kilo/server.js", () => ({
+  onServerStop: vi.fn(),
   ensureServer: vi.fn(async () => {
     throw new Error(
       "ensureServer should not be called from kilo-quickpicks tests",

@@ -7,12 +7,88 @@
 
 import { getDatabase } from "../db.js";
 import { cronSql } from "../sql/statements.generated.js";
-import type {
-  CatchupPolicy,
-  CronJob,
-  CronJobType,
-  CronRunStatus,
-} from "../cron-store.js";
+import type { CatchupPolicy } from "../../native/scheduler-core.js";
+
+export type CronJobType = "message" | "query";
+
+/** Outcome of the most recent execution — surfaced in list_cron_jobs. */
+export type CronRunStatus = "ok" | "error";
+
+export type CronJob = {
+  id: string;
+  chatId: string;
+  /**
+   * Cron expression (5-field: minute hour day month weekday). Optional — a job
+   * carries EITHER `schedule` (cron mode) OR `everyMs` (interval mode), never
+   * both. The store validator (`isCronJob`) enforces exactly one.
+   */
+  schedule?: string;
+  /**
+   * Fixed interval in milliseconds (interval mode). Mutually exclusive with
+   * `schedule`. The job fires roughly every `everyMs` after its anchor
+   * (`lastRunAt`, else `startAt`, else `createdAt`). Wires the native
+   * scheduler-core interval math (next-due + missed-run catch-up) directly.
+   */
+  everyMs?: number;
+  /** "message" sends content as text; "query" runs content as a Claude prompt with tools */
+  type: CronJobType;
+  /** The message text or query prompt */
+  content: string;
+  /** Human-readable name for the job */
+  name: string;
+  enabled: boolean;
+  createdAt: number;
+  lastRunAt?: number;
+  runCount: number;
+  /** IANA timezone (e.g. "America/New_York"). Defaults to system timezone. */
+  timezone?: string;
+  /**
+   * Optional model override for `query` jobs. Unset = the chat's model. `query`
+   * cron jobs run as an isolated one-shot (no chat session), so unlike triggers
+   * the model may be on a different provider — see `provider`.
+   */
+  model?: string;
+  /**
+   * Optional provider/backend id for the override (e.g. a cheaper provider than
+   * the chat). Requires `model`. Unset = the chat's backend. Since cron runs
+   * isolated, a different provider is fine here.
+   */
+  provider?: string;
+  /**
+   * Optional short brief that becomes the isolated agent's system prompt — what
+   * the job is and how to do it. Useful to orient a cheaper override model.
+   */
+  instructions?: string;
+  /**
+   * Don't fire before this epoch-ms instant (a delayed start / "not before").
+   * Unset = eligible immediately.
+   */
+  startAt?: number;
+  /**
+   * Don't fire after this epoch-ms instant; the job auto-disables once now
+   * passes it (a natural expiry / "until"). Unset = no end.
+   */
+  endAt?: number;
+  /**
+   * Auto-disable after this many total runs (`runCount >= maxRuns`). A value of
+   * 1 makes the job one-shot. Unset = unbounded.
+   */
+  maxRuns?: number;
+  /**
+   * Missed-run policy for runs that were due while Talon was down:
+   *   "skip" (default) — drop them, resume on the next due tick
+   *   "once"           — collapse any number of missed runs into a single catch-up
+   *   "all"            — replay every missed run, capped by CATCHUP_MAX
+   * Decided by the native scheduler-core `catchupRunCount`.
+   */
+  catchup?: CatchupPolicy;
+  /** Status of the most recent execution. */
+  lastStatus?: CronRunStatus;
+  /** Error message from the most recent failed execution (cleared on success). */
+  lastError?: string;
+  /** Wall-clock duration of the most recent execution, in ms. */
+  lastDurationMs?: number;
+};
 
 type Row = {
   id: string;

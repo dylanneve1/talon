@@ -37,9 +37,10 @@ const {
   setChatPulseInterval,
   getRegisteredPulseChats,
   loadChatSettings,
-  resolveModelName,
   EFFORT_LEVELS,
 } = await import("../storage/chat-settings.js");
+const { resolveModelId: resolveModelName } =
+  await import("../core/models/catalog.js");
 
 // Register Claude models (static — no SDK subprocess in tests)
 const { registerClaudeModelsStatic, CLAUDE_MODELS_STATIC } =

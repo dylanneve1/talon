@@ -1,10 +1,10 @@
 /**
  * Post-restart resume — respawn persistent triggers, fire late wakes for
- * recently-terminated ones, plus the /proc-based PID-starttime probe and the
- * orphan-kill used to avoid duplicate spawns after an unclean crash.
+ * recently-terminated ones, plus the orphan-kill used to avoid duplicate
+ * spawns after an unclean crash. The /proc PID-starttime probe both this
+ * and spawn use lives in ./pid.ts.
  */
 
-import { readFileSync } from "node:fs";
 import {
   getAllTriggers,
   updateTrigger,
@@ -15,6 +15,7 @@ import { log, logError } from "../../../util/log.js";
 import { depsHolder } from "./state.js";
 import { fireWake } from "./output.js";
 import { spawnTrigger } from "./spawn.js";
+import { readPidStarttimeSync } from "./pid.js";
 
 /**
  * After the dispatcher is wired, walk the store and clean up leftover state
@@ -65,27 +66,6 @@ export async function resumeAfterRestart(): Promise<void> {
     ) {
       await fireWake(t.id, "terminated", t.lastError, /* terminal */ true);
     }
-  }
-}
-
-/**
- * Read field 22 (start time in jiffies since boot) from /proc/<pid>/stat.
- * Returns undefined if /proc isn't available (non-Linux) or the read fails.
- *
- * Parsing note: the `comm` field (2nd) is wrapped in parens and may itself
- * contain ')' — the safe parse finds the LAST ')' and splits the rest on
- * space. After that split, index 19 corresponds to field 22.
- */
-export function readPidStarttimeSync(pid: number): number | undefined {
-  try {
-    const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
-    const lastParen = stat.lastIndexOf(")");
-    if (lastParen < 0) return undefined;
-    const tail = stat.slice(lastParen + 2).split(" ");
-    const starttime = Number(tail[19]);
-    return Number.isFinite(starttime) ? starttime : undefined;
-  } catch {
-    return undefined;
   }
 }
 

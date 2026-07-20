@@ -24,28 +24,8 @@ import { importLegacyJson } from "./legacy-import.js";
 import { setMessageFilePath } from "./history.js";
 import * as repo from "./repositories/media-index-repo.js";
 
-export type MediaEntry = {
-  id: string; // unique key: chatId:msgId
-  chatId: string;
-  msgId: number;
-  senderName: string;
-  type:
-    | "photo"
-    | "document"
-    | "voice"
-    | "video"
-    | "animation"
-    | "audio"
-    | "sticker";
-  filePath: string;
-  caption?: string;
-  timestamp: number;
-  /**
-   * BLAKE3 hex digest of the file contents (native/blake3-wasm).
-   * Filled in asynchronously after addMedia; undefined until hashed.
-   */
-  contentHash?: string;
-};
+export type { MediaEntry } from "./repositories/media-index-repo.js";
+import type { MediaEntry } from "./repositories/media-index-repo.js";
 
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 

@@ -16,6 +16,7 @@ import type {
   TaskRecord,
   TaskState,
 } from "../core/tasks/index.js";
+import type { PublishedEvent } from "../core/bus/index.js";
 
 function formatDuration(ms: number): string {
   const seconds = Math.floor(ms / 1000);
@@ -120,7 +121,10 @@ async function journalTasks(
   const { readJournal } = await import("../storage/journal.js");
   const seen = new Set(liveTasks.map((t) => `${t.id}:${t.queuedAt}`));
   const historical: TaskRecord[] = [];
-  for (const entry of readJournal({ type: "task.settled", limit })) {
+  for (const entry of readJournal<PublishedEvent>({
+    type: "task.settled",
+    limit,
+  })) {
     if (entry.event.type !== "task.settled") continue;
     const task = entry.event.task;
     // (id, queuedAt) identifies a run across surfaces — per-process ids

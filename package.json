@@ -42,6 +42,7 @@
     "src/native/",
     "src/plugins/",
     "src/storage/",
+    "src/types/",
     "src/util/",
     "src/app.ts",
     "src/bootstrap.ts",
@@ -77,6 +78,8 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src/",
+    "depcruise": "depcruise src",
+    "ratchets": "node scripts/check-ratchets.mjs",
     "knip": "knip",
     "format": "prettier --write src/ prompts/",
     "format:check": "prettier --check src/ prompts/",
@@ -130,9 +133,11 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@swc/core": "^1.15.46",
     "@types/node": "^26.0.0",
     "@types/write-file-atomic": "^4.0.3",
     "@vitest/coverage-v8": "^4.1.3",
+    "dependency-cruiser": "^18.1.0",
     "fast-check": "^4.6.0",
     "knip": "^6.3.1",
     "oxlint": "^1.59.0",

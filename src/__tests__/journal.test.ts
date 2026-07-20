@@ -96,7 +96,10 @@ describe("event journal", () => {
       journal.appendToJournal(taskSettled(i, i + 10, i * 100 + 1));
     }
 
-    const settled = journal.readJournal({ type: "task.settled", limit: 3 });
+    const settled = journal.readJournal<PublishedEvent>({
+      type: "task.settled",
+      limit: 3,
+    });
     expect(settled).toHaveLength(3);
     expect(settled.every((e) => e.event.type === "task.settled")).toBe(true);
     // Newest three of the five.

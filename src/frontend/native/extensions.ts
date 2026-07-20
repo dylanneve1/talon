@@ -21,7 +21,7 @@ import type { Backend } from "../../core/agent-runtime/capabilities.js";
 import { performPluginReload } from "../../core/engine/gateway-actions/plugins.js";
 import { getPluginPromptAdditions } from "../../core/plugin/index.js";
 import { listPluginItems, setPluginEnabled } from "../../core/plugin/manage.js";
-import { clearSystemPromptSnapshots } from "../../backend/shared/system-prompt.js";
+import { notifyPromptInputsChanged } from "../../core/prompt/invalidation.js";
 import { listSkills, setSkillEnabled } from "../../storage/skill-store.js";
 import { rebuildSystemPrompt, type TalonConfig } from "../../util/config.js";
 import { log } from "../../util/log.js";
@@ -88,6 +88,6 @@ export function toggleSkill(
   log("native", `Skill ${name} ${enabled ? "enabled" : "disabled"} via bridge`);
   rebuildSystemPrompt(config, getPluginPromptAdditions());
   backend?.control?.updateSystemPrompt?.(config.systemPrompt);
-  clearSystemPromptSnapshots();
+  notifyPromptInputsChanged();
   return { ok: true };
 }

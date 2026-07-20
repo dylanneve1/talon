@@ -22,63 +22,12 @@ import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
 import { importLegacyJson } from "./legacy-import.js";
 import * as repo from "./repositories/chat-settings-repo.js";
-import type { ReasoningEffortLevel } from "../core/types.js";
+import type { ReasoningEffortLevel } from "../types/effort.js";
 
 export type EffortLevel = ReasoningEffortLevel;
 
-export type ChatSettings = {
-  /**
-   * Per-backend model overrides for this chat. Keyed by backend id
-   * (`"claude"`, `"codex"`, `"openai-agents"`, etc). Each entry is the
-   * model id the user picked on that backend.
-   *
-   * Switching backends preserves each side's last pick — your Codex
-   * chat remembers `gpt-5.5`, your OpenRouter chat remembers
-   * `meta-llama/...`. Replaces the single legacy `model` field which
-   * couldn't differentiate per-backend choices and produced the
-   * orphan-bug class (model from backend X persisting when switching
-   * to backend Y).
-   *
-   * Resolution order (see `core/models/active-model.ts`):
-   *   1. `modelByBackend[activeBackend]` if it validates on the catalog
-   *   2. `backend.getDefaultModel()` (canonical for backends that have one)
-   *   3. `config.backendDefaults[activeBackend]` (operator override)
-   *   4. `config.model` (only when activeBackend === config.backend)
-   *   5. null → "No model selected" UI + send guard refuses.
-   */
-  modelByBackend?: Record<string, string>;
-  /**
-   * @deprecated Single-slot model field. Retained for back-compat with
-   * old stores; migrated into `modelByBackend` on load. New writes go
-   * through `setChatModelForBackend` instead.
-   */
-  model?: string;
-  /**
-   * Backend override for this chat. When set, queries from this chat
-   * route to the override backend instead of the global `config.backend`.
-   * The backend controller refcounts pool instances, so two chats on
-   * two different backends keep both alive concurrently.
-   *
-   * Stored as the registry id (e.g. `"claude"`, `"openai-agents"`).
-   * Cleared via `setChatBackend(cid, undefined)` — chat reverts to
-   * the global default.
-   */
-  backend?: string;
-  /** Effort level override (maps to SDK thinking + effort options). */
-  effort?: EffortLevel;
-  /** Whether pulse is enabled for this chat. */
-  pulse?: boolean;
-  /** Per-chat pulse check interval in milliseconds. */
-  pulseIntervalMs?: number;
-  /** Last message ID checked by pulse (persisted to avoid reprocessing on restart). */
-  pulseLastCheckMsgId?: number;
-  /**
-   * When true, the model picker filters to free-tier models by default.
-   * Only meaningful for backends that report free-tier metadata (currently
-   * `openai-agents` against OpenRouter); other backends ignore the flag.
-   */
-  freeOnly?: boolean;
-};
+export type { ChatSettings } from "./repositories/chat-settings-repo.js";
+import type { ChatSettings } from "./repositories/chat-settings-repo.js";
 
 // In-memory cache over the chat_settings table. Reads serve live
 // references from here; writes go through persist() so each mutation
@@ -488,9 +437,3 @@ export const EFFORT_LEVELS: EffortLevel[] = [
   "max",
   "xhigh",
 ];
-
-/**
- * Resolve a user-provided model name (alias or full ID) to the canonical model ID.
- * Delegates to the model registry; falls through unknown names unchanged.
- */
-export { resolveModelId as resolveModelName } from "../core/models/catalog.js";

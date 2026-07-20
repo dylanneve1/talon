@@ -20,8 +20,8 @@ import {
   getChatSettings,
   setChatModel,
   setChatEffort,
-  resolveModelName,
 } from "../../storage/chat-settings.js";
+import { resolveModelId as resolveModelName } from "../../core/models/catalog.js";
 import {
   getAllSessions,
   getSession,

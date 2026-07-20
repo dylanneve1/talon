@@ -13,7 +13,7 @@
  * Kilo ids routinely contain "/" and ":" (e.g. "inclusionai/ling-2.6-1t:free").
  */
 
-import { ensureServer } from "../server.js";
+import { ensureServer, onServerStop } from "../server.js";
 import { createRemoteModelCatalogModule } from "../../remote-server/model-catalog/index.js";
 
 export type {
@@ -40,6 +40,9 @@ const kiloModels = createRemoteModelCatalogModule({
   allowCallbackSeparators: true,
   quickPickLimit: 24,
 });
+
+// A stopped server invalidates the catalog it served.
+onServerStop(kiloModels.clearCache);
 
 export const getOpenCodeModelCatalog = kiloModels.getCatalog;
 export const clearModelCatalogCache = kiloModels.clearCache;

@@ -52,7 +52,7 @@ async function showHistory(limit: number): Promise<void> {
   const { readJournal } = await import("../storage/journal.js");
   let entries;
   try {
-    entries = readJournal({ limit });
+    entries = readJournal<TalonEvent & { at: number }>({ limit });
   } catch (err) {
     console.log(
       `  ${pc.red("✖")} Could not read the journal: ${err instanceof Error ? err.message : err}\n`,

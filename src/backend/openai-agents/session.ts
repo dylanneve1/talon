@@ -251,7 +251,7 @@ export class TalonSession extends MemorySession {
     return current;
   }
 
-  async addItems(items: AgentInputItem[]): Promise<void> {
+  override async addItems(items: AgentInputItem[]): Promise<void> {
     await super.addItems(items);
     await this.enforceCap();
   }

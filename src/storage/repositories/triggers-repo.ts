@@ -8,11 +8,66 @@
 
 import { getDatabase } from "../db.js";
 import { triggersSql } from "../sql/statements.generated.js";
-import type {
-  Trigger,
-  TriggerLanguage,
-  TriggerStatus,
-} from "../trigger-store.js";
+export type TriggerLanguage = "bash" | "python" | "node" | "lua";
+
+export type TriggerStatus =
+  | "pending" // created, not yet spawned (transient)
+  | "running" // child process alive
+  | "fired" // exited 0 — fired final wake message
+  | "errored" // exited non-zero — fired error wake message
+  | "cancelled" // killed by user (trigger_cancel)
+  | "timed_out" // killed by hard timeout
+  | "terminated"; // killed by Talon shutdown / restart
+
+export type Trigger = {
+  id: string;
+  chatId: string;
+  numericChatId: number;
+  name: string;
+  language: TriggerLanguage;
+  /** Absolute path to the script body on disk. */
+  scriptPath: string;
+  /** Absolute path to the run log (interleaved stdout+stderr). */
+  logPath: string;
+  description?: string;
+  status: TriggerStatus;
+  createdAt: number;
+  startedAt?: number;
+  endedAt?: number;
+  /** PID of the child process while running (cleared on exit). */
+  pid?: number;
+  /** Linux /proc/<pid>/stat field 22 (start time in jiffies) captured at
+   *  spawn. Used by killOrphan to defend against PID reuse — start time is
+   *  monotonic per boot and unchanged by exec(), so a match guarantees the
+   *  current owner of the PID is the same process we spawned. Undefined on
+   *  non-Linux platforms. */
+  pidStarttime?: number;
+  /** Hard timeout in seconds. Default 24h, max 7d. */
+  timeoutSeconds: number;
+  /** Exit code on terminal status. */
+  exitCode?: number;
+  /** Total wake-ups fired for this trigger — sum of mid-run TALON_FIRE: lines
+   *  plus the terminal exit fire. Incremented every time fireWake() runs. */
+  fireCount: number;
+  lastFireAt?: number;
+  /** Truncated tail of the most recent fire payload (for diagnostics). */
+  lastFirePayload?: string;
+  lastError?: string;
+  /** If true, the trigger is respawned on Talon startup if it was still
+   *  active when Talon went down. Triggers in any terminal state
+   *  (fired/errored/cancelled) are NOT respawned — only ones interrupted
+   *  by Talon shutdown or crash. (Persistent triggers have no hard timeout,
+   *  so timed_out is unreachable for them — see spawnTrigger.) */
+  persistent?: boolean;
+  /**
+   * Optional model override for the wake-up turn — a model id valid on the
+   * chat's own backend. Unset = inherit the chat's model (preferred). When set,
+   * the fired wake-up runs on this (typically cheaper) model instead, while
+   * still resuming the chat session (restricted to the same backend so
+   * continuity is preserved).
+   */
+  model?: string;
+};
 
 type Row = {
   id: string;

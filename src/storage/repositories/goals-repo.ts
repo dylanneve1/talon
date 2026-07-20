@@ -7,7 +7,26 @@
 
 import { getDatabase } from "../db.js";
 import { goalsSql } from "../sql/statements.generated.js";
-import type { Goal, GoalPriority, GoalStatus } from "../goal-store.js";
+export type GoalStatus = "active" | "paused" | "completed" | "abandoned";
+export type GoalPriority = "low" | "normal" | "high";
+
+/** One persistent goal as the domain sees it. */
+export type Goal = {
+  id: string;
+  /** Chat the goal belongs to — progress reports route back here. */
+  chatId: string;
+  title: string;
+  description?: string;
+  status: GoalStatus;
+  priority: GoalPriority;
+  createdAt: number;
+  updatedAt: number;
+  /** Optional soft deadline (unix ms). */
+  dueAt?: number;
+  /** Rolling note from the last progress update. */
+  lastProgressNote?: string;
+  lastProgressAt?: number;
+};
 
 type Row = {
   id: string;

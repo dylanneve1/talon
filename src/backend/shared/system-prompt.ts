@@ -41,6 +41,7 @@ import {
   type TalonConfig,
 } from "../../util/config.js";
 import { getPluginPromptAdditions } from "../../core/plugin/index.js";
+import { onPromptInputsChanged } from "../../core/prompt/invalidation.js";
 import { frontendForChatId, nonTerminalFrontends } from "./frontends.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -111,6 +112,10 @@ const MAX_SNAPSHOTS = 256;
 export function clearSystemPromptSnapshots(): void {
   snapshots.clear();
 }
+
+// Core and frontends invalidate through the core-side seam — they never
+// import this module (layer rule: nothing above backend/ reaches into it).
+onPromptInputsChanged(clearSystemPromptSnapshots);
 
 // ── Public API ──────────────────────────────────────────────────────────────
 

@@ -60,6 +60,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Architecture boundaries (dependency-cruiser)
+        run: npm run depcruise
+
+      - name: Ratchet gates
+        run: npm run ratchets
+
       - name: Check for .only/.skip in tests
         run: |
           if grep -rn '\.only\s*(' --include='*.test.ts' src/__tests__/ || \

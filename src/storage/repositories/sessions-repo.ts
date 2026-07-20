@@ -19,7 +19,7 @@ import {
   normaliseMetrics,
   type SessionMetrics,
   type SessionState,
-} from "../sessions.js";
+} from "../session-record.js";
 
 type Row = {
   chat_id: string;

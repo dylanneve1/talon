@@ -22,21 +22,8 @@ import { dirname, resolve } from "node:path";
 import { dirs } from "../util/paths.js";
 import * as repo from "./repositories/scripts-repo.js";
 
-export type ScriptLanguage = "bash" | "python" | "node";
-
-export type Script = {
-  id: string;
-  /** Unique lookup key — also the script's filename stem. */
-  name: string;
-  /** One-liner shown in listings; tells the agent when to reach for it. */
-  description: string;
-  language: ScriptLanguage;
-  scriptPath: string;
-  createdAt: number;
-  updatedAt: number;
-  useCount: number;
-  lastUsedAt?: number;
-};
+export type { Script, ScriptLanguage } from "./repositories/scripts-repo.js";
+import type { Script, ScriptLanguage } from "./repositories/scripts-repo.js";
 
 export const SCRIPT_LANGUAGES: readonly ScriptLanguage[] = [
   "bash",

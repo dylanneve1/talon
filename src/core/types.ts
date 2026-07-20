@@ -29,8 +29,8 @@ export type UnifiedModelInfo = {
   unavailableReason?: string;
 };
 
-export type ReasoningEffortLevel =
-  "off" | "minimal" | "low" | "medium" | "high" | "max" | "xhigh";
+export type { ReasoningEffortLevel } from "../types/effort.js";
+import type { ReasoningEffortLevel } from "../types/effort.js";
 
 /** Result of resolving a user's model query. */
 export type UnifiedModelResolution =

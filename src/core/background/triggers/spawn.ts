@@ -25,7 +25,7 @@ import {
 import { commandForLanguage } from "./command.js";
 import { handleStdoutLine, handleStderrLine } from "./output.js";
 import { handleTimeout, finalizeExit, failTrigger } from "./exit.js";
-import { readPidStarttimeSync } from "./resume.js";
+import { readPidStarttimeSync } from "./pid.js";
 
 /**
  * Spawn a trigger's script as a supervised child process.

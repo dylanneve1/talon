@@ -34,7 +34,10 @@ vi.mock("../storage/chat-settings.js", () => ({
     mockSetChatModel(chatId, model),
   setChatEffort: (chatId: string, effort: string | undefined) =>
     mockSetChatEffort(chatId, effort),
-  resolveModelName: (s: string) => mockResolveModelName(s),
+}));
+vi.mock("../core/models/catalog.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../core/models/catalog.js")>()),
+  resolveModelId: (s: string) => mockResolveModelName(s),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

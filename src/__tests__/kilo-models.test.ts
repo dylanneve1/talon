@@ -12,6 +12,7 @@ vi.mock("../util/log.js", () => ({
 // kilo server module still gets imported for type resolution. Stub it so the
 // import doesn't try to spin up a real Kilo process.
 vi.mock("../backend/kilo/server.js", () => ({
+  onServerStop: vi.fn(),
   ensureServer: vi.fn(async () => {
     throw new Error("ensureServer should not be called from kilo-models tests");
   }),

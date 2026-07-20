@@ -8,7 +8,20 @@
 import { escapeLike } from "../../native/sqlguard.js";
 import { getDatabase, inTransaction } from "../db.js";
 import { historySql } from "../sql/statements.generated.js";
-import type { HistoryMessage } from "../history.js";
+/** One chat message as the domain sees it — the shape the rows map to. */
+export type HistoryMessage = {
+  msgId: number;
+  senderId: number;
+  senderName: string;
+  text: string;
+  replyToMsgId?: number;
+  timestamp: number;
+  mediaType?:
+    "photo" | "document" | "voice" | "sticker" | "video" | "animation";
+  stickerFileId?: string;
+  /** Saved file path for downloaded media. */
+  filePath?: string;
+};
 
 type Row = {
   msg_id: number;

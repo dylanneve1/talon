@@ -25,13 +25,12 @@ import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
 import { logWarn } from "../../util/log.js";
 import { buildDeliveryContract } from "../shared/delivery-contract.js";
-import { clearModelCatalogCache } from "./models/index.js";
 import {
   guessProviderID,
   getBucketPriority,
   normalizeModelLookup,
-  parseOpenCodeModelQuery,
-} from "./models/index.js";
+  parseRemoteModelQuery as parseOpenCodeModelQuery,
+} from "../remote-server/model-catalog/index.js";
 import {
   createRemoteServerState,
   ensureRemoteServer as ensureRemoteServerShared,
@@ -154,13 +153,27 @@ async function prewarmPluginMcpServers(): Promise<void> {
 }
 
 /**
+ * Callbacks run when the server stops — cache invalidation lives with the
+ * caches. The models module registers its clear here at load time, so the
+ * server never has to import it (which would be a cycle).
+ */
+const stopHooks = new Set<() => void>();
+
+/** Register a callback to run whenever the Kilo server is stopped. */
+export function onServerStop(hook: () => void): void {
+  stopHooks.add(hook);
+}
+
+/**
  * Stop the local Kilo server (if we own it) and clear caches.
  *
  * Idempotent: safe to call multiple times. If we reused a pre-existing
  * server, this leaves it running — we don't own it.
  */
 export function stopKiloServer(): void {
-  stopRemoteServer(state, clearModelCatalogCache);
+  stopRemoteServer(state, () => {
+    for (const hook of stopHooks) hook();
+  });
 }
 
 // ── Server lifecycle ────────────────────────────────────────────────────────

@@ -15,9 +15,20 @@
  * PRUNE_EVERY appends) rather than on a timer.
  */
 
-import type { PublishedEvent, TalonEvent } from "../core/bus/index.js";
 import { logError } from "../util/log.js";
 import * as repo from "./repositories/journal-repo.js";
+
+/**
+ * The shape the journal needs from a record: a type column to index on
+ * and a publish time. The bus's `PublishedEvent` satisfies it; the
+ * journal itself stays ignorant of the event vocabulary (storage never
+ * imports upward from core) — readers narrow with the type parameter
+ * on `readJournal`.
+ */
+export interface JournalRecord {
+  readonly type: string;
+  readonly at: number;
+}
 
 /** Rows kept after a prune — bounded, but generous for a busy daemon. */
 export const JOURNAL_RETENTION = 20_000;
@@ -26,12 +37,12 @@ export const JOURNAL_RETENTION = 20_000;
 const PRUNE_EVERY = 500;
 
 /** One journal record: the event plus its durable cursor and time. */
-export interface JournalEntry {
+export interface JournalEntry<E extends JournalRecord = JournalRecord> {
   /** Durable, monotonic cursor — survives restarts (unlike bus ids). */
   readonly seq: number;
   /** Publish time, epoch ms. */
   readonly at: number;
-  readonly event: TalonEvent;
+  readonly event: E;
 }
 
 let appendsSincePrune = 0;
@@ -42,7 +53,7 @@ let appendFailureLogged = false;
  * observer, and a full disk or locked database must not break the bus
  * or the publisher behind it.
  */
-export function appendToJournal(event: PublishedEvent): void {
+export function appendToJournal(event: JournalRecord): void {
   try {
     repo.append(event.at, event.type, JSON.stringify(event));
     if (++appendsSincePrune >= PRUNE_EVERY) {
@@ -63,20 +74,20 @@ export function appendToJournal(event: PublishedEvent): void {
  * (indexed). Rows whose payload no longer parses are skipped — a
  * corrupt row must not take down the readable ones around it.
  */
-export function readJournal(
-  options: { limit?: number; type?: TalonEvent["type"] } = {},
-): JournalEntry[] {
+export function readJournal<E extends JournalRecord = JournalRecord>(
+  options: { limit?: number; type?: E["type"] } = {},
+): JournalEntry<E>[] {
   const limit = options.limit ?? 100;
   const rows = options.type
     ? repo.recentByType(options.type, limit)
     : repo.recent(limit);
-  const entries: JournalEntry[] = [];
+  const entries: JournalEntry<E>[] = [];
   for (const row of rows) {
     try {
       entries.push({
         seq: row.seq,
         at: row.at,
-        event: JSON.parse(row.payload) as TalonEvent,
+        event: JSON.parse(row.payload) as E,
       });
     } catch {
       // skip the corrupt row

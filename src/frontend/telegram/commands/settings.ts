@@ -9,9 +9,9 @@ import {
   setChatBackend,
   setChatEffort,
   setChatPulseInterval,
-  resolveModelName,
   type EffortLevel,
 } from "../../../storage/chat-settings.js";
+import { resolveModelId as resolveModelName } from "../../../core/models/catalog.js";
 import {
   registerChat,
   disablePulse,

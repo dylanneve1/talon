@@ -11,8 +11,8 @@ import type { Context } from "grammy";
 import {
   setChatModelForBackend,
   setChatBackend,
-  resolveModelName,
 } from "../../../storage/chat-settings.js";
+import { resolveModelId as resolveModelName } from "../../../core/models/catalog.js";
 import { resetSession } from "../../../storage/sessions.js";
 import { clearHistory } from "../../../storage/history.js";
 import {

@@ -8,7 +8,22 @@
 
 import { getDatabase } from "../db.js";
 import { scriptsSql } from "../sql/statements.generated.js";
-import type { Script, ScriptLanguage } from "../script-store.js";
+export type ScriptLanguage = "bash" | "python" | "node";
+
+/** One saved script as the domain sees it. */
+export type Script = {
+  id: string;
+  /** Unique lookup key — also the script's filename stem. */
+  name: string;
+  /** One-liner shown in listings; tells the agent when to reach for it. */
+  description: string;
+  language: ScriptLanguage;
+  scriptPath: string;
+  createdAt: number;
+  updatedAt: number;
+  useCount: number;
+  lastUsedAt?: number;
+};
 
 type Row = {
   id: string;

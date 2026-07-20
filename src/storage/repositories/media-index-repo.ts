@@ -14,7 +14,29 @@
 
 import { getDatabase, inTransaction } from "../db.js";
 import { mediaIndexSql } from "../sql/statements.generated.js";
-import type { MediaEntry } from "../media-index.js";
+/** One indexed media file as the domain sees it. */
+export type MediaEntry = {
+  id: string; // unique key: chatId:msgId
+  chatId: string;
+  msgId: number;
+  senderName: string;
+  type:
+    | "photo"
+    | "document"
+    | "voice"
+    | "video"
+    | "animation"
+    | "audio"
+    | "sticker";
+  filePath: string;
+  caption?: string;
+  timestamp: number;
+  /**
+   * BLAKE3 hex digest of the file contents (native/blake3-wasm).
+   * Filled in asynchronously after addMedia; undefined until hashed.
+   */
+  contentHash?: string;
+};
 
 type Row = {
   chat_id: string;

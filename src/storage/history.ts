@@ -26,19 +26,8 @@ import { formatSmartTimestamp, formatRelativeAge } from "../util/time.js";
 import { importLegacyJson } from "./legacy-import.js";
 import * as repo from "./repositories/history-repo.js";
 
-export type HistoryMessage = {
-  msgId: number;
-  senderId: number;
-  senderName: string;
-  text: string;
-  replyToMsgId?: number;
-  timestamp: number;
-  mediaType?:
-    "photo" | "document" | "voice" | "sticker" | "video" | "animation";
-  stickerFileId?: string;
-  /** Saved file path for downloaded media. */
-  filePath?: string;
-};
+export type { HistoryMessage } from "./repositories/history-repo.js";
+import type { HistoryMessage } from "./repositories/history-repo.js";
 
 // ── Persistence lifecycle ───────────────────────────────────────────────────
 

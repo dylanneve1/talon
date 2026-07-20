@@ -12,7 +12,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import type { TalonPlugin } from "../../core/plugin/index.js";
+import type { TalonPlugin } from "../../core/plugin/types.js";
 import { log, logWarn } from "../../util/log.js";
 
 /**

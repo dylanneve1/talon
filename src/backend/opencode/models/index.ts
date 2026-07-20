@@ -12,7 +12,7 @@
  * stay at 4 and only short separator-free ids are embedded raw.
  */
 
-import { ensureServer } from "../server.js";
+import { ensureServer, onServerStop } from "../server.js";
 import { createRemoteModelCatalogModule } from "../../remote-server/model-catalog/index.js";
 
 export type {
@@ -39,6 +39,9 @@ const opencodeModels = createRemoteModelCatalogModule({
   allowCallbackSeparators: false,
   quickPickLimit: 4,
 });
+
+// A stopped server invalidates the catalog it served.
+onServerStop(opencodeModels.clearCache);
 
 export const getOpenCodeModelCatalog = opencodeModels.getCatalog;
 export const clearModelCatalogCache = opencodeModels.clearCache;

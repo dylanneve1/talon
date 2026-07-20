@@ -21,7 +21,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { TalonPlugin } from "../../core/plugin/index.js";
+import type { TalonPlugin } from "../../core/plugin/types.js";
 import { log, logWarn } from "../../util/log.js";
 import { dirs } from "../../util/paths.js";
 

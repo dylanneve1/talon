@@ -22,8 +22,8 @@ export async function performPluginReload(
   const { reloadPlugins, getPluginPromptAdditions } =
     await import("../../plugin/index.js");
   const { rebuildSystemPrompt } = await import("../../../util/config.js");
-  const { clearSystemPromptSnapshots } =
-    await import("../../../backend/shared/system-prompt.js");
+  const { notifyPromptInputsChanged } =
+    await import("../../prompt/invalidation.js");
 
   // reloadPlugins reads + validates config internally — no double read.
   // Frontends are derived from config if not explicitly provided.
@@ -37,7 +37,7 @@ export async function performPluginReload(
   // Plugin prompt additions changed — drop per-session prompt
   // snapshots so every chat's next turn picks up the new prompt
   // (deliberate one-time cache re-write per live session).
-  clearSystemPromptSnapshots();
+  notifyPromptInputsChanged();
 
   return { names };
 }

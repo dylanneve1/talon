@@ -17,25 +17,16 @@
 import { randomUUID } from "node:crypto";
 import * as repo from "./repositories/goals-repo.js";
 
-export type GoalStatus = "active" | "paused" | "completed" | "abandoned";
-export type GoalPriority = "low" | "normal" | "high";
-
-export type Goal = {
-  id: string;
-  /** Chat the goal belongs to — progress reports route back here. */
-  chatId: string;
-  title: string;
-  description?: string;
-  status: GoalStatus;
-  priority: GoalPriority;
-  createdAt: number;
-  updatedAt: number;
-  /** Optional soft deadline (unix ms). */
-  dueAt?: number;
-  /** Rolling note from the last progress update. */
-  lastProgressNote?: string;
-  lastProgressAt?: number;
-};
+export type {
+  Goal,
+  GoalPriority,
+  GoalStatus,
+} from "./repositories/goals-repo.js";
+import type {
+  Goal,
+  GoalPriority,
+  GoalStatus,
+} from "./repositories/goals-repo.js";
 
 export const GOAL_STATUSES: readonly GoalStatus[] = [
   "active",

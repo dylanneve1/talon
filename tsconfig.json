@@ -5,6 +5,12 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "strict": true,
+    // Beyond-strict gates. Two more are measured but not yet on — the fix
+    // waves are their own PRs: noUncheckedIndexedAccess (666 errors),
+    // exactOptionalPropertyTypes (303 errors).
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "outDir": "dist",
