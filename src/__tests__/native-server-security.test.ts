@@ -104,10 +104,9 @@ describe("bridge server security posture", () => {
 
   it("serves the full /health to an authenticated client", async () => {
     const port = await startServer("secret");
-    const body = (await (await get(port, "/health", "secret")).json()) as Record<
-      string,
-      unknown
-    >;
+    const body = (await (
+      await get(port, "/health", "secret")
+    ).json()) as Record<string, unknown>;
     expect(body.botName).toBe("Talon");
     expect(body.backend).toBe("test");
     expect(body.activeChats).toBe(2);
