@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.0](https://github.com/dylanneve1/talon/compare/v3.0.5...v3.1.0) (2026-07-21)
+
+
+### Features
+
+* **companion:** desktop keyboard shortcuts help dialog ([#592](https://github.com/dylanneve1/talon/issues/592)) ([613c94e](https://github.com/dylanneve1/talon/commit/613c94e74f45562c596192a9a42d489e28a4db5d))
+
 ## [3.0.5](https://github.com/dylanneve1/talon/compare/v3.0.4...v3.0.5) (2026-07-18)
 
 
