@@ -463,7 +463,14 @@ describe("native mesh bridge routes", () => {
   it("advertises mesh in health and auth-protects mesh routes", async () => {
     const { server, port } = await startMeshServer();
     try {
-      const health = await fetch(`http://127.0.0.1:${port}/health`);
+      // Capability advertisement is for paired clients — the pre-auth
+      // /health body stays down to pairing essentials.
+      const probe = await fetch(`http://127.0.0.1:${port}/health`);
+      expect(await probe.json()).not.toHaveProperty("capabilities");
+
+      const health = await fetch(`http://127.0.0.1:${port}/health`, {
+        headers: { Authorization: "Bearer secret" },
+      });
       expect(await health.json()).toMatchObject({
         capabilities: ["mesh", "mesh-commands", "mesh-file-stream"],
       });

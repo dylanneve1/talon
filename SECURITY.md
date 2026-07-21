@@ -39,6 +39,12 @@ Instead, use [GitHub's private vulnerability reporting](https://github.com/dylan
 - **Bridge auth**: bearer-token auth with constant-time comparison. A
   non-loopback bind with no configured token auto-mints a persistent one
   (`~/.talon/keys/bridge-token`) — the bridge is never open on the network.
+- **Brute-force lockout**: an address presenting repeated wrong tokens is
+  refused (HTTP 429) for a cooldown window, and the lockout is logged for
+  fail2ban-style tooling. Tokenless probes don't count — only wrong secrets.
+- **Minimal pre-auth surface**: unauthenticated `/health` serves only what
+  pairing needs (identity, protocol version, certificate fingerprint);
+  operational details require the token.
 - **At rest**: `~/.talon/`, `data/`, and `keys/` are clamped to owner-only
   (0700) on every boot; `config.json`, `talon.log`, `talon.db`, and the
   Telegram session file are clamped to 0600.

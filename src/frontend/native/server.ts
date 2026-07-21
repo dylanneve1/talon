@@ -25,7 +25,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { extname } from "node:path";
-import { log, logError, logDebug } from "../../util/log.js";
+import { log, logError, logDebug, logWarn } from "../../util/log.js";
 import { formatFingerprint, type BridgeTlsIdentity } from "./tls.js";
 import {
   BRIDGE_PROTOCOL_VERSION,
@@ -149,12 +149,32 @@ const MAX_BODY_BYTES = 256 * 1024;
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const PORT_FALLBACKS = 5;
 
+// Failed-auth lockout: after this many wrong tokens from one address inside
+// the window, that address gets 429s until the window lapses. The token's
+// 256 bits make brute force hopeless anyway — this is about not letting an
+// internet-facing bridge be hammered for free (and giving fail2ban-style
+// tooling a clean signal in the log). Only *presented-and-wrong* secrets
+// count: tokenless probes are just scanners finding a locked door.
+const AUTH_LOCKOUT_MAX_FAILURES = 20;
+const AUTH_LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
+/** Hard cap on tracked addresses so the map can't become a memory lever. */
+const AUTH_LOCKOUT_MAX_TRACKED = 10_000;
+
+/**
+ * ok: request carries the right token (or none is required).
+ * anonymous: no credential presented — a pre-pairing probe, not an attack.
+ * bad: a credential was presented and it is wrong.
+ */
+type AuthState = "ok" | "anonymous" | "bad";
+
 export class BridgeServer {
   private server: Server | null = null;
   private clients = new Set<ServerResponse>();
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private port = 0;
   private tlsIdentity: BridgeTlsIdentity | null = null;
+  /** Wrong-token counts per remote address (behind a proxy: per proxy). */
+  private authFailures = new Map<string, { count: number; resetAt: number }>();
 
   constructor(
     private readonly opts: {
@@ -311,21 +331,43 @@ export class BridgeServer {
       return;
     }
 
+    const remote = req.socket.remoteAddress ?? "unknown";
+    if (this.authLockedOut(remote)) {
+      res.writeHead(429, {
+        ...this.jsonHeaders(),
+        "Retry-After": String(Math.ceil(AUTH_LOCKOUT_WINDOW_MS / 1000)),
+      });
+      res.end(
+        JSON.stringify({ ok: false, error: "Too many failed auth attempts" }),
+      );
+      return;
+    }
+
+    const auth = this.authState(req, url);
+    if (auth === "bad") this.recordAuthFailure(remote);
+    else if (auth === "ok") this.authFailures.delete(remote);
+
     // /health is unauthenticated so clients can discover/ping the bridge
-    // before they hold a token. It exposes no chat content.
+    // before they hold a token. Pre-auth it serves only what pairing needs
+    // (identity, protocol, fingerprint) — operational details like bot name,
+    // backend, and chat count are not for internet scanners to enumerate.
     if (method === "GET" && path === "/health") {
-      const s = this.handlers.status();
-      return this.json(res, 200, {
+      const base = {
         app: "talon-bridge",
         ok: true,
         protocol: BRIDGE_PROTOCOL_VERSION,
-        host: this.opts.host,
         port: this.port,
         scheme: this.getScheme(),
         // The certificate's own hash — public by definition (any TLS client
         // sees the certificate), surfaced so pairing UIs can display it.
         fingerprint: this.getFingerprint(),
         authRequired: Boolean(this.opts.token),
+      };
+      if (auth !== "ok") return this.json(res, 200, base);
+      const s = this.handlers.status();
+      return this.json(res, 200, {
+        ...base,
+        host: this.opts.host,
         startedAt: this.opts.startedAt,
         botName: s.botName,
         backend: s.backend,
@@ -335,7 +377,7 @@ export class BridgeServer {
       });
     }
 
-    if (!this.authOk(req, url)) {
+    if (auth !== "ok") {
       return this.json(res, 401, { ok: false, error: "Unauthorized" });
     }
 
@@ -677,17 +719,54 @@ export class BridgeServer {
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
-  private authOk(req: IncomingMessage, url: URL): boolean {
-    if (!this.opts.token) return true;
+  private authState(req: IncomingMessage, url: URL): AuthState {
+    if (!this.opts.token) return "ok";
     const header = req.headers["authorization"];
-    if (
-      typeof header === "string" &&
-      header.startsWith("Bearer ") &&
-      this.tokenMatches(header.slice("Bearer ".length))
-    )
-      return true;
+    const fromHeader =
+      typeof header === "string" && header.startsWith("Bearer ")
+        ? header.slice("Bearer ".length)
+        : null;
     // EventSource can't set headers, so SSE clients pass ?token=… instead.
-    return this.tokenMatches(url.searchParams.get("token"));
+    const candidate = fromHeader ?? url.searchParams.get("token");
+    if (candidate === null) return "anonymous";
+    return this.tokenMatches(candidate) ? "ok" : "bad";
+  }
+
+  private authLockedOut(remote: string): boolean {
+    const entry = this.authFailures.get(remote);
+    if (!entry) return false;
+    if (Date.now() >= entry.resetAt) {
+      this.authFailures.delete(remote);
+      return false;
+    }
+    return entry.count >= AUTH_LOCKOUT_MAX_FAILURES;
+  }
+
+  private recordAuthFailure(remote: string): void {
+    const now = Date.now();
+    const entry = this.authFailures.get(remote);
+    if (!entry || now >= entry.resetAt) {
+      if (this.authFailures.size >= AUTH_LOCKOUT_MAX_TRACKED) {
+        for (const [ip, e] of this.authFailures) {
+          if (now >= e.resetAt) this.authFailures.delete(ip);
+        }
+        // Still saturated after pruning live entries — under that much churn
+        // dropping the newest attacker beats unbounded growth.
+        if (this.authFailures.size >= AUTH_LOCKOUT_MAX_TRACKED) return;
+      }
+      this.authFailures.set(remote, {
+        count: 1,
+        resetAt: now + AUTH_LOCKOUT_WINDOW_MS,
+      });
+      return;
+    }
+    entry.count++;
+    if (entry.count === AUTH_LOCKOUT_MAX_FAILURES) {
+      logWarn(
+        "native",
+        `Bridge auth lockout for ${remote} (${AUTH_LOCKOUT_MAX_FAILURES} wrong tokens in ${AUTH_LOCKOUT_WINDOW_MS / 60_000}m)`,
+      );
+    }
   }
 
   /**
@@ -708,6 +787,8 @@ export class BridgeServer {
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Authorization, Content-Type",
       "Access-Control-Max-Age": "86400",
+      // Every response states its type; never let a browser guess one.
+      "X-Content-Type-Options": "nosniff",
     };
   }
 
