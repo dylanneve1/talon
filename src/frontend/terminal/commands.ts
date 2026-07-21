@@ -15,7 +15,15 @@ import {
   resolveModel as coreResolveModel,
   getModels,
 } from "../../core/models/catalog.js";
-import { buildCacheDisplay } from "../shared/status-context.js";
+import {
+  buildCacheDisplay,
+  buildContextDisplay,
+} from "../shared/status-context.js";
+import {
+  formatDuration,
+  formatTokenCount,
+  formatUsd,
+} from "../shared/format.js";
 import {
   getChatSettings,
   setChatModel,
@@ -282,7 +290,7 @@ export function registerBuiltinCommands(): void {
       let displayCacheRead = u.totalCacheRead;
       let displayCacheWrite = u.totalCacheWrite;
       let backendModelLine = "";
-      let backendContextLine = "";
+      let contextWindow = u.contextWindow;
       ctx.renderer.writeln();
       const nameStr = info.sessionName ? `"${info.sessionName}"  ·  ` : "";
 
@@ -313,12 +321,30 @@ export function registerBuiltinCommands(): void {
         if (modelInfo) {
           backendModelLine = `  ${pc.bold(label)}  ${modelInfo.displayName}  ·  ${modelInfo.providerName}${modelInfo.free ? " · free" : ""}`;
           if (modelInfo.contextWindow) {
-            backendContextLine = cache
-              ? `  ${pc.dim(`context window ${modelInfo.contextWindow.toLocaleString()}  ·  cache ${cache.read.toLocaleString()} / ${cache.write.toLocaleString()}`)}`
-              : `  ${pc.dim(`context window ${modelInfo.contextWindow.toLocaleString()}`)}`;
+            contextWindow ||= modelInfo.contextWindow;
           }
         }
       }
+
+      const context = buildContextDisplay({
+        contextTokens: u.contextTokens,
+        lastPromptTokens: u.lastPromptTokens,
+        contextWindow,
+      });
+      const contextUsed = context.known
+        ? formatTokenCount(context.used)
+        : "unknown";
+      const contextMax = context.max
+        ? formatTokenCount(context.max)
+        : "unknown";
+      const avgResponseMs =
+        info.turns > 0 && u.totalResponseMs
+          ? Math.round(u.totalResponseMs / info.turns)
+          : 0;
+      const fastestResponseMs =
+        Number.isFinite(u.fastestResponseMs) && u.fastestResponseMs > 0
+          ? u.fastestResponseMs
+          : 0;
 
       ctx.renderer.writeln(
         `  ${pc.bold("Session")}  ${nameStr}turns ${info.turns}${cache ? `  ·  ${cache.hitPct}% cache` : ""}`,
@@ -326,12 +352,24 @@ export function registerBuiltinCommands(): void {
       ctx.renderer.writeln(
         `  ${pc.dim(`in ${displayInputTokens.toLocaleString()}  ·  out ${displayOutputTokens.toLocaleString()} tokens`)}`,
       );
+      ctx.renderer.writeln();
+      ctx.renderer.writeln(
+        `  ${pc.bold("Context")}  ${contextUsed} / ${contextMax} (${context.known ? `${context.pct}%` : "unknown"})${context.warn ? pc.yellow("  nearing limit") : ""}`,
+      );
+      ctx.renderer.writeln(
+        `  ${context.warn ? pc.yellow(context.bar) : pc.dim(context.bar)}`,
+      );
+      ctx.renderer.writeln(
+        `  ${pc.dim(`response last ${u.lastResponseMs ? formatDuration(u.lastResponseMs) : "—"}  ·  avg ${avgResponseMs ? formatDuration(avgResponseMs) : "—"}  ·  best ${fastestResponseMs ? formatDuration(fastestResponseMs) : "—"}`)}`,
+      );
+      if (u.estimatedCostUsd > 0) {
+        ctx.renderer.writeln(
+          `  ${pc.dim(`estimated session cost ${formatUsd(u.estimatedCostUsd)}`)}`,
+        );
+      }
       if (backendModelLine) {
         ctx.renderer.writeln();
         ctx.renderer.writeln(backendModelLine);
-        if (backendContextLine) {
-          ctx.renderer.writeln(backendContextLine);
-        }
       }
 
       const plugins = getLoadedPlugins();

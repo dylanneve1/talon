@@ -38,6 +38,12 @@ export function formatTokenCount(n: number): string {
   return String(n);
 }
 
+/** Keep small model costs legible without making larger totals noisy. */
+export function formatUsd(cost: number): string {
+  const safeCost = Number.isFinite(cost) && cost > 0 ? cost : 0;
+  return `$${safeCost > 0.5 ? safeCost.toFixed(2) : safeCost.toFixed(4)}`;
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
   if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;

@@ -329,6 +329,19 @@ describe("createRenderer", () => {
     expect(text).not.toContain("cache");
   });
 
+  it("renderStatusLine shows a non-zero estimated cost", () => {
+    const r = createRenderer(80);
+    output = [];
+    r.renderStatusLine(1500, 0, {
+      model: "Sonnet 4.6",
+      turns: 2,
+      inputTokens: 100,
+      outputTokens: 50,
+      costUsd: 0.01234,
+    });
+    expect(output.join("")).toContain("$0.0123");
+  });
+
   it("renderStatusLine pluralizes tool count correctly", () => {
     const r = createRenderer(80);
 

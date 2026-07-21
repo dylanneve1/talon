@@ -7,6 +7,7 @@
  */
 
 import pc from "picocolors";
+import { formatUsd } from "../shared/format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -193,6 +194,7 @@ export function createRenderer(cols?: number, displayName = "Talon"): Renderer {
     if (typeof info.cacheHitPct === "number") {
       p.push(`${info.cacheHitPct}% cache`);
     }
+    if (info.costUsd > 0) p.push(formatUsd(info.costUsd));
     if (tools > 0) p.push(`${tools} tool${tools > 1 ? "s" : ""}`);
     writeln();
     writeln(`  ${pc.dim(p.join("  ·  "))}`);

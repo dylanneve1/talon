@@ -462,6 +462,8 @@ describe("/status command", () => {
         totalCacheRead: 200,
         totalCacheWrite: 0,
         lastPromptTokens: 100,
+        contextTokens: 100,
+        contextWindow: 200_000,
         estimatedCostUsd: 0.01,
         totalResponseMs: 5000,
         lastResponseMs: 1000,
@@ -470,8 +472,41 @@ describe("/status command", () => {
     });
     const ctx = makeMockContext();
     await tryRunCommand("/status", ctx);
-    expect(ctx.renderer.writeln).toHaveBeenCalled();
+    const output = (ctx.renderer.writeln as ReturnType<typeof vi.fn>).mock.calls
+      .flat()
+      .join(" ");
+    expect(output).toContain("Context");
+    expect(output).toContain("0%");
+    expect(output).toContain("$0.0100");
+    expect(output).toContain("response last 1s");
     expect(ctx.reprompt).toHaveBeenCalled();
+  });
+
+  it("warns when the current context is at least 80% full", async () => {
+    mockGetSessionInfo.mockReturnValueOnce({
+      turns: 2,
+      usage: {
+        totalInputTokens: 10_000,
+        totalOutputTokens: 500,
+        totalCacheRead: 0,
+        totalCacheWrite: 0,
+        lastPromptTokens: 160_000,
+        contextTokens: 160_000,
+        contextWindow: 200_000,
+        estimatedCostUsd: 0,
+        totalResponseMs: 2000,
+        lastResponseMs: 1000,
+        fastestResponseMs: 1000,
+      },
+    });
+
+    const ctx = makeMockContext();
+    await tryRunCommand("/status", ctx);
+    const output = (ctx.renderer.writeln as ReturnType<typeof vi.fn>).mock.calls
+      .flat()
+      .join(" ");
+    expect(output).toContain("80%");
+    expect(output).toContain("nearing limit");
   });
 
   it("displays session name when set", async () => {
@@ -594,7 +629,7 @@ describe("/status command", () => {
       .join(" ");
     expect(output).toContain("1,389,045");
     expect(output).toContain("3,675");
-    expect(output).toContain("204,800");
+    expect(output).toContain("204.8k");
   });
 });
 

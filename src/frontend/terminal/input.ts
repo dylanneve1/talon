@@ -3,7 +3,7 @@
  *
  * Input is a list of parts: text segments and collapsed paste blocks.
  * You can type, paste, type more, paste again. Backspace removes from the end.
- * Enter submits everything. Ctrl+U clears all.
+ * Enter submits everything. Ctrl+U clears all. Up/Down walk prompt history.
  */
 
 import pc from "picocolors";
@@ -19,9 +19,10 @@ export type InputHandler = {
   resume(): void;
 };
 
-type TextPart = { type: "text"; content: string };
-type PastePart = { type: "paste"; content: string };
-type Part = TextPart | PastePart;
+export type InputPart =
+  { type: "text"; content: string } | { type: "paste"; content: string };
+type TextPart = Extract<InputPart, { type: "text" }>;
+type PastePart = Extract<InputPart, { type: "paste" }>;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,79 @@ const PASTE_COLLAPSE_LINES = 3;
 const PASTE_COLLAPSE_CHARS = 150;
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
+const MAX_HISTORY_ITEMS = 100;
+
+function cloneParts(parts: readonly InputPart[]): InputPart[] {
+  return parts.map((part) => ({ ...part }));
+}
+
+function partsText(parts: readonly InputPart[]): string {
+  return parts
+    .map((part) => part.content)
+    .join("\n")
+    .trim();
+}
+
+/**
+ * In-process prompt history. Keeping this out of the persistent stores avoids
+ * creating a second plaintext transcript while still giving terminal users
+ * the expected Up/Down workflow.
+ */
+export class PromptHistory {
+  private readonly entries: InputPart[][] = [];
+  private cursor = 0;
+  private draft: InputPart[] | null = null;
+
+  constructor(private readonly maxItems = MAX_HISTORY_ITEMS) {}
+
+  add(parts: readonly InputPart[]): void {
+    const text = partsText(parts);
+    if (!text) return;
+
+    const latest = this.entries.at(-1);
+    if (!latest || partsText(latest) !== text) {
+      this.entries.push(cloneParts(parts));
+      if (this.entries.length > this.maxItems) this.entries.shift();
+    }
+    this.resetNavigation();
+  }
+
+  move(
+    direction: "previous" | "next",
+    current: readonly InputPart[],
+  ): InputPart[] | undefined {
+    if (this.entries.length === 0) return undefined;
+
+    if (direction === "previous") {
+      if (this.cursor === this.entries.length) {
+        this.draft = cloneParts(current);
+      }
+      if (this.cursor > 0) this.cursor--;
+      return cloneParts(this.entries[this.cursor]!);
+    }
+
+    if (this.cursor === this.entries.length) return undefined;
+    if (this.cursor < this.entries.length - 1) {
+      this.cursor++;
+      return cloneParts(this.entries[this.cursor]!);
+    }
+
+    this.cursor = this.entries.length;
+    return cloneParts(this.draft ?? [{ type: "text", content: "" }]);
+  }
+
+  /** Preserve an edited recalled prompt as the current draft. */
+  detach(parts: readonly InputPart[]): void {
+    if (this.cursor === this.entries.length) return;
+    this.cursor = this.entries.length;
+    this.draft = cloneParts(parts);
+  }
+
+  resetNavigation(): void {
+    this.cursor = this.entries.length;
+    this.draft = null;
+  }
+}
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
@@ -38,7 +112,8 @@ export function createInput(promptStr: string): InputHandler {
   let paused = false;
 
   // Input is an ordered list of parts
-  let parts: Part[] = [{ type: "text", content: "" }];
+  let parts: InputPart[] = [{ type: "text", content: "" }];
+  const history = new PromptHistory();
 
   // Bracketed paste accumulation
   let inPaste = false;
@@ -46,7 +121,7 @@ export function createInput(promptStr: string): InputHandler {
 
   // ── Helpers ──
 
-  function lastPart(): Part {
+  function lastPart(): InputPart {
     return parts[parts.length - 1]!;
   }
 
@@ -99,18 +174,17 @@ export function createInput(promptStr: string): InputHandler {
   }
 
   function getFullText(): string {
-    return parts
-      .map((p) => p.content)
-      .join("\n")
-      .trim();
+    return partsText(parts);
   }
 
   function clear(): void {
     parts = [{ type: "text", content: "" }];
+    history.resetNavigation();
   }
 
   function submit(): void {
     const text = getFullText();
+    if (!pendingResolve) history.add(parts);
     clear();
     process.stdout.write("\n");
 
@@ -135,6 +209,7 @@ export function createInput(promptStr: string): InputHandler {
       // Short paste — inline into current text part
       ensureTrailingText().content += text.replace(/\n/g, " ");
     }
+    history.detach(parts);
     redraw();
   }
 
@@ -160,6 +235,14 @@ export function createInput(promptStr: string): InputHandler {
       if (parts.length === 0) parts.push({ type: "text", content: "" });
       ensureTrailingText();
     }
+    history.detach(parts);
+    redraw();
+  }
+
+  function navigateHistory(direction: "previous" | "next"): void {
+    const recalled = history.move(direction, parts);
+    if (!recalled) return;
+    parts = recalled;
     redraw();
   }
 
@@ -236,9 +319,22 @@ export function createInput(promptStr: string): InputHandler {
 
       if (code === 0x1b) {
         if (i + 1 < chunk.length && chunk[i + 1] === "[") {
-          // ANSI escape sequence (arrows, etc.) — skip
+          // CSI escape sequence. Up/Down navigate history; the rest are
+          // ignored until cursor editing is implemented.
+          let end = i + 2;
+          while (end < chunk.length && chunk.charCodeAt(end) < 0x40) end++;
+          const final = chunk[end];
+          if (final === "A") navigateHistory("previous");
+          if (final === "B") navigateHistory("next");
+          i = end;
+        } else if (
+          i + 2 < chunk.length &&
+          chunk[i + 1] === "O" &&
+          (chunk[i + 2] === "A" || chunk[i + 2] === "B")
+        ) {
+          // Some terminals use application-cursor sequences (ESC O A/B).
+          navigateHistory(chunk[i + 2] === "A" ? "previous" : "next");
           i += 2;
-          while (i < chunk.length && chunk.charCodeAt(i) < 0x40) i++;
         } else if (pendingResolve) {
           // Bare Escape during waitForInput — cancel
           const resolve = pendingResolve;
@@ -253,6 +349,7 @@ export function createInput(promptStr: string): InputHandler {
       if (code === 0x09) {
         // Tab
         ensureTrailingText().content += "  ";
+        history.detach(parts);
         redraw();
         continue;
       }
@@ -261,6 +358,7 @@ export function createInput(promptStr: string): InputHandler {
 
       // Printable char
       ensureTrailingText().content += ch;
+      history.detach(parts);
       redraw();
     }
   });
