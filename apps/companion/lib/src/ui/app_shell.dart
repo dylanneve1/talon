@@ -24,7 +24,7 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   /// Last layout mode reported by the LayoutBuilder.
   bool _narrow = false;
 
@@ -37,13 +37,34 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.state.addListener(_scheduleSync);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.state.removeListener(_scheduleSync);
     super.dispose();
+  }
+
+  /// While a conversation route covers this shell (narrow layout), the
+  /// two-pane LayoutBuilder below is offstage and never sees a resize — so
+  /// growing the window back past the breakpoint would strand the user on
+  /// the pushed route with no sidebar. Watch the window metrics directly:
+  /// crossing the breakpoint re-runs the route sync, which pops the
+  /// conversation and lands on the two-pane layout with the chat still
+  /// selected. The LayoutBuilder keeps owning the onstage transitions.
+  @override
+  void didChangeMetrics() {
+    if (!mounted) return;
+    final view = View.of(context);
+    final wide = view.physicalSize.width / view.devicePixelRatio >=
+        AppShell._wideBreakpoint;
+    if (_narrow == !wide) return;
+    widget.state.setNarrowLayout(!wide);
+    _narrow = !wide;
+    _scheduleSync();
   }
 
   /// Selection/layout changes can arrive mid-build — reconcile the navigator

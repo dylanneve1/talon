@@ -337,10 +337,6 @@ class _AttachButton extends StatelessWidget {
       onPressed: enabled ? onTap : null,
       icon: const Icon(Icons.add_photo_alternate_outlined, size: 20),
       color: TalonColors.textDim,
-      style: IconButton.styleFrom(
-        backgroundColor: TalonColors.surfaceHi.withValues(alpha: 0.72),
-        disabledBackgroundColor: TalonColors.surfaceHi.withValues(alpha: 0.34),
-      ),
       tooltip: 'Attach image',
     );
   }

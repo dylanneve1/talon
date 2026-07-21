@@ -6,6 +6,7 @@ import 'package:talon_companion/src/services/prefs.dart';
 import 'package:talon_companion/src/state/app_state.dart';
 import 'package:talon_companion/src/theme.dart';
 import 'package:talon_companion/src/ui/app_shell.dart';
+import 'package:talon_companion/src/ui/sidebar.dart';
 
 /// The Android back contract: from an open conversation, the system back
 /// button/gesture returns to the chat list; from the list it pops for real
@@ -81,6 +82,44 @@ void main() {
     // From the list, back is NOT consumed — the app may background/exit.
     final poppedAgain = await tester.binding.handlePopRoute();
     expect(poppedAgain, isFalse);
+
+    // Flush AppState's debounced snapshot timer before teardown.
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('re-expanding past the breakpoint restores the two panes',
+      (tester) async {
+    // Drive size through the view (not setSurfaceSize) so the resize fires
+    // didChangeMetrics — the shell can't rely on its LayoutBuilder here,
+    // which is exactly the regression: while the conversation route covers
+    // it, the two-pane layout is offstage and never relays out.
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final state = await seededState();
+    addTearDown(state.dispose);
+    await tester.pumpWidget(host(state));
+    await tester.pumpAndSettle();
+
+    // Wide start: sidebar + conversation, most recent chat adopted.
+    expect(state.selectedChatId, 'c1');
+    expect(find.byType(Sidebar), findsOneWidget);
+
+    // Shrink with the chat open: the conversation becomes a pushed route
+    // covering the list — no sidebar on screen.
+    tester.view.physicalSize = const Size(400, 800);
+    await tester.pumpAndSettle();
+    expect(find.text('hello there'), findsOneWidget);
+    expect(find.byType(Sidebar), findsNothing);
+
+    // Re-expand: the route pops, the two panes return, and the chat is
+    // still selected — no stranded full-screen conversation.
+    tester.view.physicalSize = const Size(1200, 800);
+    await tester.pumpAndSettle();
+    expect(find.byType(Sidebar), findsOneWidget);
+    expect(find.text('hello there'), findsOneWidget);
+    expect(state.selectedChatId, 'c1');
 
     // Flush AppState's debounced snapshot timer before teardown.
     await tester.pump(const Duration(seconds: 3));
