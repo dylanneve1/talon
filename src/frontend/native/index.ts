@@ -75,6 +75,7 @@ import { createNativeActionHandler } from "./actions.js";
 import { getMeshService } from "../../core/mesh/index.js";
 import { removeBridgeDiscovery, writeBridgeDiscovery } from "./discovery.js";
 import { isLoopbackHost, loadOrCreateBridgeTlsIdentity } from "./tls.js";
+import { loadOrCreateBridgeToken } from "./auth.js";
 import { readLogEntries } from "./logs.js";
 import {
   BRIDGE_PROTOCOL_VERSION,
@@ -1200,11 +1201,16 @@ export function createNativeFrontend(
   // Encrypted by default the moment the bridge leaves the machine; loopback
   // stays plain HTTP unless explicitly opted in (`native.tls`).
   const bridgeTls = nativeCfg.tls ?? !isLoopbackHost(bridgeHost);
+  // Never serve the agent API to the network unauthenticated: a non-loopback
+  // bind with no configured token gets a persistent auto-minted one instead.
+  const bridgeToken =
+    nativeCfg.token ??
+    (isLoopbackHost(bridgeHost) ? undefined : loadOrCreateBridgeToken());
   const server = new BridgeServer(
     {
       host: bridgeHost,
       port: nativeCfg.port ?? 19880,
-      token: nativeCfg.token,
+      token: bridgeToken,
       startedAt,
       ...(bridgeTls ? { tls: () => loadOrCreateBridgeTlsIdentity() } : {}),
     },
@@ -1274,7 +1280,7 @@ export function createNativeFrontend(
       const fingerprint = server.getFingerprint();
       await writeBridgeDiscovery({
         port: server.getPort(),
-        token: nativeCfg.token,
+        token: bridgeToken,
         scheme: server.getScheme(),
         ...(fingerprint ? { fingerprint } : {}),
         startedAt: Date.parse(startedAt),

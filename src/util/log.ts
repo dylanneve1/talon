@@ -137,7 +137,8 @@ if (!quiet) {
 if (!IS_VITEST) {
   streams.push({
     level: "trace",
-    stream: createWriteStream(LOG_FILE, { flags: "a" }),
+    // 0600: turns and tool output land here — same sensitivity as history.
+    stream: createWriteStream(LOG_FILE, { flags: "a", mode: 0o600 }),
   });
 }
 

@@ -31,6 +31,18 @@ Instead, use [GitHub's private vulnerability reporting](https://github.com/dylan
 - Status update within 7 days
 - Fix or mitigation for confirmed vulnerabilities as soon as practical
 
+## Security measures
+
+- **Bridge transport**: the companion bridge serves TLS by default whenever it
+  binds a non-loopback host, using a persistent locally-minted certificate
+  (ECDSA P-256) whose SHA-256 fingerprint clients pin on first connect.
+- **Bridge auth**: bearer-token auth with constant-time comparison. A
+  non-loopback bind with no configured token auto-mints a persistent one
+  (`~/.talon/keys/bridge-token`) — the bridge is never open on the network.
+- **At rest**: `~/.talon/`, `data/`, and `keys/` are clamped to owner-only
+  (0700) on every boot; `config.json`, `talon.log`, `talon.db`, and the
+  Telegram session file are clamped to 0600.
+
 ## Scope
 
 Talon is an AI agent with tool access (file system, web, messaging). Security issues of particular interest include:

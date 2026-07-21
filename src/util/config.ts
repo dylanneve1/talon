@@ -2,6 +2,7 @@ import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import writeFileAtomic from "write-file-atomic";
 import { z } from "zod";
 import { dirs, files as pathFiles } from "./paths.js";
+import { hardenTalonPermissions } from "./harden.js";
 import { setTimezone } from "./time.js";
 import { BACKEND_IDS } from "../core/agent-runtime/model-ref.js";
 import {
@@ -137,6 +138,8 @@ const frontendEnum = z.enum([
  * Defaults are loopback-only and unauthenticated (single-machine use). To
  * reach Talon remotely, set `host: "0.0.0.0"` and a `token` — the bridge
  * then requires `Authorization: Bearer <token>` (or `?token=` for SSE).
+ * A non-loopback bind with no token auto-mints a persistent one
+ * (~/.talon/keys/bridge-token) rather than serving the LAN open.
  */
 const nativeConfigSchema = z
   .object({
@@ -150,8 +153,9 @@ const nativeConfigSchema = z
     host: z.string().default("127.0.0.1"),
     /**
      * Optional shared secret. When set, every request must present it as a
-     * bearer token (header) or `?token=` query param (SSE). Required in
-     * practice whenever `host` is not loopback.
+     * bearer token (header) or `?token=` query param (SSE). When unset on a
+     * non-loopback `host`, the bridge mints and persists one automatically
+     * (~/.talon/keys/bridge-token) — the network never gets an open bridge.
      */
     token: z.string().optional(),
     /**
@@ -596,9 +600,11 @@ function ensureConfigFile(): boolean {
   if (!existsSync(dirs.root)) mkdirSync(dirs.root, { recursive: true });
   if (!existsSync(dirs.data)) mkdirSync(dirs.data, { recursive: true });
   if (!existsSync(CONFIG_FILE)) {
+    // Owner-only from birth: the config accumulates bot tokens and API keys.
     writeFileAtomic.sync(
       CONFIG_FILE,
       JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n",
+      { mode: 0o600 },
     );
     return true;
   }
@@ -613,6 +619,7 @@ function ensureConfigFile(): boolean {
 
 export function loadConfig(): TalonConfig {
   ensureConfigFile();
+  hardenTalonPermissions();
   const fileConfig = normalizeDeprecatedFrontendConfig(loadConfigFile());
 
   // Runtime frontend override (TALON_FRONTEND_OVERRIDE). Lets the native
