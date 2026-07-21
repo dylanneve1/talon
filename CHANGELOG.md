@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.1](https://github.com/dylanneve1/talon/compare/v3.1.0...v3.1.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* **security:** closed-by-default bridge auth + owner-only at-rest permissions ([#596](https://github.com/dylanneve1/talon/issues/596)) ([60c983d](https://github.com/dylanneve1/talon/commit/60c983debca2e2d0883a4560e0230b6a76d5f990))
+
 ## [3.1.0](https://github.com/dylanneve1/talon/compare/v3.0.5...v3.1.0) (2026-07-21)
 
 
