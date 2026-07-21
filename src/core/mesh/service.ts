@@ -942,8 +942,7 @@ export class MeshService {
     if (!dispatched.result.ok) {
       return {
         ok: false,
-        text:
-          dispatched.result.message ?? `${target.name} refused the update.`,
+        text: dispatched.result.message ?? `${target.name} refused the update.`,
       };
     }
     return {
