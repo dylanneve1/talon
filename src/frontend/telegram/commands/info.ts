@@ -7,6 +7,8 @@ import { isUserClientReady } from "../userbot.js";
 import { escapeHtml } from "../formatting.js";
 import { formatDuration } from "../helpers/index.js";
 import { getLoadedPlugins } from "../../../core/plugin/index.js";
+import { getMeshService } from "../../../core/mesh/index.js";
+import type { MeshPingResult } from "../../../core/mesh/service.js";
 
 export function registerInfoCommands(bot: Bot): void {
   bot.command("start", (ctx) =>
@@ -42,6 +44,7 @@ export function registerInfoCommands(bot: Bot): void {
         "  /doctor -- environment and native-module health (admin)",
         "  /dream -- force memory consolidation now",
         "  /ping -- health check with latency",
+        "  /mesh -- ping and list companion mesh devices",
         "  /reset -- clear session and start fresh",
         "  /restart -- restart the bot process",
         "  /plugins -- list loaded plugins",
@@ -100,6 +103,50 @@ export function registerInfoCommands(bot: Bot): void {
     }
   });
 
+  bot.command("mesh", async (ctx) => {
+    const sent = await ctx.reply("🛰️ Pinging mesh devices…");
+    let results: MeshPingResult[];
+    try {
+      results = await getMeshService().pingAll();
+    } catch {
+      await editOrReply(
+        bot,
+        ctx.chat.id,
+        sent.message_id,
+        "Could not reach the mesh service.",
+      );
+      return;
+    }
+    if (results.length === 0) {
+      await editOrReply(
+        bot,
+        ctx.chat.id,
+        sent.message_id,
+        "<b>🛰️ Mesh</b>\n\nNo devices have registered yet.",
+      );
+      return;
+    }
+    // Online (reachable first, by latency) before offline; a stable, useful
+    // order for a glance at the fleet.
+    const sorted = [...results].sort((a, b) => {
+      if (a.device.online !== b.device.online) return a.device.online ? -1 : 1;
+      return (a.latencyMs ?? Infinity) - (b.latencyMs ?? Infinity);
+    });
+    const online = results.filter((r) => r.device.online).length;
+    const reachable = results.filter((r) => r.reachable).length;
+    const lines = sorted.map((r) => meshLine(r));
+    await editOrReply(
+      bot,
+      ctx.chat.id,
+      sent.message_id,
+      [
+        `<b>🛰️ Mesh</b> — ${results.length} device(s), ${online} online, ${reachable} responding`,
+        "",
+        ...lines,
+      ].join("\n"),
+    );
+  });
+
   bot.command("plugins", async (ctx) => {
     const plugins = getLoadedPlugins();
     if (plugins.length === 0) {
@@ -122,4 +169,39 @@ export function registerInfoCommands(bot: Bot): void {
       },
     );
   });
+}
+
+/** One `/mesh` line: presence + reachability + latency + platform. */
+function meshLine(r: MeshPingResult): string {
+  const d = r.device;
+  const dot = r.reachable ? "🟢" : d.online ? "🟡" : "⚪";
+  const name = `<b>${escapeHtml(d.name)}</b>`;
+  const bits: string[] = [`${d.platform}`];
+  if (r.reachable && typeof r.latencyMs === "number") {
+    bits.push(`${r.latencyMs}ms`);
+  } else if (d.online && r.error) {
+    bits.push(escapeHtml(r.error));
+  } else if (!d.online) {
+    bits.push(`offline, last seen ${formatDuration(Date.now() - d.lastSeen)}`);
+  }
+  if (typeof d.battery === "number") {
+    bits.push(`${d.battery}%${d.charging ? "⚡" : ""}`);
+  }
+  return `${dot} ${name} — ${bits.join(" · ")}`;
+}
+
+/** Edit the placeholder in place, falling back to a fresh reply. */
+async function editOrReply(
+  bot: Bot,
+  chatId: number,
+  messageId: number,
+  text: string,
+): Promise<void> {
+  try {
+    await bot.api.editMessageText(chatId, messageId, text, {
+      parse_mode: "HTML",
+    });
+  } catch {
+    await bot.api.sendMessage(chatId, text, { parse_mode: "HTML" });
+  }
 }

@@ -1184,3 +1184,45 @@ describe("MeshService registry hygiene", () => {
     expect(res.text).toContain('No mesh device matches "no-such-thing"');
   });
 });
+
+describe("MeshService.pingAll", () => {
+  it("probes an online device and reports its round-trip latency", async () => {
+    const service = await tempService({ commandTimeoutMs: 500 });
+    await registerPhone(service); // online (just registered)
+
+    // Transport that answers the phone's status probe.
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) => {
+        if (cmd.deviceId === "phone" && cmd.name === "status") {
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: "phone",
+            ok: true,
+            data: { name: "Pixel 9" },
+          });
+        }
+      },
+    });
+
+    const results = await service.pingAll();
+    expect(results).toHaveLength(1);
+    const phone = results[0];
+    expect(phone.reachable).toBe(true);
+    expect(typeof phone.latencyMs).toBe("number");
+  });
+
+  it("marks every device unreachable when no transport is attached", async () => {
+    const service = await tempService({ commandTimeoutMs: 200 });
+    await registerPhone(service);
+    const results = await service.pingAll();
+    expect(results).toHaveLength(1);
+    expect(results[0].reachable).toBe(false);
+    expect(results[0].error).toContain("transport");
+  });
+
+  it("returns an empty list when nothing has registered", async () => {
+    const service = await tempService();
+    expect(await service.pingAll()).toEqual([]);
+  });
+});

@@ -54,6 +54,17 @@ export type MeshTransport = {
 
 export type MeshToolResult = { ok: boolean; text: string };
 
+/** Outcome of pinging one device (see {@link MeshService.pingAll}). */
+export type MeshPingResult = {
+  device: DeviceInfo;
+  /** True when the device answered the probe (offline devices are false). */
+  reachable: boolean;
+  /** Round-trip time of the probe, present only when reachable. */
+  latencyMs?: number;
+  /** Why the probe didn't land (offline, no transport, timeout). */
+  error?: string;
+};
+
 export type MeshServiceOptions = {
   /** How long a locate waits for a fresh fix before last-known fallback. */
   freshFixTimeoutMs?: number;
@@ -306,6 +317,36 @@ export class MeshService {
       ok: true,
       text: devices.map((d) => this.deviceLine(d)).join("\n"),
     };
+  }
+
+  /**
+   * Ping every registered device: read the registry, then actively probe
+   * each ONLINE device with a lightweight `status` command (concurrently)
+   * and measure round-trip latency. Offline devices are reported from
+   * presence without a probe (a probe would just burn the timeout). The
+   * structured result powers frontend surfaces like Telegram's /mesh — the
+   * mesh tools stay text-only for the model, this is for humans.
+   */
+  async pingAll(timeoutMs = 5_000): Promise<MeshPingResult[]> {
+    const { devices } = await this.list();
+    const hasTransport = this.transports.size > 0;
+    return Promise.all(
+      devices.map(async (device): Promise<MeshPingResult> => {
+        if (!device.online) return { device, reachable: false };
+        if (!hasTransport) {
+          return { device, reachable: false, error: "no transport connected" };
+        }
+        const start = Date.now();
+        const result = await this.sendCommand(device, "status", {}, timeoutMs);
+        return result.ok
+          ? { device, reachable: true, latencyMs: Date.now() - start }
+          : {
+              device,
+              reachable: false,
+              error: result.message ?? "no response",
+            };
+      }),
+    );
   }
 
   /**
