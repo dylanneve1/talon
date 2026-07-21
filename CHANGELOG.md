@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.0](https://github.com/dylanneve1/talon/compare/v3.1.1...v3.2.0) (2026-07-21)
+
+
+### Features
+
+* **node:** talon-node — headless mesh device for servers (Linux/macOS/Windows) ([#602](https://github.com/dylanneve1/talon/issues/602)) ([09d863b](https://github.com/dylanneve1/talon/commit/09d863b4389796d67816e0801e61264aa1b6e157))
+
 ## [3.1.1](https://github.com/dylanneve1/talon/compare/v3.1.0...v3.1.1) (2026-07-21)
 
 
