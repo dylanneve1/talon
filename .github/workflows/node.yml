@@ -48,9 +48,10 @@ jobs:
       - name: version.txt in sync with package.json
         run: |
           want=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' ../../package.json | head -1)
-          got=$(tr -d '[:space:]' < version.txt)
+          # version.txt is "<semver> # x-release-please-version"; take the first field.
+          got=$(awk 'NF{print $1; exit}' version.txt)
           if [ "$want" != "$got" ]; then
-            echo "version.txt ($got) != package.json ($want) — run scripts/build-all.sh to refresh it" >&2
+            echo "version.txt ($got) != package.json ($want) — release-please bumps it on the release PR; run scripts/build-all.sh to refresh manually" >&2
             exit 1
           fi
 

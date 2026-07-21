@@ -19,8 +19,10 @@ SHA=$(git rev-parse --short HEAD 2>/dev/null || echo dev)
 VERSION="${1:-${PKG_VERSION:-0.0.0}+${SHA}}"
 OUT="${2:-build}"
 
-# Keep the embedded Talon version (bare-build fallback) in sync.
-printf '%s\n' "${PKG_VERSION:-0.0.0}" > version.txt
+# Keep the embedded Talon version (bare-build fallback) in sync. The trailing
+# annotation lets release-please bump this file on the release PR; consumers
+# (main.go, CI) read only the first field.
+printf '%s # x-release-please-version\n' "${PKG_VERSION:-0.0.0}" > version.txt
 
 TARGETS=(
   linux/amd64

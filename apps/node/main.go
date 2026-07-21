@@ -29,9 +29,11 @@ import (
 )
 
 // talonVersion is the Talon release this node was compiled against, embedded
-// from version.txt (kept in sync with the root package.json — CI verifies).
-// It is the fallback identity so even a bare `go build .` reports the right
-// Talon version rather than a placeholder.
+// from version.txt. That file carries the version plus an
+// `x-release-please-version` annotation so release-please bumps it in lockstep
+// with the root package.json on every release PR (CI also verifies the two
+// match). It is the fallback identity so even a bare `go build .` reports the
+// right Talon version rather than a placeholder.
 //
 //go:embed version.txt
 var talonVersion string
@@ -49,8 +51,10 @@ func resolveVersion() string {
 	if v := strings.TrimSpace(ldflagsVersion); v != "" {
 		return v
 	}
-	if v := strings.TrimSpace(talonVersion); v != "" {
-		return v
+	// version.txt carries a trailing "# x-release-please-version" annotation;
+	// take the first whitespace-delimited field so only the semver is reported.
+	if fields := strings.Fields(talonVersion); len(fields) > 0 {
+		return fields[0]
 	}
 	return "dev"
 }

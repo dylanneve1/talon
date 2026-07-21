@@ -12,6 +12,9 @@
     ".": {
       "package-name": "talon",
       "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "generic", "path": "apps/node/version.txt" }
+      ],
       "changelog-sections": [
         { "type": "feat", "section": "Features" },
         { "type": "fix", "section": "Bug Fixes" },
