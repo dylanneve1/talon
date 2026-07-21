@@ -1,8 +1,7 @@
-# htmlents-cpp
+# htmlents-wasm
 
-HTML entity escaping in C++, compiled to `wasm32-freestanding` with the
-pinned Zig toolchain (`zig c++`, pin in `native/.zig-version`;
-`-fno-exceptions -fno-rtti`, no standard library). One single-pass
+HTML entity escaping in Rust, compiled to `wasm32-unknown-unknown`
+(`no_std`, toolchain pinned in `rust-toolchain.toml`). One single-pass
 escaper for Telegram HTML parse mode — every outbound Telegram render
 flows through it — replacing five chained regex passes in JS.
 
@@ -13,7 +12,7 @@ TypeScript consumer: `src/native/htmlents.ts` (used by
 ## ABI
 
 Linear-memory C ABI, no imports. `alloc` / `dealloc` come from the
-shared allocator (`native/shared/walloc.h`); see
+shared allocator (`native/shared/walloc.rs`); see
 `src/native/runtime.ts` for the conventions every native module shares.
 
 - `escape_html(in_ptr, in_len) -> ptr`
@@ -28,5 +27,5 @@ shared allocator (`native/shared/walloc.h`); see
 ## Build
 
 ```sh
-npm run build:cpp   # zig c++ → htmlents.wasm → src/native/htmlents-wasm-bytes.ts
+npm run build:wasm  # cargo → htmlents_wasm.wasm → src/native/htmlents-wasm-bytes.ts
 ```

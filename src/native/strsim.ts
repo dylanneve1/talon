@@ -2,8 +2,8 @@
  * String similarity — TypeScript boundary over the C wasm module.
  *
  * Powers "did you mean ...?" suggestions for unknown Telegram slash
- * commands and unknown CLI subcommands. The C source lives in
- * native/strsim-c and exports a three-function C ABI (alloc / dealloc /
+ * commands and unknown CLI subcommands. The Rust source lives in
+ * native/strsim-wasm and exports a three-function C ABI (alloc / dealloc /
  * levenshtein) — see that module's README for the contract, and
  * src/native/runtime.ts for the embedding and memory conventions
  * shared by every native module.
@@ -29,7 +29,7 @@ import {
 /** Returned by the wasm side when either input exceeds its DP buffer. */
 const OVERFLOW = 0xffffffff;
 
-/** The C-ABI surface exported by native/strsim-c. */
+/** The C-ABI surface exported by native/strsim-wasm. */
 interface StrsimExports extends WasmCoreExports {
   levenshtein(aPtr: number, aLen: number, bPtr: number, bLen: number): number;
 }

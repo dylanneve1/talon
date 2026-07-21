@@ -172,7 +172,7 @@ export async function runCli(): Promise<void> {
       mainMenu();
       break;
     default: {
-      // "did you mean ...?" via the C similarity core (native/strsim-c).
+      // "did you mean ...?" via the native similarity core (native/strsim-wasm).
       const { closestMatch } = await import("../native/strsim.js");
       const suggestion = closestMatch(command, CLI_COMMANDS);
       const hint = suggestion

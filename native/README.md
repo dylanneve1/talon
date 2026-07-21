@@ -1,7 +1,7 @@
 # Talon native plane
 
 Talon's hot paths and policy cores are written in systems languages and
-embedded into the TypeScript runtime. Six embedded modules, five
+embedded into the TypeScript runtime. Six embedded modules, three
 languages, one contract — plus two real executables (a native launcher
 that fronts the CLI, a Rust supervision harness that fronts every
 trigger child) and one in-process napi addon for hashing throughput.
@@ -10,9 +10,9 @@ trigger child) and one in-process napi addon for hashing throughput.
 | --- | --- | --- | --- |
 | [blake3-wasm](blake3-wasm/) | Rust | wasm32-unknown-unknown | media dedupe / content hashing (`src/native/blake3.ts`) |
 | [textops-wasm](textops-wasm/) | Zig | wasm32-freestanding | message splitting for every frontend (`src/native/textops.ts`) |
-| [strsim-c](strsim-c/) | C | wasm32-freestanding | "did you mean ...?" for Telegram + CLI (`src/native/strsim.ts`) |
-| [sqlguard-c](sqlguard-c/) | C | wasm32-freestanding | SQL LIKE / FTS5 escaping for model-controlled input (`src/native/sqlguard.ts`) |
-| [htmlents-cpp](htmlents-cpp/) | C++ | wasm32-freestanding | HTML escaping on every Telegram render (`src/native/htmlents.ts`) |
+| [strsim-wasm](strsim-wasm/) | Rust | wasm32-unknown-unknown | "did you mean ...?" for Telegram + CLI (`src/native/strsim.ts`) |
+| [sqlguard-wasm](sqlguard-wasm/) | Rust | wasm32-unknown-unknown | SQL LIKE / FTS5 escaping for model-controlled input (`src/native/sqlguard.ts`) |
+| [htmlents-wasm](htmlents-wasm/) | Rust | wasm32-unknown-unknown | HTML escaping on every Telegram render (`src/native/htmlents.ts`) |
 | [scheduler-core](scheduler-core/) | Gleam | JavaScript | cron/heartbeat backoff, breaker, catch-up policy (`src/native/scheduler-core.ts`) |
 
 The launcher and the warden are a different kind of native component —
@@ -41,14 +41,14 @@ real per-arch artifact like the executables, loaded only when present:
   their entry points; multi-value results use a shared length-prefixed
   table. The TS side of the contract lives in ONE place:
   `src/native/runtime.ts` (lazy instantiation, guarded staging,
-  result decoding). C and C++ modules share the allocator in
-  [shared/walloc.h](shared/walloc.h).
+  result decoding). The `no_std` Rust modules share the allocator in
+  [shared/walloc.rs](shared/walloc.rs).
 - **One registry.** Every module declares provenance + a live
   self-test in `src/native/registry.ts`. `talon doctor` and the
   Telegram `/doctor` command iterate that list — a new module shows up
   on every health surface by adding one entry.
-- **Pinned, reproducible builds.** Zig, C, and C++ build through the
-  zig toolchain pinned in [.zig-version](.zig-version); Rust pins via
+- **Pinned, reproducible builds.** Zig builds through the toolchain
+  pinned in [.zig-version](.zig-version); Rust pins via per-crate
   `rust-toolchain.toml`; Gleam is pinned in CI. CI rebuilds every
   artifact from source and fails if the committed bytes drift
   (`.github/workflows/ci.yml`).
@@ -61,10 +61,8 @@ real per-arch artifact like the executables, loaded only when present:
 Each module only needs its own toolchain:
 
 ```sh
-npm run build:wasm        # Rust  → blake3
+npm run build:wasm        # Rust  → blake3, strsim, sqlguard, htmlents
 npm run build:zig         # Zig   → textops
-npm run build:c           # C     → strsim, sqlguard
-npm run build:cpp         # C++   → htmlents
 npm run build:gleam       # Gleam → scheduler-core
 npm run build:native      # all six embedded modules
 
@@ -77,7 +75,7 @@ npm run build:napi        # Rust blake3 addon → bin/talon-blake3.node (host)
 ## Adding a module
 
 1. Create `native/<name>/` with sources, a README documenting the ABI,
-   and a thin `build.mjs` manifest (see strsim-c for the C/C++ shape).
+   and a thin `build.mjs` manifest (see strsim-wasm for the Rust shape).
 2. Write the TS boundary in `src/native/<name>.ts` on top of
    `runtime.ts`.
 3. Register it in `src/native/registry.ts` with a self-test — doctor

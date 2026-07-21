@@ -75,9 +75,9 @@ export const NATIVE_MODULES: readonly NativeModuleSpec[] = [
   },
   {
     name: "strsim",
-    language: "C",
-    target: "wasm32-freestanding",
-    sourceDir: "native/strsim-c",
+    language: "Rust",
+    target: "wasm32-unknown-unknown",
+    sourceDir: "native/strsim-wasm",
     sizeBytes: async () =>
       base64ByteLength(
         (await import("./strsim-wasm-bytes.js")).STRSIM_WASM_BASE64,
@@ -90,9 +90,9 @@ export const NATIVE_MODULES: readonly NativeModuleSpec[] = [
   },
   {
     name: "sqlguard",
-    language: "C",
-    target: "wasm32-freestanding",
-    sourceDir: "native/sqlguard-c",
+    language: "Rust",
+    target: "wasm32-unknown-unknown",
+    sourceDir: "native/sqlguard-wasm",
     sizeBytes: async () =>
       base64ByteLength(
         (await import("./sqlguard-wasm-bytes.js")).SQLGUARD_WASM_BASE64,
@@ -107,9 +107,9 @@ export const NATIVE_MODULES: readonly NativeModuleSpec[] = [
   },
   {
     name: "htmlents",
-    language: "C++",
-    target: "wasm32-freestanding",
-    sourceDir: "native/htmlents-cpp",
+    language: "Rust",
+    target: "wasm32-unknown-unknown",
+    sourceDir: "native/htmlents-wasm",
     sizeBytes: async () =>
       base64ByteLength(
         (await import("./htmlents-wasm-bytes.js")).HTMLENTS_WASM_BASE64,

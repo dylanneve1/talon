@@ -1,0 +1,8 @@
+# Pin the exact compiler so the committed wasm bytes are reproducible:
+# CI rebuilds the artifact and `git diff --exit-code`s it against
+# src/native/htmlents-wasm-bytes.ts, and rustc codegen changes between
+# stable releases would otherwise break that check on unrelated PRs.
+# To bump: update channel, run `npm run build:wasm`, commit both.
+[toolchain]
+channel = "1.93.1"
+targets = ["wasm32-unknown-unknown"]

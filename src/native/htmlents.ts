@@ -1,10 +1,10 @@
 /**
- * HTML entity escaping — TypeScript boundary over the C++ wasm module.
+ * HTML entity escaping — TypeScript boundary over the Rust wasm module.
  *
  * One single-pass escaper for Telegram HTML parse mode, replacing the
  * five chained regex passes it supersedes. Every outbound Telegram
- * render flows through here (frontend/telegram/formatting.ts). The C++
- * source lives in native/htmlents-cpp and exports a three-function
+ * render flows through here (frontend/telegram/formatting.ts). The Rust
+ * source lives in native/htmlents-wasm and exports a three-function
  * C ABI (alloc / dealloc / escape_html) — see that module's README for
  * the contract, and src/native/runtime.ts for the embedding and memory
  * conventions shared by every native module.
@@ -24,7 +24,7 @@ import {
   type WasmCoreExports,
 } from "./runtime.js";
 
-/** The C-ABI surface exported by native/htmlents-cpp. */
+/** The C-ABI surface exported by native/htmlents-wasm. */
 interface HtmlentsExports extends WasmCoreExports {
   escape_html(inputPtr: number, len: number): number;
 }

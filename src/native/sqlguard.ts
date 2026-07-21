@@ -6,7 +6,7 @@
  * pattern for a LIKE search (get_user_messages), and `ftsQuote` turns
  * free-form text into a literal FTS5 MATCH expression (search_history).
  *
- * The C source lives in native/sqlguard-c and exports a four-function
+ * The Rust source lives in native/sqlguard-wasm and exports a four-function
  * C ABI (alloc / dealloc / escape_like / fts_quote) — see that module's
  * README for the contract, and src/native/runtime.ts for the embedding
  * and memory conventions shared by every native module.
@@ -27,7 +27,7 @@ import {
 } from "./runtime.js";
 import { SQLGUARD_WASM_BASE64 } from "./sqlguard-wasm-bytes.js";
 
-/** The C-ABI surface exported by native/sqlguard-c. */
+/** The C-ABI surface exported by native/sqlguard-wasm. */
 interface SqlguardExports extends WasmCoreExports {
   escape_like(inputPtr: number, len: number): number;
   fts_quote(inputPtr: number, len: number): number;

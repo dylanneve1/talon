@@ -1,7 +1,7 @@
-# strsim-c
+# strsim-wasm
 
-String-similarity core in C, compiled to `wasm32-freestanding` with the
-pinned Zig toolchain (`zig cc`, pin in `native/.zig-version`). Powers
+String-similarity core in Rust, compiled to `wasm32-unknown-unknown`
+(`no_std`, toolchain pinned in `rust-toolchain.toml`). Powers
 "did you mean ...?" suggestions for unknown Telegram slash commands and
 unknown CLI subcommands.
 
@@ -11,7 +11,7 @@ record: `src/native/strsim-wasm-bytes.ts` (rebuilt + diffed by CI).
 ## ABI
 
 Linear-memory C ABI, no imports. `alloc` / `dealloc` come from the
-shared allocator (`native/shared/walloc.h`); see
+shared allocator (`native/shared/walloc.rs`); see
 `src/native/runtime.ts` for the conventions every native module shares.
 
 - `levenshtein(a_ptr, a_len, b_ptr, b_len) -> u32`
@@ -27,5 +27,5 @@ for, byte distance equals character distance.
 ## Build
 
 ```sh
-npm run build:c     # zig cc → strsim.wasm → src/native/strsim-wasm-bytes.ts
+npm run build:wasm  # cargo → strsim_wasm.wasm → src/native/strsim-wasm-bytes.ts
 ```

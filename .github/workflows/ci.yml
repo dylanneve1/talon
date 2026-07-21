@@ -347,12 +347,11 @@ jobs:
           git diff --exit-code src/native/
 
   # ── Zig toolchain artifact drift guard ─────────────────────────
-  # Three native modules build through the pinned zig toolchain
+  # textops builds through the pinned zig toolchain
   # (native/.zig-version — codegen changes between releases, so the
-  # version is part of the artifact contract): textops (Zig), strsim
-  # (C via `zig cc`), and htmlents (C++ via `zig c++`), each embedded
-  # as base64 under src/native/. Rebuild all three from source and
-  # fail if any committed bytes drifted.
+  # version is part of the artifact contract), embedded as base64
+  # under src/native/. Rebuild it from source and fail if the
+  # committed bytes drifted.
   zig-artifact:
     name: Zig Toolchain Artifacts
     runs-on: ubuntu-latest
@@ -391,13 +390,7 @@ jobs:
       - name: Rebuild and check drift
         run: |
           npm run build:zig
-          npm run build:c
-          npm run build:cpp
-          git diff --exit-code \
-            src/native/textops-wasm-bytes.ts \
-            src/native/strsim-wasm-bytes.ts \
-            src/native/sqlguard-wasm-bytes.ts \
-            src/native/htmlents-wasm-bytes.ts
+          git diff --exit-code src/native/textops-wasm-bytes.ts
 
       # The talon-driver launcher is a native per-arch binary (not an
       # embedded artifact), so there is nothing to drift-check — instead
@@ -416,11 +409,12 @@ jobs:
           npx vitest run src/__tests__/talon-driver.test.ts
 
   # ── WASM artifact reproducibility ──────────────────────────────
-  # The Rust blake3-wasm crate (native/blake3-wasm) is committed alongside
-  # its built artifact, embedded as base64 in src/native/blake3-wasm-bytes.ts.
-  # Rebuild from source and diff: if the committed bytes drift from the
-  # committed Rust source (or someone hand-edits the generated module),
-  # this fails. Toolchain is pinned by native/blake3-wasm/rust-toolchain.toml
+  # The Rust wasm crates (native/blake3-wasm, native/strsim-wasm,
+  # native/sqlguard-wasm, native/htmlents-wasm) are committed alongside
+  # their built artifacts, embedded as base64 under src/native/.
+  # Rebuild from source and diff: if any committed bytes drift from the
+  # committed Rust source (or someone hand-edits a generated module),
+  # this fails. Toolchains are pinned per-crate by rust-toolchain.toml
   # so rustc codegen drift can't break the diff. Runs on the runner's own
   # node (embed.mjs uses only builtins) — independent of the repo's Node
   # version matrix.
@@ -439,13 +433,22 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: native/blake3-wasm
+          workspaces: |
+            native/blake3-wasm
+            native/strsim-wasm
+            native/sqlguard-wasm
+            native/htmlents-wasm
 
       - name: Rebuild wasm + regenerate embedded bytes
         run: npm run build:wasm
 
       - name: Committed bytes must match committed Rust source
-        run: git diff --exit-code src/native/blake3-wasm-bytes.ts
+        run: |
+          git diff --exit-code \
+            src/native/blake3-wasm-bytes.ts \
+            src/native/strsim-wasm-bytes.ts \
+            src/native/sqlguard-wasm-bytes.ts \
+            src/native/htmlents-wasm-bytes.ts
 
   # ── Warden supervision harness ─────────────────────────────────
   # talon-warden (native/talon-warden) is a native per-arch Rust binary

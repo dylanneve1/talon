@@ -1,5 +1,5 @@
 /**
- * htmlents-wasm — the C++ HTML entity escaper behind every Telegram
+ * htmlents-wasm — the Rust HTML entity escaper behind every Telegram
  * HTML render (frontend/telegram/formatting.ts). Exercises the
  * TypeScript boundary (src/native/htmlents.ts) over the embedded wasm:
  * the exact entity set, UTF-8 passthrough, a property check against

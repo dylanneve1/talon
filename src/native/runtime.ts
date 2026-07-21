@@ -2,8 +2,8 @@
  * Embedded-wasm runtime — the one place that knows how Talon's native
  * modules cross the JS boundary.
  *
- * Every wasm module in the native plane (Rust blake3, Zig textops,
- * C strsim, C++ htmlents) follows the same contract:
+ * Every wasm module in the native plane (Rust blake3, strsim,
+ * sqlguard, htmlents; Zig textops) follows the same contract:
  *
  *   - The artifact ships as base64 inside a generated `*-bytes.ts`
  *     module, so it survives `bun build --compile` single binaries —

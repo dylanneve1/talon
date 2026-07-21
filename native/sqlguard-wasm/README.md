@@ -1,21 +1,21 @@
-# sqlguard-c
+# sqlguard-wasm
 
-SQL input-hardening cores in C, compiled to `wasm32-freestanding` with
-the pinned Zig toolchain (`zig cc`, pin in `native/.zig-version`, no
-standard library). Two byte-local escapers for the model/attacker-
-controlled text that the history tools splice into SQLite queries.
+SQL input-hardening cores in Rust, compiled to `wasm32-unknown-unknown`
+(`no_std`, toolchain pinned in `rust-toolchain.toml`). Two byte-local
+escapers for the model/attacker-controlled text that the history tools
+splice into SQLite queries.
 
 TypeScript consumer: `src/native/sqlguard.ts` (used by
 `src/storage/repositories/history-repo.ts` and `src/storage/history.ts`).
 Embedded artifact of record: `src/native/sqlguard-wasm-bytes.ts` (rebuilt
-+ diffed by CI). Output is byte-identical to the JavaScript it replaces —
++ diffed by CI). Output is byte-identical to the JavaScript it replaced —
 guaranteed by the differential test in
 `src/__tests__/native-sqlguard.test.ts`.
 
 ## ABI
 
 Linear-memory C ABI, no imports. `alloc` / `dealloc` come from the shared
-allocator (`native/shared/walloc.h`); see `src/native/runtime.ts` for the
+allocator (`native/shared/walloc.rs`); see `src/native/runtime.ts` for the
 conventions every native module shares. Both entry points return the
 shared length-prefixed result table (u32 LE): `[0]` total buffer size
 (pass back to `dealloc`), `[1]` item count (always 1), `[2]` produced byte
@@ -38,5 +38,5 @@ length, then the bytes. Both return 0 on allocation failure.
 ## Build
 
 ```sh
-npm run build:c   # zig cc → sqlguard.wasm → src/native/sqlguard-wasm-bytes.ts
+npm run build:wasm  # cargo → sqlguard_wasm.wasm → src/native/sqlguard-wasm-bytes.ts
 ```

@@ -6,13 +6,13 @@
  * Each module's build.mjs is a thin manifest that calls in here:
  *
  *   - requirePinnedZig(): resolve the zig binary and enforce the
- *     toolchain pin in native/.zig-version (one pin for every module
- *     that builds through the zig toolchain — Zig, C, and C++ alike),
- *     so codegen drift between releases can't break the CI drift diff.
- *   - compileWasm(): drive `zig cc` / `zig c++` to wasm32-freestanding
- *     with the flag set that keeps output deterministic (-g0, stripped,
- *     no host paths). Exports are declared in-source via
- *     __attribute__((export_name(...))).
+ *     toolchain pin in native/.zig-version (textops and the launcher
+ *     build through the zig toolchain), so codegen drift between
+ *     releases can't break the CI drift diff.
+ *   - cargoBuildWasm(): drive cargo to wasm32-unknown-unknown with the
+ *     path remapping that keeps output machine-independent. The
+ *     toolchain pin lives in each crate's rust-toolchain.toml. Exports
+ *     are declared in-source via #[export_name = "..."].
  *   - embedWasm(): write the base64 `*-bytes.ts` module that is the
  *     runtime artifact of record (survives `bun build --compile`
  *     single binaries — no fs paths or import.meta.url asset lookups).
@@ -22,6 +22,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -49,47 +50,36 @@ export function requirePinnedZig() {
 }
 
 /**
- * Compile C or C++ sources to a wasm32-freestanding artifact.
+ * Compile a Rust crate to a wasm32-unknown-unknown artifact and return
+ * its path.
  *
- * Determinism: pinned compiler + fixed flags + -g0 (no debug info, no
- * host paths) + --strip-all. -fno-builtin stops clang from recognising
- * hand-written byte loops and lowering them to memcpy/memset libcalls
- * that -nostdlib cannot satisfy.
+ * Determinism: pinned compiler (the crate's rust-toolchain.toml) +
+ * --locked + path remapping. rustc embeds source paths (panic
+ * locations) of registry crates, which live under $CARGO_HOME — a
+ * machine-dependent absolute path. Remap both the registry root and
+ * the workspace to fixed virtual paths so the artifact is independent
+ * of who built it and where.
  */
-export function compileWasm({ moduleDir, language, sources, outName }) {
-  const zig = requirePinnedZig();
-  const driver = language === "c++" ? "c++" : "cc";
-  const langFlags =
-    language === "c++"
-      ? ["-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics"]
-      : [];
+export function cargoBuildWasm({ moduleDir, crateName }) {
+  const cargoHome = process.env.CARGO_HOME || resolve(homedir(), ".cargo");
   execFileSync(
-    zig,
-    [
-      driver,
-      "--target=wasm32-freestanding",
-      "-O2",
-      "-g0",
-      "-fno-builtin",
-      "-nostdlib",
-      ...langFlags,
-      "-Wl,--no-entry",
-      "-Wl,--strip-all",
-      "-o",
-      outName,
-      ...sources,
-    ],
+    "cargo",
+    ["build", "--release", "--target", "wasm32-unknown-unknown", "--locked"],
     {
       cwd: moduleDir,
       stdio: "inherit",
-      // Keep compiler caches inside the module dir (gitignored) so
-      // builds never depend on or pollute machine-global state.
       env: {
         ...process.env,
-        ZIG_LOCAL_CACHE_DIR: join(moduleDir, ".zig-cache"),
-        ZIG_GLOBAL_CACHE_DIR: join(moduleDir, ".zig-cache", "global"),
+        RUSTFLAGS: `--remap-path-prefix=${cargoHome}=/cargo-home --remap-path-prefix=${moduleDir}=/build`,
       },
     },
+  );
+  return join(
+    moduleDir,
+    "target",
+    "wasm32-unknown-unknown",
+    "release",
+    `${crateName}.wasm`,
   );
 }
 

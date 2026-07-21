@@ -211,7 +211,7 @@ export function registerAdminCommands(
   }
 
   // Unknown /command → "did you mean ...?" via the C similarity core
-  // (native/strsim-c). Registered after every real command, so grammY
+  // (native/strsim-wasm). Registered after every real command, so grammY
   // only reaches this when nothing above matched. Only bare commands
   // are intercepted — a close miss gets a suggestion, anything else
   // keeps flowing to the agent as a normal message.

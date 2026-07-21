@@ -26,11 +26,11 @@ describe("checkNativeModules", () => {
     expect(byName.blake3.sizeBytes).toBeGreaterThan(0);
     expect(byName.textops.language).toBe("Zig");
     expect(byName.textops.sizeBytes).toBeGreaterThan(0);
-    expect(byName.strsim.language).toBe("C");
+    expect(byName.strsim.language).toBe("Rust");
     expect(byName.strsim.sizeBytes).toBeGreaterThan(0);
-    expect(byName.sqlguard.language).toBe("C");
+    expect(byName.sqlguard.language).toBe("Rust");
     expect(byName.sqlguard.sizeBytes).toBeGreaterThan(0);
-    expect(byName.htmlents.language).toBe("C++");
+    expect(byName.htmlents.language).toBe("Rust");
     expect(byName.htmlents.sizeBytes).toBeGreaterThan(0);
     expect(byName["scheduler-core"].language).toBe("Gleam");
     // Gleam compiles to plain JS — there is no embedded wasm artifact.

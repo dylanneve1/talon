@@ -4,7 +4,7 @@ import fc from "fast-check";
 import { escapeLike, ftsQuote } from "../native/sqlguard.js";
 
 /**
- * sqlguard (native/sqlguard-c) replaces hand-rolled JS escaping that fed
+ * sqlguard (native/sqlguard-wasm) replaces hand-rolled JS escaping that fed
  * model/attacker-controlled text into SQLite queries. These reference
  * implementations are the *exact* original JS — the bar is byte-for-byte
  * equality, so the transition is a pure refactor with no behaviour change.

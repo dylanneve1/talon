@@ -155,7 +155,7 @@ export function getRecentFormatted(chatId: string, limit = 20): string {
  * Build an FTS5 MATCH expression from free-form user input. Every
  * token is double-quoted so FTS operators (AND, NEAR, *, ^) in user
  * text are treated as literals, not syntax. Delegates to the C core
- * (native/sqlguard-c) for byte-identical output.
+ * (native/sqlguard-wasm) for byte-identical output.
  */
 function ftsQuery(query: string): string {
   return ftsQuote(query);

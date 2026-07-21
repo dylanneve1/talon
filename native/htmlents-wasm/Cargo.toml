@@ -1,0 +1,21 @@
+# HTML entity escaping compiled to wasm32-unknown-unknown with a
+# hand-rolled C ABI — no_std, no dependencies, allocator shared with the
+# other guard modules (native/shared/walloc.rs). See README.md for the
+# ABI contract.
+[package]
+name = "htmlents-wasm"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+# Size-optimized: the .wasm is committed (as base64) into the TS tree and
+# shipped inside the bun single-binary, so every KB counts.
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
