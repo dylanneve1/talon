@@ -1,0 +1,61 @@
+name: Headless Node
+
+# Builds talon-node (the headless mesh device) for all targets. On a
+# published Release the binaries are attached to it; on PRs touching the
+# node (or manual dispatch) it vets, tests, and cross-compiles so the
+# pipeline is verified before a real release.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/node/**"
+      - ".github/workflows/node.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: node-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Vet, Test & Cross-compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/node
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: apps/node/go.mod
+
+      - name: Format check
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Cross-compile all targets
+        run: ./scripts/build-all.sh "${GITHUB_REF_NAME#v}+${GITHUB_SHA::7}"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: talon-node-binaries
+          path: apps/node/build/*
+
+      - name: Attach binaries to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" build/* --clobber
