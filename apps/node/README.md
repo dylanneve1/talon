@@ -15,6 +15,10 @@ works out of the box.
   `stat`, `delete`, `mkdir`, `move`, streamed `upload_file`/`download_file`,
   `status`, `ring`. That is the entire teleport substrate, so
   `teleport(device)` gives the model a real shell + file tools on the node.
+- **Remote self-update**: `update_node` — the daemon streams a new binary,
+  the node verifies its hash, atomically swaps its own binary, and restarts
+  into it (in-place `execve` on Linux/macOS, so the mesh reconnects in
+  seconds). Version tracks the Talon release it was built against.
 
 ## Quick start
 
@@ -83,9 +87,35 @@ apps pair with). No daemon-side changes are required for headless nodes.
 The `Headless Node` workflow builds the same matrix in CI and attaches the
 binaries to published releases.
 
+## Versioning
+
+The reported version tracks the **Talon release the binary was compiled
+against**, so a node's `appVersion` in the mesh tells you exactly which Talon
+it matches:
+
+- Release/CI and `scripts/build-all.sh` builds report `<talon-version>+<sha>`
+  (e.g. `3.1.1+c8c7437c`), stamped via `-ldflags -X main.ldflagsVersion=…`.
+- A bare `go build .` reports the embedded Talon version (`version.txt`,
+  kept in sync with the root `package.json` — CI fails if it drifts).
+
+## Remote self-update
+
+`update_node` (daemon-side mesh tool) streams a freshly-built binary to the
+node, which re-hashes it, atomically swaps its own binary, and restarts into
+it — an in-place `execve` on Linux/macOS (same pid, no supervisor
+crash-accounting), a rename-aside + relaunch on Windows. A truncated or
+mismatched binary is refused before the swap, so the running node is never
+left broken. Build the replacement for the node's OS/arch first
+(`talon-node-<os>-<arch>`), then confirm with `get_device_status` once
+`appVersion` changes.
+
+On Unix, `SIGHUP` also reloads the node into whatever binary is on disk —
+handy for `systemctl reload`-style restarts after an out-of-band swap.
+
 ## Capabilities vs. the companion app
 
 Headless nodes do not advertise `locate` (no GPS) or `install_apk`
-(Android-only self-update). Everything else matches the app's device-control
+(Android-only self-update); instead they advertise `update_node` for the
+equivalent self-update. Everything else matches the app's device-control
 surface, including the capped exec output contract (192 KB head + rolling
 64 KB tail) that teleport's cwd tracking depends on.

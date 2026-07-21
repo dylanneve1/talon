@@ -19,15 +19,41 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 )
 
-// version is stamped at build time via -ldflags "-X main.version=…".
-var version = "dev"
+// talonVersion is the Talon release this node was compiled against, embedded
+// from version.txt (kept in sync with the root package.json — CI verifies).
+// It is the fallback identity so even a bare `go build .` reports the right
+// Talon version rather than a placeholder.
+//
+//go:embed version.txt
+var talonVersion string
+
+// ldflagsVersion is stamped at build time via -ldflags "-X main.ldflagsVersion=…"
+// with the full "<talon-version>+<sha>" string. Release/CI builds set it;
+// ad-hoc builds leave it empty and fall back to the embedded Talon version.
+var ldflagsVersion = ""
+
+// version is the resolved identity reported over the mesh (appVersion). It
+// always tracks the Talon version the binary was built from.
+var version = resolveVersion()
+
+func resolveVersion() string {
+	if v := strings.TrimSpace(ldflagsVersion); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(talonVersion); v != "" {
+		return v
+	}
+	return "dev"
+}
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `talon-node %s — headless Talon mesh device

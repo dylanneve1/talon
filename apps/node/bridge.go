@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -42,6 +43,7 @@ var nodeCapabilities = []string{
 	"move",
 	"upload_file",
 	"download_file",
+	"update_node",
 }
 
 // Node is the running mesh client: pinned-TLS HTTP to the bridge plus the
@@ -53,6 +55,11 @@ type Node struct {
 	// seenFingerprint carries the leaf-certificate hash observed during TLS
 	// verification of the most recent connection, for TOFU capture.
 	seenFingerprint string
+	// pendingReexec is set by a successful update_node so handleCommand can
+	// restart into the new binary AFTER the command result has been posted
+	// (a re-exec replaces the whole process image, so the ack must land
+	// first or the caller would hang waiting for a reply that never comes).
+	pendingReexec atomic.Bool
 }
 
 func NewNode(cfg *Config) (*Node, error) {
@@ -210,6 +217,9 @@ func (n *Node) Run(ctx context.Context) {
 	// Heartbeat runs independently of the event stream: registration is how
 	// presence works, and it must survive SSE reconnect churn.
 	go n.heartbeatLoop(ctx)
+	// SIGHUP (unix) restarts into the on-disk binary — a reload after the
+	// binary is replaced out of band. No-op on Windows.
+	go watchReload(ctx, n)
 
 	backoff := time.Second
 	for ctx.Err() == nil {
@@ -324,6 +334,13 @@ func (n *Node) handleCommand(ctx context.Context, event map[string]any) {
 	defer cancel()
 	if err := n.PostCommandResult(postCtx, result); err != nil {
 		log.Printf("could not answer command %q (%s): %v", name, id, err)
+	}
+	// A successful update_node swapped the on-disk binary; now that the ack
+	// has been delivered, restart into it. Under systemd/launchd this is an
+	// in-place execve (same pid, no exit → the supervisor sees no crash);
+	// the daemon confirms via get_device_status once appVersion changes.
+	if n.pendingReexec.Load() {
+		reexecInto(n)
 	}
 }
 

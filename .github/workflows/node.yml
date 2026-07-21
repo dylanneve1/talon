@@ -45,8 +45,17 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: version.txt in sync with package.json
+        run: |
+          want=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' ../../package.json | head -1)
+          got=$(tr -d '[:space:]' < version.txt)
+          if [ "$want" != "$got" ]; then
+            echo "version.txt ($got) != package.json ($want) — run scripts/build-all.sh to refresh it" >&2
+            exit 1
+          fi
+
       - name: Cross-compile all targets
-        run: ./scripts/build-all.sh "${GITHUB_REF_NAME#v}+${GITHUB_SHA::7}"
+        run: ./scripts/build-all.sh
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v6

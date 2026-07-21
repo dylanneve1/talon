@@ -185,4 +185,25 @@ export const meshTools: ToolDefinition[] = [
     execute: (params, bridge) => bridge("update_device", params),
     tag: "mesh",
   },
+  {
+    name: "update_node",
+    description:
+      "Remotely update a headless talon-node (Linux/macOS/Windows server on the mesh): stream a new node binary from the daemon and have the node verify its hash, atomically swap its own binary, and restart into it. On Linux/macOS this is an in-place execve so the mesh connection returns within seconds; the node re-hashes the pushed file and refuses a truncated or mismatched binary. Build the replacement for the node's platform/arch first (talon-node-<os>-<arch>). Confirm success with get_device_status afterwards (appVersion should change). This is the node counterpart of update_device — use update_device for Android companions.",
+    schema: {
+      device: deviceParam,
+      binary_path: z
+        .string()
+        .describe(
+          "Path to the new talon-node binary, relative to the workspace (or absolute), built for the node's OS/arch.",
+        ),
+      remote_path: z
+        .string()
+        .optional()
+        .describe(
+          "Where to stage the binary on the node (default /tmp/talon-node.update; the node re-stages next to its own executable before the atomic swap).",
+        ),
+    },
+    execute: (params, bridge) => bridge("update_node", params),
+    tag: "mesh",
+  },
 ];

@@ -874,6 +874,88 @@ export class MeshService {
   }
 
   /**
+   * `update_node`: remote self-update for a headless talon-node. Streams a
+   * replacement binary to the node, then sends `update_node` so the node
+   * verifies the digest, atomically swaps its own binary, and restarts into
+   * it (an in-place execve under systemd/launchd, so the mesh connection
+   * returns on its own within seconds — the same UX as the Android path).
+   *
+   * The binary is hashed here and the digest travels with the command; the
+   * node re-hashes the pushed file and refuses to swap on a mismatch, so a
+   * truncated transfer can never be installed. Build the replacement for the
+   * node's platform/arch (talon-node-<os>-<arch>) before calling.
+   */
+  async updateNodeBinary(
+    query: unknown,
+    localBinaryPath: unknown,
+    remotePath?: unknown,
+  ): Promise<MeshToolResult> {
+    const local =
+      typeof localBinaryPath === "string" && localBinaryPath.trim()
+        ? resolve(dirs.workspace, localBinaryPath.trim())
+        : "";
+    if (!local) return { ok: false, text: "A local binary path is required." };
+    await this.load();
+    const resolved = this.resolveDevice(query);
+    if ("error" in resolved) return { ok: false, text: resolved.error };
+    const target = resolved.target;
+    if (target.capabilities && !target.capabilities.includes("update_node")) {
+      return {
+        ok: false,
+        text: `${target.name} can't self-update — it needs the update_node capability (a talon-node headless device).`,
+      };
+    }
+
+    let sha256: string;
+    let size: number;
+    try {
+      ({ sha256, size } = await hashFile(local));
+    } catch (err) {
+      return {
+        ok: false,
+        text: `Cannot read binary ${local}: ${(err as Error).message}`,
+      };
+    }
+    if (size === 0) return { ok: false, text: `Binary ${local} is empty.` };
+
+    // Default staging path is /tmp on unix nodes (the node re-stages next to
+    // its own executable before the atomic swap, so this is only transient).
+    const remote =
+      typeof remotePath === "string" && remotePath.trim()
+        ? remotePath.trim()
+        : "/tmp/talon-node.update";
+
+    // 1. Stream the new binary to the node.
+    const push = await this.pushFileToDevice(target.id, local, remote);
+    if (!push.ok) {
+      return { ok: false, text: `Update aborted — push failed: ${push.text}` };
+    }
+
+    // 2. Trigger the swap + restart (node verifies the digest first).
+    const dispatched = await this.dispatchCommand(
+      target.id,
+      "update_node",
+      { path: remote, sha256 },
+      this.commandTimeoutMs,
+    );
+    if ("error" in dispatched) return { ok: false, text: dispatched.error };
+    if (!dispatched.result.ok) {
+      return {
+        ok: false,
+        text:
+          dispatched.result.message ?? `${target.name} refused the update.`,
+      };
+    }
+    return {
+      ok: true,
+      text:
+        `Pushed ${formatBytes(size)} and staged the update on ${target.name}. ` +
+        `${dispatched.result.message ?? "Restarting now."} ` +
+        `Confirm with get_device_status once it reconnects (appVersion should change).`,
+    };
+  }
+
+  /**
    * Chunked read of a remote file into a Buffer. Loops `read_file` with
    * increasing offsets until the device reports EOF.
    *

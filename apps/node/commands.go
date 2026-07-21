@@ -71,6 +71,8 @@ func dispatch(ctx context.Context, n *Node, name string, params map[string]any) 
 		return cmdUploadFile(ctx, n, params)
 	case "download_file":
 		return cmdDownloadFile(ctx, n, params)
+	case "update_node":
+		return cmdUpdateNode(n, params)
 	default:
 		return fail("talon-node does not support %q.", name)
 	}

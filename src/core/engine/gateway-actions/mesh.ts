@@ -57,4 +57,12 @@ export const meshHandlers: SharedActionHandlers = {
       body.apk_path,
       body.remote_path,
     ),
+  // Remote self-update for a headless talon-node: push a new binary and have
+  // the node verify, swap, and restart into it.
+  update_node: (body) =>
+    getMeshService().updateNodeBinary(
+      body.device,
+      body.binary_path,
+      body.remote_path,
+    ),
 };

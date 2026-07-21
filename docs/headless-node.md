@@ -31,14 +31,20 @@ Advertised at registration — the daemon gates commands on this list:
 
 ```
 ring, status, exec, read_file, write_file, list_dir, stat, delete,
-mkdir, move, upload_file, download_file
+mkdir, move, upload_file, download_file, update_node
 ```
 
 That is the app's full device-control surface minus `locate` (no GPS) and
-`install_apk` (Android self-update). Because teleport is built entirely on
-`exec` + the fs commands, a headless node is a first-class teleport target,
-including the capped exec output contract (192 KB head + rolling 64 KB
-tail) the teleport cwd marker rides on.
+`install_apk` (Android self-update), plus `update_node` — the headless
+equivalent of remote self-update (`update_device` for the companion). Because
+teleport is built entirely on `exec` + the fs commands, a headless node is a
+first-class teleport target, including the capped exec output contract
+(192 KB head + rolling 64 KB tail) the teleport cwd marker rides on.
+
+The node's `appVersion` tracks the Talon release it was built against
+(`<talon-version>+<sha>`), so the mesh shows exactly which Talon each node
+matches, and `update_node` streams a new binary + verifies + swaps + restarts
+in place — see `apps/node/README.md`.
 
 No daemon-side changes were needed — headless nodes registered against an
 unmodified bridge.
