@@ -17,6 +17,15 @@
  *     "browser": "firefox",
  *     "endpointFile": "/home/dylan/camoufox-endpoint.txt"
  *   }
+ *
+ * VERSION COUPLING (endpoint mode): the WebSocket handshake requires the
+ * client (playwright-core bundled inside @playwright/mcp) and the remote
+ * browser server (e.g. the python-playwright process hosting Camoufox) to be
+ * on the SAME playwright minor version — a mismatch fails every tool call
+ * with "428 Precondition Required". @playwright/mcp is therefore pinned
+ * exactly in package.json (0.0.76 → playwright 1.61.x; keep the python side
+ * on 1.61.x too). Bump BOTH sides together, deliberately — do not let a
+ * routine dependency bump move one without the other.
  */
 
 import { existsSync, readFileSync } from "node:fs";

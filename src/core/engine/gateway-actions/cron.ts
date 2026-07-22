@@ -198,8 +198,13 @@ export const cronHandlers: SharedActionHandlers = {
       maxRuns = m;
     }
 
-    // Missed-run catch-up policy.
-    let catchup: CatchupPolicy | undefined;
+    // Missed-run catch-up policy. New jobs default to "once": a run that
+    // came due while Talon was down (or while the scheduler was wedged)
+    // replays a single time at startup instead of being lost silently — a
+    // live audit found one-shot reminders that missed their date under the
+    // old "skip" default and quietly rolled over a full year. Explicit
+    // "skip" remains available for jobs where a late run is worthless.
+    let catchup: CatchupPolicy = "once";
     if (provided(body.catchup)) {
       catchup = String(body.catchup) as CatchupPolicy;
       if (!CATCHUP_POLICIES.has(catchup))
@@ -245,7 +250,7 @@ export const cronHandlers: SharedActionHandlers = {
       ...(startAt !== undefined ? { startAt } : {}),
       ...(endAt !== undefined ? { endAt } : {}),
       ...(maxRuns !== undefined ? { maxRuns } : {}),
-      ...(catchup ? { catchup } : {}),
+      catchup,
       ...(model ? { model } : {}),
       ...(provider ? { provider } : {}),
       ...(instructions ? { instructions } : {}),

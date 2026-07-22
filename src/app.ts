@@ -22,6 +22,7 @@ import {
   runStartupCatchup,
 } from "./core/background/cron.js";
 import { shutdownTriggers } from "./core/background/triggers/index.js";
+import { pruneSettledTriggers } from "./storage/trigger-store.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
 import {
@@ -94,6 +95,7 @@ onBackendChange((holder, newBackend, info) => {
 // ── Graceful shutdown ────────────────────────────────────────────────────────
 
 let shuttingDown = false;
+let triggerPruneTimer: ReturnType<typeof setInterval> | null = null;
 
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 const DRAIN_TIMEOUT_MS = 5_000;
@@ -167,6 +169,10 @@ async function gracefulShutdown(signal: string): Promise<void> {
     await awaitHeartbeat();
   });
   await shutdownStep("cron timer", stopCronTimer);
+  await shutdownStep("trigger prune timer", () => {
+    if (triggerPruneTimer) clearInterval(triggerPruneTimer);
+    triggerPruneTimer = null;
+  });
   await shutdownStep("triggers", shutdownTriggers);
   await shutdownStep("watchdog", stopWatchdog);
   await shutdownStep("upload cleanup", stopUploadCleanup);
@@ -225,6 +231,38 @@ async function main(): Promise<void> {
   startWatchdog(config.workspace);
   startUploadCleanup(config.workspace);
 
+  // Cron MUST start before the frontends are awaited: a long-polling
+  // frontend's start() blocks for the entire process lifetime, so anything
+  // sequenced after that await effectively runs at shutdown. (Regression
+  // #396→3.5.0: startCronTimer() sat after the frontend await and no
+  // scheduled job fired for 23 days.) Message delivery inside cron uses the
+  // frontend's send API, which works as soon as init() has completed —
+  // it does not depend on the polling loop being up.
+  //
+  // Catch-up replays runs that came due while Talon was down (per-job
+  // policy; default for new jobs is "once"). Kicking it off first gives it
+  // the ~60s head start to take each replayed job's in-flight lock before
+  // the first scheduled tick, so a replay can't race a scheduled run.
+  // Fire-and-forget so a slow replay never blocks startup.
+  runStartupCatchup().catch((err) =>
+    logError("cron", "startup catch-up failed", err),
+  );
+  startCronTimer();
+
+  // Sweep settled triggers (fired/errored/cancelled/timed_out/terminated)
+  // past their retention window so the trigger list doesn't accumulate
+  // corpses forever. Once at boot, then daily.
+  const pruned = pruneSettledTriggers();
+  if (pruned > 0) log("triggers", `Pruned ${pruned} settled trigger(s)`);
+  triggerPruneTimer = setInterval(
+    () => {
+      const n = pruneSettledTriggers();
+      if (n > 0) log("triggers", `Pruned ${n} settled trigger(s)`);
+    },
+    24 * 60 * 60_000,
+  );
+  triggerPruneTimer.unref();
+
   // A stdin-reading frontend (terminal) blocks in start() for the
   // process lifetime — run it without awaiting alongside the others.
   const stdinFrontends = frontends.filter(
@@ -248,15 +286,8 @@ async function main(): Promise<void> {
       );
   }
 
-  // Replay any runs that came due while Talon was down (per-job catch-up
-  // policy; default skip = fast no-op), THEN start the live cron tick. Kicking
-  // catch-up off first gives it the ~60s head start to take each replayed job's
-  // in-flight lock before the first scheduled tick, so a replay can't race a
-  // scheduled run. Fire-and-forget so a slow replay never blocks startup.
-  runStartupCatchup().catch((err) =>
-    logError("cron", "startup catch-up failed", err),
-  );
-  startCronTimer();
+  // NOTE: nothing may be sequenced after this point — the await above only
+  // resolves when the frontends stop (i.e. at shutdown).
 }
 
 main().catch((err) => {

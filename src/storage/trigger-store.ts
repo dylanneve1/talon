@@ -243,6 +243,34 @@ export function updateTrigger(
   });
 }
 
+/**
+ * How long a settled trigger (fired/errored/cancelled/timed_out/terminated)
+ * is kept for post-mortem inspection before the daily sweep removes it.
+ * Without a sweep the trigger list accumulates corpses forever — a live
+ * audit found 12 of 14 listed triggers dead, some over a week old.
+ */
+export const SETTLED_TRIGGER_TTL_MS = 72 * 60 * 60_000; // 3 days
+
+/**
+ * Delete settled triggers whose terminal state is older than `ttlMs`
+ * (script + log files included, via deleteTrigger). Running/pending
+ * triggers are never touched. Returns how many were pruned.
+ */
+export function pruneSettledTriggers(
+  nowMs = Date.now(),
+  ttlMs = SETTLED_TRIGGER_TTL_MS,
+): number {
+  let pruned = 0;
+  for (const t of getAllTriggers()) {
+    if (t.status === "running" || t.status === "pending") continue;
+    const settledAt =
+      t.endedAt ?? t.lastFireAt ?? t.startedAt ?? t.createdAt;
+    if (nowMs - settledAt < ttlMs) continue;
+    if (deleteTrigger(t.id)) pruned++;
+  }
+  return pruned;
+}
+
 /** Delete a trigger and best-effort clean up its on-disk script + log. */
 export function deleteTrigger(id: string): boolean {
   const t = repo.get(id);

@@ -249,6 +249,32 @@ describe("create_cron_job — content", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// create_cron_job — missed-run catch-up policy default
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("create_cron_job — catchup default", () => {
+  it("defaults new jobs to catchup 'once' so missed runs replay at startup", async () => {
+    const res = await create({ schedule: "0 9 * * *" });
+    expect(res.ok).toBe(true);
+    const job = getCronJob(idFromCreate(res));
+    expect(job?.catchup).toBe("once");
+  });
+
+  it("honors an explicit catchup override", async () => {
+    const res = await create({ schedule: "0 9 * * *", catchup: "skip" });
+    expect(res.ok).toBe(true);
+    const job = getCronJob(idFromCreate(res));
+    expect(job?.catchup).toBe("skip");
+  });
+
+  it("still rejects an invalid catchup value", async () => {
+    const res = await create({ schedule: "0 9 * * *", catchup: "maybe" });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/catchup/i);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // create_cron_job — lifecycle bounds (start_at / end_at)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -415,7 +441,9 @@ describe("create_cron_job — backward compat", () => {
     expect(job.startAt).toBeUndefined();
     expect(job.endAt).toBeUndefined();
     expect(job.maxRuns).toBeUndefined();
-    expect(job.catchup).toBeUndefined();
+    // catchup is the one deliberate exception: new jobs default to "once"
+    // so runs missed during downtime replay instead of being lost.
+    expect(job.catchup).toBe("once");
     expect(job.model).toBeUndefined();
   });
 });

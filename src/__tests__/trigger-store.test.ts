@@ -77,6 +77,8 @@ const {
   DEFAULT_TIMEOUT_SECONDS,
   MAX_TIMEOUT_SECONDS,
   MAX_ACTIVE_PER_CHAT,
+  pruneSettledTriggers,
+  SETTLED_TRIGGER_TTL_MS,
 } = await import("../storage/trigger-store.js");
 
 const envBackup = process.env.TALON_DB_PATH;
@@ -424,6 +426,69 @@ describe("trigger-store", () => {
     it("does nothing when the legacy file does not exist", () => {
       expect(() => loadTriggers()).not.toThrow();
       expect(getTrigger("any")).toBeUndefined();
+    });
+  });
+
+  describe("pruneSettledTriggers", () => {
+    const now = Date.now();
+    const old = now - SETTLED_TRIGGER_TTL_MS - 60_000; // past retention
+    const fresh = now - 60_000; // well inside retention
+
+    it("removes settled triggers past the retention window", () => {
+      addTrigger(
+        makeTrigger({ id: "old-fired", status: "fired", endedAt: old }),
+      );
+      addTrigger(
+        makeTrigger({ id: "old-errored", status: "errored", endedAt: old }),
+      );
+      addTrigger(
+        makeTrigger({ id: "old-timeout", status: "timed_out", endedAt: old }),
+      );
+      expect(pruneSettledTriggers(now)).toBe(3);
+      expect(getTrigger("old-fired")).toBeUndefined();
+      expect(getTrigger("old-errored")).toBeUndefined();
+      expect(getTrigger("old-timeout")).toBeUndefined();
+    });
+
+    it("keeps settled triggers inside the retention window", () => {
+      addTrigger(
+        makeTrigger({ id: "new-fired", status: "fired", endedAt: fresh }),
+      );
+      expect(pruneSettledTriggers(now)).toBe(0);
+      expect(getTrigger("new-fired")).toBeDefined();
+    });
+
+    it("never touches running or pending triggers, however old", () => {
+      addTrigger(
+        makeTrigger({ id: "old-running", status: "running", createdAt: old }),
+      );
+      addTrigger(
+        makeTrigger({ id: "old-pending", status: "pending", createdAt: old }),
+      );
+      expect(pruneSettledTriggers(now)).toBe(0);
+      expect(getTrigger("old-running")).toBeDefined();
+      expect(getTrigger("old-pending")).toBeDefined();
+    });
+
+    it("falls back through lastFireAt/startedAt/createdAt when endedAt is unset", () => {
+      addTrigger(
+        makeTrigger({
+          id: "old-no-ended",
+          status: "terminated",
+          createdAt: old,
+        }),
+      );
+      addTrigger(
+        makeTrigger({
+          id: "kept-late-fire",
+          status: "fired",
+          createdAt: old,
+          lastFireAt: fresh,
+        }),
+      );
+      expect(pruneSettledTriggers(now)).toBe(1);
+      expect(getTrigger("old-no-ended")).toBeUndefined();
+      expect(getTrigger("kept-late-fire")).toBeDefined();
     });
   });
 

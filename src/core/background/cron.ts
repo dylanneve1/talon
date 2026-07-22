@@ -116,30 +116,56 @@ const JOB_HEALTH: JobHealthOptions = {
 // fires a handful of times, not hundreds.
 const CATCHUP_MAX = 5;
 
+// Wall-clock watermark of the last fully-evaluated tick. Cron dueness is
+// window-based — "did a fire time land inside (watermark, now]?" — instead of
+// "does the current minute match?". setInterval ticks drift under event-loop
+// load, so a tick landing at :29:59 followed by one at :31:01 skips the :30
+// minute entirely under minute-equality; the window formulation cannot miss
+// it. Initialized to process start: anything earlier is startup-catch-up
+// territory (per-job catchup policy), not live-tick recovery.
+let lastTickMs = Date.now();
+
+// Hard cap on how far back a live tick will look. Bounds the window when the
+// watermark lags (load-shed ticks don't advance it) and keeps a pathological
+// stall from replaying ancient fire times outside the catch-up policy.
+const MAX_TICK_LOOKBACK_MS = 10 * 60_000;
+
 async function runCronTick(): Promise<void> {
   if (!deps) return;
-  if (getActiveCount() > 10) return; // safety valve — don't pile on if heavily loaded
+  // Safety valve — don't pile on if heavily loaded. The watermark is NOT
+  // advanced, so the skipped window is re-covered by the next tick (bounded
+  // by MAX_TICK_LOOKBACK_MS).
+  if (getActiveCount() > 10) return;
 
   const now = new Date();
   const nowMs = now.getTime();
+  const windowStartMs = Math.max(lastTickMs, nowMs - MAX_TICK_LOOKBACK_MS);
   const jobs = getAllCronJobs();
   pruneJobHealth(new Set(jobs.map((j) => j.id)));
 
+  let loadShed = false;
   for (const job of jobs) {
     if (!job.enabled) continue;
     // Expiry takes priority over dueness: a job past its end time is disabled
     // and skipped even if this minute would otherwise match.
     if (expireIfPast(job, nowMs)) continue;
     if (runningJobs.has(job.id)) continue; // already in-flight this tick or a previous one
-    if (!isDue(job, now)) continue;
+    if (!isDue(job, now, windowStartMs)) continue;
     if (!jobAllowsRun(job.id, nowMs, JOB_HEALTH)) {
       log("cron", `Skipping "${job.name}" [${job.id}] — breaker open`);
       continue;
     }
-    if (getActiveCount() > 10) break;
+    if (getActiveCount() > 10) {
+      loadShed = true;
+      break;
+    }
 
     await runScheduled(job);
   }
+
+  // Only advance the watermark when every job was evaluated — a load-shed
+  // break leaves it in place so unevaluated jobs keep their window.
+  if (!loadShed) lastTickMs = nowMs;
 }
 
 /**
@@ -343,7 +369,7 @@ export async function runJobNow(
 const warnedBadSchedule = new Set<string>();
 const MAX_WARNED_SCHEDULES = 200;
 
-function isDue(job: CronJob, now: Date): boolean {
+function isDue(job: CronJob, now: Date, windowStartMs: number): boolean {
   const nowMs = now.getTime();
 
   // Not-before gate (both modes): never fire before startAt.
@@ -354,7 +380,9 @@ function isDue(job: CronJob, now: Date): boolean {
   // a burst.
   if (job.lastRunAt !== undefined && job.lastRunAt > nowMs) return false;
 
-  return isIntervalJob(job) ? isIntervalDue(job, nowMs) : isCronDue(job, now);
+  return isIntervalJob(job)
+    ? isIntervalDue(job, nowMs)
+    : isCronDue(job, now, windowStartMs);
 }
 
 /**
@@ -366,11 +394,17 @@ function isIntervalDue(job: CronJob, nowMs: number): boolean {
   return nowMs - intervalAnchor(job) >= (job.everyMs as number);
 }
 
-/** Cron mode: due when the current minute matches a fire time. */
-function isCronDue(job: CronJob, now: Date): boolean {
+/**
+ * Cron mode: due when a scheduled fire time fell inside (floor, now], where
+ * the floor is the tick window start raised by lastRunAt (dedupe — never
+ * re-fire a slot that already ran) and startAt (never count fire times from
+ * before the job's not-before gate). Window semantics make dueness immune to
+ * tick drift: a fire time in a minute no tick landed on is still caught by
+ * the next tick, because the window spans the gap.
+ */
+function isCronDue(job: CronJob, now: Date, windowStartMs: number): boolean {
   if (!job.schedule) return false;
   try {
-    const oneMinuteAgo = new Date(now.getTime() - 60_000);
     const cron = new Cron(job.schedule, {
       timezone: job.timezone ?? undefined,
     });
@@ -380,12 +414,15 @@ function isCronDue(job: CronJob, now: Date): boolean {
     // the job is actually due right now)
     warnedBadSchedule.delete(job.id);
 
-    const next = cron.nextRun(oneMinuteAgo);
-    if (!next) return false;
-
-    const nowMinute = Math.floor(now.getTime() / 60_000);
-    const nextMinute = Math.floor(next.getTime() / 60_000);
-    if (nowMinute !== nextMinute) return false;
+    const floorMs = Math.max(
+      windowStartMs,
+      job.lastRunAt ?? 0,
+      job.startAt ?? 0,
+    );
+    // croner's nextRun is strictly-after its argument, so the fire time at
+    // exactly floorMs is excluded — (floor, now].
+    const next = cron.nextRun(new Date(floorMs));
+    if (!next || next.getTime() > now.getTime()) return false;
 
     // Prevent duplicate runs — ensure at least 55 seconds since last execution
     if (job.lastRunAt && now.getTime() - job.lastRunAt < 55_000) return false;
@@ -406,6 +443,14 @@ function isCronDue(job: CronJob, now: Date): boolean {
     return false;
   }
 }
+
+// Internal exports for tests — window-based dueness is regression-critical
+// (a drifted tick must not skip a scheduled minute).
+export const _cronInternals = {
+  isDue,
+  isCronDue,
+  MAX_TICK_LOOKBACK_MS,
+};
 
 const CRON_JOB_TIMEOUT_MS = 10 * 60_000; // 10-minute max per job
 

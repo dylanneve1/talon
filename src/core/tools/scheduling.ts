@@ -44,7 +44,7 @@ Lifecycle (all optional):
   • once: true        — run a single time, then auto-disable (a one-shot). For "run at 3pm tomorrow", pair a cron/interval that next fires then with once.
   • max_runs: N       — auto-disable after N runs.
   • start_at / end_at — ISO-8601 timestamp (or epoch ms). Don't fire before start_at; auto-disable after end_at.
-  • catchup           — what to do with runs missed while Talon was down: "skip" (default), "once" (one catch-up run), or "all" (replay each missed run, capped).
+  • catchup           — what to do with runs missed while Talon was down: "once" (default — one catch-up run), "skip" (drop missed runs), or "all" (replay each missed run, capped).
 
 Model: leave "model"/"provider" unset to use this chat's model. Set "model" for a valid model on this chat's backend, or set both "provider" and "model" for another backend that supports isolated jobs. "instructions" can provide a short system brief for query jobs.`,
     schema: {
@@ -95,7 +95,7 @@ Model: leave "model"/"provider" unset to use this chat's model. Set "model" for 
         .enum(["skip", "once", "all"])
         .optional()
         .describe(
-          "Missed-run policy for downtime: skip (default), once, or all (capped).",
+          "Missed-run policy for downtime: once (default — one catch-up run), skip, or all (capped).",
         ),
       model: z
         .string()
