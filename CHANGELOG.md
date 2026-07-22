@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.0](https://github.com/dylanneve1/talon/compare/v3.3.0...v3.4.0) (2026-07-22)
+
+
+### Features
+
+* **mesh:** node provisioning — binary resolver, bridge-served installers, arch-aware update_node ([#610](https://github.com/dylanneve1/talon/issues/610)) ([abadad9](https://github.com/dylanneve1/talon/commit/abadad90995fefe8cb3793162f16c000f1969f99))
+
 ## [3.3.0](https://github.com/dylanneve1/talon/compare/v3.2.0...v3.3.0) (2026-07-22)
 
 
