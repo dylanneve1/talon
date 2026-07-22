@@ -12,6 +12,9 @@ on:
     branches: [main]
     paths:
       - "apps/companion/**"
+      # Shared protocol fixtures — the companion's conformance tests replay
+      # them (protocol/README.md), so a protocol change must run this suite.
+      - "protocol/**"
       - ".github/workflows/companion.yml"
 
 permissions:

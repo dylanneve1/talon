@@ -181,11 +181,13 @@ func (n *Node) Health() (map[string]any, error) {
 	return out, nil
 }
 
-// Register upserts this node in the daemon's mesh registry — also the 60s
+// registrationBody is the POST /devices/register payload — also the 60s
 // heartbeat body. Battery fields are omitted entirely: servers don't have
-// one, and the registry treats absence correctly.
-func (n *Node) Register(ctx context.Context) error {
-	err := n.postJSON(ctx, "/devices/register", map[string]any{
+// one, and the registry treats absence correctly. Kept as its own function
+// so the protocol conformance test can assert the wire shape against the
+// shared fixture (protocol/fixtures/mesh_v1.json).
+func (n *Node) registrationBody() map[string]any {
+	return map[string]any{
 		"id":       n.DeviceID,
 		"name":     n.cfg.Name,
 		"platform": meshPlatform(),
@@ -195,24 +197,36 @@ func (n *Node) Register(ctx context.Context) error {
 		"arch":         runtime.GOARCH,
 		"appVersion":   version,
 		"capabilities": nodeCapabilities,
-	}, nil)
+	}
+}
+
+// Register upserts this node in the daemon's mesh registry.
+func (n *Node) Register(ctx context.Context) error {
+	err := n.postJSON(ctx, "/devices/register", n.registrationBody(), nil)
 	if err == nil {
 		n.maybeAdoptFingerprint()
 	}
 	return err
 }
 
+// resultBody is the POST /devices/command-result payload. Its own function
+// so the protocol conformance test can assert the wire shape against the
+// shared fixture (protocol/fixtures/mesh_v1.json).
+func resultBody(deviceID string, r commandResult) map[string]any {
+	return map[string]any{
+		"commandId": r.CommandID,
+		"deviceId":  deviceID,
+		"ok":        r.OK,
+		"message":   r.Message,
+		"data":      r.Data,
+	}
+}
+
 // PostCommandResult answers one device_command by correlation id. Every
 // command path must end here — success, failure, or unsupported — or the
 // daemon-side tool call hangs until its timeout.
 func (n *Node) PostCommandResult(ctx context.Context, r commandResult) error {
-	return n.postJSON(ctx, "/devices/command-result", map[string]any{
-		"commandId": r.CommandID,
-		"deviceId":  n.DeviceID,
-		"ok":        r.OK,
-		"message":   r.Message,
-		"data":      r.Data,
-	}, nil)
+	return n.postJSON(ctx, "/devices/command-result", resultBody(n.DeviceID, r), nil)
 }
 
 // Run is the forever loop: register, heartbeat, and consume the SSE stream,
@@ -297,18 +311,8 @@ func (n *Node) consumeEvents(ctx context.Context) error {
 	// JSON; give the scanner room well beyond that.
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue // blank separators / comments / keepalives
-		}
-		var event map[string]any
-		if err := json.Unmarshal([]byte(line[len("data: "):]), &event); err != nil {
-			continue // not for us to crash on — skip malformed frames
-		}
-		if event["kind"] != "device_command" {
-			continue
-		}
-		if id, _ := event["deviceId"].(string); id != n.DeviceID {
+		event, ok := decodeCommandFrame(scanner.Text(), n.DeviceID)
+		if !ok {
 			continue
 		}
 		// Commands run concurrently on purpose: a long exec must not block a
@@ -346,6 +350,27 @@ func (n *Node) handleCommand(ctx context.Context, event map[string]any) {
 	if n.pendingReexec.Load() {
 		reexecInto(n)
 	}
+}
+
+// decodeCommandFrame parses one SSE line into a device_command event
+// addressed to deviceID. Everything else — blank separators, comments,
+// keepalives, malformed JSON (not for us to crash on), other event kinds,
+// commands for other devices — returns false and is skipped.
+func decodeCommandFrame(line, deviceID string) (map[string]any, bool) {
+	if !strings.HasPrefix(line, "data: ") {
+		return nil, false
+	}
+	var event map[string]any
+	if err := json.Unmarshal([]byte(line[len("data: "):]), &event); err != nil {
+		return nil, false
+	}
+	if event["kind"] != "device_command" {
+		return nil, false
+	}
+	if id, _ := event["deviceId"].(string); id != deviceID {
+		return nil, false
+	}
+	return event, true
 }
 
 // meshPlatform maps the Go runtime OS onto the mesh's DevicePlatform enum.

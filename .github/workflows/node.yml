@@ -12,6 +12,9 @@ on:
     branches: [main]
     paths:
       - "apps/node/**"
+      # Shared protocol fixtures — the node's conformance test replays them
+      # (protocol/README.md), so a protocol change must run this suite.
+      - "protocol/**"
       - ".github/workflows/node.yml"
 
 permissions:

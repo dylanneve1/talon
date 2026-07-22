@@ -150,7 +150,7 @@ The Kilo and OpenCode backends share infrastructure (`backend/remote-server/`) s
 
 ## Desktop & mobile app
 
-The `desktop` frontend turns the daemon into a **client bridge** — a versioned HTTP + Server-Sent-Events JSON API (the _Talon Client Bridge Protocol_, `src/frontend/desktop/protocol.ts`) that any GUI client can speak. The reference client is **[Talon Companion](apps/companion/)**, a single Flutter codebase that runs on **Windows, macOS, Linux, and Android**.
+The `desktop` frontend turns the daemon into a **client bridge** — a versioned HTTP + Server-Sent-Events JSON API (the _Talon Client Bridge Protocol_, `src/frontend/native/protocol.ts`) that any GUI client can speak. The reference client is **[Talon Companion](apps/companion/)**, a single Flutter codebase that runs on **Windows, macOS, Linux, and Android**. The protocol has three independent implementations (daemon, companion, [talon-node](apps/node/)); shared wire fixtures in [protocol/](protocol/) are replayed by all three test suites so a drift on any side fails its CI — see [protocol/README.md](protocol/README.md).
 
 ```jsonc
 // ~/.talon/config.json

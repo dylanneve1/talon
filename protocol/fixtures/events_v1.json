@@ -1,0 +1,180 @@
+{
+  "_comment": "Canonical Bridge Protocol v1 SSE event stream. One entry per BridgeEvent kind (tool appears three times: call, ok result, error result). Asserted by all three implementations: src/__tests__/protocol-conformance.test.ts (daemon types + exhaustiveness), apps/companion/test/protocol_conformance_test.dart (streamed through the live SSE client into AppState), and apps/node/protocol_conformance_test.go (SSE frame decoding + device_command filtering). The `events` array is a coherent session in order — the companion test replays it top to bottom. `forwardCompat` frames must be silently tolerated by every client: unknown kinds and unknown fields on known kinds are additive evolution, never errors.",
+  "protocol": 1,
+  "events": [
+    {
+      "kind": "hello",
+      "status": {
+        "app": "talon-bridge",
+        "protocol": 1,
+        "capabilities": ["plugins-skills"],
+        "botName": "Talon",
+        "backend": "claude",
+        "model": "Claude Sonnet 5",
+        "activeChats": 3,
+        "startedAt": "2026-01-01T00:00:00.000Z"
+      },
+      "chats": [
+        {
+          "id": "d_abc123",
+          "title": "Protocol design",
+          "createdAt": 1767225500000,
+          "lastActive": 1767225600000,
+          "preview": "Here is markdown with code.",
+          "model": "claude-sonnet-5",
+          "backend": "claude",
+          "effort": "high",
+          "pulse": true
+        }
+      ]
+    },
+    {
+      "kind": "status",
+      "status": {
+        "app": "talon-bridge",
+        "protocol": 1,
+        "botName": "Talon",
+        "backend": "claude",
+        "model": "Claude Sonnet 5",
+        "activeChats": 4,
+        "startedAt": "2026-01-01T00:00:00.000Z"
+      }
+    },
+    {
+      "kind": "chat_created",
+      "chat": {
+        "id": "d_new777",
+        "title": "Scratch",
+        "createdAt": 1767225610000,
+        "lastActive": 1767225610000,
+        "preview": ""
+      }
+    },
+    {
+      "kind": "chat_updated",
+      "chat": {
+        "id": "d_abc123",
+        "title": "Protocol design",
+        "createdAt": 1767225500000,
+        "lastActive": 1767225620000,
+        "preview": "find the fox",
+        "model": "claude-sonnet-5",
+        "backend": "claude",
+        "effort": "high",
+        "pulse": true,
+        "context": {
+          "known": true,
+          "used": 40000,
+          "max": 200000,
+          "pct": 20,
+          "warn": false
+        },
+        "queued": { "text": "and after that, the hedgehog", "hasAttachment": false }
+      }
+    },
+    {
+      "kind": "message",
+      "chatId": "d_abc123",
+      "message": {
+        "id": "2001",
+        "chatId": "d_abc123",
+        "role": "user",
+        "text": "find the fox",
+        "ts": 1767225620000
+      }
+    },
+    { "kind": "turn_start", "chatId": "d_abc123" },
+    { "kind": "typing", "chatId": "d_abc123", "on": true },
+    { "kind": "reasoning", "chatId": "d_abc123", "text": "The user wants the fox located." },
+    { "kind": "delta", "chatId": "d_abc123", "text": "Looking for the fox…" },
+    {
+      "kind": "tool",
+      "chatId": "d_abc123",
+      "id": "toolu_c1",
+      "name": "Bash",
+      "phase": "call",
+      "input": { "command": "ls dens/" }
+    },
+    {
+      "kind": "tool",
+      "chatId": "d_abc123",
+      "id": "toolu_c1",
+      "name": "Bash",
+      "phase": "result",
+      "output": "red-fox.txt"
+    },
+    {
+      "kind": "tool",
+      "chatId": "d_abc123",
+      "id": "toolu_c2",
+      "name": "mcp__search__web",
+      "phase": "call",
+      "input": { "query": "quick brown fox" }
+    },
+    {
+      "kind": "tool",
+      "chatId": "d_abc123",
+      "id": "toolu_c2",
+      "name": "mcp__search__web",
+      "phase": "result",
+      "error": "exit 1"
+    },
+    {
+      "kind": "message",
+      "chatId": "d_abc123",
+      "message": {
+        "id": "2002",
+        "chatId": "d_abc123",
+        "role": "assistant",
+        "text": "Found the **fox** in `dens/red-fox.txt`.",
+        "ts": 1767225625000,
+        "tools": [
+          {
+            "id": "toolu_c1",
+            "name": "Bash",
+            "input": { "command": "ls dens/" },
+            "durationMs": 800,
+            "output": "red-fox.txt"
+          },
+          {
+            "id": "toolu_c2",
+            "name": "mcp__search__web",
+            "input": { "query": "quick brown fox" },
+            "error": "exit 1",
+            "durationMs": 120
+          }
+        ]
+      }
+    },
+    {
+      "kind": "turn_end",
+      "chatId": "d_abc123",
+      "delivered": 1,
+      "durationMs": 4200,
+      "usage": { "input": 1200, "output": 340 }
+    },
+    { "kind": "typing", "chatId": "d_abc123", "on": false },
+    {
+      "kind": "message_edited",
+      "chatId": "d_abc123",
+      "messageId": "2002",
+      "text": "Found the **fox** in `dens/red-fox.txt` (edited)."
+    },
+    { "kind": "reaction", "chatId": "d_abc123", "messageId": "2002", "emoji": "👍" },
+    { "kind": "message_deleted", "chatId": "d_abc123", "messageId": "2001" },
+    { "kind": "error", "chatId": "d_abc123", "message": "SDK error: transient stream drop" },
+    { "kind": "locate", "deviceId": "dev_pixel8" },
+    {
+      "kind": "device_command",
+      "id": "cmd_01",
+      "deviceId": "dev_node01",
+      "name": "status",
+      "params": {}
+    },
+    { "kind": "chat_deleted", "chatId": "d_new777" }
+  ],
+  "forwardCompat": [
+    { "kind": "holo_message", "chatId": "d_abc123", "payload": { "hologram": true } },
+    { "kind": "typing", "chatId": "d_abc123", "on": false, "sparkle": "additive-field" }
+  ]
+}

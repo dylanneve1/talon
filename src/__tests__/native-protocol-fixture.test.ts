@@ -1,10 +1,10 @@
 /**
  * Contract test against the shared protocol fixture in
- * apps/companion/test/fixtures/protocol_v1.json. The companion app asserts
- * the same file from Dart (test/protocol_fixture_test.dart), so a wire-shape
- * drift on either side fails one of the two suites instead of shipping a
- * silent misrender. Assignments to the protocol types make renames a
- * compile-time failure here.
+ * protocol/fixtures/protocol_v1.json. The companion app asserts the same
+ * file from Dart (test/protocol_fixture_test.dart), so a wire-shape drift on
+ * either side fails one of the two suites instead of shipping a silent
+ * misrender. Assignments to the protocol types make renames a compile-time
+ * failure here. See protocol/README.md for the full conformance scheme.
  */
 
 import { describe, it, expect } from "vitest";
@@ -22,7 +22,7 @@ import {
 
 const fixture = JSON.parse(
   readFileSync(
-    join(__dirname, "../../apps/companion/test/fixtures/protocol_v1.json"),
+    join(__dirname, "../../protocol/fixtures/protocol_v1.json"),
     "utf-8",
   ),
 ) as {

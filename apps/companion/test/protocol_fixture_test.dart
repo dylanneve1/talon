@@ -4,13 +4,15 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:talon_companion/src/models/bridge_models.dart';
 
-/// Contract test against the shared protocol fixture. The daemon asserts the
-/// same file from TypeScript (src/__tests__/native-protocol-fixture.test.ts),
-/// so a wire-shape drift on either side fails one of the two suites instead
-/// of shipping a silent misrender.
+/// Contract test against the shared protocol fixture in
+/// protocol/fixtures/protocol_v1.json. The daemon asserts the same file from
+/// TypeScript (src/__tests__/native-protocol-fixture.test.ts), so a
+/// wire-shape drift on either side fails one of the two suites instead of
+/// shipping a silent misrender. See protocol/README.md for the full
+/// conformance scheme.
 void main() {
   final fixture = jsonDecode(
-    File('test/fixtures/protocol_v1.json').readAsStringSync(),
+    File('../../protocol/fixtures/protocol_v1.json').readAsStringSync(),
   ) as Map<String, dynamic>;
 
   test('fixture protocol version matches the client', () {
