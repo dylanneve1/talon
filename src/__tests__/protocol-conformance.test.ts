@@ -206,14 +206,15 @@ describe("events fixture (protocol/fixtures/events_v1.json)", () => {
       (e): e is Extract<BridgeEvent, { kind: "tool" }> => e.kind === "tool",
     );
     const persisted = eventsFixture.events
-      .filter((e): e is Extract<BridgeEvent, { kind: "message" }> =>
-        e.kind === "message",
+      .filter(
+        (e): e is Extract<BridgeEvent, { kind: "message" }> =>
+          e.kind === "message",
       )
       .flatMap((e) => e.message.tools ?? []);
     for (const tool of persisted) {
-      expect(streamed.some((s) => s.id === tool.id && s.name === tool.name)).toBe(
-        true,
-      );
+      expect(
+        streamed.some((s) => s.id === tool.id && s.name === tool.name),
+      ).toBe(true);
     }
   });
 
@@ -295,7 +296,9 @@ describe("mesh fixture (protocol/fixtures/mesh_v1.json)", () => {
     expect(meshFixture.registration.capabilities).toEqual(
       meshFixture.nodeCapabilities,
     );
-    expect(meshFixture.device.capabilities).toEqual(meshFixture.nodeCapabilities);
+    expect(meshFixture.device.capabilities).toEqual(
+      meshFixture.nodeCapabilities,
+    );
   });
 
   it("every advertised capability has a canonical command sample", () => {
@@ -305,9 +308,10 @@ describe("mesh fixture (protocol/fixtures/mesh_v1.json)", () => {
       ...meshFixture.companionCoreCapabilities,
       ...meshFixture.companionDeviceControlCapabilities,
     ]) {
-      expect(sampled, `missing command sample for capability "${name}"`).toContain(
-        name,
-      );
+      expect(
+        sampled,
+        `missing command sample for capability "${name}"`,
+      ).toContain(name);
     }
     // And no sample invents a command outside the advertised surfaces.
     const known = new Set([
@@ -351,6 +355,8 @@ describe("mesh fixture (protocol/fixtures/mesh_v1.json)", () => {
     expect(
       toDeviceInfo(meshFixture.device, meshFixture.device.lastSeen),
     ).toEqual(meshFixture.device);
-    expect(toDeviceLocation(meshFixture.location)).toEqual(meshFixture.location);
+    expect(toDeviceLocation(meshFixture.location)).toEqual(
+      meshFixture.location,
+    );
   });
 });
