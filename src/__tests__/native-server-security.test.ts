@@ -58,6 +58,8 @@ const handlers: BridgeServerHandlers = {
   completeCommand: () => false,
   acceptFileUpload: async () => ({ ok: false, error: "unused" }),
   openFileDownload: async () => null,
+  openNodeInstall: () => null,
+  openNodeBinary: () => null,
 };
 
 describe("bridge server security posture", () => {
@@ -160,5 +162,29 @@ describe("bridge server security posture", () => {
     ]) {
       expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     }
+  });
+
+  it("gates the pre-auth node provisioning routes on the grant token alone", async () => {
+    // Deliberately pre-auth (a fresh host holds no bearer yet) — so a bad or
+    // missing provision token must 404, and a valid one must serve without
+    // any Authorization header.
+    server = new BridgeServer(
+      { host: "127.0.0.1", port: 0, token: "secret", startedAt: "boot" },
+      {
+        ...handlers,
+        openNodeInstall: (token) =>
+          token === "good-grant"
+            ? { script: "#!/bin/sh\necho install", filename: "install.sh" }
+            : null,
+      },
+    );
+    const port = await server.start();
+
+    expect((await get(port, "/node/install")).status).toBe(404);
+    expect((await get(port, "/node/install?provision=wrong")).status).toBe(404);
+    const ok = await get(port, "/node/install?provision=good-grant");
+    expect(ok.status).toBe(200);
+    expect(await ok.text()).toContain("echo install");
+    expect((await get(port, "/node/binary?provision=wrong")).status).toBe(404);
   });
 });

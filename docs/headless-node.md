@@ -51,8 +51,26 @@ unmodified bridge.
 
 ## Deploying a node
 
-See `apps/node/README.md` for flags, config, and service install
-(systemd/launchd/scheduled task). The short version:
+The one-command path — ask the model for an install link
+(`make_node_install_link(os, arch)`), then run the returned command on the
+new host:
+
+```sh
+curl -fsSk "https://<daemon>:19880/node/install?provision=<token>" | sh
+```
+
+The bridge serves a generated installer over a single-use, expiring grant
+token (`src/core/mesh/node-provision.ts`): it downloads the matching
+talon-node binary from the same bridge, verifies its sha256 against the
+digest baked into the script, installs it, pre-pins the bridge TLS
+fingerprint, embeds the bearer token, and registers the boot service.
+Windows grants produce a PowerShell installer with the same flow. The two
+routes (`GET /node/install`, `GET /node/binary`) are deliberately pre-auth —
+the fresh host holds no credential yet; the grant token is the entire
+authorization, exactly like streamed-transfer tokens.
+
+Manual alternative — see `apps/node/README.md` for flags, config, and
+service install (systemd/launchd/scheduled task):
 
 ```sh
 talon-node install --bridge https://<daemon>:19880 --token <bridge-token> --name my-server
@@ -62,8 +80,32 @@ Remote nodes are best pointed at the daemon over a tailnet/VPN address —
 the bridge token grants the full bridge API, so avoid exposing the port
 publicly. Scoping per-device tokens is a known follow-up.
 
+## Where node binaries come from
+
+`src/core/mesh/node-binaries.ts` materializes a binary for any supported
+target regardless of how the daemon was installed, trying in order:
+
+1. **source build** — a dev checkout with Go on PATH cross-compiles
+   `apps/node` for the target (rebuilt every resolve, stamped
+   `<version>+<sha>`);
+2. **cache** — `~/.talon/node-bin/<talon-version>/`, digest-re-verified on
+   every hit;
+3. **release download** — the GitHub release matching the daemon's own
+   version, verified against its `talon-node-SHA256SUMS` manifest. This is
+   what lets prebuilt installs (npm, deb, standalone binary) provision and
+   update nodes with no toolchain.
+
+Everything rides that resolver: `get_node_binary` (stage a binary on the
+daemon host), `make_node_install_link` (bridge-served installer), and
+`update_node` with no `binary_path` (auto-picks the target's registered
+platform/arch — nodes advertise `runtime.GOARCH` at registration).
+
 ## Release artifacts
 
 `.github/workflows/node.yml` vets, tests, and cross-compiles
 linux/amd64+arm64+arm, darwin/amd64+arm64, and windows/amd64 on every PR
-touching `apps/node`, and attaches the binaries to published releases.
+touching `apps/node` (via the platform-neutral `go run ./tools/build`), and
+attaches the binaries plus `talon-node-SHA256SUMS` to published releases.
+The version.txt drift guard runs on PRs only — release builds stamp from
+the tag, so a stale release PR can no longer ship a release with no node
+binaries.

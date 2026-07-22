@@ -186,9 +186,13 @@ func (n *Node) Health() (map[string]any, error) {
 // one, and the registry treats absence correctly.
 func (n *Node) Register(ctx context.Context) error {
 	err := n.postJSON(ctx, "/devices/register", map[string]any{
-		"id":           n.DeviceID,
-		"name":         n.cfg.Name,
-		"platform":     meshPlatform(),
+		"id":       n.DeviceID,
+		"name":     n.cfg.Name,
+		"platform": meshPlatform(),
+		// The Go arch (amd64/arm64/arm) — matched against release binary
+		// names (talon-node-<os>-<arch>) so the daemon can auto-resolve the
+		// right replacement for update_node.
+		"arch":         runtime.GOARCH,
 		"appVersion":   version,
 		"capabilities": nodeCapabilities,
 	}, nil)

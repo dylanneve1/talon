@@ -58,11 +58,23 @@ export const meshHandlers: SharedActionHandlers = {
       body.remote_path,
     ),
   // Remote self-update for a headless talon-node: push a new binary and have
-  // the node verify, swap, and restart into it.
+  // the node verify, swap, and restart into it. binary_path is optional —
+  // omitted, the daemon resolves the right build for the node's
+  // platform/arch itself (source build or verified release download).
   update_node: (body) =>
     getMeshService().updateNodeBinary(
       body.device,
       body.binary_path,
       body.remote_path,
+    ),
+  // Node provisioning: materialize a talon-node binary for any arch, and
+  // mint single-use bridge-served install links for fresh hosts.
+  get_node_binary: (body) => getMeshService().getNodeBinary(body.os, body.arch),
+  make_node_install_link: (body) =>
+    getMeshService().makeNodeInstallLink(
+      body.os,
+      body.arch,
+      body.name,
+      body.bridge_url,
     ),
 };

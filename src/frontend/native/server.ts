@@ -142,6 +142,10 @@ export type BridgeServerHandlers = {
   openFileDownload(
     token: string,
   ): Promise<{ path: string; size: number } | null>;
+  /** Resolve a node-provisioning token to its installer script, or null. */
+  openNodeInstall(token: string): { script: string; filename: string } | null;
+  /** Resolve a node-provisioning token to the binary to stream, or null. */
+  openNodeBinary(token: string): { path: string; size: number } | null;
 };
 
 const SSE_PING_MS = 25_000;
@@ -375,6 +379,45 @@ export class BridgeServer {
         activeChats: s.activeChats,
         capabilities: ["mesh", "mesh-commands", "mesh-file-stream"],
       });
+    }
+
+    // Node provisioning runs PRE-AUTH by design: the target host holds no
+    // bridge credential yet — the single-use grant token (minted by
+    // make_node_install_link, expiring, one serve per leg) is the entire
+    // authorization, the same trust model as streamed-transfer tokens.
+    if (
+      method === "GET" &&
+      (path === "/node/install" || path === "/node/binary")
+    ) {
+      const token = url.searchParams.get("provision") ?? "";
+      const unknown = () =>
+        this.json(res, 404, {
+          ok: false,
+          error: "Unknown, expired, or already-used provisioning token",
+        });
+      if (!token) return unknown();
+      if (path === "/node/install") {
+        const install = this.handlers.openNodeInstall(token);
+        if (!install) return unknown();
+        res.writeHead(200, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${install.filename}"`,
+          ...this.corsHeaders(),
+        });
+        res.end(install.script);
+        return;
+      }
+      const binary = this.handlers.openNodeBinary(token);
+      if (!binary) return unknown();
+      res.writeHead(200, {
+        "Content-Type": "application/octet-stream",
+        "Content-Length": String(binary.size),
+        ...this.corsHeaders(),
+      });
+      const stream = createReadStream(binary.path);
+      stream.on("error", () => res.destroy());
+      stream.pipe(res);
+      return;
     }
 
     if (auth !== "ok") {

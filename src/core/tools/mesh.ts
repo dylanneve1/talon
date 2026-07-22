@@ -188,13 +188,14 @@ export const meshTools: ToolDefinition[] = [
   {
     name: "update_node",
     description:
-      "Remotely update a headless talon-node (Linux/macOS/Windows server on the mesh): stream a new node binary from the daemon and have the node verify its hash, atomically swap its own binary, and restart into it. On Linux/macOS this is an in-place execve so the mesh connection returns within seconds; the node re-hashes the pushed file and refuses a truncated or mismatched binary. Build the replacement for the node's platform/arch first (talon-node-<os>-<arch>). Confirm success with get_device_status afterwards (appVersion should change). This is the node counterpart of update_device — use update_device for Android companions.",
+      "Remotely update a headless talon-node (Linux/macOS/Windows server on the mesh): stream a new node binary from the daemon and have the node verify its hash, atomically swap its own binary, and restart into it. On Linux/macOS this is an in-place execve so the mesh connection returns within seconds; the node re-hashes the pushed file and refuses a truncated or mismatched binary. With no binary_path, the daemon auto-resolves the right build for the node's registered platform/arch (source build in a dev checkout, else the digest-verified release download matching this Talon version) — the normal call is just update_node(device). Confirm success with get_device_status afterwards (appVersion should change). This is the node counterpart of update_device — use update_device for Android companions.",
     schema: {
       device: deviceParam,
       binary_path: z
         .string()
+        .optional()
         .describe(
-          "Path to the new talon-node binary, relative to the workspace (or absolute), built for the node's OS/arch.",
+          "Optional explicit binary, relative to the workspace (or absolute), built for the node's OS/arch. Omit to auto-resolve.",
         ),
       remote_path: z
         .string()
@@ -204,6 +205,44 @@ export const meshTools: ToolDefinition[] = [
         ),
     },
     execute: (params, bridge) => bridge("update_node", params),
+    tag: "mesh",
+  },
+  {
+    name: "get_node_binary",
+    description:
+      "Materialize a talon-node binary (the headless mesh device) for any supported platform/arch on the daemon host and return its path, version, and sha256. Resolution order: built from source when running in a dev checkout with Go, else the cached copy, else the digest-verified download from this Talon version's GitHub release — so it works on prebuilt installs with no toolchain. Use it to stage a binary for manual deployment (scp, device_push_file); for onboarding a fresh host prefer make_node_install_link, and for updating an existing node just call update_node (which resolves automatically).",
+    schema: {
+      os: z.string().describe("Target OS: linux, macos/darwin, or windows."),
+      arch: z
+        .string()
+        .describe("Target arch: amd64/x86_64, arm64/aarch64, or arm."),
+    },
+    execute: (params, bridge) => bridge("get_node_binary", params),
+    tag: "mesh",
+  },
+  {
+    name: "make_node_install_link",
+    description:
+      "Mint a single-use install link served by this daemon's bridge and return the one command that attaches a fresh Linux/macOS/Windows host to the mesh as a headless talon-node. Running it on the host downloads the installer script and binary from the bridge (sha256-verified), installs talon-node, pre-pins the bridge TLS certificate, embeds the bearer token, and registers a boot service — no toolchain, package manager, or manual config on the host. The link expires in 30 minutes and each leg serves exactly once; the host only needs to reach the bridge URL. Requires the native bridge running on a non-loopback bind with a token.",
+    schema: {
+      os: z.string().describe("Host OS: linux, macos/darwin, or windows."),
+      arch: z
+        .string()
+        .describe("Host arch: amd64/x86_64, arm64/aarch64, or arm."),
+      name: z
+        .string()
+        .optional()
+        .describe(
+          "Device name to register with (default: the host's hostname).",
+        ),
+      bridge_url: z
+        .string()
+        .optional()
+        .describe(
+          "Bridge base URL as reachable FROM the new host (e.g. https://100.64.0.7:19880). Default: derived from the bridge bind (wildcard binds use this host's first external IPv4).",
+        ),
+    },
+    execute: (params, bridge) => bridge("make_node_install_link", params),
     tag: "mesh",
   },
 ];

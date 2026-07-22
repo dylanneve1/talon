@@ -237,10 +237,12 @@ function sanitizeDevice(
   ) {
     return null;
   }
+  const arch = stringField(body.arch)?.toLowerCase().slice(0, 16);
   return {
     id: id ?? "",
     name: name ?? "",
     platform: platform ?? "linux",
+    ...(arch ? { arch } : {}),
     appVersion: appVersion ?? "",
     online: body.online === true,
     lastSeen: numberField(body.lastSeen) ?? now,

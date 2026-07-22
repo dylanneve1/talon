@@ -68,6 +68,9 @@ describe("mesh tool availability", () => {
         "device_pull_file",
         "device_push_file",
         "update_device",
+        "update_node",
+        "get_node_binary",
+        "make_node_install_link",
         "remove_device",
       ]) {
         expect(names).toContain(tool);
@@ -1224,5 +1227,150 @@ describe("MeshService.pingAll", () => {
   it("returns an empty list when nothing has registered", async () => {
     const service = await tempService();
     expect(await service.pingAll()).toEqual([]);
+  });
+});
+
+describe("MeshService node provisioning", () => {
+  /** A resolver seam standing in for source-build/cache/release tiers. */
+  async function stubResolver(): Promise<{
+    resolver: NonNullable<
+      ConstructorParameters<typeof MeshService>[1]
+    >["nodeBinaryResolver"];
+    binaryPath: string;
+    calls: string[];
+  }> {
+    const dir = await mkdtemp(join(tmpdir(), "talon-node-resolve-"));
+    const binaryPath = join(dir, "talon-node-linux-arm64");
+    await fsWriteFile(binaryPath, "fake node binary");
+    const calls: string[] = [];
+    return {
+      resolver: async (goos, goarch) => {
+        calls.push(`${goos}/${goarch}`);
+        return {
+          path: binaryPath,
+          version: "3.4.0",
+          sha256: "ab".repeat(32),
+          size: 16,
+          source: "cache",
+        };
+      },
+      binaryPath,
+      calls,
+    };
+  }
+
+  async function registerNode(
+    service: MeshService,
+    extra: Record<string, unknown> = {},
+  ): Promise<void> {
+    await service.register({
+      id: "srv",
+      name: "Build Server",
+      platform: "linux",
+      arch: "arm64",
+      appVersion: "3.3.0",
+      capabilities: ["update_node", "write_file"],
+      ...extra,
+    });
+  }
+
+  it("registers and lists a node's arch alongside its platform", async () => {
+    const service = await tempService();
+    await registerNode(service);
+    const listed = await service.describeDevices();
+    expect(listed.text).toContain("(linux/arm64)");
+  });
+
+  it("auto-resolves the update binary from the node's platform/arch", async () => {
+    const { resolver, calls } = await stubResolver();
+    const service = await tempService({ nodeBinaryResolver: resolver });
+    await registerNode(service);
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(() =>
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: true,
+            ...(cmd.name === "update_node"
+              ? { message: "Swapping and restarting." }
+              : {}),
+          }),
+        ),
+    });
+
+    const result = await service.updateNodeBinary("srv");
+    expect(result.ok).toBe(true);
+    expect(result.text).toContain("auto-resolved 3.4.0 for linux/arm64");
+    expect(calls).toEqual(["linux/arm64"]);
+  });
+
+  it("asks for an explicit binary when the node never advertised arch", async () => {
+    const service = await tempService();
+    await registerNode(service, { arch: undefined });
+    const result = await service.updateNodeBinary("srv");
+    expect(result.ok).toBe(false);
+    expect(result.text).toContain("CPU architecture");
+  });
+
+  it("refuses update_node aimed at a mobile companion", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["update_node"],
+    });
+    const result = await service.updateNodeBinary("phone");
+    expect(result.ok).toBe(false);
+    expect(result.text).toContain("headless nodes only");
+  });
+
+  it("mints a single-use install link and serves both legs through the bridge routes", async () => {
+    const { resolver, binaryPath } = await stubResolver();
+    const service = await tempService({ nodeBinaryResolver: resolver });
+    service.setBridgeInfo({
+      scheme: "https",
+      host: "100.64.0.7",
+      port: 19880,
+      token: "bearer-secret",
+      fingerprint: "cd".repeat(32),
+    });
+
+    const minted = await service.makeNodeInstallLink("macos", "aarch64");
+    expect(minted.ok).toBe(true);
+    expect(minted.text).toContain(
+      'curl -fsSk "https://100.64.0.7:19880/node/install?provision=',
+    );
+
+    const token = /provision=([A-Za-z0-9_-]+)/.exec(minted.text)![1]!;
+    const install = service.openNodeInstall(token);
+    expect(install?.filename).toBe("install-talon-node.sh");
+    expect(install?.script).toContain("bearer-secret");
+    expect(service.openNodeInstall(token)).toBeNull();
+    expect(service.openNodeBinary(token)).toEqual({
+      path: binaryPath,
+      size: 16,
+    });
+    expect(service.openNodeBinary(token)).toBeNull();
+  });
+
+  it("refuses install links when the bridge is loopback-only or absent", async () => {
+    const service = await tempService();
+    const none = await service.makeNodeInstallLink("linux", "amd64");
+    expect(none.ok).toBe(false);
+    expect(none.text).toContain("bridge isn't running");
+
+    service.setBridgeInfo({
+      scheme: "http",
+      host: "127.0.0.1",
+      port: 19880,
+      token: "tok",
+    });
+    const loopback = await service.makeNodeInstallLink("linux", "amd64");
+    expect(loopback.ok).toBe(false);
+    expect(loopback.text).toContain("loopback");
   });
 });

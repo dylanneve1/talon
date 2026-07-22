@@ -154,6 +154,8 @@ describe("bridge server over TLS", () => {
     completeCommand: () => false,
     acceptFileUpload: async () => ({ ok: false, error: "unused" }),
     openFileDownload: async () => null,
+    openNodeInstall: () => null,
+    openNodeBinary: () => null,
   };
 
   /** GET over HTTPS trusting exactly the bridge's own certificate. */

@@ -1194,6 +1194,8 @@ export function createNativeFrontend(
     completeCommand: (body) => mesh.completeCommand(body),
     acceptFileUpload: (token, body) => mesh.acceptFileUpload(token, body),
     openFileDownload: (token) => mesh.openFileDownload(token),
+    openNodeInstall: (token) => mesh.openNodeInstall(token),
+    openNodeBinary: (token) => mesh.openNodeBinary(token),
   };
 
   const nativeCfg = config.native ?? { port: 19880, host: "127.0.0.1" };
@@ -1278,6 +1280,15 @@ export function createNativeFrontend(
       chats.restore();
       await server.start();
       const fingerprint = server.getFingerprint();
+      // Tell the mesh how this bridge is reachable — everything a generated
+      // node installer needs (make_node_install_link fails cleanly without it).
+      mesh.setBridgeInfo({
+        scheme: server.getScheme(),
+        host: bridgeHost,
+        port: server.getPort(),
+        ...(bridgeToken ? { token: bridgeToken } : {}),
+        ...(fingerprint ? { fingerprint } : {}),
+      });
       await writeBridgeDiscovery({
         port: server.getPort(),
         token: bridgeToken,
@@ -1297,6 +1308,7 @@ export function createNativeFrontend(
     async stop() {
       unregisterMeshTransport?.();
       unregisterMeshTransport = null;
+      mesh.setBridgeInfo(null);
       await removeBridgeDiscovery();
       await server.stop();
       await gateway.stop();

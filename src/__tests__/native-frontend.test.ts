@@ -451,6 +451,8 @@ describe("native mesh bridge routes", () => {
       completeCommand: () => false,
       acceptFileUpload: (t, body) => transfers.acceptUpload(t, body),
       openFileDownload: (t) => transfers.openDownload(t),
+      openNodeInstall: () => null,
+      openNodeBinary: () => null,
     };
     const server = new BridgeServer(
       { host: "127.0.0.1", port: 0, token, startedAt: "now" },

@@ -30,11 +30,20 @@ import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { networkInterfaces, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { clampExecOutput } from "../../util/exec-output.js";
 import { dirs } from "../../util/paths.js";
+import {
+  NODE_TARGETS,
+  normalizeGoarch,
+  normalizeGoos,
+  platformToGoos,
+  resolveNodeBinary,
+  type NodeBinaryResolver,
+} from "./node-binaries.js";
+import { installOneLiner, NodeProvisionStore } from "./node-provision.js";
 import { MeshRegistry } from "./registry.js";
 import { TransferStore } from "./transfers.js";
 import type {
@@ -72,6 +81,25 @@ export type MeshServiceOptions = {
   pollIntervalMs?: number;
   /** How long a device command waits for its result before timing out. */
   commandTimeoutMs?: number;
+  /** Node-binary resolver override (tests — the real one builds/downloads). */
+  nodeBinaryResolver?: NodeBinaryResolver;
+};
+
+/**
+ * What the native bridge tells the mesh about itself once it's listening —
+ * everything a generated node installer needs to point a fresh host here.
+ * Registered by the native frontend after server start; null when the
+ * bridge isn't running (provisioning tools then fail with a clear reason).
+ */
+export type MeshBridgeInfo = {
+  scheme: "http" | "https";
+  /** The bind host from config — may be a wildcard (0.0.0.0/::). */
+  host: string;
+  port: number;
+  /** Bearer token clients authenticate with (absent on open loopback). */
+  token?: string;
+  /** TLS certificate SHA-256 (absent over plain HTTP). */
+  fingerprint?: string;
 };
 
 const DEFAULT_FRESH_FIX_TIMEOUT_MS = 8_000;
@@ -144,6 +172,10 @@ export class MeshService {
   private readonly receivedAt = new Map<string, number>();
   /** One-time tokens arranging streamed (single-HTTP-request) transfers. */
   private readonly transfers = new TransferStore();
+  /** One-time grants for bridge-served node installers. */
+  private readonly provision = new NodeProvisionStore();
+  private readonly resolveNode: NodeBinaryResolver;
+  private bridgeInfo: MeshBridgeInfo | null = null;
   private readonly freshFixTimeoutMs: number;
   private readonly pollIntervalMs: number;
   private readonly commandTimeoutMs: number;
@@ -158,6 +190,12 @@ export class MeshService {
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.commandTimeoutMs =
       options.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
+    this.resolveNode = options.nodeBinaryResolver ?? resolveNodeBinary;
+  }
+
+  /** The native bridge reports its reachable identity here (null on stop). */
+  setBridgeInfo(info: MeshBridgeInfo | null): void {
+    this.bridgeInfo = info;
   }
 
   /** Hydrate persisted devices/locations. Idempotent — safe to await from
@@ -923,19 +961,17 @@ export class MeshService {
    *
    * The binary is hashed here and the digest travels with the command; the
    * node re-hashes the pushed file and refuses to swap on a mismatch, so a
-   * truncated transfer can never be installed. Build the replacement for the
-   * node's platform/arch (talon-node-<os>-<arch>) before calling.
+   * truncated transfer can never be installed.
+   *
+   * With no binary_path, the replacement is auto-resolved for the node's
+   * registered platform/arch (source build in a dev checkout, else the
+   * version-matched release download — see node-binaries.ts).
    */
   async updateNodeBinary(
     query: unknown,
-    localBinaryPath: unknown,
+    localBinaryPath?: unknown,
     remotePath?: unknown,
   ): Promise<MeshToolResult> {
-    const local =
-      typeof localBinaryPath === "string" && localBinaryPath.trim()
-        ? resolve(dirs.workspace, localBinaryPath.trim())
-        : "";
-    if (!local) return { ok: false, text: "A local binary path is required." };
     await this.load();
     const resolved = this.resolveDevice(query);
     if ("error" in resolved) return { ok: false, text: resolved.error };
@@ -945,6 +981,34 @@ export class MeshService {
         ok: false,
         text: `${target.name} can't self-update — it needs the update_node capability (a talon-node headless device).`,
       };
+    }
+
+    let local: string;
+    let provenance = "";
+    if (typeof localBinaryPath === "string" && localBinaryPath.trim()) {
+      local = resolve(dirs.workspace, localBinaryPath.trim());
+    } else {
+      const goos = platformToGoos(target.platform);
+      if (!goos) {
+        return {
+          ok: false,
+          text: `${target.name} is a ${target.platform} device — update_node targets headless nodes only.`,
+        };
+      }
+      const goarch = normalizeGoarch(target.arch);
+      if (!goarch) {
+        return {
+          ok: false,
+          text: `${target.name} has not advertised its CPU architecture (a node build from before arch reporting). Pass binary_path explicitly for this update — after it, the node advertises arch and future updates auto-resolve.`,
+        };
+      }
+      try {
+        const bin = await this.resolveNode(goos, goarch);
+        local = bin.path;
+        provenance = ` (auto-resolved ${bin.version} for ${goos}/${goarch} via ${bin.source})`;
+      } catch (err) {
+        return { ok: false, text: (err as Error).message };
+      }
     }
 
     let sha256: string;
@@ -989,10 +1053,143 @@ export class MeshService {
     return {
       ok: true,
       text:
-        `Pushed ${formatBytes(size)} and staged the update on ${target.name}. ` +
+        `Pushed ${formatBytes(size)}${provenance} and staged the update on ${target.name}. ` +
         `${dispatched.result.message ?? "Restarting now."} ` +
         `Confirm with get_device_status once it reconnects (appVersion should change).`,
     };
+  }
+
+  // ── Node provisioning ──────────────────────────────────────────────────────
+
+  /**
+   * `get_node_binary`: materialize a talon-node binary for any supported
+   * platform/arch on the daemon host — source build in a dev checkout, else
+   * the digest-verified release download (cached under ~/.talon/node-bin).
+   */
+  async getNodeBinary(os: unknown, arch: unknown): Promise<MeshToolResult> {
+    const goos = normalizeGoos(os);
+    const goarch = normalizeGoarch(arch);
+    if (!goos || !goarch) {
+      return { ok: false, text: unknownTargetText(os, arch) };
+    }
+    try {
+      const bin = await this.resolveNode(goos, goarch);
+      return {
+        ok: true,
+        text: `talon-node ${bin.version} for ${goos}/${goarch}: ${bin.path} (${formatBytes(bin.size)}, sha256 ${bin.sha256}, via ${bin.source})`,
+      };
+    } catch (err) {
+      return { ok: false, text: (err as Error).message };
+    }
+  }
+
+  /**
+   * `make_node_install_link`: mint a single-use provisioning URL on the
+   * bridge and return the one command that turns a fresh host into a mesh
+   * node — it fetches the installer script, which downloads the (digest-
+   * verified) binary from the same bridge, installs it, pre-pins the bridge
+   * certificate, and registers the boot service.
+   */
+  async makeNodeInstallLink(
+    os: unknown,
+    arch: unknown,
+    name?: unknown,
+    bridgeUrl?: unknown,
+  ): Promise<MeshToolResult> {
+    const goos = normalizeGoos(os);
+    const goarch = normalizeGoarch(arch);
+    if (!goos || !goarch) {
+      return { ok: false, text: unknownTargetText(os, arch) };
+    }
+    const info = this.bridgeInfo;
+    if (!info) {
+      return {
+        ok: false,
+        text: "The native bridge isn't running, so there is nothing for a new node to connect to. Enable the native frontend first.",
+      };
+    }
+    if (!info.token) {
+      return {
+        ok: false,
+        text: "The bridge has no bearer token (loopback-only bind), and nodes authenticate with one. Set native.host to a reachable address (a token is auto-minted) and restart.",
+      };
+    }
+    const base = this.bridgeBaseUrl(info, bridgeUrl);
+    if (typeof base !== "string") return { ok: false, text: base.error };
+    let bin;
+    try {
+      bin = await this.resolveNode(goos, goarch);
+    } catch (err) {
+      return { ok: false, text: (err as Error).message };
+    }
+    const grant = this.provision.create({
+      goos,
+      goarch,
+      ...(typeof name === "string" && name.trim() ? { name: name.trim() } : {}),
+      binaryPath: bin.path,
+      sha256: bin.sha256,
+      size: bin.size,
+      version: bin.version,
+      bridgeUrl: base,
+      bearerToken: info.token,
+      ...(info.fingerprint ? { fingerprint: info.fingerprint } : {}),
+    });
+    return {
+      ok: true,
+      text: [
+        `Run this on the new ${goos}/${goarch} host:`,
+        "",
+        `  ${installOneLiner(grant)}`,
+        "",
+        `It installs talon-node ${bin.version} (sha256-verified against ${grant.sha256.slice(0, 12)}…), pins the bridge certificate, and registers a boot service — the host appears on the mesh within a minute.`,
+        `Single-use link, expires in 30 minutes. The host must be able to reach ${base}.`,
+      ].join("\n"),
+    };
+  }
+
+  /** GET /node/install — serve a grant's installer script (single-use). */
+  openNodeInstall(token: string): { script: string; filename: string } | null {
+    return this.provision.openScript(token);
+  }
+
+  /** GET /node/binary — serve a grant's binary (single-use). */
+  openNodeBinary(token: string): { path: string; size: number } | null {
+    return this.provision.openBinary(token);
+  }
+
+  /**
+   * The bridge base URL a NEW host should dial: an explicit override wins;
+   * otherwise derive from the bridge's bind. A wildcard bind maps to this
+   * host's first external IPv4; a loopback bind is unreachable from other
+   * machines, so it's an error rather than a link that can't work.
+   */
+  private bridgeBaseUrl(
+    info: MeshBridgeInfo,
+    explicit?: unknown,
+  ): string | { error: string } {
+    if (typeof explicit === "string" && explicit.trim()) {
+      const url = explicit.trim().replace(/\/+$/, "");
+      if (!/^https?:\/\/\S+$/.test(url)) {
+        return { error: `bridge_url must be an http(s) URL, got "${url}".` };
+      }
+      return url;
+    }
+    let host = info.host;
+    if (host === "0.0.0.0" || host === "::") {
+      const external = firstExternalIPv4();
+      if (!external) {
+        return {
+          error:
+            "Could not determine this host's external address — pass bridge_url explicitly (the URL the new node should dial).",
+        };
+      }
+      host = external;
+    } else if (isLoopbackAddress(host)) {
+      return {
+        error: `The bridge is bound to loopback (${host}), which other machines can't reach. Set native.host to a reachable address, or pass bridge_url if a tunnel exposes it.`,
+      };
+    }
+    return `${info.scheme}://${host}:${info.port}`;
   }
 
   /**
@@ -1243,7 +1440,7 @@ export class MeshService {
 
   private deviceLine(device: DeviceInfo): string {
     const parts = [
-      `${device.name} [id: ${device.id}] (${device.platform})`,
+      `${device.name} [id: ${device.id}] (${device.platform}${device.arch ? `/${device.arch}` : ""})`,
       device.online ? "online" : "offline",
       `last seen ${age(Date.now() - device.lastSeen)}`,
     ];
@@ -1443,6 +1640,28 @@ function clampExecTimeout(value: unknown): number {
 /** Trim a string path param, returning undefined when blank. */
 function requirePath(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/** Error text for an os/arch pair outside the talon-node build matrix. */
+function unknownTargetText(os: unknown, arch: unknown): string {
+  return `No talon-node target for os="${String(os)}", arch="${String(arch)}". Supported: ${NODE_TARGETS.map(
+    (t) => `${t.goos}/${t.goarch}`,
+  ).join(", ")} (macos ≡ darwin, x86_64 ≡ amd64, aarch64 ≡ arm64).`;
+}
+
+/** First non-internal IPv4 on this host — the wildcard-bind fallback. */
+function firstExternalIPv4(): string | undefined {
+  for (const list of Object.values(networkInterfaces())) {
+    for (const iface of list ?? []) {
+      if (!iface.internal && iface.family === "IPv4") return iface.address;
+    }
+  }
+  return undefined;
+}
+
+function isLoopbackAddress(host: string): boolean {
+  const h = host.toLowerCase();
+  return h === "localhost" || h === "::1" || h.startsWith("127.");
 }
 
 /** Render an exec result: exit code headline + stdout/stderr blocks. */

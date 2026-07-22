@@ -22,8 +22,15 @@ works out of the box.
 
 ## Quick start
 
+The fastest path needs nothing on this list: ask the Talon model for an
+install link (`make_node_install_link`) and run the returned one-liner on
+the host — it fetches a digest-verified binary from the daemon's bridge,
+installs it, pins the TLS fingerprint, and registers the boot service.
+
+Manual setup:
+
 ```sh
-# Build (or grab a release binary):
+# Build (or grab a release binary, or `get_node_binary` via the daemon):
 cd apps/node && go build -o talon-node .
 
 # First run — mints a device id, pins the bridge cert on first connect:
@@ -81,11 +88,16 @@ apps pair with). No daemon-side changes are required for headless nodes.
 ## Building all targets
 
 ```sh
-./scripts/build-all.sh          # → build/talon-node-<os>-<arch>[.exe]
+go run ./tools/build            # → build/talon-node-<os>-<arch>[.exe]
+                                #   + build/talon-node-SHA256SUMS
+./scripts/build-all.sh          # same thing, POSIX wrapper
 ```
 
-The `Headless Node` workflow builds the same matrix in CI and attaches the
-binaries to published releases.
+The builder is a Go program so it runs anywhere Go does (Windows included).
+It also emits the `talon-node-SHA256SUMS` manifest the daemon's node-binary
+resolver verifies release downloads against. The `Headless Node` workflow
+builds the same matrix in CI and attaches binaries + manifest to published
+releases.
 
 ## Versioning
 
@@ -93,21 +105,23 @@ The reported version tracks the **Talon release the binary was compiled
 against**, so a node's `appVersion` in the mesh tells you exactly which Talon
 it matches:
 
-- Release/CI and `scripts/build-all.sh` builds report `<talon-version>+<sha>`
+- Release/CI and `go run ./tools/build` builds report `<talon-version>+<sha>`
   (e.g. `3.1.1+c8c7437c`), stamped via `-ldflags -X main.ldflagsVersion=…`.
 - A bare `go build .` reports the embedded Talon version (`version.txt`,
   kept in sync with the root `package.json` — CI fails if it drifts).
 
 ## Remote self-update
 
-`update_node` (daemon-side mesh tool) streams a freshly-built binary to the
+`update_node` (daemon-side mesh tool) streams a replacement binary to the
 node, which re-hashes it, atomically swaps its own binary, and restarts into
 it — an in-place `execve` on Linux/macOS (same pid, no supervisor
 crash-accounting), a rename-aside + relaunch on Windows. A truncated or
 mismatched binary is refused before the swap, so the running node is never
-left broken. Build the replacement for the node's OS/arch first
-(`talon-node-<os>-<arch>`), then confirm with `get_device_status` once
-`appVersion` changes.
+left broken. With no `binary_path` the daemon resolves the right build
+itself from the node's registered platform/arch (nodes advertise
+`runtime.GOARCH`) — source build in a dev checkout, else the digest-verified
+release download. Confirm with `get_device_status` once `appVersion`
+changes.
 
 On Unix, `SIGHUP` also reloads the node into whatever binary is on disk —
 handy for `systemctl reload`-style restarts after an out-of-band swap.

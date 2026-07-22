@@ -15,6 +15,13 @@ export type DeviceInfo = {
   id: string;
   name: string;
   platform: DevicePlatform;
+  /**
+   * CPU architecture in Go spelling (amd64/arm64/arm), as talon-node
+   * advertises it. Lets the daemon pick the right release binary for
+   * update_node without being told. Absent for companion apps and node
+   * builds that predate arch reporting.
+   */
+  arch?: string;
   appVersion: string;
   online: boolean;
   /** Epoch milliseconds. */
@@ -83,6 +90,7 @@ export function toDeviceInfo(
     id: value.id,
     name: value.name,
     platform: value.platform,
+    ...(value.arch ? { arch: value.arch } : {}),
     appVersion: value.appVersion,
     online: now - value.lastSeen <= offlineAfterMs && value.online,
     lastSeen: value.lastSeen,
