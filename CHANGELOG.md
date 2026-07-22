@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.6.2](https://github.com/dylanneve1/talon/compare/v3.6.1...v3.6.2) (2026-07-22)
+
+
+### Documentation
+
+* add hero banner to README ([#627](https://github.com/dylanneve1/talon/issues/627)) ([747a057](https://github.com/dylanneve1/talon/commit/747a0578894138b18271d9b8e3bf58c41f151882))
+
 ## [3.6.1](https://github.com/dylanneve1/talon/compare/v3.6.0...v3.6.1) (2026-07-22)
 
 
