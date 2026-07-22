@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.5.0](https://github.com/dylanneve1/talon/compare/v3.4.1...v3.5.0) (2026-07-22)
+
+
+### Features
+
+* **frontend:** frontend SDK — capability contract + self-registering frontend registry ([#615](https://github.com/dylanneve1/talon/issues/615)) ([362d1be](https://github.com/dylanneve1/talon/commit/362d1be02553aec3a9c6a62809d4042c4b45755c))
+
+
+### Tests
+
+* **protocol:** tri-implementation bridge protocol conformance suite ([#614](https://github.com/dylanneve1/talon/issues/614)) ([53c1c87](https://github.com/dylanneve1/talon/commit/53c1c87bc5e38e9071bf0212b86c671d86f63e62))
+
 ## [3.4.1](https://github.com/dylanneve1/talon/compare/v3.4.0...v3.4.1) (2026-07-22)
 
 
