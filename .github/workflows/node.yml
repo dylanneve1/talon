@@ -68,7 +68,7 @@ jobs:
         run: go run ./tools/build
 
       - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: talon-node-binaries
           path: apps/node/build/*
