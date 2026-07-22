@@ -28,10 +28,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # NO `release-type` input here, deliberately: release-please-action
+      # ignores config-file whenever release-type is passed (its code does
+      # `if (inputs.releaseType) Manifest.fromConfig(...)`), which silently
+      # disabled everything in release-please-config.json — including the
+      # extra-files bump of apps/node/version.txt — from the day the config
+      # was added. release-type lives in the config file instead.
       - uses: googleapis/release-please-action@v5
         id: release
         with:
-          release-type: node
           token: ${{ secrets.PAT }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json

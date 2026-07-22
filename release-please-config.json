@@ -10,7 +10,7 @@
   "draft-pull-request": false,
   "packages": {
     ".": {
-      "package-name": "talon",
+      "package-name": "talon-agent",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         { "type": "generic", "path": "apps/node/version.txt" }
