@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.1](https://github.com/dylanneve1/talon/compare/v3.4.0...v3.4.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* **ci:** stop release-please ignoring its config file (release-type input override) ([#612](https://github.com/dylanneve1/talon/issues/612)) ([9b7240c](https://github.com/dylanneve1/talon/commit/9b7240c8b69351517452e9d2776a9a314385f614))
+
 ## [3.4.0](https://github.com/dylanneve1/talon/compare/v3.3.0...v3.4.0) (2026-07-22)
 
 
