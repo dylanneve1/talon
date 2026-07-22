@@ -2,44 +2,41 @@
  * Frontend-list helpers shared across backends.
  *
  * Every backend needs "which frontends get an MCP tool server?" at
- * spawn time; before this helper, claude-sdk, openai-agents, and codex
- * each carried their own copy of the same normalise-and-filter logic.
+ * spawn time. Identity, chat-id ownership, and the messaging trait are
+ * owned by the frontend registry (`core/frontend-runtime`) — these
+ * helpers are thin views over it, kept for their call-site-friendly
+ * shapes.
  */
 
 import {
-  isNativeChatId,
-  isTeamsChatId,
-  isDiscordChatId,
-  isTelegramChatId,
-} from "../../util/chat-id.js";
+  getFrontendDescriptor,
+  resolveOwnerFrontendId,
+} from "../../core/frontend-runtime/routing.js";
 
 /**
  * Normalise a config `frontend` value (string or array, possibly
  * undefined) to the list of messaging frontends — i.e. those that
  * need an MCP tool server spawned. `terminal` is excluded: it has no
- * outbound messaging surface (the agent runs to stdout).
+ * outbound messaging surface (the agent runs to stdout). Unknown ids
+ * are kept — an unregistered frontend must fail loudly downstream,
+ * not silently lose its tools.
  */
 export function nonTerminalFrontends(
   frontend: string | readonly string[] | undefined,
 ): readonly string[] {
   if (!frontend) return [];
   const all = Array.isArray(frontend) ? frontend : [frontend as string];
-  return all.filter((f) => f !== "terminal");
+  return all.filter((f) => getFrontendDescriptor(f)?.messaging !== false);
 }
 
 /**
  * The messaging frontend that owns a chat, inferred from the chat-id
- * shape (the same convention the gateway uses to route actions):
- * native `d_*`, teams `teams_chat_*`, discord `discord_*`, telegram
- * numeric. Returns null for cross-surface contexts — the heartbeat
+ * shape (the same registry matchers the gateway uses to route
+ * actions). Returns null for cross-surface contexts — the heartbeat
  * sentinel, isolated one-shots, terminal sessions.
  */
 export function frontendForChatId(chatId: string): string | null {
-  if (isNativeChatId(chatId)) return "native";
-  if (isTeamsChatId(chatId)) return "teams";
-  if (isDiscordChatId(chatId)) return "discord";
-  if (isTelegramChatId(chatId)) return "telegram";
-  return null;
+  return resolveOwnerFrontendId(chatId);
 }
 
 /**

@@ -32,13 +32,7 @@ import { taskTable } from "../tasks/index.js";
 import type { FrontendActionHandler } from "../types.js";
 import { BOT_MESSAGE_ACTIONS, noteBotMessage } from "../soul/taps.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
-import {
-  isNativeChatId,
-  isDiscordChatId,
-  isTelegramChatId,
-  isTerminalChatId,
-  isTeamsChatId,
-} from "../../util/chat-id.js";
+import { resolveOwnerFrontendId } from "../frontend-runtime/routing.js";
 
 // ── Retry helper (stateless — standalone export) ─────────────────────────────
 
@@ -169,12 +163,9 @@ export class Gateway {
   ): string | null {
     const owned = this.chatFrontendOwners.get(chatId);
     if (owned) return owned;
-    if (isTerminalChatId(rawChatId)) return "terminal";
-    if (isNativeChatId(rawChatId)) return "native";
-    if (isTeamsChatId(rawChatId)) return "teams";
-    if (isDiscordChatId(rawChatId)) return "discord";
-    if (isTelegramChatId(rawChatId)) return "telegram";
-    return null;
+    // Shape-convention fallback — the frontend registry owns chat-id
+    // matchers, including any registered at runtime.
+    return resolveOwnerFrontendId(rawChatId, { includeNonMessaging: true });
   }
 
   private resolveFrontendHandler(

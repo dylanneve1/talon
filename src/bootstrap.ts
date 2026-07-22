@@ -34,70 +34,37 @@ import { initDream, maybeStartDream } from "./core/background/dream.js";
 import { initHeartbeat } from "./core/background/heartbeat/index.js";
 import { log, logWarn, logDebug } from "./util/log.js";
 import type { TalonConfig } from "./util/config.js";
-import {
-  isNativeChatId,
-  isDiscordChatId,
-  isTelegramChatId,
-  isTerminalChatId,
-  isTeamsChatId,
-} from "./util/chat-id.js";
+import { resolveFrontendIdAmong } from "./core/frontend-runtime/routing.js";
+import type { Frontend } from "./core/frontend-runtime/index.js";
 import type { ContextManager } from "./core/types.js";
 import type { Backend } from "./core/agent-runtime/capabilities.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type Frontend = {
-  name: "telegram" | "terminal" | "teams" | "discord" | "native";
-  context: ContextManager;
-  sendTyping: (chatId: number) => Promise<void>;
-  sendMessage: (chatId: number, text: string) => Promise<void>;
-  getBridgePort: () => number;
-  init: () => Promise<void>;
-  start: () => Promise<void>;
-  stop: () => Promise<void>;
-};
+// The Frontend contract moved to core/frontend-runtime/capabilities.ts
+// (the frontend counterpart of agent-runtime). Re-exported so existing
+// importers keep working.
+export type { Frontend } from "./core/frontend-runtime/index.js";
 
 type FrontendSelection = Frontend | Frontend[];
 
 function normalizeFrontends(frontend: FrontendSelection): Frontend[] {
   const list = Array.isArray(frontend) ? frontend : [frontend];
-  const byName = new Map<Frontend["name"], Frontend>();
+  const byName = new Map<string, Frontend>();
   for (const item of list) byName.set(item.name, item);
   return [...byName.values()];
-}
-
-function resolveFrontendName(
-  chatId: string | undefined,
-  frontends: Frontend[],
-): Frontend["name"] {
-  if (frontends.length === 1) return frontends[0].name;
-  if (chatId) {
-    if (
-      isTerminalChatId(chatId) &&
-      frontends.some((f) => f.name === "terminal")
-    )
-      return "terminal";
-    if (isNativeChatId(chatId) && frontends.some((f) => f.name === "native"))
-      return "native";
-    if (isTeamsChatId(chatId) && frontends.some((f) => f.name === "teams"))
-      return "teams";
-    if (isDiscordChatId(chatId) && frontends.some((f) => f.name === "discord"))
-      return "discord";
-    if (
-      isTelegramChatId(chatId) &&
-      frontends.some((f) => f.name === "telegram")
-    )
-      return "telegram";
-  }
-  const firstNonTerminal = frontends.find((f) => f.name !== "terminal");
-  return firstNonTerminal?.name ?? frontends[0].name;
 }
 
 function resolveFrontend(
   chatId: string | undefined,
   frontends: Frontend[],
 ): Frontend {
-  const name = resolveFrontendName(chatId, frontends);
+  // Chat-id ownership and fallback order live in the frontend registry
+  // (one source of truth shared with gateway routing and MCP scoping).
+  const name = resolveFrontendIdAmong(
+    chatId,
+    frontends.map((f) => f.name),
+  );
   const resolved = frontends.find((frontend) => frontend.name === name);
   if (!resolved) {
     throw new Error(`No frontend available for ${chatId ?? "unknown chat"}`);

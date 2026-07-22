@@ -126,7 +126,7 @@ index.ts                    Composition root
   +-- util/                 Config, logging, workspace, paths, time
 ```
 
-**Dependency rule:** `core/` imports nothing from `frontend/` or `backend/`. Frontends and backends depend on core types, never on each other. All five backends (Claude SDK, Kilo, OpenCode, Codex, OpenAI Agents) implement the same `Backend` capability interface from `core/agent-runtime/capabilities.ts`. Kilo and OpenCode additionally share the `remote-server/` infrastructure because they wrap forks of the same upstream HTTP agent server.
+**Dependency rule:** `core/` imports nothing from `frontend/` or `backend/`. Frontends and backends depend on core types, never on each other. All five backends (Claude SDK, Kilo, OpenCode, Codex, OpenAI Agents) implement the same `Backend` capability interface from `core/agent-runtime/capabilities.ts`. Frontends mirror this: each implements the `Frontend` contract from `core/frontend-runtime/capabilities.ts` and self-registers in the frontend registry (identity + chat-id routing in a descriptor, lazy `create` in a per-frontend `factory.ts`) — see [docs/frontends.md](docs/frontends.md). Kilo and OpenCode additionally share the `remote-server/` infrastructure because they wrap forks of the same upstream HTTP agent server.
 
 **Prompts:** everything the model reads at session start is assembled by `core/prompt/` from the files in `prompts/` — see [prompts/README.md](prompts/README.md) for the assembly order, file ownership (user-editable vs package-owned templates), and the per-backend delivery contracts.
 

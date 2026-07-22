@@ -31,7 +31,15 @@ import {
 } from "./core/vfs/index.js";
 import { bootstrap, initBackendAndDispatcher } from "./bootstrap.js";
 import { Gateway } from "./core/engine/gateway.js";
+import {
+  createFrontendById,
+  getFrontendDescriptor,
+} from "./core/frontend-runtime/index.js";
 import type { Frontend } from "./bootstrap.js";
+// Attach every built-in frontend's create() to its registry descriptor.
+// Adding a frontend is strictly additive: drop a factory.ts under the
+// new frontend dir and list it in frontend/factories.ts.
+import "./frontend/factories.js";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -55,45 +63,13 @@ gateway.onStarted((port) =>
 );
 gateway.onShutdownRequest((reason) => void gracefulShutdown(reason));
 
-const configuredFrontends = [
-  ...new Set(getFrontends(config)),
-] as Frontend["name"][];
-
-async function createFrontend(name: Frontend["name"]): Promise<Frontend> {
-  switch (name) {
-    case "terminal": {
-      const { createTerminalFrontend } =
-        await import("./frontend/terminal/index.js");
-      return createTerminalFrontend(config, gateway);
-    }
-    case "teams": {
-      const { createTeamsFrontend } = await import("./frontend/teams/index.js");
-      return createTeamsFrontend(config, gateway);
-    }
-    case "discord": {
-      const { createDiscordFrontend } =
-        await import("./frontend/discord/index.js");
-      return createDiscordFrontend(config, gateway);
-    }
-    case "native": {
-      const { createNativeFrontend } =
-        await import("./frontend/native/index.js");
-      return createNativeFrontend(config, gateway);
-    }
-    case "telegram":
-    default: {
-      const { createTelegramFrontend } =
-        await import("./frontend/telegram/index.js");
-      return createTelegramFrontend(config, gateway);
-    }
-  }
-}
+const configuredFrontends = [...new Set(getFrontends(config))];
 
 const frontends: Frontend[] = [];
 for (const name of configuredFrontends) {
-  const frontend = await createFrontend(name);
+  const frontend = await createFrontendById(name, config, gateway);
   frontends.push(frontend);
-  log("bot", `Frontend: ${name[0].toUpperCase()}${name.slice(1)}`);
+  log("bot", `Frontend: ${getFrontendDescriptor(name)?.label ?? name}`);
 }
 
 // ── Create backend + wire dispatcher ─────────────────────────────────────────
@@ -249,20 +225,22 @@ async function main(): Promise<void> {
   startWatchdog(config.workspace);
   startUploadCleanup(config.workspace);
 
-  const terminalFrontends = frontends.filter(
-    (frontend) => frontend.name === "terminal",
+  // A stdin-reading frontend (terminal) blocks in start() for the
+  // process lifetime — run it without awaiting alongside the others.
+  const stdinFrontends = frontends.filter(
+    (frontend) => getFrontendDescriptor(frontend.name)?.sharesStdin === true,
   );
   const blockingFrontends = frontends.filter(
-    (frontend) => frontend.name !== "terminal",
+    (frontend) => !stdinFrontends.includes(frontend),
   );
-  if (terminalFrontends.length > 0 && frontends.length > 1) {
+  if (stdinFrontends.length > 0 && frontends.length > 1) {
     log(
       "bot",
       "Terminal frontend shares stdin with the other frontends; it will run alongside them without blocking startup.",
     );
   }
   await Promise.all(blockingFrontends.map((frontend) => frontend.start()));
-  for (const frontend of terminalFrontends) {
+  for (const frontend of stdinFrontends) {
     void frontend
       .start()
       .catch((err) =>

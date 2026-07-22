@@ -9,8 +9,9 @@ export async function startChat(): Promise<void> {
   const { bootstrap, initBackendAndDispatcher } =
     await import("../bootstrap.js");
   const { flushDatabase } = await import("../storage/db.js");
-  const { createTerminalFrontend } =
-    await import("../frontend/terminal/index.js");
+  const { createFrontendById } =
+    await import("../core/frontend-runtime/index.js");
+  await import("../frontend/terminal/factory.js");
   const { Gateway } = await import("../core/engine/gateway.js");
 
   const { config } = await bootstrap({ frontendNames: ["terminal"] });
@@ -25,7 +26,7 @@ export async function startChat(): Promise<void> {
   rebuildSystemPrompt(config, getPluginPromptAdditions());
 
   const gateway = new Gateway("chat");
-  const frontend = createTerminalFrontend(config, gateway);
+  const frontend = await createFrontendById("terminal", config, gateway);
   await frontend.init();
   const { backend } = await initBackendAndDispatcher(config, frontend);
   gateway.backend = backend;
