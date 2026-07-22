@@ -58,7 +58,6 @@ import { todayAndYesterday } from "../../util/time.js";
 import { log } from "../../util/log.js";
 import { loadSystemTemplate } from "./templates.js";
 import { renderWorkspaceListing } from "./workspace-listing.js";
-import { MAX_OPEN_GOALS_PER_CHAT } from "../../storage/goal-store.js";
 import { renderSkillsPrompt } from "../../storage/skill-store.js";
 import { renderStickerLibraryPrompt } from "../../storage/sticker-store.js";
 import { getSoul } from "../soul/service.js";
@@ -216,9 +215,7 @@ export function assembleSystemPrompt(
     loadSystemTemplate("workspace"),
     loadSystemTemplate("cron"),
     loadSystemTemplate("triggers"),
-    loadSystemTemplate("goals", {
-      maxOpenGoals: String(MAX_OPEN_GOALS_PER_CHAT),
-    }),
+    loadSystemTemplate("goals"),
     loadSystemTemplate("skills"),
   );
 

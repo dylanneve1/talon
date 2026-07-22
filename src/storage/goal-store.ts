@@ -43,7 +43,6 @@ export const GOAL_PRIORITIES: readonly GoalPriority[] = [
 /** Statuses that count as "open" — shown to the heartbeat and listings. */
 export const OPEN_GOAL_STATUSES: readonly GoalStatus[] = ["active", "paused"];
 
-export const MAX_OPEN_GOALS_PER_CHAT = 25;
 export const MAX_TITLE_LENGTH = 200;
 export const MAX_DESCRIPTION_LENGTH = 2_000;
 export const MAX_PROGRESS_NOTE_LENGTH = 1_000;

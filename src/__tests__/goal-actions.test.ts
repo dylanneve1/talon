@@ -25,7 +25,6 @@ import {
   generateGoalId,
   getGoal,
   getGoalsForChat,
-  MAX_OPEN_GOALS_PER_CHAT,
   type Goal,
 } from "../storage/goal-store.js";
 import type { ActionResult } from "../core/types.js";
@@ -105,14 +104,14 @@ describe("add_goal", () => {
     expect(getGoalsForChat(String(chatId))).toHaveLength(0);
   });
 
-  it("enforces the per-chat open-goal cap", async () => {
+  it("does not cap the number of open goals (goals grow freely)", async () => {
     const chatId = freshChatId();
-    for (let i = 0; i < MAX_OPEN_GOALS_PER_CHAT; i++) {
+    for (let i = 0; i < 30; i++) {
       addGoal(makeGoal(chatId, { title: `goal ${i}` }));
     }
     const result = await act(chatId, { action: "add_goal", title: "one more" });
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain("cap");
+    expect(result.ok).toBe(true);
+    expect(getGoalsForChat(String(chatId))).toHaveLength(31);
   });
 });
 

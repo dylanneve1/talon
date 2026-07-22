@@ -5,7 +5,6 @@
 
 import {
   addGoal,
-  countOpenGoalsForChat,
   deleteGoal,
   formatGoal,
   generateGoalId,
@@ -18,7 +17,6 @@ import {
   validateProgressNote,
   validateTitle,
   GOAL_STATUSES,
-  MAX_OPEN_GOALS_PER_CHAT,
   OPEN_GOAL_STATUSES,
   type Goal,
   type GoalStatus,
@@ -51,13 +49,8 @@ export const goalHandlers: SharedActionHandlers = {
     }
 
     const chatIdStr = String(chatId);
-    const openCount = countOpenGoalsForChat(chatIdStr);
-    if (openCount >= MAX_OPEN_GOALS_PER_CHAT) {
-      return {
-        ok: false,
-        error: `Per-chat open-goal cap reached (${MAX_OPEN_GOALS_PER_CHAT}). Complete or abandon one before adding another.`,
-      };
-    }
+    // No open-goal cap: goals grow freely. The heartbeat re-reads every open
+    // goal, so keep them tidy by closing finished ones (completed/abandoned).
 
     const now = Date.now();
     const goal: Goal = {
