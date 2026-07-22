@@ -81,7 +81,7 @@ describe("chat-id ownership (resolveOwnerFrontendId)", () => {
     ).toBe("terminal");
   });
 
-  it("terminal beats telegram for the legacy chat id \"1\"", () => {
+  it('terminal beats telegram for the legacy chat id "1"', () => {
     // "1" matches both the terminal's legacy id and telegram's numeric
     // matcher — routePriority must keep the historical terminal-first
     // order.
