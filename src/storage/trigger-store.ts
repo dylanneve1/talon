@@ -263,8 +263,7 @@ export function pruneSettledTriggers(
   let pruned = 0;
   for (const t of getAllTriggers()) {
     if (t.status === "running" || t.status === "pending") continue;
-    const settledAt =
-      t.endedAt ?? t.lastFireAt ?? t.startedAt ?? t.createdAt;
+    const settledAt = t.endedAt ?? t.lastFireAt ?? t.startedAt ?? t.createdAt;
     if (nowMs - settledAt < ttlMs) continue;
     if (deleteTrigger(t.id)) pruned++;
   }

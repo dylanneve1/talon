@@ -79,7 +79,10 @@ export function createPlaywrightPlugin(config: {
         remoteEndpoint: endpoint,
       },
     };
-    const configPath = join(tmpdir(), `talon-playwright-mcp-${process.pid}.json`);
+    const configPath = join(
+      tmpdir(),
+      `talon-playwright-mcp-${process.pid}.json`,
+    );
     writeFileSync(configPath, JSON.stringify(mcpConfig));
     args.push("--config", configPath);
   } else {
