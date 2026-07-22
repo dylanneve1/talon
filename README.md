@@ -5,6 +5,7 @@
 [![Backends](https://img.shields.io/badge/backends-Claude_%7C_Kilo_%7C_OpenCode_%7C_Codex_%7C_OpenAI_Agents-D97706)](#backends)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/dylanneve1/talon/actions/workflows/ci.yml/badge.svg)](https://github.com/dylanneve1/talon/actions/workflows/ci.yml)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/dylanneve1)
 
 Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsoft Teams**, the **Terminal**, and a **cross-platform Desktop/Mobile companion app** (Flutter), with a pluggable backend (**Claude Agent SDK**, **Kilo**, **OpenCode**, **Codex**, or **OpenAI Agents**) and full tool access through MCP.
 
@@ -435,6 +436,16 @@ npm run typecheck        # tsc --noEmit
 npm run lint             # oxlint
 npm run format           # prettier --write
 ```
+
+---
+
+## Support
+
+Talon is free and MIT-licensed, built and maintained in the open. If it's useful to you, sponsoring helps cover hosting and model costs and funds continued development — and keeps it free for everyone.
+
+**[❤️ Sponsor Talon on GitHub](https://github.com/sponsors/dylanneve1)**
+
+Even a one-time tip makes a difference, and every sponsor is appreciated. Starring the repo helps too.
 
 ---
 
