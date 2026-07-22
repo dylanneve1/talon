@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.6.1](https://github.com/dylanneve1/talon/compare/v3.6.0...v3.6.1) (2026-07-22)
+
+
+### Documentation
+
+* add Sponsor badge and Support section to README ([#625](https://github.com/dylanneve1/talon/issues/625)) ([19640f1](https://github.com/dylanneve1/talon/commit/19640f14cdb888dbe242c1e4c4785d29fe90cd4e))
+
 ## [3.6.0](https://github.com/dylanneve1/talon/compare/v3.5.0...v3.6.0) (2026-07-22)
 
 
