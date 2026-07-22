@@ -23,13 +23,16 @@
  * browser server (e.g. the python-playwright process hosting Camoufox) to be
  * on the SAME playwright minor version — a mismatch fails every tool call
  * with "428 Precondition Required". @playwright/mcp is therefore pinned
- * exactly in package.json (0.0.76 → playwright 1.61.x; keep the python side
- * on 1.61.x too). Bump BOTH sides together, deliberately — do not let a
- * routine dependency bump move one without the other.
+ * exactly in package.json (0.0.56 → playwright 1.58.x, matching python
+ * playwright 1.58 which hosts Camoufox — camoufox itself caps playwright at
+ * <1.61, so the node client cannot chase latest). Bump BOTH sides together,
+ * deliberately — do not let a routine dependency bump move one without the
+ * other.
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import type { TalonPlugin } from "../../core/plugin/types.js";
 import { log } from "../../util/log.js";
 
@@ -64,8 +67,21 @@ export function createPlaywrightPlugin(config: {
   const args: string[] = [];
 
   if (endpoint) {
-    // Connect to existing browser (e.g. Camoufox websocket server)
-    args.push("--endpoint", endpoint);
+    // Connect to the existing browser (e.g. the Camoufox websocket server)
+    // via a generated MCP config file: `browser.remoteEndpoint` is the
+    // stable, documented way to attach to a running Playwright server and —
+    // unlike the newer `--endpoint` flag — exists across the @playwright/mcp
+    // versions this repo can pin (the pin tracks the python playwright
+    // version hosting Camoufox; see the version-coupling note above).
+    const mcpConfig = {
+      browser: {
+        ...(browser !== "chromium" ? { browserName: browser } : {}),
+        remoteEndpoint: endpoint,
+      },
+    };
+    const configPath = join(tmpdir(), `talon-playwright-mcp-${process.pid}.json`);
+    writeFileSync(configPath, JSON.stringify(mcpConfig));
+    args.push("--config", configPath);
   } else {
     args.push("--no-sandbox");
 
