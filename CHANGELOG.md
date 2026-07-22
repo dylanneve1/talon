@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.6.0](https://github.com/dylanneve1/talon/compare/v3.5.0...v3.6.0) (2026-07-22)
+
+
+### Features
+
+* **goals:** remove the per-chat open-goal cap ([#622](https://github.com/dylanneve1/talon/issues/622)) ([7f292c2](https://github.com/dylanneve1/talon/commit/7f292c2595fb65ec094464d6145efbb3f3539fa0))
+
+
+### Miscellaneous Chores
+
+* add GitHub Sponsors funding config ([#623](https://github.com/dylanneve1/talon/issues/623)) ([6910d82](https://github.com/dylanneve1/talon/commit/6910d825c595e05529a7f82199f086faf5ee520b))
+* **deps-dev:** Bump the dev-dependencies group with 2 updates ([#620](https://github.com/dylanneve1/talon/issues/620)) ([82f426b](https://github.com/dylanneve1/talon/commit/82f426bd52a72186ab11ac86e1724603b3d1df82))
+* **deps:** Bump actions/setup-go from 6 to 7 ([#619](https://github.com/dylanneve1/talon/issues/619)) ([f66aa32](https://github.com/dylanneve1/talon/commit/f66aa32448fd56b66de051bc3536da0ef789d39f))
+* **deps:** Bump the production-dependencies group with 3 updates ([#621](https://github.com/dylanneve1/talon/issues/621)) ([4ad72ca](https://github.com/dylanneve1/talon/commit/4ad72caa2340d3844056d24cf603bdfd311d81e2))
+
 ## [3.5.0](https://github.com/dylanneve1/talon/compare/v3.4.1...v3.5.0) (2026-07-22)
 
 
