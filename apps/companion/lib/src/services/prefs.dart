@@ -76,6 +76,25 @@ class Prefs {
   bool get haptics => _sp.getBool(_kHaptics) ?? true;
   Future<void> setHaptics(bool v) => _sp.setBool(_kHaptics, v);
 
+  // ── Voice mode ────────────────────────────────────────────────────────────
+
+  static const _kVoiceCaptions = 'voice.captions.v1';
+  static const _kVoiceHandsFree = 'voice.handsFree.v1';
+  static const _kVoiceRate = 'voice.rate.v1';
+
+  /// Show live captions in voice mode. Default on.
+  bool get voiceCaptions => _sp.getBool(_kVoiceCaptions) ?? true;
+  Future<void> setVoiceCaptions(bool v) => _sp.setBool(_kVoiceCaptions, v);
+
+  /// Hands-free conversation loop: re-arm the mic after each spoken reply.
+  bool get voiceHandsFree => _sp.getBool(_kVoiceHandsFree) ?? true;
+  Future<void> setVoiceHandsFree(bool v) => _sp.setBool(_kVoiceHandsFree, v);
+
+  /// Text-to-speech rate (0.6–1.6, default 1.0).
+  double get voiceRate => (_sp.getDouble(_kVoiceRate) ?? 1.0).clamp(0.6, 1.6);
+  Future<void> setVoiceRate(double v) =>
+      _sp.setDouble(_kVoiceRate, v.clamp(0.6, 1.6));
+
   // ── Device mesh ──────────────────────────────────────────────────────────
 
   String? get meshDeviceId => _sp.getString(_kMeshDeviceId);

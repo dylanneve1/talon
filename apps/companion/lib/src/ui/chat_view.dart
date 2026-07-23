@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../models/bridge_models.dart';
+import '../services/voice.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'activity_card.dart';
@@ -11,6 +12,7 @@ import 'chat_actions.dart';
 import 'composer.dart';
 import 'message_bubble.dart';
 import 'model_sheet.dart';
+import 'voice_mode_screen.dart';
 
 const double _columnMax = 768;
 
@@ -54,10 +56,19 @@ class _ChatViewState extends State<ChatView> {
   /// jump-to-latest affordance is useful.
   bool _awayFromBottom = false;
 
+  /// Voice mode is offered only where a speech recognizer actually exists
+  /// (Android with a recognition service). Probed once at mount.
+  bool _voiceAvailable = false;
+
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_onScrolled);
+    if (VoiceService.supported) {
+      VoiceService.instance.isSttAvailable().then((ok) {
+        if (mounted && ok) setState(() => _voiceAvailable = true);
+      });
+    }
   }
 
   @override
@@ -190,6 +201,10 @@ class _ChatViewState extends State<ChatView> {
                         enabled: widget.state.conn == ConnState.connected,
                         running: widget.state.isTurnRunning(chat.id),
                         onStop: () => widget.state.interruptTurn(chat.id),
+                        onVoice: _voiceAvailable
+                            ? () => Navigator.of(context)
+                                .push(VoiceModeScreen.route(widget.state))
+                            : null,
                       ),
                     ],
                   ),

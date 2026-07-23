@@ -9,6 +9,9 @@
          produces the identical error text for "no INTERNET permission" as
          it does for those. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Voice mode: on-device speech recognition needs the mic (runtime
+         prompt, requested the first time voice mode is opened). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
@@ -65,6 +68,20 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Digital-assistant candidacy: an activity handling ASSIST is
+                 what makes Talon selectable under Settings → Default apps →
+                 Digital assistant app, and what the long-press-home / corner
+                 gesture launches once selected. MainActivity is singleTop, so
+                 a warm assist launch arrives as onNewIntent and the app jumps
+                 straight into voice mode (see VoiceBridge). -->
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
@@ -98,6 +115,16 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Voice mode: package-visibility grants for the on-device speech
+             recognition and TTS engine services (Android 11+ filters them
+             out otherwise, making SpeechRecognizer.isRecognitionAvailable
+             return false even when Google's recognizer is installed). -->
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE"/>
         </intent>
     </queries>
 </manifest>

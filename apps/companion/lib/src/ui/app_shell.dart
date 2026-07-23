@@ -8,6 +8,7 @@ import 'glass.dart';
 import 'quick_switcher.dart';
 import 'shortcuts_help.dart';
 import 'sidebar.dart';
+import 'voice_mode_screen.dart';
 
 /// The main two-pane layout. Side-by-side on desktop/tablet; on a phone the
 /// chat list is the base screen and the conversation is a real pushed route —
@@ -39,12 +40,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.state.addListener(_scheduleSync);
+    // Route syncing pauses while voice mode covers the app; when the orb
+    // closes, reconcile whatever selection changes happened during it.
+    VoiceModeScreen.open.addListener(_scheduleSync);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.state.removeListener(_scheduleSync);
+    VoiceModeScreen.open.removeListener(_scheduleSync);
     super.dispose();
   }
 
@@ -83,6 +88,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   /// wide layout, where the pane shows it) means it isn't.
   void _syncConversationRoute() {
     if (!mounted) return;
+    // Voice mode owns the screen: a chat selected from inside the session
+    // (e.g. its first send created a chat) must not push a conversation
+    // route over the orb. The open-flag listener re-syncs on close.
+    if (VoiceModeScreen.open.value) return;
     final wantOpen = _narrow && widget.state.selectedChatId != null;
     final route = _convRoute;
     if (wantOpen && route == null) {

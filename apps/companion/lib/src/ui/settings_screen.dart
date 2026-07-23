@@ -12,6 +12,7 @@ import '../services/autostart.dart';
 import '../services/haptics.dart';
 import '../services/log.dart';
 import '../services/mesh_background.dart';
+import '../services/voice.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'connect_screen.dart';
@@ -34,7 +35,8 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
   ConfigSnapshot? _cfg;
   bool _loading = true;
   String? _error;
@@ -59,6 +61,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _name = TextEditingController();
   final _tz = TextEditingController();
 
+  /// Whether Talon currently holds Android's digital-assistant role
+  /// (null = unknown/loading). Android only.
+  bool? _assistantDefault;
+
   @override
   void initState() {
     super.initState();
@@ -77,6 +83,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() => _appVersion = 'v${info.version}+${info.buildNumber}');
       }
     }).catchError((_) {});
+    if (VoiceService.supported) {
+      // Observe lifecycle so returning from the system settings picker
+      // refreshes the "default assistant" status row immediately.
+      WidgetsBinding.instance.addObserver(this);
+      _refreshAssistantStatus();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshAssistantStatus();
+  }
+
+  Future<void> _refreshAssistantStatus() async {
+    if (!VoiceService.supported) return;
+    final v = await VoiceService.instance.isDefaultAssistant();
+    if (mounted) setState(() => _assistantDefault = v);
   }
 
   Future<void> _setAutostart(bool v) async {
@@ -106,6 +129,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    if (VoiceService.supported) WidgetsBinding.instance.removeObserver(this);
     widget.state.removeListener(_onAppState);
     _name.dispose();
     _tz.dispose();
@@ -358,6 +382,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 16),
         _appearanceCard(),
         const SizedBox(height: 16),
+        if (VoiceService.supported) ...[
+          _voiceCard(),
+          const SizedBox(height: 16),
+        ],
         if (cfg == null && _loading)
           const _SettingsSkeleton()
         else if (cfg == null)
@@ -514,6 +542,136 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _connectionCard(),
         const SizedBox(height: 24),
       ],
+    );
+  }
+
+  /// Voice mode preferences + the Android digital-assistant role. Android
+  /// only — VoiceService.supported gates the card at the call site.
+  Widget _voiceCard() {
+    final prefs = widget.state.prefs;
+    final isDefault = _assistantDefault;
+    return _Section(
+      title: 'Voice',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Default-assistant status + the jump into system settings. The
+          // role can only be granted there, so this row is a signpost.
+          Row(
+            children: [
+              AnimatedSwitcher(
+                duration: TalonMotion.base,
+                child: Icon(
+                  key: ValueKey(isDefault),
+                  isDefault == true
+                      ? Icons.verified_rounded
+                      : Icons.assistant_outlined,
+                  size: 20,
+                  color: isDefault == true
+                      ? TalonColors.ok
+                      : TalonColors.textDim,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Default assistant',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isDefault == null
+                          ? 'Checking…'
+                          : isDefault
+                              ? 'Talon answers the assistant gesture'
+                              : 'Let the assistant gesture open Talon voice '
+                                  'mode',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: TalonColors.textFaint,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              TextButton(
+                onPressed: () async {
+                  final ok =
+                      await VoiceService.instance.openAssistantSettings();
+                  if (!ok && mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Could not open system settings'),
+                      ),
+                    );
+                  }
+                },
+                child: Text(isDefault == true ? 'Change' : 'Set up'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _switchRow(
+            'Hands-free conversation',
+            'Keep listening after each reply — talk back and forth without '
+                'touching the screen',
+            prefs.voiceHandsFree,
+            (v) {
+              Haptics.selection();
+              prefs.setVoiceHandsFree(v);
+              setState(() {});
+            },
+          ),
+          _switchRow(
+            'Captions',
+            'Show the live transcript in voice mode (toggleable in-session '
+                'too)',
+            prefs.voiceCaptions,
+            (v) {
+              Haptics.selection();
+              prefs.setVoiceCaptions(v);
+              setState(() {});
+            },
+          ),
+          const SizedBox(height: 4),
+          // Speech-rate slider: how fast Talon reads replies aloud.
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Speech rate',
+                  style: TextStyle(fontSize: 13, color: TalonColors.textDim),
+                ),
+              ),
+              Text(
+                '${prefs.voiceRate.toStringAsFixed(1)}×',
+                style: TalonType.mono.copyWith(
+                  fontSize: 12,
+                  color: TalonColors.textDim,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: prefs.voiceRate,
+            min: 0.6,
+            max: 1.6,
+            divisions: 10,
+            onChanged: (v) {
+              prefs.setVoiceRate(v);
+              setState(() {});
+            },
+          ),
+        ],
+      ),
     );
   }
 

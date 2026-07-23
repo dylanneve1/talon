@@ -34,6 +34,11 @@ class Composer extends StatefulWidget {
   /// Interrupt the running turn. Null when the backend can't interrupt.
   final Future<void> Function()? onStop;
 
+  /// Open full-screen voice mode. Null where voice isn't available (desktop,
+  /// no recognizer) — the mic button simply doesn't exist then. Shown in the
+  /// send slot while the input is empty, WhatsApp-style.
+  final VoidCallback? onVoice;
+
   const Composer({
     super.key,
     required this.onSend,
@@ -41,6 +46,7 @@ class Composer extends StatefulWidget {
     required this.enabled,
     this.running = false,
     this.onStop,
+    this.onVoice,
   });
 
   @override
@@ -263,12 +269,23 @@ class _ComposerState extends State<Composer> {
                           widget.onStop != null)
                       ? _StopButton(
                           key: const ValueKey('stop'), onTap: widget.onStop!)
-                      : _SendButton(
-                          key: const ValueKey('send'),
-                          enabled: canSend,
-                          busy: _uploading,
-                          onTap: _send,
-                        ),
+                      : (!canSend &&
+                              !_uploading &&
+                              widget.enabled &&
+                              !widget.running &&
+                              widget.onVoice != null)
+                          // Empty input + voice available → the slot offers
+                          // voice mode instead of a dead send button.
+                          ? _VoiceButton(
+                              key: const ValueKey('voice'),
+                              onTap: widget.onVoice!,
+                            )
+                          : _SendButton(
+                              key: const ValueKey('send'),
+                              enabled: canSend,
+                              busy: _uploading,
+                              onTap: _send,
+                            ),
                 ),
               ],
             ),
@@ -338,6 +355,38 @@ class _AttachButton extends StatelessWidget {
       icon: const Icon(Icons.add_photo_alternate_outlined, size: 20),
       color: TalonColors.textDim,
       tooltip: 'Attach image',
+    );
+  }
+}
+
+/// Fills the send slot when there's nothing typed and voice is available:
+/// a quiet mic that opens full-screen voice mode. Same footprint as the send
+/// button so the AnimatedSwitcher morph between them reads as one control.
+class _VoiceButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _VoiceButton({super.key, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Voice mode',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [TalonColors.accent, TalonColors.accentDeep],
+            ),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: TalonShadows.glow,
+          ),
+          child: const Icon(Icons.mic_rounded, color: Colors.white, size: 20),
+        ),
+      ),
     );
   }
 }
