@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.7.0](https://github.com/dylanneve1/talon/compare/v3.6.3...v3.7.0) (2026-07-24)
+
+
+### Features
+
+* **companion:** full-screen voice mode + Android assistant role ([#630](https://github.com/dylanneve1/talon/issues/630)) ([6e44b61](https://github.com/dylanneve1/talon/commit/6e44b619f66453ed984f70e4ed5b70f0c24d8e3b))
+
 ## [3.6.3](https://github.com/dylanneve1/talon/compare/v3.6.2...v3.6.3) (2026-07-24)
 
 
