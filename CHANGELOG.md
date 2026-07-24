@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.6.3](https://github.com/dylanneve1/talon/compare/v3.6.2...v3.6.3) (2026-07-24)
+
+
+### Bug Fixes
+
+* **scheduler:** cron dead since Jun 29 — start before blocking frontend await, drift-proof dueness, trigger GC, playwright pin ([#617](https://github.com/dylanneve1/talon/issues/617)) ([2639250](https://github.com/dylanneve1/talon/commit/263925095103237f43f0b1945e6b0210fd620089))
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump @anthropic-ai/claude-agent-sdk ([#629](https://github.com/dylanneve1/talon/issues/629)) ([072ad74](https://github.com/dylanneve1/talon/commit/072ad74cd261fcfdcd8d51c822de43a78c4e54e5))
+* **deps:** Bump actions/upload-artifact from 6 to 7 ([#618](https://github.com/dylanneve1/talon/issues/618)) ([e720b4b](https://github.com/dylanneve1/talon/commit/e720b4b6f792e3349087e1a11eb7867c45be51cd))
+
 ## [3.6.2](https://github.com/dylanneve1/talon/compare/v3.6.1...v3.6.2) (2026-07-22)
 
 
