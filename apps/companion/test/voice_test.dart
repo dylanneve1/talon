@@ -334,6 +334,53 @@ void main() {
       expect(engine.started.last, 'stt1');
     });
 
+    test('barge-in holds the bot caption until new speech is transcribed',
+        () async {
+      await session.start();
+      engine.ready('stt0');
+      engine.finalResult('stt0', 'original question');
+      await _flush();
+      state.beginTurn();
+      state.deliver('Interrupted answer stays visible');
+      expect(session.assistantCaption, 'Interrupted answer stays visible');
+
+      await session.onOrbTap();
+      expect(session.phase, VoicePhase.recovering);
+      expect(session.lastUserText, 'original question');
+      expect(session.assistantCaption, 'Interrupted answer stays visible');
+
+      await _advance(_testTiming.audioHandoff);
+      engine.ready('stt1');
+      expect(session.assistantCaption, 'Interrupted answer stays visible');
+
+      engine.partialResult('stt1', 'new question');
+      expect(session.partial, 'new question');
+      expect(session.assistantCaption, isEmpty);
+    });
+
+    test('silence after barge-in does not discard the bot caption', () async {
+      await session.start();
+      engine.ready('stt0');
+      engine.finalResult('stt0', 'original question');
+      await _flush();
+      state.beginTurn();
+      state.deliver('Keep this through silence');
+
+      await session.onOrbTap();
+      await _advance(_testTiming.audioHandoff);
+      engine.ready('stt1');
+      engine.sttError('stt1', 6, 'No speech heard');
+      expect(session.phase, VoicePhase.recovering);
+      expect(session.assistantCaption, 'Keep this through silence');
+
+      await _advance(_testTiming.silenceBackoff.first);
+      engine.ready('stt2');
+      engine.finalResult('stt2', 'replacement question');
+      await _flush();
+      expect(session.lastUserText, 'replacement question');
+      expect(session.assistantCaption, isEmpty);
+    });
+
     test('TTS refusal completes cleanly and hands the mic back', () async {
       await session.start();
       engine.ready('stt0');
@@ -682,6 +729,8 @@ class _FakeVoiceEngine implements VoiceEngine {
   void ready(String id) => readyEvents.add(id);
   void end(String id) => endEvents.add(id);
   void rms(String id, double level) => levels.add(SttLevelEvent(id, level));
+  void partialResult(String id, String text) =>
+      partials.add(SttTextEvent(id, text));
   void finalResult(String id, String text) =>
       finals.add(SttTextEvent(id, text));
   void sttError(String id, int code, String message) =>

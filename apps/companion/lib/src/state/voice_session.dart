@@ -184,6 +184,7 @@ class VoiceSession extends ChangeNotifier {
   final Set<String> _seenMessageIds = {};
   final Queue<({String display, String speech})> _speakQueue = Queue();
   ({String display, String speech})? _current;
+  String? _heldAssistantCaption;
   String? _currentTtsId;
   bool _turnSeen = false;
   int _turnEpoch = 0;
@@ -218,6 +219,8 @@ class VoiceSession extends ChangeNotifier {
   String get assistantCaption {
     final cur = _current;
     if (cur != null) return cur.display;
+    final held = _heldAssistantCaption;
+    if (held != null) return held;
     final id = chatId;
     if (id == null) return '';
     return state.turnFor(id).draft;
@@ -334,6 +337,12 @@ class VoiceSession extends ChangeNotifier {
         break;
       case VoicePhase.speaking:
         // Barge-in: invalidate the old utterance before stop() can callback.
+        final interruptedCaption = _current?.display.trim();
+        if (interruptedCaption != null && interruptedCaption.isNotEmpty) {
+          // Keep the reply visible while audio hands back to the mic. It is
+          // retired only when the recognizer produces a new user caption.
+          _heldAssistantCaption = interruptedCaption;
+        }
         _speakQueue.clear();
         _current = null;
         _currentTtsId = null;
@@ -386,6 +395,7 @@ class VoiceSession extends ChangeNotifier {
     _readyTimer?.cancel();
     _transition(VoicePhase.listening, 'speech partial');
     partial = event.text;
+    if (event.text.trim().isNotEmpty) _heldAssistantCaption = null;
     _silenceCount = 0;
     _recoverableErrors = 0;
     _notify();
@@ -430,6 +440,7 @@ class VoiceSession extends ChangeNotifier {
       return;
     }
 
+    _heldAssistantCaption = null;
     _silenceCount = 0;
     _recoverableErrors = 0;
     partial = '';
