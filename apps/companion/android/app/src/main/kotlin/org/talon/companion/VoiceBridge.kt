@@ -19,6 +19,8 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
+import java.util.Locale
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
@@ -37,7 +39,7 @@ import io.flutter.plugin.common.MethodChannel
  * Dart ↔ native protocol (channel `talon/voice`):
  *   Dart → native: isSttAvailable, hasMicPermission, requestMicPermission,
  *     startListening{sessionId}, stopListening{sessionId},
- *     cancelListening{sessionId}, speak{text,id,rate,voice,flush},
+ *     cancelListening{sessionId}, speak{text,id,rate,pitch,voice,flush},
  *     stopSpeaking, listVoices,
  *     isDefaultAssistant, openAssistantSettings, consumeAssistLaunch
  *   native → Dart (invokeMethod, fire-and-forget):
@@ -54,6 +56,11 @@ class VoiceBridge(
     companion object {
         const val CHANNEL = "talon/voice"
         private const val PERMISSION_REQUEST = 7431
+        private const val GOOGLE_TTS = "com.google.android.tts"
+
+        /// How long focus is kept after an utterance ends, so the next queued
+        /// chunk inherits the same hold instead of re-ducking the mix.
+        private const val FOCUS_RELEASE_GRACE_MS = 700L
     }
 
     private val context: Context get() = activity.applicationContext
@@ -65,11 +72,21 @@ class VoiceBridge(
 
     private var tts: TextToSpeech? = null
     private var ttsReady = false
+    /// Best voice for this device, resolved once per engine instance.
+    /// Recomputing it per utterance meant walking the engine's whole voice set
+    /// (hundreds of Voice objects) on the way into every chunk of speech.
+    private var autoVoice: Voice? = null
+    private var autoVoiceResolved = false
+    private var appliedVoiceName: String? = null
+    private var appliedRate = Float.NaN
+    private var appliedPitch = Float.NaN
+    private var triedFallbackEngine = false
     private val pendingTtsInit = mutableListOf<(Boolean) -> Unit>()
     private var activeTtsId: String? = null
     private val audioManager =
         context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var ttsFocusRequest: AudioFocusRequest? = null
+    private var focusRelease: Runnable? = null
     private var disposed = false
 
     private var pendingPermission: MethodChannel.Result? = null
@@ -113,11 +130,13 @@ class VoiceBridge(
                     call.argument<String>("text") ?: "",
                     call.argument<String>("id") ?: "utt",
                     (call.argument<Number>("rate") ?: 1.0).toFloat(),
+                    (call.argument<Number>("pitch") ?: 1.0).toFloat(),
                     call.argument<String>("voice"),
                     call.argument<Boolean>("flush") ?: true,
                     result,
                 )
                 "stopSpeaking" -> {
+                    activeTtsId = null
                     tts?.stop()
                     abandonTtsAudioFocus()
                     result.success(true)
@@ -213,6 +232,22 @@ class VoiceBridge(
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+            // Default end-pointing cuts people off mid-thought (the recognizer
+            // treats a breath as end-of-speech). Give a natural pause room to
+            // breathe; engines that ignore these extras are unaffected.
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
+                1500,
+            )
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                1200,
+            )
+            putExtra(
+                RecognizerIntent
+                    .EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                900,
+            )
         }
         recognizer = r
         sttSessionId = sessionId
@@ -415,26 +450,98 @@ class VoiceBridge(
         }
         pendingTtsInit.add(onReady)
         if (tts != null) return // init already in flight
-        tts = TextToSpeech(context) { status ->
+        tts = createTts(engine = null)
+    }
+
+    /// Build a TextToSpeech bound to [engine] (null = the user's system
+    /// default) and settle the pending `ensureTts` callbacks when it reports.
+    ///
+    /// If the default engine fails to initialize we retry once against Google's
+    /// engine when it is installed: a broken or voice-less default engine is
+    /// the single most common cause of "voice mode sounds terrible / says
+    /// nothing" reports, and the fallback is strictly better than silence. A
+    /// working default engine is never overridden — the user's choice wins.
+    private fun createTts(engine: String?): TextToSpeech {
+        lateinit var instance: TextToSpeech
+        instance = TextToSpeech(context, { status ->
             main.post {
                 if (disposed) {
-                    tts?.shutdown()
-                    tts = null
-                    val waiting = pendingTtsInit.toList()
-                    pendingTtsInit.clear()
-                    for (cb in waiting) cb(false)
+                    instance.shutdown()
+                    if (tts === instance) tts = null
+                    settleTtsInit(false)
                     return@post
                 }
-                ttsReady = status == TextToSpeech.SUCCESS
-                if (ttsReady) {
-                    tts?.setOnUtteranceProgressListener(utteranceListener)
-                    tts?.setAudioAttributes(speechAudioAttributes())
+                val ok = status == TextToSpeech.SUCCESS
+                if (!ok && !triedFallbackEngine) {
+                    val fallback = installedFallbackEngine()
+                    if (fallback != null && fallback != engine) {
+                        triedFallbackEngine = true
+                        instance.shutdown()
+                        tts = createTts(fallback)
+                        return@post
+                    }
                 }
-                val waiting = pendingTtsInit.toList()
-                pendingTtsInit.clear()
-                for (cb in waiting) cb(ttsReady)
+                ttsReady = ok
+                if (ok) {
+                    resetVoiceCache()
+                    instance.setOnUtteranceProgressListener(utteranceListener)
+                    instance.setAudioAttributes(speechAudioAttributes())
+                }
+                settleTtsInit(ok)
             }
+        }, engine)
+        return instance
+    }
+
+    private fun settleTtsInit(ready: Boolean) {
+        val waiting = pendingTtsInit.toList()
+        pendingTtsInit.clear()
+        for (cb in waiting) cb(ready)
+    }
+
+    private fun resetVoiceCache() {
+        autoVoice = null
+        autoVoiceResolved = false
+        appliedVoiceName = null
+        appliedRate = Float.NaN
+        appliedPitch = Float.NaN
+    }
+
+    private fun installedFallbackEngine(): String? =
+        GOOGLE_TTS.takeIf {
+            runCatching {
+                context.packageManager.getPackageInfo(it, 0)
+            }.isSuccess
         }
+
+    /// The engine's best voice for this device, or null to keep whatever the
+    /// engine defaults to.
+    ///
+    /// Android's `defaultVoice` is frequently the small embedded "compact"
+    /// variant even when a high-quality one is installed, which is exactly the
+    /// robotic voice users complain about. Rank instead by: matching country
+    /// first (en-IE beats en-US for an Irish device), then engine-reported
+    /// quality, then locally synthesized over network-only (a network voice
+    /// stalls or silently downgrades when the connection is poor), then
+    /// latency.
+    private fun bestVoice(engine: TextToSpeech): Voice? {
+        if (autoVoiceResolved) return autoVoice
+        autoVoiceResolved = true
+        val target = Locale.getDefault()
+        val usable = engine.voices.orEmpty().filter { voice ->
+            !voice.features.orEmpty()
+                .contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) &&
+                voice.locale.language.equals(target.language, ignoreCase = true)
+        }
+        autoVoice = usable.maxWithOrNull(
+            compareBy<Voice>(
+                { if (it.locale.country.equals(target.country, true)) 1 else 0 },
+                { it.quality },
+                { if (it.isNetworkConnectionRequired) 0 else 1 },
+                { -it.latency },
+            ),
+        ) ?: engine.defaultVoice
+        return autoVoice
     }
 
     private val utteranceListener = object : UtteranceProgressListener() {
@@ -463,6 +570,7 @@ class VoiceBridge(
         text: String,
         id: String,
         rate: Float,
+        pitch: Float,
         voiceName: String?,
         flush: Boolean,
         result: MethodChannel.Result,
@@ -480,27 +588,64 @@ class VoiceBridge(
                 result.error("tts_unavailable", "Text-to-speech disposed", null)
                 return@ensureTts
             }
-            val available = engine.voices.orEmpty()
-            val requested = voiceName
-                ?.takeIf { it.isNotBlank() }
-                ?.let { name -> available.firstOrNull { it.name == name } }
-            val voice = requested ?: engine.defaultVoice
-            if (voice != null && engine.setVoice(voice) != TextToSpeech.SUCCESS) {
-                result.error("tts_voice_unavailable", "Selected voice is unavailable", null)
-                return@ensureTts
+            val wanted = voiceName?.takeIf { it.isNotBlank() }
+            // Voice/rate/pitch are engine-wide state, so only touch them when
+            // something actually changed: re-applying them per chunk is what
+            // made queued utterances hiccup between sentences.
+            if (wanted != appliedVoiceName) {
+                val requested = wanted?.let { name ->
+                    engine.voices.orEmpty().firstOrNull { it.name == name }
+                }
+                if (wanted != null && requested == null) {
+                    result.error(
+                        "tts_voice_unavailable",
+                        "Selected voice is unavailable",
+                        null,
+                    )
+                    return@ensureTts
+                }
+                val voice = requested ?: bestVoice(engine)
+                if (
+                    voice != null &&
+                    engine.setVoice(voice) != TextToSpeech.SUCCESS
+                ) {
+                    result.error(
+                        "tts_voice_unavailable",
+                        "Selected voice is unavailable",
+                        null,
+                    )
+                    return@ensureTts
+                }
+                appliedVoiceName = wanted
             }
-            engine.setSpeechRate(rate.coerceIn(0.4f, 2.0f))
+            val clampedRate = rate.coerceIn(0.4f, 2.0f)
+            if (clampedRate != appliedRate) {
+                engine.setSpeechRate(clampedRate)
+                appliedRate = clampedRate
+            }
+            val clampedPitch = pitch.coerceIn(0.5f, 2.0f)
+            if (clampedPitch != appliedPitch) {
+                engine.setPitch(clampedPitch)
+                appliedPitch = clampedPitch
+            }
             requestTtsAudioFocus()
             activeTtsId = id
+            val params = Bundle().apply {
+                // Engines default to the stream volume they were last handed;
+                // pin speech at full scale and let the assistant stream's own
+                // volume do the attenuating.
+                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+                putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, id)
+            }
             val queued = engine.speak(
                 text,
                 if (flush) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
-                null,
+                params,
                 id,
             )
             if (queued != TextToSpeech.SUCCESS) {
                 if (activeTtsId == id) activeTtsId = null
-                abandonTtsAudioFocus()
+                releaseTtsAudioFocusSoon()
             }
             result.success(queued == TextToSpeech.SUCCESS)
         }
@@ -561,9 +706,14 @@ class VoiceBridge(
         }
     }
 
+    /// Focus is held for a whole spoken run, not per utterance: dropping and
+    /// re-taking it between queued chunks made other audio duck in and out
+    /// (and, on some devices, clipped the first syllable of each chunk).
     @Suppress("DEPRECATION")
     private fun requestTtsAudioFocus() {
-        abandonTtsAudioFocus()
+        focusRelease?.let(main::removeCallbacks)
+        focusRelease = null
+        if (ttsFocusRequest != null) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
                 .setAudioAttributes(speechAudioAttributes())
@@ -580,8 +730,22 @@ class VoiceBridge(
         }
     }
 
+    /// Give the next queued utterance a moment to start before handing focus
+    /// back, so a chunked reply is one continuous hold.
+    private fun releaseTtsAudioFocusSoon() {
+        focusRelease?.let(main::removeCallbacks)
+        val task = Runnable {
+            focusRelease = null
+            if (activeTtsId == null) abandonTtsAudioFocus()
+        }
+        focusRelease = task
+        main.postDelayed(task, FOCUS_RELEASE_GRACE_MS)
+    }
+
     @Suppress("DEPRECATION")
     private fun abandonTtsAudioFocus() {
+        focusRelease?.let(main::removeCallbacks)
+        focusRelease = null
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             ttsFocusRequest?.let(audioManager::abandonAudioFocusRequest)
             ttsFocusRequest = null
@@ -600,7 +764,7 @@ class VoiceBridge(
             val id = utteranceId ?: ""
             if (activeTtsId == id) {
                 activeTtsId = null
-                abandonTtsAudioFocus()
+                releaseTtsAudioFocusSoon()
             }
             val args = mutableMapOf<String, Any?>("id" to id)
             if (errorCode != null) {
@@ -678,6 +842,7 @@ class VoiceBridge(
         tts?.shutdown()
         tts = null
         ttsReady = false
+        resetVoiceCache()
         activeTtsId = null
         abandonTtsAudioFocus()
         pendingTtsInit.clear()

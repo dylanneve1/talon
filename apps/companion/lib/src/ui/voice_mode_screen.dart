@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 
 import '../services/haptics.dart';
 import '../state/app_state.dart';
@@ -49,10 +50,21 @@ class VoiceModeScreen extends StatefulWidget {
 }
 
 class _VoiceModeScreenState extends State<VoiceModeScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final VoiceSession _session;
   late final AnimationController _ambient;
   late bool _captions;
+
+  /// Smoothed orb energy. Phase changes flip the *target* instantly (idle 0.10
+  /// → listening 0.9 is a jump of nearly the whole range); easing towards it
+  /// per frame is what turns that pop into a swell. Attack is faster than
+  /// release so speech transients still read as punchy.
+  final ValueNotifier<double> _energy = ValueNotifier(0.10);
+  late final Ticker _ticker;
+  Duration _lastTick = Duration.zero;
+
+  /// 0 → resting, 1 → finger down on the orb.
+  final ValueNotifier<double> _press = ValueNotifier(0);
 
   @override
   void initState() {
@@ -69,13 +81,34 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       vsync: this,
       duration: const Duration(seconds: 6),
     )..repeat();
+    _ticker = createTicker(_followEnergy)..start();
     WidgetsBinding.instance.addPostFrameCallback((_) => _session.start());
+  }
+
+  void _followEnergy(Duration elapsed) {
+    final dt = ((elapsed - _lastTick).inMicroseconds / 1e6).clamp(0.0, 0.05);
+    _lastTick = elapsed;
+    final target = orbTargetEnergy(
+      t: _ambient.value,
+      phase: _session.phase,
+      level: _session.level,
+      muted: _session.muted,
+    );
+    final rising = target > _energy.value;
+    // Exponential follow, frame-rate independent: fast attack, softer release.
+    final k = rising ? 14.0 : 5.5;
+    final next =
+        _energy.value + (target - _energy.value) * (1 - math.exp(-k * dt));
+    if ((next - _energy.value).abs() > 1e-4) _energy.value = next;
   }
 
   @override
   void dispose() {
     VoiceModeScreen.open.value = false;
+    _ticker.dispose();
     _ambient.dispose();
+    _energy.dispose();
+    _press.dispose();
     _session.dispose();
     super.dispose();
   }
@@ -128,26 +161,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                   // The orb IS the interface: it pulses with the mic while
                   // listening, orbits while thinking, and swells while
                   // speaking. Tap semantics live in the session.
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      Haptics.medium();
-                      s.onOrbTap();
-                    },
-                    child: AnimatedBuilder(
-                      animation: _ambient,
-                      builder: (context, _) => CustomPaint(
-                        size: const Size.square(240),
-                        painter: _OrbPainter(
-                          t: still ? 0.25 : _ambient.value,
-                          phase: s.phase,
-                          level: s.level,
-                          muted: s.muted,
-                          palette: TalonTheme.palette,
-                        ),
-                      ),
-                    ),
-                  ),
+                  _orb(s, still),
                   const SizedBox(height: 28),
                   // Status line morphs between phases.
                   AnimatedSwitcher(
@@ -190,6 +204,55 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           ),
         ),
       ),
+    );
+  }
+
+  /// The orb itself: an entrance swell on mount, a springy press response, and
+  /// a repaint driven by the ambient clock plus the smoothed energy follower.
+  Widget _orb(VoiceSession s, bool still) {
+    final orb = AnimatedBuilder(
+      animation: Listenable.merge([_ambient, _energy, _press]),
+      builder: (context, _) => CustomPaint(
+        size: const Size.square(240),
+        painter: _OrbPainter(
+          t: still ? 0.25 : _ambient.value,
+          phase: s.phase,
+          level: s.level,
+          muted: s.muted,
+          energy: still
+              ? orbTargetEnergy(
+                  t: 0.25,
+                  phase: s.phase,
+                  level: s.level,
+                  muted: s.muted,
+                )
+              : _energy.value,
+          press: still ? 0 : _press.value,
+          palette: TalonTheme.palette,
+        ),
+      ),
+    );
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _press.value = 1,
+      onTapCancel: () => _press.value = 0,
+      onTapUp: (_) => _press.value = 0,
+      onTap: () {
+        Haptics.medium();
+        s.onOrbTap();
+      },
+      child: still
+          ? orb
+          : TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.72, end: 1.0),
+              duration: const Duration(milliseconds: 620),
+              curve: Curves.easeOutBack,
+              builder: (context, value, child) => Transform.scale(
+                scale: value,
+                child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
+              ),
+              child: orb,
+            ),
     );
   }
 
@@ -391,18 +454,26 @@ class _RoundControl extends StatelessWidget {
   }
 }
 
-/// The voice orb. Three soft radial blobs orbiting a bright core; motion and
-/// scale are keyed to the session phase:
-///   arming/recovering → soft concentric breath,
-///   listening → pulse follows the mic level,
-///   thinking  → slow orbit with a sweeping arc,
-///   speaking  → rhythmic swell,
+/// The voice orb. A soft plasma of drifting blobs under a bright core, wrapped
+/// in a living contour whose amplitude is the session's energy:
+///   arming/recovering → concentric breath with travelling rings,
+///   listening → contour and halo track the mic level,
+///   thinking  → two counter-rotating arcs sweep the rim,
+///   speaking  → rhythmic swell with a faster contour,
 ///   idle/muted/error → near-still.
 class _OrbPainter extends CustomPainter {
   final double t; // 0..1 ambient clock
   final VoicePhase phase;
   final double level; // 0..1 smoothed mic level
   final bool muted;
+
+  /// Smoothed energy from the widget. The raw per-phase target lives in
+  /// [orbTargetEnergy]; painting the smoothed value is what removes the pop at
+  /// every phase change.
+  final double energy;
+
+  /// 0..1 press depth — the orb dips slightly under a finger.
+  final double press;
   final TalonPalette palette;
 
   _OrbPainter({
@@ -410,6 +481,8 @@ class _OrbPainter extends CustomPainter {
     required this.phase,
     required this.level,
     required this.muted,
+    required this.energy,
+    required this.press,
     required this.palette,
   });
 
@@ -423,10 +496,9 @@ class _OrbPainter extends CustomPainter {
       level: level,
       muted: muted,
     );
-    final energy = motion.energy;
 
     final base = size.shortestSide * 0.30;
-    final swell = base * (1 + energy * 0.22);
+    final swell = base * (1 + energy * 0.22) * (1 - press * 0.06);
 
     // Ambient halo.
     canvas.drawCircle(
@@ -441,7 +513,9 @@ class _OrbPainter extends CustomPainter {
         ).createShader(Rect.fromCircle(center: c, radius: swell * 1.9)),
     );
 
-    // Three drifting blobs, each on its own slow orbit and hue.
+    // Three drifting blobs, each on its own slow orbit and hue. A blur on top
+    // of the radial falloff is what makes them read as one fluid body instead
+    // of three overlapping discs.
     final colors = [
       palette.accent,
       palette.accent2,
@@ -456,6 +530,7 @@ class _OrbPainter extends CustomPainter {
         c + off,
         r,
         Paint()
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.18)
           ..shader = RadialGradient(
             colors: [
               color.withValues(alpha: 0.55),
@@ -465,12 +540,18 @@ class _OrbPainter extends CustomPainter {
       );
     }
 
-    // Bright core.
+    _paintContour(canvas, c, swell, tau);
+
+    // Bright core, with the highlight nudged up-left so the orb reads as lit
+    // rather than flat.
+    final coreRadius = swell * 0.58;
+    final coreRect = Rect.fromCircle(center: c, radius: coreRadius);
     canvas.drawCircle(
       c,
-      swell * 0.58,
+      coreRadius,
       Paint()
         ..shader = RadialGradient(
+          center: const Alignment(-0.25, -0.3),
           colors: [
             Colors.white.withValues(
                 alpha: palette.brightness == Brightness.dark ? 0.9 : 0.95),
@@ -478,31 +559,37 @@ class _OrbPainter extends CustomPainter {
             palette.accent.withValues(alpha: 0.0),
           ],
           stops: const [0.0, 0.45, 1.0],
-        ).createShader(Rect.fromCircle(center: c, radius: swell * 0.58)),
+        ).createShader(coreRect),
     );
 
-    // Thinking: a sweeping arc that says "working" even when audio is quiet.
+    // Thinking: two counter-rotating arcs. One sweep alone reads as a spinner;
+    // the pair reads as something turning over.
     if (phase == VoicePhase.thinking) {
-      final rect = Rect.fromCircle(center: c, radius: swell * 1.28);
-      canvas.drawArc(
-        rect,
-        t * tau * 2,
-        tau * 0.28,
-        false,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.4
-          ..strokeCap = StrokeCap.round
-          ..shader = SweepGradient(
-            startAngle: 0,
-            endAngle: tau,
-            colors: [
-              palette.accent2.withValues(alpha: 0),
-              palette.accent2.withValues(alpha: 0.9),
-            ],
-            transform: GradientRotation(t * tau * 2),
-          ).createShader(rect),
-      );
+      for (var i = 0; i < 2; i++) {
+        final direction = i == 0 ? 1.0 : -1.0;
+        final radius = swell * (i == 0 ? 1.28 : 1.44);
+        final rect = Rect.fromCircle(center: c, radius: radius);
+        final spin = t * tau * (i == 0 ? 2 : 1.25) * direction;
+        canvas.drawArc(
+          rect,
+          spin,
+          tau * (i == 0 ? 0.28 : 0.16),
+          false,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = i == 0 ? 2.4 : 1.6
+            ..strokeCap = StrokeCap.round
+            ..shader = SweepGradient(
+              startAngle: 0,
+              endAngle: tau,
+              colors: [
+                palette.accent2.withValues(alpha: 0),
+                palette.accent2.withValues(alpha: i == 0 ? 0.9 : 0.5),
+              ],
+              transform: GradientRotation(spin),
+            ).createShader(rect),
+        );
+      }
     }
 
     // Arming and silent-room recovery should feel alive, not broken: two
@@ -535,12 +622,53 @@ class _OrbPainter extends CustomPainter {
     }
   }
 
+  /// The contour: a closed loop whose radius is modulated by two harmonics
+  /// scaled by [energy]. At rest it is a circle; while listening or speaking it
+  /// ripples, which is the difference between "a glowing ball" and "something
+  /// responding to you".
+  void _paintContour(Canvas canvas, Offset c, double swell, double tau) {
+    final amplitude = 0.02 + energy * 0.12;
+    final speed = switch (phase) {
+      VoicePhase.speaking => 3.0,
+      VoicePhase.listening => 2.0,
+      VoicePhase.thinking => 1.0,
+      _ => 0.6,
+    };
+    final radius = swell * 1.16;
+    final path = Path();
+    const steps = 96;
+    for (var i = 0; i <= steps; i++) {
+      final theta = tau * i / steps;
+      final wobble = amplitude *
+          (math.sin(3 * theta + t * tau * speed) * 0.6 +
+              math.sin(5 * theta - t * tau * speed * 1.5) * 0.4);
+      final r = radius * (1 + wobble);
+      final point = c + Offset(math.cos(theta) * r, math.sin(theta) * r);
+      if (i == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+    path.close();
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.2)
+        ..color = palette.accent2.withValues(alpha: 0.10 + energy * 0.35),
+    );
+  }
+
   @override
   bool shouldRepaint(_OrbPainter old) =>
       old.t != t ||
       old.phase != phase ||
       old.level != level ||
       old.muted != muted ||
+      old.energy != energy ||
+      old.press != press ||
       old.palette != palette;
 }
 
@@ -605,6 +733,45 @@ class OrbMotionSample {
       };
 }
 
+/// The orb's *target* energy for a phase — what the widget's follower eases
+/// towards, and what [sampleOrbMotion] reports.
+///
+/// Every oscillation uses an integer number of cycles over `t = 0..1` so the
+/// value at the animation controller's loop boundary is identical at both ends.
+@visibleForTesting
+double orbTargetEnergy({
+  required double t,
+  required VoicePhase phase,
+  required double level,
+  required bool muted,
+}) {
+  const tau = 2 * math.pi;
+  final angle = (t % 1.0) * tau;
+  switch (phase) {
+    case VoicePhase.listening:
+      return muted ? 0.06 : 0.25 + level.clamp(0.0, 1.0) * 0.75;
+    case VoicePhase.arming:
+    case VoicePhase.recovering:
+      // These phases alternate during silence retries. Sharing one continuous
+      // breath avoids a size jump every time the recognizer is recreated.
+      return 0.16 + 0.06 * (0.5 + 0.5 * math.sin(angle * 2));
+    case VoicePhase.finalizing:
+      return 0.28;
+    case VoicePhase.speaking:
+      // Synthetic rhythm — Android TTS reports no output level, so the cadence
+      // is faked. Two detuned harmonics instead of one sine: a single tone
+      // reads as a metronome, the pair reads like speech stress.
+      return 0.42 +
+          0.24 * math.sin(angle * 7) +
+          0.11 * math.sin(angle * 11 + 1.7);
+    case VoicePhase.thinking:
+      return 0.22;
+    case VoicePhase.idle:
+    case VoicePhase.error:
+      return 0.10;
+  }
+}
+
 @visibleForTesting
 OrbMotionSample sampleOrbMotion({
   required double t,
@@ -615,28 +782,12 @@ OrbMotionSample sampleOrbMotion({
   const tau = 2 * math.pi;
   final cycle = t % 1.0;
   final angle = cycle * tau;
-  final quietBreath = 0.16 + 0.06 * (0.5 + 0.5 * math.sin(angle * 2));
-
-  final double energy;
-  switch (phase) {
-    case VoicePhase.listening:
-      energy = muted ? 0.06 : 0.25 + level.clamp(0.0, 1.0) * 0.75;
-    case VoicePhase.arming:
-    case VoicePhase.recovering:
-      // These phases alternate during silence retries. Sharing one continuous
-      // breath avoids a size jump every time the recognizer is recreated.
-      energy = quietBreath;
-    case VoicePhase.finalizing:
-      energy = 0.28;
-    case VoicePhase.speaking:
-      // Synthetic rhythm — TTS gives no level feedback, so fake a cadence.
-      energy = 0.45 + 0.35 * (0.5 + 0.5 * math.sin(angle * 7));
-    case VoicePhase.thinking:
-      energy = 0.22;
-    case VoicePhase.idle:
-    case VoicePhase.error:
-      energy = 0.10;
-  }
+  final energy = orbTargetEnergy(
+    t: t,
+    phase: phase,
+    level: level,
+    muted: muted,
+  );
 
   // Integer x/y/radius harmonics form varied Lissajous paths while returning
   // every blob to precisely the same point at the controller boundary.

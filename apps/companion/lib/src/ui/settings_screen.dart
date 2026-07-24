@@ -138,6 +138,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         'Hi, I’m Talon. This is how I’ll sound in voice mode.',
         id: id,
         rate: widget.state.prefs.voiceRate,
+        pitch: widget.state.prefs.voicePitch,
         voiceName: voiceName,
       );
       if (accepted) {
@@ -743,7 +744,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       children: [
                         Text(
                           selected == null
-                              ? 'System voice'
+                              ? 'Best available voice'
                               : _voiceDisplayName(selected),
                           style: const TextStyle(
                             fontSize: 14,
@@ -755,7 +756,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                           selected == null
                               ? (_voicesLoading
                                   ? 'Finding voices on this device…'
-                                  : 'Choose and preview a voice')
+                                  : 'Highest-quality voice for your language, '
+                                      'picked automatically')
                               : _voiceDescription(selected),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -852,6 +854,36 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 8),
+          // Pitch: a narrow ±20% band. Wider than that and every engine starts
+          // sounding like a cartoon rather than a different speaker.
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Pitch',
+                  style: TextStyle(fontSize: 13, color: TalonColors.textDim),
+                ),
+              ),
+              Text(
+                '${prefs.voicePitch.toStringAsFixed(2)}×',
+                style: TalonType.mono.copyWith(
+                  fontSize: 12,
+                  color: TalonColors.textDim,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: prefs.voicePitch,
+            min: 0.8,
+            max: 1.2,
+            divisions: 8,
+            onChanged: (v) {
+              prefs.setVoicePitch(v);
+              setState(() {});
+            },
           ),
         ],
       ),

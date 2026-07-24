@@ -24,35 +24,87 @@ void main() {
     });
 
     test('keeps inline code content, drops backticks', () {
-      expect(speechify('Run `flutter test` now'), 'Run flutter test now');
+      expect(speechify('Run `flutter test` now'), 'Run flutter test now.');
     });
 
     test('collapses links to their label and bare URLs to "link"', () {
       expect(
         speechify('See [the docs](https://example.com/a?b=c)'),
-        'See the docs',
+        'See the docs.',
       );
       expect(
         speechify('Go to https://example.com/x now'),
-        'Go to link now',
+        'Go to link now.',
       );
     });
 
     test('drops images entirely', () {
-      expect(speechify('Look ![alt](https://x/y.png) here'), 'Look here');
+      expect(speechify('Look ![alt](https://x/y.png) here'), 'Look here.');
     });
 
     test('flattens lists and quotes', () {
       expect(
         speechify('> quoted\n\n- one\n- two'),
-        'quoted. one\ntwo'.replaceAll('\n', ' '),
+        'quoted. one\ntwo.'.replaceAll('\n', ' '),
       );
     });
 
-    test('caps very long utterances', () {
-      final out = speechify('word ' * 2000);
-      expect(out.length, lessThanOrEqualTo(3601));
-      expect(out.endsWith('…'), isTrue);
+    test('drops emoji instead of letting the engine narrate them', () {
+      expect(speechify('Shipped it 🚀🎉 all good ✅'), 'Shipped it all good.');
+    });
+
+    test('keeps snake_case readable and normalises arrows and dashes', () {
+      expect(
+        speechify('Set voice_rate then A -> B — done'),
+        'Set voice rate then A to B, done.',
+      );
+    });
+
+    test('drops table delimiter rows and collapses shouty punctuation', () {
+      expect(
+        speechify('| a | b |\n|---|---|\n| 1 | 2 |\n\nWow!!!'),
+        'a b. 1 2. Wow!',
+      );
+    });
+
+    test('ends on a terminator so engines do not clip the last word', () {
+      expect(speechify('no punctuation here'), 'no punctuation here.');
+      expect(speechify('already done.'), 'already done.');
+    });
+  });
+
+  group('splitForSpeech', () {
+    test('keeps a short reply as a single utterance', () {
+      expect(splitForSpeech('Short answer.'), ['Short answer.']);
+    });
+
+    test('starts with a small chunk so audio begins quickly', () {
+      final chunks = splitForSpeech(
+        'First sentence here. ${'Another sentence follows. ' * 12}',
+      );
+      expect(chunks.length, greaterThan(1));
+      expect(chunks.first, 'First sentence here.');
+      expect(chunks.first.length, lessThan(chunks[1].length));
+    });
+
+    test('splits on sentence boundaries and loses nothing', () {
+      final source = List.generate(40, (i) => 'Sentence number $i.').join(' ');
+      final chunks = splitForSpeech(source);
+      expect(chunks.join(' '), source);
+      for (final chunk in chunks) {
+        expect(chunk.length, lessThanOrEqualTo(kMaxUtteranceChars));
+      }
+    });
+
+    test('hard-wraps a single sentence longer than the engine limit', () {
+      final monster = '${'word ' * 2000}end.';
+      final chunks = splitForSpeech(monster);
+      expect(chunks.length, greaterThan(1));
+      for (final chunk in chunks) {
+        expect(chunk.length, lessThanOrEqualTo(kMaxUtteranceChars));
+      }
+      // The tail used to be truncated away with an ellipsis.
+      expect(chunks.last.endsWith('end.'), isTrue);
     });
   });
 
@@ -139,7 +191,7 @@ void main() {
       state.beginTurn();
       state.deliver('First answer');
       expect(session.phase, VoicePhase.speaking);
-      expect(engine.spoken.single.text, 'First answer');
+      expect(engine.spoken.single.text, 'First answer.');
       state.endTurn();
       engine.ttsDone('utt0');
       expect(session.phase, VoicePhase.recovering);
@@ -421,6 +473,7 @@ void main() {
     test('forwards the persisted voice and rate to every utterance', () async {
       await prefs.setVoiceName('com.example.voice.en_us');
       await prefs.setVoiceRate(1.35);
+      await prefs.setVoicePitch(1.1);
       await session.start();
       engine.ready('stt0');
       engine.finalResult('stt0', 'hello');
@@ -430,6 +483,36 @@ void main() {
 
       expect(engine.spoken.single.voiceName, 'com.example.voice.en_us');
       expect(engine.spoken.single.rate, 1.35);
+      expect(engine.spoken.single.pitch, 1.1);
+    });
+
+    test('pipelines the chunks of one long reply back-to-back', () async {
+      await session.start();
+      engine.ready('stt0');
+      engine.finalResult('stt0', 'tell me a long story');
+      await _flush();
+      state.beginTurn();
+      state.deliver(List.generate(12, (i) => 'Sentence number $i.').join(' '));
+
+      // The follow-up chunk is queued while the first is still audible, so
+      // Android plays them with no gap — but it is queued, never flushed.
+      expect(engine.spoken.length, greaterThanOrEqualTo(2));
+      expect(engine.spoken.first.flush, isTrue);
+      expect(engine.spoken[1].flush, isFalse);
+      expect(engine.spoken.first.text.length,
+          lessThan(engine.spoken[1].text.length));
+
+      final chunks = engine.spoken.length;
+      engine.ttsDone(engine.spoken.first.id);
+      // Completing the audible chunk promotes the queued one instead of
+      // speaking it a second time.
+      expect(
+        engine.spoken.where((s) => s.id == engine.spoken[1].id).length,
+        1,
+      );
+      expect(engine.spoken.length, greaterThanOrEqualTo(chunks));
+      expect(session.phase, VoicePhase.speaking);
+      cleanUp();
     });
 
     test('denied availability and permission fail before opening the mic',
@@ -635,8 +718,17 @@ class _Spoken {
   final String text;
   final double rate;
   final String? voiceName;
+  final double pitch;
+  final bool flush;
 
-  const _Spoken(this.id, this.text, this.rate, this.voiceName);
+  const _Spoken(
+    this.id,
+    this.text,
+    this.rate,
+    this.voiceName, {
+    this.pitch = 1.0,
+    this.flush = true,
+  });
 }
 
 class _FakeVoiceEngine implements VoiceEngine {
@@ -711,10 +803,11 @@ class _FakeVoiceEngine implements VoiceEngine {
     String text, {
     required String id,
     required double rate,
+    double pitch = 1.0,
     String? voiceName,
     bool flush = true,
   }) async {
-    spoken.add(_Spoken(id, text, rate, voiceName));
+    spoken.add(_Spoken(id, text, rate, voiceName, pitch: pitch, flush: flush));
     ttsStarts.add(TtsEvent(id));
     final accepted = nextSpeakAccepted;
     nextSpeakAccepted = true;

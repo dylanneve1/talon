@@ -82,6 +82,7 @@ class Prefs {
   static const _kVoiceHandsFree = 'voice.handsFree.v1';
   static const _kVoiceRate = 'voice.rate.v1';
   static const _kVoiceName = 'voice.name.v1';
+  static const _kVoicePitch = 'voice.pitch.v1';
 
   /// Show live captions in voice mode. Default on.
   bool get voiceCaptions => _sp.getBool(_kVoiceCaptions) ?? true;
@@ -96,7 +97,14 @@ class Prefs {
   Future<void> setVoiceRate(double v) =>
       _sp.setDouble(_kVoiceRate, v.clamp(0.6, 1.6));
 
-  /// Stable Android TTS voice name, or null to follow the system default.
+  /// Text-to-speech pitch (0.8–1.2, default 1.0). Small range on purpose:
+  /// past roughly ±20% the engine's formants smear and it sounds synthetic.
+  double get voicePitch => (_sp.getDouble(_kVoicePitch) ?? 1.0).clamp(0.8, 1.2);
+  Future<void> setVoicePitch(double v) =>
+      _sp.setDouble(_kVoicePitch, v.clamp(0.8, 1.2));
+
+  /// Stable Android TTS voice name, or null to let the engine's best-quality
+  /// voice for the device locale be picked automatically.
   String? get voiceName => _sp.getString(_kVoiceName);
   Future<void> setVoiceName(String? name) => name == null
       ? _sp.remove(_kVoiceName).then((_) {})

@@ -182,10 +182,15 @@ class VoiceSession extends ChangeNotifier {
 
   // Reply tracking for the in-flight turn.
   final Set<String> _seenMessageIds = {};
-  final Queue<({String display, String speech})> _speakQueue = Queue();
-  ({String display, String speech})? _current;
+  final Queue<_SpeechChunk> _speakQueue = Queue();
+  _SpeechChunk? _current;
+
+  /// The chunk already handed to the engine behind [_current] so playback runs
+  /// back-to-back with no seam. Only ever a continuation of the same message.
+  _SpeechChunk? _prefetched;
   String? _heldAssistantCaption;
   String? _currentTtsId;
+  int _messageSeq = 0;
   bool _turnSeen = false;
   int _turnEpoch = 0;
   int _utteranceSeq = 0;
@@ -345,6 +350,7 @@ class VoiceSession extends ChangeNotifier {
         }
         _speakQueue.clear();
         _current = null;
+        _prefetched = null;
         _currentTtsId = null;
         _ttsTimer?.cancel();
         await engine.stopSpeaking();
@@ -449,6 +455,7 @@ class VoiceSession extends ChangeNotifier {
     _turnSeen = false;
     _speakQueue.clear();
     _current = null;
+    _prefetched = null;
     _currentTtsId = null;
     _ttsTimer?.cancel();
     final turnEpoch = ++_turnEpoch;
@@ -569,7 +576,21 @@ class VoiceSession extends ChangeNotifier {
       if (!_seenMessageIds.add(message.id)) continue;
       final speech = speechify(message.text);
       if (speech.isEmpty) continue;
-      _speakQueue.add((display: message.text, speech: speech));
+      // Long replies are spoken as sentence-sized chunks: the first one is
+      // short so audio starts promptly, and nothing is lost to the engine's
+      // input limit the way a single truncated utterance used to be.
+      final chunks = splitForSpeech(speech);
+      final seq = _messageSeq++;
+      for (var i = 0; i < chunks.length; i++) {
+        _speakQueue.add(
+          _SpeechChunk(
+            messageSeq: seq,
+            display: message.text,
+            speech: chunks[i],
+            startsMessage: i == 0,
+          ),
+        );
+      }
     }
 
     if (phase == VoicePhase.thinking) {
@@ -585,9 +606,17 @@ class VoiceSession extends ChangeNotifier {
   }
 
   void _speakNext() {
-    if (_disposed || _speakQueue.isEmpty) return;
-    final next = _speakQueue.removeFirst();
-    final utteranceId = 'utt${_utteranceSeq++}';
+    if (_disposed) return;
+    final promoted = _prefetched;
+    final next =
+        promoted ?? (_speakQueue.isEmpty ? null : _speakQueue.removeFirst());
+    if (next == null) return;
+    _prefetched = null;
+    // A promoted chunk is already sitting in the engine's queue; re-speaking
+    // it would double the audio.
+    final alreadyQueued = promoted != null;
+    final utteranceId = next.id ?? 'utt${_utteranceSeq++}';
+    next.id = utteranceId;
     _current = next;
     _currentTtsId = utteranceId;
     _stallTimer?.cancel();
@@ -606,38 +635,73 @@ class VoiceSession extends ChangeNotifier {
       );
       _currentTtsId = null;
       _current = null;
+      _prefetched = null;
       unawaited(engine.stopSpeaking());
       _afterUtteranceFinished();
     });
 
-    unawaited(_requestSpeech(next.speech, utteranceId));
+    if (!alreadyQueued) {
+      unawaited(
+        _requestSpeech(next.speech, utteranceId, flush: next.startsMessage),
+      );
+    }
+    _prefetchNext();
   }
 
-  Future<void> _requestSpeech(String text, String utteranceId) async {
+  /// Queue the following chunk of the *same* message while the current one is
+  /// still playing. Android plays queued utterances back-to-back, so a reply
+  /// split across chunks sounds like one continuous sentence run instead of a
+  /// stutter at every boundary. Chunks of a different message are left alone —
+  /// the small pause between separate replies is wanted.
+  void _prefetchNext() {
+    if (_disposed || _prefetched != null) return;
+    final current = _current;
+    if (current == null || _speakQueue.isEmpty) return;
+    if (_speakQueue.first.messageSeq != current.messageSeq) return;
+    final next = _speakQueue.removeFirst();
+    final utteranceId = 'utt${_utteranceSeq++}';
+    next.id = utteranceId;
+    _prefetched = next;
+    unawaited(_requestSpeech(next.speech, utteranceId, flush: false));
+  }
+
+  Future<void> _requestSpeech(
+    String text,
+    String utteranceId, {
+    bool flush = true,
+  }) async {
     var accepted = false;
     try {
       accepted = await engine.speak(
         text,
         id: utteranceId,
         rate: state.prefs.voiceRate,
+        pitch: state.prefs.voicePitch,
         voiceName: state.prefs.voiceName,
+        flush: flush,
       );
     } catch (error) {
       AppLog.warn('voice', '[$diagnosticId] tts request threw', error);
     }
-    if (!accepted && _currentTtsId == utteranceId) {
-      AppLog.warn(
-        'voice',
-        '[$diagnosticId] tts request refused',
-        utteranceId,
-      );
-      _finishUtterance(utteranceId);
+    if (accepted) return;
+    AppLog.warn(
+      'voice',
+      '[$diagnosticId] tts request refused',
+      utteranceId,
+    );
+    if (_prefetched?.id == utteranceId) {
+      // Put it back at the head: the current utterance will retry it.
+      _speakQueue.addFirst(_prefetched!);
+      _prefetched = null;
+      return;
     }
+    if (_currentTtsId == utteranceId) _finishUtterance(utteranceId);
   }
 
   void _onTtsDone(TtsEvent event) => _finishUtterance(event.id);
 
   void _onTtsError(TtsEvent event) {
+    if (_dropPrefetched(event.id, 'error')) return;
     if (!_acceptTtsCallback(event.id, 'error')) return;
     AppLog.warn(
       'voice',
@@ -648,9 +712,23 @@ class VoiceSession extends ChangeNotifier {
   }
 
   void _onTtsStopped(TtsEvent event) {
+    if (_dropPrefetched(event.id, 'stop')) return;
     if (_acceptTtsCallback(event.id, 'stop')) {
       _finishUtterance(event.id);
     }
+  }
+
+  /// A terminal callback for the pipelined chunk (it failed or was flushed
+  /// before it ever became audible) retires just that chunk.
+  bool _dropPrefetched(String utteranceId, String event) {
+    final queued = _prefetched;
+    if (queued == null || queued.id != utteranceId) return false;
+    AppLog.debug(
+      'voice',
+      '[$diagnosticId] dropped prefetched utterance $utteranceId ($event)',
+    );
+    _prefetched = null;
+    return true;
   }
 
   void _finishUtterance(String utteranceId) {
@@ -662,7 +740,7 @@ class VoiceSession extends ChangeNotifier {
   }
 
   void _afterUtteranceFinished() {
-    if (_speakQueue.isNotEmpty) {
+    if (_prefetched != null || _speakQueue.isNotEmpty) {
       _speakNext();
       return;
     }
@@ -790,4 +868,25 @@ class VoiceSession extends ChangeNotifier {
     unawaited(engine.stopSpeaking());
     super.dispose();
   }
+}
+
+/// One utterance-sized piece of an assistant reply.
+///
+/// [messageSeq] identifies the message the chunk came from so the session can
+/// pipeline chunks of the same reply (gapless) while still leaving a beat
+/// between separate replies. [id] is assigned when the chunk is handed to the
+/// engine and is what correlates the native callbacks.
+class _SpeechChunk {
+  final int messageSeq;
+  final String display;
+  final String speech;
+  final bool startsMessage;
+  String? id;
+
+  _SpeechChunk({
+    required this.messageSeq,
+    required this.display,
+    required this.speech,
+    required this.startsMessage,
+  });
 }

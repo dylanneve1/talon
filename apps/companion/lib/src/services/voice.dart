@@ -128,6 +128,7 @@ abstract class VoiceEngine {
     String text, {
     required String id,
     required double rate,
+    double pitch = 1.0,
     String? voiceName,
     bool flush = true,
   });
@@ -289,6 +290,7 @@ class VoiceService implements VoiceEngine {
     String text, {
     required String id,
     required double rate,
+    double pitch = 1.0,
     String? voiceName,
     bool flush = true,
   }) =>
@@ -296,6 +298,7 @@ class VoiceService implements VoiceEngine {
         'text': text,
         'id': id,
         'rate': rate,
+        'pitch': pitch,
         'voice': voiceName,
         'flush': flush,
       });
@@ -337,9 +340,25 @@ class VoiceService implements VoiceEngine {
   Future<bool> consumeAssistLaunch() => _invoke('consumeAssistLaunch', false);
 }
 
+/// Hard ceiling for a single utterance. Android's
+/// `TextToSpeech.getMaxSpeechInputLength()` is 4000 characters on every
+/// current release; [splitForSpeech] keeps every chunk well under it so a long
+/// reply is spoken in full instead of being truncated.
+const int kMaxUtteranceChars = 3200;
+
+/// Emoji, pictographs, dingbats and their variation selectors. Engines either
+/// announce these by name ("smiling face with sunglasses") or stumble over
+/// them mid-sentence — both sound broken, so they are dropped.
+final RegExp _emoji = RegExp(
+  '[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}'
+  '\u{FE00}-\u{FE0F}\u{1F1E6}-\u{1F1FF}\u{200D}\u{20E3}]',
+  unicode: true,
+);
+
 /// Convert assistant markdown into something that sounds natural when read
 /// aloud: code blocks are summarized, link syntax collapses to its label,
-/// URLs and formatting glyphs disappear.
+/// URLs, emoji and formatting glyphs disappear, and what is left keeps the
+/// punctuation an engine needs for sane prosody.
 String speechify(String markdown) {
   var s = markdown;
   // Fenced code blocks → a spoken placeholder (reading code aloud is noise).
@@ -351,18 +370,124 @@ String speechify(String markdown) {
   s = s.replaceAllMapped(RegExp(r'\[([^\]]+)\]\([^)]*\)'), (m) => m[1] ?? '');
   // Bare URLs → "link".
   s = s.replaceAll(RegExp(r'https?://\S+'), 'link');
-  // Headings / quotes / list bullets / emphasis / tables — drop the syntax.
+  // Table delimiter rows (|---|:--:|) are pure syntax — never speak them.
+  s = s.replaceAll(
+    RegExp(
+      r'^[ \t]*\|?[ \t]*:?-{2,}:?[ \t]*(\|[ \t]*:?-{2,}:?[ \t]*)*\|?[ \t]*$',
+      multiLine: true,
+    ),
+    '',
+  );
+  // Headings / quotes.
   s = s.replaceAll(RegExp(r'^#{1,6}\s*', multiLine: true), '');
   s = s.replaceAll(RegExp(r'^>\s?', multiLine: true), '');
+  // Task-list checkboxes before the plain bullet strip below.
+  s = s.replaceAll(
+    RegExp(r'^[ \t]*[-*+][ \t]+\[[ xX]\][ \t]+', multiLine: true),
+    '',
+  );
   // ([ \t]*, not \s*: \s would swallow the preceding blank line's newline and
   // break paragraph-break detection below.)
-  s = s.replaceAll(RegExp(r'^[ \t]*[-*+][ \t]+', multiLine: true), '');
-  s = s.replaceAll(RegExp(r'[*_~#|]'), '');
+  s = s.replaceAll(
+    RegExp(r'^[ \t]*[-*+•‣·][ \t]+', multiLine: true),
+    '',
+  );
+  s = s.replaceAll(_emoji, ' ');
+  // Arrows and dashes are punctuation for the ear, not symbols to announce.
+  s = s.replaceAll(RegExp(r'\s*(->|=>|→|⇒)\s*'), ' to ');
+  s = s.replaceAll(RegExp(r'\s*[—–]\s*'), ', ');
+  // Emphasis / table glyphs. Underscore becomes a space so snake_case reads as
+  // two words instead of one run-on token.
+  s = s.replaceAll('_', ' ');
+  s = s.replaceAll(RegExp(r'[*~#|]'), '');
+  // Entities that survive markdown rendering.
+  s = s
+      .replaceAll('&amp;', ' and ')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll(RegExp(r'&[lg]t;'), ' ');
+  // Repeated terminal punctuation makes engines pause oddly ("wow!!!").
+  s = s.replaceAllMapped(RegExp(r'([!?.])\1{1,}'), (m) => m[1] ?? '');
+  // Empty brackets left behind by the stripping above.
+  s = s.replaceAll(RegExp(r'\(\s*\)|\[\s*\]'), '');
   // Collapse whitespace runs left behind by the stripping.
   s = s.replaceAll(RegExp(r'[ \t]+'), ' ');
   s = s.replaceAll(RegExp(r'\n{2,}'), '. ').replaceAll('\n', ' ');
+  s = s.replaceAllMapped(RegExp(r'\s+([,.;:!?])'), (m) => m[1] ?? '');
   s = s.replaceAll(RegExp(r'\s{2,}'), ' ').trim();
-  // Android TTS rejects very long utterances; keep well under the limit.
-  if (s.length > 3600) s = '${s.substring(0, 3600)}…';
+  // A trailing terminator stops engines clipping the final word.
+  if (s.isNotEmpty && RegExp(r'[\w"’)]$').hasMatch(s)) s = '$s.';
   return s;
+}
+
+/// Split a speech-ready string into utterance-sized chunks on sentence
+/// boundaries.
+///
+/// Three reasons this exists rather than handing the whole reply to the engine:
+///   * long replies used to be truncated at the engine's input limit — the tail
+///     was simply never spoken;
+///   * the first chunk is deliberately short, so audio starts a beat after the
+///     reply lands instead of after the whole paragraph is synthesized;
+///   * a chunk boundary is a clean place to barge in.
+/// Chunks are queued back-to-back natively, so playback stays gapless.
+List<String> splitForSpeech(
+  String speech, {
+  int firstTarget = 16,
+  int target = 340,
+  int maxChars = kMaxUtteranceChars,
+}) {
+  final text = speech.trim();
+  if (text.isEmpty) return const [];
+
+  final pieces = <String>[];
+  for (final sentence in text.split(RegExp(r'(?<=[.!?…])\s+'))) {
+    final trimmed = sentence.trim();
+    if (trimmed.isEmpty) continue;
+    pieces.addAll(_hardWrap(trimmed, maxChars));
+  }
+
+  final chunks = <String>[];
+  final buffer = StringBuffer();
+  var limit = firstTarget;
+  for (final piece in pieces) {
+    if (buffer.isEmpty) {
+      buffer.write(piece);
+    } else if (buffer.length + 1 + piece.length <= maxChars) {
+      buffer
+        ..write(' ')
+        ..write(piece);
+    } else {
+      chunks.add(buffer.toString());
+      buffer
+        ..clear()
+        ..write(piece);
+      limit = target;
+    }
+    if (buffer.length >= limit) {
+      chunks.add(buffer.toString());
+      buffer.clear();
+      limit = target;
+    }
+  }
+  if (buffer.isNotEmpty) chunks.add(buffer.toString());
+  return chunks;
+}
+
+/// Break a single over-long sentence at commas, then at word boundaries, so no
+/// chunk can exceed the engine's input limit.
+List<String> _hardWrap(String sentence, int maxChars) {
+  if (sentence.length <= maxChars) return [sentence];
+  final out = <String>[];
+  var rest = sentence;
+  while (rest.length > maxChars) {
+    final window = rest.substring(0, maxChars);
+    var cut = window.lastIndexOf(RegExp(r'[,;:]\s'));
+    if (cut < maxChars ~/ 3) cut = window.lastIndexOf(' ');
+    if (cut <= 0) cut = maxChars - 1;
+    out.add(rest.substring(0, cut + 1).trim());
+    rest = rest.substring(cut + 1).trim();
+  }
+  if (rest.isNotEmpty) out.add(rest);
+  return out;
 }
