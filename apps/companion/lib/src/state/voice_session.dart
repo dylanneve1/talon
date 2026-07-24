@@ -500,6 +500,9 @@ class VoiceSession extends ChangeNotifier {
 
   void _afterEmptyCapture() {
     partial = '';
+    // Do not carry the last recognizer generation's noise floor into the next
+    // listening animation. The recovery phase owns the visual handoff.
+    level = 0;
     if (handsFree && !muted) {
       final index = _silenceCount.clamp(0, timing.silenceBackoff.length - 1);
       _silenceCount++;

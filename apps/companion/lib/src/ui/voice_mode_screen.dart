@@ -417,27 +417,13 @@ class _OrbPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final c = size.center(Offset.zero);
     const tau = 2 * math.pi;
-
-    // Per-phase energy: how much the blobs breathe and drift.
-    final double energy;
-    switch (phase) {
-      case VoicePhase.listening:
-        energy = muted ? 0.06 : 0.25 + level * 0.75;
-      case VoicePhase.arming:
-        energy = 0.16 + 0.08 * (0.5 + 0.5 * math.sin(t * tau * 2));
-      case VoicePhase.finalizing:
-        energy = 0.28;
-      case VoicePhase.speaking:
-        // Synthetic rhythm — TTS gives no level feedback, so fake a cadence.
-        energy = 0.45 + 0.35 * (0.5 + 0.5 * math.sin(t * tau * 7));
-      case VoicePhase.thinking:
-        energy = 0.22;
-      case VoicePhase.recovering:
-        energy = 0.13 + 0.07 * (0.5 + 0.5 * math.sin(t * tau * 1.5));
-      case VoicePhase.idle:
-      case VoicePhase.error:
-        energy = 0.10;
-    }
+    final motion = sampleOrbMotion(
+      t: t,
+      phase: phase,
+      level: level,
+      muted: muted,
+    );
+    final energy = motion.energy;
 
     final base = size.shortestSide * 0.30;
     final swell = base * (1 + energy * 0.22);
@@ -456,16 +442,16 @@ class _OrbPainter extends CustomPainter {
     );
 
     // Three drifting blobs, each on its own slow orbit and hue.
-    final blobs = [
-      (palette.accent, 1.0, 0.0),
-      (palette.accent2, 1.6, tau / 3),
-      (palette.accentDeep, 2.2, 2 * tau / 3),
+    final colors = [
+      palette.accent,
+      palette.accent2,
+      palette.accentDeep,
     ];
-    for (final (color, speed, phi) in blobs) {
-      final a = t * tau * speed + phi;
+    for (var i = 0; i < colors.length; i++) {
+      final color = colors[i];
       final drift = swell * (0.16 + energy * 0.10);
-      final off = Offset(math.cos(a) * drift, math.sin(a * 1.3) * drift);
-      final r = swell * (0.85 + 0.10 * math.sin(a * 1.7));
+      final off = motion.blobOffset(i) * drift;
+      final r = swell * motion.blobRadiusFactor(i);
       canvas.drawCircle(
         c + off,
         r,
@@ -523,7 +509,7 @@ class _OrbPainter extends CustomPainter {
     // feather-light rings travel out from the core and dissolve.
     if (phase == VoicePhase.arming || phase == VoicePhase.recovering) {
       for (var i = 0; i < 2; i++) {
-        final progress = (t * 1.35 + i * 0.5) % 1.0;
+        final progress = motion.ringProgress(i);
         final radius = swell * (0.82 + progress * 0.72);
         canvas.drawCircle(
           c,
@@ -532,7 +518,7 @@ class _OrbPainter extends CustomPainter {
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.8
             ..color = palette.accent2.withValues(
-              alpha: (1 - progress) * 0.34,
+              alpha: motion.ringOpacity(i),
             ),
         );
       }
@@ -557,3 +543,143 @@ class _OrbPainter extends CustomPainter {
       old.muted != muted ||
       old.palette != palette;
 }
+
+/// One loop-safe sample of the orb's ambient motion.
+///
+/// Every frequency is an integer number of cycles over `t = 0..1`, so an
+/// [AnimationController.repeat] boundary lands at the exact same visual
+/// position. Ring opacity is also zero at each pulse wrap; a ring can move
+/// from its outer edge back to the core without visibly teleporting.
+@visibleForTesting
+class OrbMotionSample {
+  final double energy;
+  final Offset blob0Offset;
+  final Offset blob1Offset;
+  final Offset blob2Offset;
+  final double blob0RadiusFactor;
+  final double blob1RadiusFactor;
+  final double blob2RadiusFactor;
+  final double ring0Progress;
+  final double ring1Progress;
+  final double ring0Opacity;
+  final double ring1Opacity;
+
+  const OrbMotionSample({
+    required this.energy,
+    required this.blob0Offset,
+    required this.blob1Offset,
+    required this.blob2Offset,
+    required this.blob0RadiusFactor,
+    required this.blob1RadiusFactor,
+    required this.blob2RadiusFactor,
+    required this.ring0Progress,
+    required this.ring1Progress,
+    required this.ring0Opacity,
+    required this.ring1Opacity,
+  });
+
+  Offset blobOffset(int index) => switch (index) {
+        0 => blob0Offset,
+        1 => blob1Offset,
+        2 => blob2Offset,
+        _ => throw RangeError.index(index, this, 'index', null, 3),
+      };
+
+  double blobRadiusFactor(int index) => switch (index) {
+        0 => blob0RadiusFactor,
+        1 => blob1RadiusFactor,
+        2 => blob2RadiusFactor,
+        _ => throw RangeError.index(index, this, 'index', null, 3),
+      };
+
+  double ringProgress(int index) => switch (index) {
+        0 => ring0Progress,
+        1 => ring1Progress,
+        _ => throw RangeError.index(index, this, 'index', null, 2),
+      };
+
+  double ringOpacity(int index) => switch (index) {
+        0 => ring0Opacity,
+        1 => ring1Opacity,
+        _ => throw RangeError.index(index, this, 'index', null, 2),
+      };
+}
+
+@visibleForTesting
+OrbMotionSample sampleOrbMotion({
+  required double t,
+  required VoicePhase phase,
+  required double level,
+  required bool muted,
+}) {
+  const tau = 2 * math.pi;
+  final cycle = t % 1.0;
+  final angle = cycle * tau;
+  final quietBreath = 0.16 + 0.06 * (0.5 + 0.5 * math.sin(angle * 2));
+
+  final double energy;
+  switch (phase) {
+    case VoicePhase.listening:
+      energy = muted ? 0.06 : 0.25 + level.clamp(0.0, 1.0) * 0.75;
+    case VoicePhase.arming:
+    case VoicePhase.recovering:
+      // These phases alternate during silence retries. Sharing one continuous
+      // breath avoids a size jump every time the recognizer is recreated.
+      energy = quietBreath;
+    case VoicePhase.finalizing:
+      energy = 0.28;
+    case VoicePhase.speaking:
+      // Synthetic rhythm — TTS gives no level feedback, so fake a cadence.
+      energy = 0.45 + 0.35 * (0.5 + 0.5 * math.sin(angle * 7));
+    case VoicePhase.thinking:
+      energy = 0.22;
+    case VoicePhase.idle:
+    case VoicePhase.error:
+      energy = 0.10;
+  }
+
+  // Integer x/y/radius harmonics form varied Lissajous paths while returning
+  // every blob to precisely the same point at the controller boundary.
+  final blob0Offset = _orbPath(angle, 1, 2, 0);
+  final blob1Offset = _orbPath(angle, 2, 3, tau / 3);
+  final blob2Offset = _orbPath(angle, 3, 1, 2 * tau / 3);
+  final blob0Radius = _orbRadius(angle, 3, 0);
+  final blob1Radius = _orbRadius(angle, 2, tau / 3);
+  final blob2Radius = _orbRadius(angle, 4, 2 * tau / 3);
+
+  final ring0Progress = (cycle * 2) % 1.0;
+  final ring1Progress = (cycle * 2 + 0.5) % 1.0;
+
+  return OrbMotionSample(
+    energy: energy,
+    blob0Offset: blob0Offset,
+    blob1Offset: blob1Offset,
+    blob2Offset: blob2Offset,
+    blob0RadiusFactor: blob0Radius,
+    blob1RadiusFactor: blob1Radius,
+    blob2RadiusFactor: blob2Radius,
+    ring0Progress: ring0Progress,
+    ring1Progress: ring1Progress,
+    ring0Opacity: _ringOpacity(ring0Progress),
+    ring1Opacity: _ringOpacity(ring1Progress),
+  );
+}
+
+Offset _orbPath(
+  double angle,
+  int xCycles,
+  int yCycles,
+  double phaseOffset,
+) =>
+    Offset(
+      math.cos(angle * xCycles + phaseOffset),
+      math.sin(angle * yCycles + phaseOffset),
+    );
+
+double _orbRadius(double angle, int cycles, double phaseOffset) =>
+    0.85 + 0.10 * math.sin(angle * cycles + phaseOffset);
+
+// A sine envelope is zero at both ends of the pulse. The radius may wrap, but
+// there is no visible stroke at that instant.
+double _ringOpacity(double progress) =>
+    math.pow(math.sin(math.pi * progress), 1.35).toDouble() * 0.34;

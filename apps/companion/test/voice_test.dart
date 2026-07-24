@@ -187,9 +187,12 @@ void main() {
       for (var i = 0; i < 6; i++) {
         final id = 'stt$i';
         engine.ready(id);
+        engine.rms(id, 1);
+        expect(session.level, greaterThan(0));
         engine.sttError(id, 6, 'No speech heard');
         expect(session.phase, VoicePhase.recovering);
         expect(session.errorText, isNull);
+        expect(session.level, 0);
         final delay = _testTiming
             .silenceBackoff[i.clamp(0, _testTiming.silenceBackoff.length - 1)];
         await _advance(delay);
@@ -678,6 +681,7 @@ class _FakeVoiceEngine implements VoiceEngine {
 
   void ready(String id) => readyEvents.add(id);
   void end(String id) => endEvents.add(id);
+  void rms(String id, double level) => levels.add(SttLevelEvent(id, level));
   void finalResult(String id, String text) =>
       finals.add(SttTextEvent(id, text));
   void sttError(String id, int code, String message) =>
