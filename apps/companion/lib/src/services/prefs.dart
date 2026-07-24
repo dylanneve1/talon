@@ -81,6 +81,7 @@ class Prefs {
   static const _kVoiceCaptions = 'voice.captions.v1';
   static const _kVoiceHandsFree = 'voice.handsFree.v1';
   static const _kVoiceRate = 'voice.rate.v1';
+  static const _kVoiceName = 'voice.name.v1';
 
   /// Show live captions in voice mode. Default on.
   bool get voiceCaptions => _sp.getBool(_kVoiceCaptions) ?? true;
@@ -94,6 +95,12 @@ class Prefs {
   double get voiceRate => (_sp.getDouble(_kVoiceRate) ?? 1.0).clamp(0.6, 1.6);
   Future<void> setVoiceRate(double v) =>
       _sp.setDouble(_kVoiceRate, v.clamp(0.6, 1.6));
+
+  /// Stable Android TTS voice name, or null to follow the system default.
+  String? get voiceName => _sp.getString(_kVoiceName);
+  Future<void> setVoiceName(String? name) => name == null
+      ? _sp.remove(_kVoiceName).then((_) {})
+      : _sp.setString(_kVoiceName, name);
 
   // ── Device mesh ──────────────────────────────────────────────────────────
 

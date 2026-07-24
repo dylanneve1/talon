@@ -91,13 +91,19 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     switch (s.phase) {
       case VoicePhase.idle:
         return 'Tap the orb to talk';
+      case VoicePhase.arming:
+        return 'Opening the microphone…';
       case VoicePhase.listening:
         return 'Listening…';
+      case VoicePhase.finalizing:
+        return 'Got it…';
       case VoicePhase.thinking:
         final tool = s.toolLabel;
         return tool != null ? 'Running $tool…' : 'Thinking…';
       case VoicePhase.speaking:
         return 'Tap to interrupt';
+      case VoicePhase.recovering:
+        return s.recoveryText;
       case VoicePhase.error:
         return s.errorText ?? 'Something went wrong';
     }
@@ -226,9 +232,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   /// slides + fades away when captions are off — AnimatedSwitcher with a
   /// SizeTransition so the layout closes up smoothly instead of snapping.
   Widget _captionsPanel(VoiceSession s) {
-    final userLine = s.phase == VoicePhase.listening && s.partial.isNotEmpty
-        ? s.partial
-        : s.lastUserText;
+    final userLine =
+        (s.phase == VoicePhase.listening || s.phase == VoicePhase.finalizing) &&
+                s.partial.isNotEmpty
+            ? s.partial
+            : s.lastUserText;
     final assistantLine = s.assistantCaption;
     final hasContent = userLine.isNotEmpty || assistantLine.isNotEmpty;
     return AnimatedSwitcher(
@@ -385,6 +393,7 @@ class _RoundControl extends StatelessWidget {
 
 /// The voice orb. Three soft radial blobs orbiting a bright core; motion and
 /// scale are keyed to the session phase:
+///   arming/recovering → soft concentric breath,
 ///   listening → pulse follows the mic level,
 ///   thinking  → slow orbit with a sweeping arc,
 ///   speaking  → rhythmic swell,
@@ -414,11 +423,17 @@ class _OrbPainter extends CustomPainter {
     switch (phase) {
       case VoicePhase.listening:
         energy = muted ? 0.06 : 0.25 + level * 0.75;
+      case VoicePhase.arming:
+        energy = 0.16 + 0.08 * (0.5 + 0.5 * math.sin(t * tau * 2));
+      case VoicePhase.finalizing:
+        energy = 0.28;
       case VoicePhase.speaking:
         // Synthetic rhythm — TTS gives no level feedback, so fake a cadence.
         energy = 0.45 + 0.35 * (0.5 + 0.5 * math.sin(t * tau * 7));
       case VoicePhase.thinking:
         energy = 0.22;
+      case VoicePhase.recovering:
+        energy = 0.13 + 0.07 * (0.5 + 0.5 * math.sin(t * tau * 1.5));
       case VoicePhase.idle:
       case VoicePhase.error:
         energy = 0.10;
@@ -471,9 +486,8 @@ class _OrbPainter extends CustomPainter {
       Paint()
         ..shader = RadialGradient(
           colors: [
-            Colors.white.withValues(alpha: palette.brightness == Brightness.dark
-                ? 0.9
-                : 0.95),
+            Colors.white.withValues(
+                alpha: palette.brightness == Brightness.dark ? 0.9 : 0.95),
             palette.accent.withValues(alpha: 0.65),
             palette.accent.withValues(alpha: 0.0),
           ],
@@ -503,6 +517,25 @@ class _OrbPainter extends CustomPainter {
             transform: GradientRotation(t * tau * 2),
           ).createShader(rect),
       );
+    }
+
+    // Arming and silent-room recovery should feel alive, not broken: two
+    // feather-light rings travel out from the core and dissolve.
+    if (phase == VoicePhase.arming || phase == VoicePhase.recovering) {
+      for (var i = 0; i < 2; i++) {
+        final progress = (t * 1.35 + i * 0.5) % 1.0;
+        final radius = swell * (0.82 + progress * 0.72);
+        canvas.drawCircle(
+          c,
+          radius,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.8
+            ..color = palette.accent2.withValues(
+              alpha: (1 - progress) * 0.34,
+            ),
+        );
+      }
     }
 
     // Muted: a quiet slash over the core so the state is unmissable.
