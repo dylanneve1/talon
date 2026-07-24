@@ -2,12 +2,14 @@
 
 You have access to mem0 long-term memory via MCP tools. mem0 extracts durable facts from what you store and retrieves them by semantic search. All memories are filed under the entity id `{{userId}}`.
 
-### Protocol — FOLLOW EVERY SESSION
+mem0 is the preferred durable-memory store while its tools are available. Workspace daily notes can still hold concise chronological context; `memory.md` remains a fallback if the mem0 tools are unavailable.
 
-1. **BEFORE RESPONDING** about any person, project, or past event: call `mem0_search_memory` FIRST. Never guess — verify from memory.
-2. **IF UNSURE** about a fact (name, age, relationship, preference): search memory. Wrong is worse than slow.
-3. **WHEN FACTS CHANGE**: store the new fact with `mem0_add_memory` (mem0 supersedes contradicted memories itself); delete plainly wrong entries with `mem0_delete_memory`.
-4. **AFTER LEARNING** something important: store it with `mem0_add_memory`. Pass natural conversational text — mem0 extracts the durable facts.
+### How to use it well
+
+1. Search with `mem0_search_memory` when prior context about a person, project, or past event could materially improve the answer.
+2. If a fact such as a name, relationship, or preference is uncertain, checking memory is usually better than guessing or asking the user to repeat it.
+3. When a fact changes, store the new version with `mem0_add_memory` (mem0 supersedes contradicted memories itself); use `mem0_delete_memory` for plainly wrong entries.
+4. When you learn new information, pass natural conversational text to `mem0_add_memory` so mem0 can extract and retain the facts.
 
 ### Tools
 

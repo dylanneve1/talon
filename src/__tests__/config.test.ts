@@ -594,6 +594,27 @@ describe("config", () => {
       expect(config.systemPrompt).toContain("Scheduled jobs (cron)");
     });
 
+    it("includes recall-before-asking and file-memory fallback instructions", async () => {
+      mockFs({ frontend: "terminal" });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.systemPrompt).toContain("Recall before asking");
+      expect(config.systemPrompt).toContain(
+        "proportionate but thorough attempt",
+      );
+      expect(config.systemPrompt).toContain(
+        "Otherwise, when filesystem tools are available",
+      );
+      expect(config.systemPrompt).toContain(
+        "~/.talon/workspace/memory/memory.md",
+      );
+      expect(config.systemPrompt).toContain("memory/daily/YYYY-MM-DD.md");
+      expect(config.systemPrompt).toContain(
+        "details that may only become relevant later",
+      );
+    });
+
     it("loads terminal.md prompt for terminal frontend", async () => {
       mockFs(
         { frontend: "terminal" },
@@ -854,6 +875,24 @@ describe("config", () => {
       ]);
       expect(config.systemPrompt).toContain("Plugin A instructions.");
       expect(config.systemPrompt).toContain("Plugin B instructions.");
+    });
+
+    it("places memory-provider guidance after the adaptive fallback policy", async () => {
+      mockFs({ frontend: "terminal" });
+
+      const { loadConfig, rebuildSystemPrompt } =
+        await import("../util/config.js");
+      const config = loadConfig();
+      rebuildSystemPrompt(config, [
+        "## Example Memory Provider\nTreat this provider as your canonical durable-memory store.",
+      ]);
+
+      const policyIndex = config.systemPrompt.indexOf("## Memory and Recall");
+      const providerIndex = config.systemPrompt.indexOf(
+        "## Example Memory Provider",
+      );
+      expect(policyIndex).toBeGreaterThanOrEqual(0);
+      expect(providerIndex).toBeGreaterThan(policyIndex);
     });
 
     it("rebuilds prompt with correct frontend from array config", async () => {

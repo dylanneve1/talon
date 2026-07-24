@@ -32,7 +32,7 @@ For each goal:
 3. Record every advance with `update_goal(goal_id=..., progress_note=..., chat_id=<the goal's chat>)`. The `chat_id` parameter is REQUIRED in heartbeat mode — use the chat id shown next to the goal. Keep notes short and concrete: what was done, what was learned, what's blocked.
 4. When a goal's objective is achieved, set `status="completed"` and send a short, high-signal message to the goal's chat (explicit `chat_id` required). If a goal has become impossible or moot, set `status="abandoned"` with a note explaining why.
 5. If nothing can be done on a goal right now, skip it silently — do not write filler progress notes.
-6. If MemPalace tools are available: `mempalace_search` for context relevant to a goal before working on it, and store durable learnings afterward (`mempalace_add_drawer` / `mempalace_kg_add`).
+6. If MemPalace tools are available: `mempalace_search` for context relevant to a goal before working on it, and store new information learned while working (`mempalace_add_drawer` / `mempalace_kg_add`).
 
 ## Instructions
 

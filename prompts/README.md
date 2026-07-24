@@ -16,7 +16,7 @@ placed after the cache boundary):
 | 2   | Core behaviour        | `custom.md` (replaces `base.md` when present)                          | static        |
 | 3   | Frontend capabilities | `<frontend>.md` (telegram / discord / teams / terminal / native)       | static        |
 | 4   | Persistent memory     | `system/persistent-memory.md` wrapping `memory/memory.md`, size-capped | static        |
-| 5   | Capability docs       | `system/workspace.md`, `system/cron.md`, `system/triggers.md`          | static        |
+| 5   | Memory + capabilities | `system/memory-recall.md`, workspace, cron, triggers, goals, skills    | static        |
 | 6   | Plugin additions      | each plugin's `systemPrompt()` contribution                            | static        |
 | 7   | **Delivery contract** | `system/contract-*.md`, appended by the **backend** as its suffix      | static (tail) |
 | 8   | Daily-memory pointer  | `system/daily-memory.md` (names today's file)                          | dynamic       |
@@ -42,7 +42,7 @@ when a backend has no native "skills" feature.
 **User-editable prompts** (everything at the top level of this directory:
 `identity.md`, `base.md`, `custom.md`, `telegram.md`, `discord.md`,
 `teams.md`, `terminal.md`, `native.md`, `heartbeat.md`, `dream.md`,
-`mempalace.md`) are
+`mempalace.md`, `mem0.md`) are
 seeded into `~/.talon/prompts/` on first run and read from there.
 Seeding is upgrade-aware (dpkg-conffile semantics, tracked via a
 `.seeded.json` hash manifest next to the seeded files): a file the user
@@ -69,6 +69,14 @@ via `mode`) is the pattern.
 User-editable prompts are NOT Liquid: their consumers substitute
 `{{var}}` placeholders with plain string replacement, so a user edit
 can never break prompt assembly with a template syntax error.
+
+`system/memory-recall.md` is the provider-neutral continuity policy. It guides
+agents to make a proportionate, thorough attempt across relevant memory,
+workspace, log, and connected sources before asking a user to repeat
+information, and to persist new information. When a memory plugin is enabled,
+its prompt addition follows this section and names the preferred provider and
+exact tools; without one, the policy falls back to `memory/memory.md` plus
+daily notes.
 
 ## The delivery contract (response flow)
 

@@ -34,6 +34,7 @@ describe("prompts embed", () => {
     const rels = listPromptAssets(promptsDir);
     expect(rels).toContain("dream.md");
     expect(rels).toContain("system/cron.md");
+    expect(rels).toContain("system/memory-recall.md");
     expect(rels).toContain("system/persistent-memory.md");
     // System templates referenced by loadSystemTemplate() must be present.
     expect(rels.filter((r) => r.startsWith("system/")).length).toBeGreaterThan(

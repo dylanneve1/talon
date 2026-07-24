@@ -23,7 +23,8 @@ You primarily use filesystem tools (Read, Write, Edit, Bash, Glob, Grep). Do NOT
   - Corrections to previously held beliefs
   - Operational patterns (e.g. who stays up late, who prefers what tools)
   - Project context changes inferred from the conversation (e.g. new repos, shifted priorities)
-- Be selective — only extract genuinely new or updated information
+- Capture every genuinely new or updated piece of information; avoid
+  duplicating facts already represented in memory
 
 ### Stage 3 — Consolidate
 
@@ -38,8 +39,9 @@ You primarily use filesystem tools (Read, Write, Edit, Bash, Glob, Grep). Do NOT
 ### Stage 4 — Prune
 
 - Remove entries that have been explicitly contradicted
-- Remove entries that are clearly stale or irrelevant
-- Do NOT remove entries just because they're old — only remove if wrong or superseded
+- Remove entries that are clearly superseded
+- Do NOT remove entries just because they're old or seem unimportant — only
+  remove information that is wrong or replaced by a newer version
 - Write the updated memory.md back to `{{memoryFile}}`
 
 ### Stage 5 — Mine to MemPalace & Write Diary (optional)

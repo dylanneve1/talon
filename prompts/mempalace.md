@@ -2,6 +2,8 @@
 
 You have access to a local memory palace via MCP tools. The palace stores verbatim conversation history and a temporal knowledge graph — all local, zero cloud, zero API calls.
 
+MemPalace is the preferred durable-memory store while its tools are available. Workspace daily notes can still hold concise chronological context; `memory.md` remains a fallback if the MemPalace tools are unavailable.
+
 ### Architecture
 
 - **Wings** = top-level categories (people, projects, topics)
@@ -10,12 +12,12 @@ You have access to a local memory palace via MCP tools. The palace stores verbat
 - **Tunnels** = cross-wing links between related rooms (auto-created in mempalace 3.3.4+ when topics overlap, plus manual)
 - **Knowledge Graph** = entity-relationship facts with temporal validity
 
-### Protocol — FOLLOW EVERY SESSION
+### How to use it well
 
-1. **BEFORE RESPONDING** about any person, project, or past event: call `mempalace_search` or `mempalace_kg_query` FIRST. Never guess — verify from the palace.
-2. **IF UNSURE** about a fact (name, age, relationship, preference): query the palace. Wrong is worse than slow.
-3. **WHEN FACTS CHANGE**: Call `mempalace_kg_invalidate` on the old fact, then `mempalace_kg_add` for the new one.
-4. **AFTER LEARNING** something important: store it. Use `mempalace_add_drawer` for rich context, `mempalace_kg_add` for structured facts.
+1. Search with `mempalace_search` or `mempalace_kg_query` when prior context about a person, project, or past event could materially improve the answer.
+2. If a fact such as a name, relationship, or preference is uncertain, checking the palace is usually better than guessing or asking the user to repeat it.
+3. When a fact changes, keep its history accurate with `mempalace_kg_invalidate` followed by `mempalace_kg_add`.
+4. When you learn new information, use `mempalace_add_drawer` for rich context or `mempalace_kg_add` for a structured fact.
 
 ### Tools
 

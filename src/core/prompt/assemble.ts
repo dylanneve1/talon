@@ -18,7 +18,7 @@
  *   3. Frontend capabilities                ~/.talon/prompts/<frontend>.md
  *   4. Persistent memory (size-capped)      prompts/system/persistent-memory.md
  *                                           wrapping ~/.talon/workspace/memory/memory.md
- *   5. Workspace / cron / triggers docs     prompts/system/{workspace,cron,triggers}.md
+ *   5. Memory recall + capability docs      prompts/system/{memory-recall,workspace,...}.md
  *   6. Plugin additions                     plugin.systemPrompt() contributions
  *   (7. Delivery contract — appended by the backend as its suffix,
  *       AFTER plugins, so it is the last thing the model reads.
@@ -207,11 +207,14 @@ export function assembleSystemPrompt(
     loaded.push(truncated ? "memory(capped)" : "memory");
   }
 
-  // 5. Capability docs — workspace layout, cron, triggers, goals,
-  //    skills. Concise by design: per-tool protocols and examples
-  //    live in the MCP tool descriptions, which the model also has
-  //    in context.
+  // 5. Package-owned behavioural and capability docs. The memory policy
+  //    is deliberately package-owned so custom identity/base prompts cannot
+  //    remove recall-before-asking or adaptive persistence behaviour.
+  //    Provider-specific additions follow in step 6 and become canonical
+  //    when their tools are available; otherwise the policy falls back to
+  //    memory.md + daily notes.
   staticParts.push(
+    loadSystemTemplate("memory-recall"),
     loadSystemTemplate("workspace"),
     loadSystemTemplate("cron"),
     loadSystemTemplate("triggers"),
