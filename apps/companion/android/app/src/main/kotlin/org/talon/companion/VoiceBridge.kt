@@ -14,6 +14,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -55,6 +56,7 @@ class VoiceBridge(
 ) {
     companion object {
         const val CHANNEL = "talon/voice"
+        private const val TAG = "TalonVoice"
         private const val PERMISSION_REQUEST = 7431
         private const val GOOGLE_TTS = "com.google.android.tts"
 
@@ -78,6 +80,7 @@ class VoiceBridge(
     private var autoVoice: Voice? = null
     private var autoVoiceResolved = false
     private var appliedVoiceName: String? = null
+    private var voiceApplied = false
     private var appliedRate = Float.NaN
     private var appliedPitch = Float.NaN
     private var triedFallbackEngine = false
@@ -232,22 +235,6 @@ class VoiceBridge(
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-            // Default end-pointing cuts people off mid-thought (the recognizer
-            // treats a breath as end-of-speech). Give a natural pause room to
-            // breathe; engines that ignore these extras are unaffected.
-            putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
-                1500,
-            )
-            putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                1200,
-            )
-            putExtra(
-                RecognizerIntent
-                    .EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-                900,
-            )
         }
         recognizer = r
         sttSessionId = sessionId
@@ -255,6 +242,7 @@ class VoiceBridge(
         lastRmsAt = 0L
         try {
             r.startListening(intent)
+            Log.i(TAG, "stt start $sessionId")
             result.success(true)
         } catch (e: Exception) {
             completeRecognizer(sessionId, r)
@@ -405,6 +393,7 @@ class VoiceBridge(
         }
 
         override fun onError(error: Int) {
+            Log.i(TAG, "stt error $error (${sttErrorMessage(error)})")
             if (!isCurrent(sessionId, r)) return
             completeRecognizer(sessionId, r)
             emit(
@@ -481,6 +470,11 @@ class VoiceBridge(
                         return@post
                     }
                 }
+                Log.i(
+                    TAG,
+                    "tts init ${if (ok) "ok" else "failed"} " +
+                        "engine=${engine ?: "default"}",
+                )
                 ttsReady = ok
                 if (ok) {
                     resetVoiceCache()
@@ -503,6 +497,7 @@ class VoiceBridge(
         autoVoice = null
         autoVoiceResolved = false
         appliedVoiceName = null
+        voiceApplied = false
         appliedRate = Float.NaN
         appliedPitch = Float.NaN
     }
@@ -545,8 +540,10 @@ class VoiceBridge(
     }
 
     private val utteranceListener = object : UtteranceProgressListener() {
-        override fun onStart(utteranceId: String?) =
+        override fun onStart(utteranceId: String?) {
+            Log.i(TAG, "tts audio start ${utteranceId ?: ""}")
             emit("tts.start", mapOf("id" to (utteranceId ?: "")))
+        }
 
         override fun onDone(utteranceId: String?) =
             finishTts("tts.done", utteranceId)
@@ -555,8 +552,10 @@ class VoiceBridge(
         override fun onError(utteranceId: String?) =
             finishTts("tts.error", utteranceId, TextToSpeech.ERROR)
 
-        override fun onError(utteranceId: String?, errorCode: Int) =
+        override fun onError(utteranceId: String?, errorCode: Int) {
+            Log.w(TAG, "tts error $errorCode for ${utteranceId ?: ""}")
             finishTts("tts.error", utteranceId, errorCode)
+        }
 
         override fun onStop(utteranceId: String?, interrupted: Boolean) =
             finishTts(
@@ -591,32 +590,27 @@ class VoiceBridge(
             val wanted = voiceName?.takeIf { it.isNotBlank() }
             // Voice/rate/pitch are engine-wide state, so only touch them when
             // something actually changed: re-applying them per chunk is what
-            // made queued utterances hiccup between sentences.
-            if (wanted != appliedVoiceName) {
+            // made queued utterances hiccup between sentences. `voiceApplied`
+            // (not a null comparison on the name) tracks that, so the very
+            // first utterance still resolves a voice when none is pinned.
+            //
+            // Voice selection NEVER fails the utterance: a stale pinned name,
+            // a voice that vanished with an engine update, or an engine that
+            // refuses setVoice all fall back to speaking with whatever is
+            // already active. Speaking in the wrong voice beats silence.
+            if (!voiceApplied || wanted != appliedVoiceName) {
                 val requested = wanted?.let { name ->
                     engine.voices.orEmpty().firstOrNull { it.name == name }
                 }
-                if (wanted != null && requested == null) {
-                    result.error(
-                        "tts_voice_unavailable",
-                        "Selected voice is unavailable",
-                        null,
-                    )
-                    return@ensureTts
-                }
                 val voice = requested ?: bestVoice(engine)
-                if (
-                    voice != null &&
-                    engine.setVoice(voice) != TextToSpeech.SUCCESS
-                ) {
-                    result.error(
-                        "tts_voice_unavailable",
-                        "Selected voice is unavailable",
-                        null,
-                    )
-                    return@ensureTts
+                if (voice != null) {
+                    val applied = engine.setVoice(voice) == TextToSpeech.SUCCESS
+                    if (!applied) {
+                        Log.w(TAG, "setVoice rejected ${voice.name}")
+                    }
                 }
                 appliedVoiceName = wanted
+                voiceApplied = true
             }
             val clampedRate = rate.coerceIn(0.4f, 2.0f)
             if (clampedRate != appliedRate) {
@@ -628,6 +622,11 @@ class VoiceBridge(
                 engine.setPitch(clampedPitch)
                 appliedPitch = clampedPitch
             }
+            Log.i(
+                TAG,
+                "speak id=$id chars=${text.length} flush=$flush " +
+                    "voice=${appliedVoiceName ?: autoVoice?.name ?: "engine-default"}",
+            )
             requestTtsAudioFocus()
             activeTtsId = id
             val params = Bundle().apply {
@@ -644,6 +643,7 @@ class VoiceBridge(
                 id,
             )
             if (queued != TextToSpeech.SUCCESS) {
+                Log.w(TAG, "speak refused for $id")
                 if (activeTtsId == id) activeTtsId = null
                 releaseTtsAudioFocusSoon()
             }
