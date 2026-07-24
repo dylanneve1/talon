@@ -105,7 +105,7 @@
     "@openai/agents": "^0.13.0",
     "@openai/codex-sdk": "^0.145.0",
     "@opencode-ai/sdk": "^1.17.4",
-    "@playwright/mcp": "0.0.56",
+    "@playwright/mcp": "0.0.78",
     "@types/cross-spawn": "^6.0.6",
     "big-integer": "^1.6.52",
     "cheerio": "^1.2.0",
