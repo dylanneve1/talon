@@ -19,11 +19,12 @@ import { closestMatch } from "../../../native/strsim.js";
 import {
   formatDuration,
   renderDoctorMessage,
-  renderMetricsMessages,
+  renderMetricsKeyboard,
+  renderMetricsPanel,
 } from "../helpers/index.js";
 import { collectDoctorReport } from "../../../core/doctor.js";
 import { handleAdminCommand } from "../admin.js";
-import { getMetrics, getTodayMetrics } from "../../../util/metrics.js";
+import { getTodayMetrics } from "../../../util/metrics.js";
 import { isAuthorizedAdmin, type RegisterDeps } from "./state.js";
 import { telegramCommandMenu } from "./definitions.js";
 
@@ -44,17 +45,12 @@ export function registerAdminCommands(
       await ctx.reply("Not authorized.");
       return;
     }
-    const messages = [
-      ...renderMetricsMessages(getMetrics()),
-      ...renderMetricsMessages(
-        getTodayMetrics(),
-        undefined,
-        "📊 Metrics — today (UTC)",
-      ),
-    ];
-    for (const message of messages) {
-      await ctx.reply(message, { parse_mode: "HTML" });
-    }
+    // One message, two grains. Today opens first — it is the smaller,
+    // more actionable view; All time is a tap away on the same message.
+    await ctx.reply(renderMetricsPanel(getTodayMetrics(), "today"), {
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: renderMetricsKeyboard("today") },
+    });
   });
 
   bot.command("doctor", async (ctx) => {
