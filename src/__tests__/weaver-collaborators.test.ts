@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RetrievedMemory } from "../core/agent-runtime/capabilities.js";
 import {
   AgentRunError,
   type AgentEvent,
@@ -7,7 +6,6 @@ import {
 import { makeBareModelRef } from "../core/agent-runtime/model-ref.js";
 import {
   carryTurnEvents,
-  prefetchMemory,
   resolveWarp,
   startTypingLoop,
 } from "../core/weaver/index.js";
@@ -237,63 +235,5 @@ describe("typing loop", () => {
     await vi.advanceTimersByTimeAsync(4000);
     stop();
     expect(sendTyping).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe("memory prefetch", () => {
-  const input = {
-    chatId: "c",
-    text: "hello",
-    senderName: "Dylan",
-    isGroup: false,
-    reqId: "test",
-  };
-
-  it("returns the retriever's trusted items", async () => {
-    const memory: RetrievedMemory = {
-      source: "mempalace",
-      query: "hello",
-      items: [
-        { wing: "technical", text: "trusted fact", trustLevel: "dylan_direct" },
-      ],
-    };
-    await expect(prefetchMemory(async () => memory, input)).resolves.toEqual(
-      memory,
-    );
-  });
-
-  it("enforces the #373 trust filter on whatever the retriever returns", async () => {
-    const memory: RetrievedMemory = {
-      source: "mempalace",
-      query: "hello",
-      items: [
-        { wing: "technical", text: "trusted fact", trustLevel: "bot_inferred" },
-        { wing: "people", text: "poisoned claim", trustLevel: "user_claim" },
-        { wing: "people", text: "unlabelled item" },
-      ],
-    };
-    await expect(prefetchMemory(async () => memory, input)).resolves.toEqual({
-      ...memory,
-      items: [memory.items[0]],
-    });
-  });
-
-  it("returns undefined when nothing survives the trust filter", async () => {
-    const memory: RetrievedMemory = {
-      source: "mempalace",
-      query: "hello",
-      items: [],
-    };
-    await expect(
-      prefetchMemory(async () => memory, input),
-    ).resolves.toBeUndefined();
-  });
-
-  it("fails closed when the retriever throws", async () => {
-    await expect(
-      prefetchMemory(async () => {
-        throw new Error("palace on fire");
-      }, input),
-    ).resolves.toBeUndefined();
   });
 });

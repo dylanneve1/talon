@@ -3,7 +3,6 @@ export { ThreadSession, type SessionSummary } from "./thread-session.js";
 export { Loom, type ContextRegistry } from "./loom.js";
 export { carryTurnEvents, type EventSink } from "./shuttle.js";
 export { startTypingLoop, TYPING_REFRESH_MS } from "./typing-loop.js";
-export { prefetchMemory } from "./memory-prefetch.js";
 export {
   resolveWarp,
   type WarpResolution,

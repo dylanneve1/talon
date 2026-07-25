@@ -47,12 +47,7 @@ export {
 
 export { registerTurnInterrupt, interruptChatTurn } from "./turn-interrupt.js";
 
-export {
-  formatUserPrompt,
-  formatPromptWithRetrievedMemory,
-  RETRIEVED_MEMORY_DEFAULT_MAX_CHARS,
-  type PromptFormatInputs,
-} from "./prompt-format.js";
+export { formatUserPrompt, type PromptFormatInputs } from "./prompt-format.js";
 
 export {
   buildDeliveryContract,
