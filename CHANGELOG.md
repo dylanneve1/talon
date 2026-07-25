@@ -1,5 +1,33 @@
 # Changelog
 
+## [3.9.0](https://github.com/dylanneve1/talon/compare/v3.8.2...v3.9.0) (2026-07-25)
+
+
+### Features
+
+* **companion:** natural-sounding voice mode and a living orb ([#635](https://github.com/dylanneve1/talon/issues/635)) ([21d674a](https://github.com/dylanneve1/talon/commit/21d674a003436678484dfaf14a408a4c681d5cb4))
+* **companion:** settings chapters, command palette, actionable context ([#653](https://github.com/dylanneve1/talon/issues/653)) ([b21a631](https://github.com/dylanneve1/talon/commit/b21a631064cdf1a6a95bc859fa8c0b646ead2e6f))
+* **terminal:** add prompt history and richer status ([#601](https://github.com/dylanneve1/talon/issues/601)) ([b3cb5cc](https://github.com/dylanneve1/talon/commit/b3cb5ccba74de48e83edc627eeff84ae4c354bec))
+
+
+### Bug Fixes
+
+* **bridge:** refuse browser-driven and DNS-rebound requests ([#648](https://github.com/dylanneve1/talon/issues/648)) ([552c13b](https://github.com/dylanneve1/talon/commit/552c13b42bea87e9382de59239388c273d5771b3))
+* **discord:** keep API error codes readable after withRetry wraps them ([#654](https://github.com/dylanneve1/talon/issues/654)) ([2ff7237](https://github.com/dylanneve1/talon/commit/2ff7237178bcd1b4610e7b330cbdf1ccd4354538))
+* **discord:** stop one bad button or a long reply losing the whole message ([#651](https://github.com/dylanneve1/talon/issues/651)) ([ade9b5a](https://github.com/dylanneve1/talon/commit/ade9b5acd82e1960594b7dfcbd711a951bcef2d2))
+* **mesh:** address device commands, attribute results, bind transfer tokens, bound the registry ([#655](https://github.com/dylanneve1/talon/issues/655)) ([609d9b6](https://github.com/dylanneve1/talon/commit/609d9b69749898effd7c4ff833968ae3d133b440))
+* **telegram:** enforce the 64-BYTE callback_data cap on inline buttons ([#644](https://github.com/dylanneve1/talon/issues/644)) ([3881b67](https://github.com/dylanneve1/talon/commit/3881b67529a7a74e1e317c83d9482311e230b23a))
+* **telegram:** never emit crossed HTML tags from markdown conversion ([#643](https://github.com/dylanneve1/talon/issues/643)) ([970079c](https://github.com/dylanneve1/talon/commit/970079cda0ca14094480db04293f1cb511b978a6))
+* **tests:** reap leaked mkdtemp scratch dirs after each run ([#652](https://github.com/dylanneve1/talon/issues/652)) ([82782ca](https://github.com/dylanneve1/talon/commit/82782ca3774a8d7d6931b72b9912c9300f89ef10))
+
+
+### Code Refactoring
+
+* **backends:** trim dead kilo/opencode barrel surface ([#647](https://github.com/dylanneve1/talon/issues/647)) ([7d71c80](https://github.com/dylanneve1/talon/commit/7d71c80f7b65d2dee458fb2a0baf71d3dc002f34))
+* delete superseded/dead modules, make knip output actionable ([#646](https://github.com/dylanneve1/talon/issues/646)) ([d4568bc](https://github.com/dylanneve1/talon/commit/d4568bc769da5cc0f554c3a846bbc1d986741079))
+* **layering:** fix two depcruise violations, correct three rule contracts ([#650](https://github.com/dylanneve1/talon/issues/650)) ([1db5948](https://github.com/dylanneve1/talon/commit/1db59481ba6c01b84844a3270f803c3ff161fb92))
+* trim unused re-exports from core and cli barrels ([#649](https://github.com/dylanneve1/talon/issues/649)) ([8f99264](https://github.com/dylanneve1/talon/commit/8f9926428cd58ea04271b3734d6dfda929b47bcd))
+
 ## [3.8.2](https://github.com/dylanneve1/talon/compare/v3.8.1...v3.8.2) (2026-07-25)
 
 
