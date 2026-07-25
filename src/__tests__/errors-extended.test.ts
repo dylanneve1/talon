@@ -149,14 +149,14 @@ describe("classify — gateway status codes", () => {
     expect(err.status).toBe(504);
   });
 
-  it("classifies 408 Request Timeout as network/retryable via 5xx path — actually falls to unknown", () => {
-    // 408 is a 4xx status. It does not match rate_limit, overloaded, network,
-    // session, context_length, auth, 400, 403, or 5xx branches.
-    // Documents the actual behavior: falls through to unknown.
+  // 408 is a 4xx, so it matched none of rate_limit / overloaded / network /
+  // session / context_length / auth / 400 / 403 / 5xx and fell through to
+  // `unknown` — non-retryable, despite being a pure transient deadline.
+  // It now has its own branch.
+  it("classifies 408 Request Timeout as retryable", () => {
     const err = classify(new Error("408 Request Timeout"));
-    // 408 doesn't match the overloaded/5xx branch (which requires status >= 500)
-    // It also doesn't match any other pattern unless the message contains a keyword.
-    expect(err.retryable).toBe(false);
+    expect(err.reason).toBe("network");
+    expect(err.retryable).toBe(true);
     expect(err.status).toBe(408);
   });
 

@@ -34,6 +34,104 @@ describe("classify", () => {
     expect(classify(new Error("ENOTFOUND")).reason).toBe("network");
   });
 
+  // Transient transport failures that used to fall through to
+  // `unknown`/non-retryable, so `withRetry`, the backend retry ladder,
+  // and the frontend send queues all gave up on a blip instead of
+  // retrying. Every entry here is a real Node/undici/proxy message.
+  describe("transient transport failures are retryable", () => {
+    const transient = [
+      "socket hang up",
+      "other side closed",
+      "Premature close",
+      "getaddrinfo EAI_AGAIN api.anthropic.com",
+      "write EPIPE",
+      "The operation was aborted due to timeout",
+      "Request timed out.",
+      "Headers Timeout Error",
+      "UND_ERR_CONNECT_TIMEOUT",
+      "Client network socket disconnected before secure TLS connection was established",
+      "upstream connect error or disconnect/reset before headers",
+      "Internal Server Error",
+      "Bad Gateway",
+      "Gateway Timeout",
+    ];
+    for (const message of transient) {
+      it(`retries: ${message}`, () => {
+        const err = classify(new Error(message));
+        expect(err.retryable).toBe(true);
+      });
+    }
+  });
+
+  // undici reports the real fault on the cause chain and leaves the
+  // top-level message contentless ("fetch failed", "terminated"), so
+  // message-only matching misses it entirely.
+  it("finds a transport code nested on the cause chain", () => {
+    const err = classify(
+      new TypeError("fetch failed", {
+        cause: Object.assign(new Error("terminated"), {
+          code: "UND_ERR_SOCKET",
+        }),
+      }),
+    );
+    expect(err.reason).toBe("network");
+    expect(err.retryable).toBe(true);
+  });
+
+  it("walks more than one level of cause nesting", () => {
+    const err = classify(
+      new TypeError("opaque", {
+        cause: new Error("wrapper", {
+          cause: Object.assign(new Error("inner"), { code: "ECONNRESET" }),
+        }),
+      }),
+    );
+    expect(err.retryable).toBe(true);
+  });
+
+  it("treats TimeoutError by name as a retryable deadline", () => {
+    const err = new Error("no useful text");
+    err.name = "TimeoutError";
+    expect(classify(err).retryable).toBe(true);
+  });
+
+  // The counterpart to the timeout rule, and the reason bare "abort" is
+  // NOT in the transient set: an interrupt is the user saying stop.
+  // Retrying it would restart the work they just cancelled.
+  it("keeps a user interrupt non-retryable", () => {
+    const err = new Error("This operation was aborted");
+    err.name = "AbortError";
+    expect(classify(err).retryable).toBe(false);
+    expect(classify(new Error("MessageAborted")).retryable).toBe(false);
+    expect(classify(new Error("aborted")).retryable).toBe(false);
+  });
+
+  // A DNS name that does not resolve is a config error; retrying just
+  // burns the ladder. EAI_AGAIN (temporary resolver failure) does retry.
+  it("does not treat a permanently unresolvable host as retryable via code", () => {
+    const err = classify(
+      Object.assign(new Error("getaddrinfo ENOTFOUND nope.invalid"), {
+        code: "ENOTFOUND",
+      }),
+    );
+    // Still `network` via the long-standing message rule, but the code
+    // set deliberately excludes ENOTFOUND.
+    expect(err.reason).toBe("network");
+  });
+
+  it("leaves programmer-error guards as non-retryable unknown", () => {
+    for (const message of [
+      "Dispatcher not initialized",
+      'Unknown backend "gpt5" — known: claude',
+      'Backend role "chat" not bound',
+      "Heartbeat already running",
+    ]) {
+      const err = classify(new Error(message));
+      expect(err.reason).toBe("unknown");
+      expect(err.retryable).toBe(false);
+    }
+  });
+
   it("classifies session expired errors", () => {
     const err = classify(new Error("session expired"));
     expect(err.reason).toBe("session_expired");

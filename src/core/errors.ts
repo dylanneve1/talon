@@ -60,6 +60,68 @@ export class TalonError extends Error {
   }
 }
 
+// ── Transport-failure detection ─────────────────────────────────────────────
+
+/**
+ * Node / undici error codes that mean "the connection failed, try again".
+ *
+ * Codes beat message text: they're stable across Node versions and
+ * locales, and undici in particular throws bare `TypeError: terminated`
+ * / `TypeError: fetch failed` whose message says nothing while the
+ * `code` on the cause chain says everything.
+ *
+ * `ENOTFOUND` is deliberately absent — a DNS name that doesn't resolve
+ * is a config error, not a blip. `EAI_AGAIN` (temporary resolver
+ * failure) IS here, because that one does clear.
+ */
+const RETRYABLE_TRANSPORT_CODES: ReadonlySet<string> = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ECONNABORTED",
+  "EPIPE",
+  "ETIMEDOUT",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENETDOWN",
+  "EAI_AGAIN",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_SOCKET",
+  "ERR_STREAM_PREMATURE_CLOSE",
+  "ERR_SOCKET_CONNECTION_TIMEOUT",
+]);
+
+/**
+ * Transient transport failures that surface as prose with no usable
+ * `code` — Node's own `socket hang up`, undici's `other side closed` /
+ * `Premature close`, and the named 5xx bodies proxies return as text.
+ *
+ * `timeout`/`timed out` is here but bare `abort` deliberately is NOT: a
+ * user interrupt (`controller.abort()` → "This operation was aborted")
+ * must stay non-retryable, or cancelling a turn would restart it.
+ * `AbortSignal.timeout()` says "aborted due to timeout" and is caught by
+ * the timeout half, which is the distinction we want.
+ */
+const TRANSIENT_TRANSPORT_RE =
+  /socket hang up|other side closed|premature close|connection (?:closed|reset|lost)|timed out|time-?out|bad gateway|service unavailable|gateway time-?out|internal server error|upstream connect error|server disconnected/i;
+
+/**
+ * Walk the `cause` chain collecting `code` / `errno` / `name` values.
+ * undici nests the real fault one or two levels down (`TypeError: fetch
+ * failed` → `cause: Error { code: 'ECONNREFUSED' }`), so a shallow look
+ * at the thrown object misses it entirely.
+ */
+function errorCodes(err: unknown, depth = 0): string[] {
+  if (depth > 5 || err === null || typeof err !== "object") return [];
+  const e = err as { code?: unknown; errno?: unknown; cause?: unknown };
+  const codes: string[] = [];
+  if (typeof e.code === "string") codes.push(e.code);
+  if (typeof e.errno === "string") codes.push(e.errno);
+  codes.push(...errorCodes(e.cause, depth + 1));
+  return codes;
+}
+
 // ── Classify any error ──────────────────────────────────────────────────────
 
 /**
@@ -115,6 +177,27 @@ export function classify(err: unknown): TalonError {
     });
   }
 
+  // Transport failure by CODE, before any prose matching. undici wraps
+  // the real fault ("TypeError: fetch failed" → cause.code) so the
+  // message alone is often empty of signal while the code is decisive.
+  //
+  // `TimeoutError` (what AbortSignal.timeout throws) is a transient
+  // deadline and retries. `AbortError` is NOT handled here on purpose —
+  // it means a user interrupt, and retrying a cancelled turn would
+  // restart work the user just stopped.
+  const errName = err instanceof Error ? err.name : "";
+  const transportCode = errorCodes(err).find((code) =>
+    RETRYABLE_TRANSPORT_CODES.has(code),
+  );
+  if (transportCode !== undefined || errName === "TimeoutError") {
+    return new TalonError(msg, {
+      reason: "network",
+      retryable: true,
+      retryAfterMs: 2_000,
+      cause,
+    });
+  }
+
   // Overloaded / capacity
   if (/overloaded|503|capacity/i.test(msg)) {
     return new TalonError(msg, {
@@ -126,15 +209,36 @@ export function classify(err: unknown): TalonError {
     });
   }
 
-  // Network errors
+  // Network errors — codes echoed into the message text (a stringified
+  // cause, a provider wrapping the errno into prose), plus the
+  // code-less transient shapes in TRANSIENT_TRANSPORT_RE.
+  //
+  // The prose half only applies when NO HTTP status was found. A real
+  // status is the stronger signal and its own branches below own it:
+  // "500 Internal Server Error" must stay `overloaded` carrying
+  // status 500, not become a status-less `network`.
   if (
-    /network|ECONNREFUSED|ECONNRESET|ECONNABORTED|ETIMEDOUT|ENOTFOUND|fetch failed|connection reset/i.test(
+    /network|ECONNREFUSED|ECONNRESET|ECONNABORTED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EPIPE|UND_ERR_|fetch failed|connection reset/i.test(
       msg,
-    )
+    ) ||
+    (status === undefined && TRANSIENT_TRANSPORT_RE.test(msg))
   ) {
     return new TalonError(msg, {
       reason: "network",
       retryable: true,
+      retryAfterMs: 2_000,
+      cause,
+    });
+  }
+
+  // 408 Request Timeout — a transient deadline like any other, but it
+  // is neither 4xx-terminal nor 5xx, so it used to fall through to
+  // `unknown`/non-retryable and strand the request.
+  if (status === 408) {
+    return new TalonError(msg, {
+      reason: "network",
+      retryable: true,
+      status: 408,
       retryAfterMs: 2_000,
       cause,
     });
