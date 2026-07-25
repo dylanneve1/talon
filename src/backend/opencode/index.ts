@@ -13,16 +13,9 @@ export {
   type OpenCodeModelCatalog,
   type OpenCodeModelResolution,
   type ModelButton,
-  getOpenCodeModelCatalog,
-  getOpenCodeModelInfo,
   getOpenCodeModelSelectionValue,
   resolveOpenCodeModelInput,
-  getOpenCodeQuickPickModels,
-  getOpenCodeSettingsPresentation,
-  renderOpenCodeModelSummary,
-  renderOpenCodeModelList,
   formatOpenCodeSelectionError,
-  formatOpenCodeUnavailableModel,
 } from "./models/index.js";
 
 export {
