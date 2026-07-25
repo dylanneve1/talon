@@ -7,7 +7,7 @@
  */
 
 import type { Context } from "grammy";
-import { getMetrics, getTodayMetrics } from "../../../util/metrics.js";
+import { getMetrics, getTodayMetrics } from "../../../storage/metrics.js";
 import {
   renderMetricsKeyboard,
   renderMetricsPanel,
