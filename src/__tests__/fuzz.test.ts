@@ -634,6 +634,52 @@ describe("fuzz: markdownToTelegramHtml()", () => {
     );
   });
 
+  // "Never throws" is too weak a property: a crossed-tag result like
+  // `<b><i>x</b></i>` returns a perfectly fine string and then gets
+  // rejected by Telegram at send time. The output has to be *parseable*.
+  it("always emits well-formed, Telegram-allowed tags", () => {
+    const ALLOWED = new Set(["b", "i", "s", "a", "code", "pre"]);
+    const wellFormed = (html: string): boolean => {
+      const stack: string[] = [];
+      const tag = /<(\/?)([a-zA-Z]+)(?:\s[^>]*)?>/g;
+      let m: RegExpExecArray | null;
+      while ((m = tag.exec(html)) !== null) {
+        const [, closing, name] = m;
+        if (!ALLOWED.has(name!)) return false;
+        if (closing) {
+          if (stack.pop() !== name) return false;
+        } else {
+          stack.push(name!);
+        }
+      }
+      return stack.length === 0;
+    };
+
+    // Markdown-shaped tokens, which random unicode strings essentially
+    // never produce — this is where the crossed-tag bugs actually live.
+    const token = fc.constantFrom(
+      "**",
+      "***",
+      "*",
+      "_",
+      "~~",
+      "`",
+      "```\n",
+      "[x](https://a.com)",
+      "text",
+      " ",
+      "\n",
+      "<",
+      "&",
+    );
+    fc.assert(
+      fc.property(fc.array(token, { minLength: 1, maxLength: 12 }), (parts) => {
+        expect(wellFormed(markdownToTelegramHtml(parts.join("")))).toBe(true);
+      }),
+      fcParams,
+    );
+  });
+
   it("never throws on heavily nested markdown", () => {
     // Adversarial input: deeply nested formatting that often breaks naive
     // markdown parsers.

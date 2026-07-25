@@ -14,6 +14,42 @@ describe("markdownToTelegramHtml", () => {
     expect(markdownToTelegramHtml("_italic_")).toContain("<i>italic</i>");
   });
 
+  // `***text***` is everyday LLM output. The ** and * passes used to split
+  // it into the crossed pair `<b><i>x</b></i>`; Telegram 400s on that, so
+  // sendText fell back to a second round-trip with NO formatting and the
+  // user saw literal asterisks.
+  it("converts ***text*** to properly nested bold+italic", () => {
+    expect(markdownToTelegramHtml("***very bold***")).toBe(
+      "<b><i>very bold</i></b>",
+    );
+  });
+
+  it("handles ***text*** alongside plain bold and italic", () => {
+    expect(markdownToTelegramHtml("**b** and *i* and ***both***")).toBe(
+      "<b>b</b> and <i>i</i> and <b><i>both</i></b>",
+    );
+  });
+
+  it("handles repeated ***text*** spans", () => {
+    expect(markdownToTelegramHtml("***a*** then ***b***")).toBe(
+      "<b><i>a</i></b> then <b><i>b</i></b>",
+    );
+  });
+
+  // Genuinely interleaved delimiters have no valid HTML rendering. Dropping
+  // the inline formatting is the correct outcome: Telegram rejects the whole
+  // message on a parse error, so emitting crossed tags costs a failed API
+  // call and loses the formatting anyway.
+  it("drops inline formatting rather than emit crossed tags", () => {
+    expect(markdownToTelegramHtml("**a _b** c_")).toBe("**a _b** c_");
+  });
+
+  it("still restores code spans when inline formatting is dropped", () => {
+    const out = markdownToTelegramHtml("**a _b** c_ and `kept`");
+    expect(out).toContain("<code>kept</code>");
+    expect(out).not.toContain("<b>");
+  });
+
   it("converts safe https links to anchor tags", () => {
     const result = markdownToTelegramHtml("[click](https://example.com)");
     expect(result).toContain('<a href="https://example.com">click</a>');
