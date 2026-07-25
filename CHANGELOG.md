@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.9.1](https://github.com/dylanneve1/talon/compare/v3.9.0...v3.9.1) (2026-07-25)
+
+
+### Bug Fixes
+
+* **node:** stop cmd.Wait() eating exec output, and time-box both drains ([#658](https://github.com/dylanneve1/talon/issues/658)) ([79fe838](https://github.com/dylanneve1/talon/commit/79fe8389a4ac084eda663dca8493cb6dc2dcda65))
+
 ## [3.9.0](https://github.com/dylanneve1/talon/compare/v3.8.2...v3.9.0) (2026-07-25)
 
 
