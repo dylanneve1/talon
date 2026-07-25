@@ -50,6 +50,64 @@ class AssistantSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (TalonDensity.touch) return _phone(context);
+    return _pointer(context);
+  }
+
+  /// Phone anatomy: the reply is the page, not a card on it.
+  ///
+  /// A phone column is ~360dp wide. The desktop presentation spends 36 of them
+  /// on an avatar gutter and another 30 on the bubble's own padding + border,
+  /// which is a fifth of the line length for chrome that says nothing the
+  /// header above it hasn't already said. So on touch the assistant's text
+  /// sits directly on the canvas at full width — ChatGPT/Claude anatomy —
+  /// while the user's message keeps its bubble. Two speakers, one bubble
+  /// between them: whose turn it is stays obvious, and the long-form side
+  /// gets every pixel of reading width.
+  Widget _phone(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(top: showHeader ? 14 : 2, bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (showHeader) ...[
+            Row(
+              children: [
+                const BrandMark(size: 24),
+                const SizedBox(width: TalonSpace.sm),
+                Flexible(
+                  child: Text(
+                    botName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TalonType.subtitle,
+                  ),
+                ),
+                if (trailing != null) ...[
+                  const SizedBox(width: TalonSpace.sm),
+                  trailing!,
+                ],
+              ],
+            ),
+            const SizedBox(height: TalonSpace.sm),
+          ],
+          if (aboveBubble != null) ...[
+            aboveBubble!,
+            const SizedBox(height: 6),
+          ],
+          if (bubble != null)
+            SizedBox(
+              key: surfaceKey,
+              width: double.infinity,
+              child: bubble!,
+            ),
+          if (belowBubble != null) belowBubble!,
+        ],
+      ),
+    );
+  }
+
+  Widget _pointer(BuildContext context) {
     final dark = TalonTheme.isDark;
     return Padding(
       padding: EdgeInsets.only(top: showHeader ? 10 : 2, bottom: 10),

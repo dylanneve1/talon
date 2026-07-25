@@ -276,7 +276,8 @@ class _ChatViewState extends State<ChatView> {
             constraints: const BoxConstraints(maxWidth: _columnMax),
             child: ListView.builder(
               controller: _scroll,
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+              padding: EdgeInsets.fromLTRB(
+                  TalonDensity.d(20, 18), 18, TalonDensity.d(20, 18), 10),
               itemCount: itemCount,
               itemBuilder: (context, i) {
                 if (topLoader && i == 0) {
@@ -566,13 +567,22 @@ class _Header extends StatelessWidget {
                 IconButton(
                   onPressed: onBack,
                   tooltip: 'Back to chats',
-                  // Compact density at every width: the identity block sets the
-                  // bar's height, and a standard-density button would be taller
-                  // than it and push the whole header out for nothing.
-                  visualDensity: VisualDensity.compact,
+                  // Compact density with a pointer: the identity block sets
+                  // the bar's height there, and a standard-density button
+                  // would be taller than it and push the whole header out for
+                  // nothing. On touch it goes back to a full 48dp target —
+                  // back is the most-pressed control on the screen.
+                  visualDensity:
+                      TalonDensity.touch ? null : VisualDensity.compact,
+                  constraints: TalonDensity.touch
+                      ? BoxConstraints(
+                          minWidth: TalonDensity.tap,
+                          minHeight: TalonDensity.tap)
+                      : null,
                   // Platform-adaptive: Material arrow on Android, iOS chevron
                   // on Apple platforms.
-                  icon: Icon(Icons.adaptive.arrow_back, size: 21),
+                  icon: Icon(Icons.adaptive.arrow_back,
+                      size: TalonDensity.d(21, 24)),
                 ),
               Expanded(
                 child: _Identity(
@@ -648,7 +658,8 @@ class _Identity extends StatelessWidget {
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TalonType.title.copyWith(fontSize: 16),
+                style: TalonType.title.copyWith(
+                    fontSize: TalonDensity.d(16, 17.5)),
               ),
               const SizedBox(height: TalonSpace.xxs),
               Row(
@@ -662,7 +673,7 @@ class _Identity extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: TalonColors.textFaint,
-                        fontSize: 11,
+                        fontSize: TalonDensity.d(11, 12.5),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -696,8 +707,8 @@ class _ConnDot extends StatelessWidget {
     return Semantics(
       label: connected ? 'Connected' : 'Not connected',
       child: Container(
-        width: 6,
-        height: 6,
+        width: TalonDensity.d(6, 7),
+        height: TalonDensity.d(6, 7),
         decoration: BoxDecoration(
           color: connected ? TalonColors.ok : TalonColors.bad,
           shape: BoxShape.circle,
@@ -715,7 +726,9 @@ class _ChatMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
-      icon: Icon(Icons.more_vert, size: 20, color: TalonColors.textDim),
+      icon: Icon(Icons.more_vert,
+          size: TalonDensity.d(20, 24), color: TalonColors.textDim),
+      iconSize: TalonDensity.d(20, 24),
       color: TalonColors.surfaceHi,
       onSelected: (v) async {
         switch (v) {

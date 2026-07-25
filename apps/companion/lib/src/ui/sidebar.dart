@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 
 import '../models/bridge_models.dart';
 import '../services/haptics.dart';
@@ -16,15 +17,30 @@ import 'settings_screen.dart';
 import 'shortcuts_help.dart';
 import 'status_pill.dart';
 
-/// ChatGPT-style left rail: new chat, search, time-grouped history, and a
-/// footer with live status + settings.
+/// The chat list. Two presentations from one widget:
+///
+///   * desktop rail — a glass card docked beside the conversation, with the
+///     new-chat CTA at the top and a status/settings footer;
+///   * phone home ([mobile]) — the same content as a full-bleed screen: a
+///     single top bar carrying identity, live status and settings, then
+///     search, then the list, with the primary action moved to a floating
+///     button in the thumb zone where a phone's main action belongs.
 class Sidebar extends StatefulWidget {
   final AppState state;
 
   /// When set (narrow layout) tapping a chat routes through this.
   final void Function(String chatId)? onSelect;
 
-  const Sidebar({super.key, required this.state, required this.onSelect});
+  /// Phone presentation: no glass card, top bar + FAB instead of the rail's
+  /// header CTA and footer.
+  final bool mobile;
+
+  const Sidebar({
+    super.key,
+    required this.state,
+    required this.onSelect,
+    this.mobile = false,
+  });
 
   @override
   State<Sidebar> createState() => _SidebarState();
@@ -32,6 +48,10 @@ class Sidebar extends StatefulWidget {
 
 class _SidebarState extends State<Sidebar> {
   String _query = '';
+
+  /// Phone only: the FAB rides out to its labelled form at rest and pulls in
+  /// to a bare + while the list scrolls under it.
+  bool _fabExtended = true;
 
   /// Daemon-side full-text hits for [_query] — the same `GET /search` the
   /// desktop quick switcher uses, so message search isn't keyboard-only.
@@ -43,6 +63,25 @@ class _SidebarState extends State<Sidebar> {
   void dispose() {
     _debounce?.cancel();
     super.dispose();
+  }
+
+  /// Collapse the phone FAB while the list is moving away from the user and
+  /// restore it when they scroll back — the standard Material behaviour, so a
+  /// labelled button never covers the row you're reading.
+  bool _onUserScroll(UserScrollNotification n) {
+    if (!widget.mobile) return false;
+    final extended = switch (n.direction) {
+      ScrollDirection.reverse => false,
+      ScrollDirection.forward => true,
+      ScrollDirection.idle => _fabExtended,
+    };
+    if (extended != _fabExtended) {
+      // The notification arrives mid-layout; defer the rebuild by a frame.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _fabExtended = extended);
+      });
+    }
+    return false;
   }
 
   bool get _isTouch =>
@@ -77,8 +116,33 @@ class _SidebarState extends State<Sidebar> {
   /// and never re-fires on the frequent rebuilds driven by live streaming.
   final Set<String> _seen = <String>{};
 
+  void _openSettings(BuildContext context) => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => SettingsScreen(state: widget.state),
+        ),
+      );
+
+  /// The wordmark, wearing the brand gradient — one deliberate hero moment,
+  /// matching the falcon tile beside it.
+  Widget _wordmark({required double size}) => ShaderMask(
+        shaderCallback: (bounds) =>
+            TalonColors.accentGradient.createShader(bounds),
+        blendMode: BlendMode.srcIn,
+        child: Text(
+          widget.state.status.botName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TalonType.title.copyWith(
+            fontSize: size,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
+    if (widget.mobile) return _mobile(context);
     return Glass(
       radius: TalonRadius.lg,
       blur: 24,
@@ -94,23 +158,7 @@ class _SidebarState extends State<Sidebar> {
                 children: [
                   const BrandMark(size: 30),
                   const SizedBox(width: TalonSpace.sm + 2),
-                  Expanded(
-                    // The wordmark wears the brand gradient — one deliberate
-                    // hero moment, matching the falcon tile beside it.
-                    child: ShaderMask(
-                      shaderCallback: (bounds) =>
-                          TalonColors.accentGradient.createShader(bounds),
-                      blendMode: BlendMode.srcIn,
-                      child: Text(
-                        widget.state.status.botName,
-                        style: TalonType.title.copyWith(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
+                  Expanded(child: _wordmark(size: 17)),
                 ],
               ),
               const SizedBox(height: TalonSpace.md),
@@ -132,11 +180,7 @@ class _SidebarState extends State<Sidebar> {
                     ),
                   IconButton(
                     tooltip: 'Settings',
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => SettingsScreen(state: widget.state),
-                      ),
-                    ),
+                    onPressed: () => _openSettings(context),
                     icon: Icon(Icons.settings_outlined,
                         size: 20, color: TalonColors.textDim),
                   ),
@@ -146,6 +190,78 @@ class _SidebarState extends State<Sidebar> {
           );
         },
       ),
+    );
+  }
+
+  /// Phone home screen. The rail's three chrome rows (header, full-width CTA,
+  /// footer status + settings) collapse into one top bar plus a floating
+  /// action button: identity, connection state and settings share a single
+  /// line, and the ~120px that the CTA and footer used to spend is returned to
+  /// the conversation list. "New chat" moves to the bottom-right FAB — the
+  /// reachable corner on a phone, and where Material puts a screen's primary
+  /// action — and collapses to a bare + while the list is scrolling so it
+  /// never sits on top of what you're reading.
+  Widget _mobile(BuildContext context) {
+    return ListenableBuilder(
+      listenable: widget.state,
+      builder: (context, _) {
+        return Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                      TalonSpace.lg, TalonSpace.sm, TalonSpace.sm, 0),
+                  child: Row(
+                    children: [
+                      const BrandMark(size: 32),
+                      const SizedBox(width: TalonSpace.md),
+                      // Weighted over the trailing gap so a longer bot name
+                      // ("Claudius") gets the room before the spacer does.
+                      Flexible(flex: 4, child: _wordmark(size: 20)),
+                      const SizedBox(width: TalonSpace.sm),
+                      StatusPill(state: widget.state, compact: true),
+                      const Spacer(),
+                      IconButton(
+                        tooltip: 'Settings',
+                        onPressed: () => _openSettings(context),
+                        iconSize: 24,
+                        constraints: BoxConstraints(
+                          minWidth: TalonDensity.tap,
+                          minHeight: TalonDensity.tap,
+                        ),
+                        icon: Icon(Icons.settings_outlined,
+                            color: TalonColors.textDim),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(TalonSpace.md,
+                      TalonSpace.sm, TalonSpace.md, TalonSpace.sm),
+                  child: _SearchBox(onChanged: _onQuery),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: TalonSpace.sm),
+                    child: _groupedList(context),
+                  ),
+                ),
+              ],
+            ),
+            Positioned(
+              right: TalonSpace.lg,
+              bottom: TalonSpace.lg,
+              child: _NewChatFab(
+                extended: _fabExtended,
+                onTap: widget.state.newChat,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -160,13 +276,39 @@ class _SidebarState extends State<Sidebar> {
     final searchingMessages = _query.trim().length >= 2;
     if (chats.isEmpty &&
         !(searchingMessages && (_searching || _hits.isNotEmpty))) {
+      final connected = widget.state.conn == ConnState.connected;
+      final label = connected
+          ? (_query.isEmpty ? 'No chats yet.' : 'No matches.')
+          : 'Connecting…';
+      // On a phone the list IS the screen, so an empty one deserves more than
+      // a line of grey text: say what the button in the corner will do.
+      if (widget.mobile && connected && _query.isEmpty) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(TalonSpace.xl),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const BrandMark(size: 52),
+                const SizedBox(height: TalonSpace.lg),
+                Text('No chats yet', style: TalonType.title),
+                const SizedBox(height: 6),
+                Text(
+                  'Tap New chat to start talking to '
+                  '${widget.state.status.botName}.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: TalonColors.textFaint, height: 1.5),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(TalonSpace.lg),
           child: Text(
-            widget.state.conn == ConnState.connected
-                ? (_query.isEmpty ? 'No chats yet.' : 'No matches.')
-                : 'Connecting…',
+            label,
             textAlign: TextAlign.center,
             style: TextStyle(color: TalonColors.textFaint, height: 1.5),
           ),
@@ -182,7 +324,10 @@ class _SidebarState extends State<Sidebar> {
     final reduceMotion = MediaQuery.of(context).disableAnimations;
 
     final list = ListView(
-      padding: EdgeInsets.zero,
+      // Room under the last tile for the floating action button.
+      padding: widget.mobile
+          ? const EdgeInsets.only(bottom: 84)
+          : EdgeInsets.zero,
       children: [
         for (final group in groups) ...[
           Padding(
@@ -285,11 +430,16 @@ class _SidebarState extends State<Sidebar> {
 
     // Pull-to-refresh: re-sync chats/models (or retry the connection when
     // it's down). Mostly a touch gesture; harmless on desktop.
-    return RefreshIndicator(
+    final refreshable = RefreshIndicator(
       onRefresh: widget.state.refresh,
       color: TalonColors.accent,
       backgroundColor: TalonColors.surfaceHi,
       child: list,
+    );
+    if (!widget.mobile) return refreshable;
+    return NotificationListener<UserScrollNotification>(
+      onNotification: _onUserScroll,
+      child: refreshable,
     );
   }
 
@@ -362,19 +512,20 @@ class _ChatAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = title.trim();
     final initial = t.isEmpty ? '·' : String.fromCharCode(t.runes.first);
+    final size = TalonDensity.d(34, 42);
     return Container(
-      width: 34,
-      height: 34,
+      width: size,
+      height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         gradient: chatIdentityGradient(title),
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(TalonDensity.d(11, 13)),
       ),
       child: Text(
         initial.toUpperCase(),
-        style: const TextStyle(
+        style: TextStyle(
           color: Colors.white,
-          fontSize: 14,
+          fontSize: TalonDensity.d(14, 17),
           fontWeight: FontWeight.w700,
           height: 1,
         ),
@@ -455,9 +606,9 @@ class _ChatTileState extends State<_ChatTile> {
           child: AnimatedContainer(
             duration: TalonMotion.fast,
             curve: TalonMotion.standard,
-            margin: const EdgeInsets.symmetric(vertical: 2),
-            padding: const EdgeInsets.symmetric(
-                horizontal: TalonSpace.sm, vertical: 8),
+            margin: EdgeInsets.symmetric(vertical: TalonDensity.d(2, 3)),
+            padding: EdgeInsets.symmetric(
+                horizontal: TalonSpace.sm, vertical: TalonDensity.d(8, 11)),
             decoration: BoxDecoration(
               borderRadius: TalonRadius.rMd,
               color: selected
@@ -486,7 +637,7 @@ class _ChatTileState extends State<_ChatTile> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: 13.5,
+                                fontSize: TalonDensity.d(13.5, 15),
                                 fontWeight: selected || widget.unread
                                     ? FontWeight.w600
                                     : FontWeight.w500,
@@ -500,13 +651,14 @@ class _ChatTileState extends State<_ChatTile> {
                           Text(
                             _relTime(widget.chat.lastActiveTime),
                             style: TextStyle(
-                                fontSize: 10.5, color: TalonColors.textFaint),
+                                fontSize: TalonDensity.d(10.5, 11.5),
+                                color: TalonColors.textFaint),
                           ),
                           // Unread: activity newer than the user's last look.
                           if (widget.unread)
                             Container(
-                              width: 7,
-                              height: 7,
+                              width: TalonDensity.d(7, 8),
+                              height: TalonDensity.d(7, 8),
                               margin: const EdgeInsets.only(left: 6),
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
@@ -522,15 +674,19 @@ class _ChatTileState extends State<_ChatTile> {
                             key: ValueKey('chat-preview-${widget.chat.id}'),
                             data: widget.chat.preview,
                             style: TextStyle(
-                                fontSize: 11.5,
+                                fontSize: TalonDensity.d(11.5, 13),
                                 color: TalonColors.textFaint,
-                                height: 1.3),
+                                height: 1.35),
                           ),
                         ),
                     ],
                   ),
                 ),
-                AnimatedOpacity(
+                // Pointer-only affordance: on touch the same action lives in
+                // the long-press sheet and the swipe, both of which are real
+                // targets — this 15px glyph is not.
+                if (!TalonDensity.touch)
+                  AnimatedOpacity(
                   duration: TalonMotion.fast,
                   opacity: (_hover || selected) ? 1 : 0,
                   child: IgnorePointer(
@@ -738,6 +894,74 @@ class _SearchBoxState extends State<_SearchBox> {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(11),
           borderSide: BorderSide(color: TalonColors.accent),
+        ),
+      ),
+    );
+  }
+}
+
+/// The phone's primary action: a gradient pill in the reachable corner. It
+/// carries its label at rest and pulls in to a bare + while the list scrolls,
+/// so it never covers the row being read.
+class _NewChatFab extends StatelessWidget {
+  final bool extended;
+  final VoidCallback onTap;
+  const _NewChatFab({required this.extended, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(20);
+    return Container(
+      height: 56,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [TalonColors.accent, TalonColors.accentDeep],
+        ),
+        borderRadius: radius,
+        boxShadow: [
+          BoxShadow(
+            color: TalonColors.accent.withValues(alpha: 0.36),
+            blurRadius: 22,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            Haptics.medium();
+            onTap();
+          },
+          borderRadius: radius,
+          child: AnimatedSize(
+            duration: TalonMotion.base,
+            curve: TalonMotion.emphasized,
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                  horizontal: extended ? TalonSpace.lg : 16),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.add_rounded, color: Colors.white, size: 24),
+                  if (extended) ...[
+                    const SizedBox(width: TalonSpace.sm),
+                    const Text(
+                      'New chat',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

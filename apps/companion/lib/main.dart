@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import 'src/services/bridge_trust.dart';
+import 'src/services/dynamic_accent.dart';
 import 'src/services/haptics.dart';
 import 'src/services/mesh_background.dart';
 import 'src/services/prefs.dart';
@@ -71,6 +72,10 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.state.prefs.onboarded) widget.state.start();
     });
+    // Material You: the wallpaper palette can change while the app is away,
+    // so re-read it now and on every resume.
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _refreshDynamicAccent());
     if (VoiceService.supported) {
       // Warm assist launches (gesture while the app runs) arrive as events;
       // a cold start straight from the gesture leaves a flag to consume once
@@ -101,6 +106,25 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
     }
     if (!mounted || VoiceModeScreen.open.value) return;
     _navigatorKey.currentState?.push(VoiceModeScreen.route(state));
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshDynamicAccent();
+  }
+
+  /// Pull the platform accent into the palette while "Wallpaper" is the
+  /// selected accent. A wallpaper change happens outside the app, so resume is
+  /// the honest moment to notice it. The resolved colour is persisted as the
+  /// seed too, so the next cold start is already correct before this async
+  /// read returns.
+  Future<void> _refreshDynamicAccent() async {
+    if (!widget.state.prefs.accentDynamic) return;
+    final seed = await DynamicAccent.seed();
+    if (seed == null || !mounted) return;
+    if (TalonTheme.accentSeed.value?.toARGB32() == seed.toARGB32()) return;
+    TalonTheme.accentSeed.value = seed; // listener re-applies the palette
+    await widget.state.prefs.setAccentSeed(seed.toARGB32());
   }
 
   /// The OS flipped light/dark — matters in auto mode.

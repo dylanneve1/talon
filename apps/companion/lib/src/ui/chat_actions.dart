@@ -20,6 +20,9 @@ Future<void> showChatActionsSheet(
 ) async {
   final action = await showModalBottomSheet<String>(
     context: context,
+    // Material's drag handle: the grab affordance a phone sheet is supposed
+    // to have, and a real drag target for dismissing it.
+    showDragHandle: true,
     backgroundColor: TalonColors.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(TalonRadius.lg)),

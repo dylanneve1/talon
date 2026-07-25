@@ -54,6 +54,7 @@ class Prefs {
 
   static const _kThemeMode = 'themeMode.v1';
   static const _kAccentSeed = 'accentSeed.v1';
+  static const _kAccentDynamic = 'accentDynamic.v1';
   static const _kTextScale = 'textScale.v1';
   static const _kHaptics = 'haptics.v1';
 
@@ -66,6 +67,13 @@ class Prefs {
   Future<void> setAccentSeed(int? argb) => argb == null
       ? _sp.remove(_kAccentSeed).then((_) {})
       : _sp.setInt(_kAccentSeed, argb);
+
+  /// Follow the platform's own colour (Android 12+ wallpaper palette, or the
+  /// desktop accent colour) instead of a fixed seed. The resolved colour is
+  /// still written to [accentSeed] so a cold start paints the right accent
+  /// before the async system read lands. Default off.
+  bool get accentDynamic => _sp.getBool(_kAccentDynamic) ?? false;
+  Future<void> setAccentDynamic(bool v) => _sp.setBool(_kAccentDynamic, v);
 
   /// Global UI text scale (0.85–1.3, default 1.0).
   double get textScale => (_sp.getDouble(_kTextScale) ?? 1.0).clamp(0.85, 1.3);

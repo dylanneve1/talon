@@ -39,6 +39,7 @@ Future<void> openContextSheet(
   final action = await showModalBottomSheet<String>(
     context: context,
     isScrollControlled: true,
+    showDragHandle: true,
     backgroundColor: TalonColors.surface,
     constraints: const BoxConstraints(maxWidth: 520),
     shape: const RoundedRectangleBorder(

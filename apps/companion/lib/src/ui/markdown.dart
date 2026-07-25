@@ -8,12 +8,16 @@ import '../theme.dart';
 /// code blocks and accent links. Used by finalized messages and the live draft.
 MarkdownStyleSheet talonMarkdownStyle() {
   return MarkdownStyleSheet(
-    p: TextStyle(color: TalonColors.text, fontSize: 14.5, height: 1.6),
+    p: TextStyle(
+        color: TalonColors.text,
+        fontSize: TalonDensity.d(14.5, 16),
+        height: 1.6),
     a: TextStyle(
         color: TalonColors.accent2, decoration: TextDecoration.underline),
     strong: TextStyle(color: TalonColors.text, fontWeight: FontWeight.w700),
     em: TextStyle(color: TalonColors.text, fontStyle: FontStyle.italic),
-    listBullet: TextStyle(color: TalonColors.textDim, fontSize: 14.5),
+    listBullet: TextStyle(
+        color: TalonColors.textDim, fontSize: TalonDensity.d(14.5, 16)),
     h1: TextStyle(
         color: TalonColors.text, fontSize: 21, fontWeight: FontWeight.w700),
     h2: TextStyle(
@@ -28,7 +32,7 @@ MarkdownStyleSheet talonMarkdownStyle() {
       backgroundColor:
           TalonTheme.isDark ? const Color(0x22000000) : Colors.transparent,
       fontFamily: 'JetBrains Mono',
-      fontSize: 13.2,
+      fontSize: TalonDensity.d(13.2, 14.4),
     ),
     // Fenced code chrome lives entirely in CodeElementBuilder's framed panel.
     // flutter_markdown ALSO wraps the pre element in a Container carrying

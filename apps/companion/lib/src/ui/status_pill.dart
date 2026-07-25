@@ -7,19 +7,27 @@ import '../theme.dart';
 /// Compact "Talon running / connecting / offline" indicator with a live dot.
 class StatusPill extends StatelessWidget {
   final AppState state;
-  const StatusPill({super.key, required this.state});
+
+  /// Phone top bar: the wordmark next to it already says "Talon", so the
+  /// label drops to the state alone and the pill tightens to fit a line that
+  /// also carries identity and settings.
+  final bool compact;
+
+  const StatusPill({super.key, required this.state, this.compact = false});
 
   @override
   Widget build(BuildContext context) {
     final (color, label) = switch (state.conn) {
-      ConnState.connected => (TalonColors.ok, 'Talon online'),
+      ConnState.connected =>
+        (TalonColors.ok, compact ? 'Online' : 'Talon online'),
       ConnState.connecting => (TalonColors.warn, _connectingLabel()),
       ConnState.error => (TalonColors.bad, 'Offline'),
       ConnState.idle => (TalonColors.textFaint, 'Idle'),
     };
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      padding: EdgeInsets.symmetric(
+          horizontal: compact ? 9 : 11, vertical: compact ? 5 : 7),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
         borderRadius: TalonRadius.rPill,
@@ -34,7 +42,7 @@ class StatusPill extends StatelessWidget {
             label,
             style: TextStyle(
               color: color,
-              fontSize: 12,
+              fontSize: compact ? 11.5 : 12,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.2,
             ),

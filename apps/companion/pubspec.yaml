@@ -32,6 +32,11 @@ dependencies:
   # hand-rolled AnimationControllers with a chainable .animate() API and powers
   # the staggered list entrances, shimmer skeletons, and streaming caret.
   flutter_animate: ^4.5.0
+  # Material You: reads the platform's own colour source (Android 12+
+  # wallpaper palette, macOS/Windows accent colour) so the app's accent can
+  # follow the system instead of only the presets. Falls back to null off
+  # those platforms, which is exactly what the "Wallpaper" swatch needs.
+  dynamic_color: ^1.7.0
   # Open links from assistant messages / buttons in the OS browser.
   url_launcher: ^6.3.0
   # Pick an image to attach to a message. Chosen over image_picker because it

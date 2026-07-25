@@ -367,12 +367,19 @@ Future<void> _shoot(WidgetTester tester, String name) async {
 void _phone(WidgetTester tester) {
   tester.view.physicalSize = const Size(1080, 2280);
   tester.view.devicePixelRatio = 2.75;
+  // Widget tests force TargetPlatform.android, so touch density is already
+  // what this shot would get on a real phone — pin it anyway so the gallery
+  // never depends on that default.
+  TalonDensity.overrideTouch = true;
   addTearDown(tester.view.reset);
 }
 
 void _desktop(WidgetTester tester) {
   tester.view.physicalSize = const Size(1440, 900);
   tester.view.devicePixelRatio = 1.0;
+  // ...and pin the pointer scale for the desktop shots, which would otherwise
+  // render at phone density under that same forced platform.
+  TalonDensity.overrideTouch = false;
   addTearDown(tester.view.reset);
 }
 
@@ -389,6 +396,7 @@ void main() {
   });
 
   setUp(() {
+    TalonDensity.overrideTouch = null;
     TalonTheme.mode.value = ThemeMode.dark;
     TalonTheme.accentSeed.value = null;
     TalonTheme.apply(Brightness.dark);

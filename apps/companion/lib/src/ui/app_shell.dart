@@ -183,15 +183,17 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               );
             }
 
-            // Narrow: the chat list is the base screen. Selecting a chat
-            // pushes the conversation route (see _syncConversationRoute).
+            // Narrow: the chat list is the base screen — full-bleed on the
+            // backdrop rather than a glass card inset from every edge, which
+            // is a docked-pane idiom borrowed from the desktop layout and
+            // spends a frame's worth of margin on a screen that IS the pane.
+            // Selecting a chat pushes the conversation route (see
+            // _syncConversationRoute).
             return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: Sidebar(
-                  state: widget.state,
-                  onSelect: (id) => widget.state.selectChat(id),
-                ),
+              child: Sidebar(
+                state: widget.state,
+                onSelect: (id) => widget.state.selectChat(id),
+                mobile: true,
               ),
             );
           },
