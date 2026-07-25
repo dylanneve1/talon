@@ -1006,6 +1006,34 @@ export function createNativeFrontend(
     }
   }
 
+  // ── Empty-chat sweeper ───────────────────────────────────────────────────
+  //
+  // "New chat" creates a real chat on the daemon the instant it's tapped, so
+  // opening one and backing out of it leaves an empty row in every client's
+  // list forever. The app deletes an untouched chat as soon as you leave it,
+  // which covers the normal case immediately; this is the backstop for the
+  // ones no client got to clean up — the app was killed, the network dropped,
+  // or the chat was created by something that never came back.
+  //
+  // Deliberately conservative: only chats that never carried a single message
+  // (see ChatEntry.used, which a reset does NOT clear), only after an hour,
+  // never one with a turn running or a message queued, and never one whose
+  // history says otherwise. Deleting via the same handler every client uses
+  // means the removal is broadcast, so open lists update in place.
+  const EMPTY_CHAT_MIN_AGE_MS = 60 * 60_000;
+  const EMPTY_CHAT_SWEEP_INTERVAL_MS = 30 * 60_000;
+  let emptyChatSweep: ReturnType<typeof setInterval> | null = null;
+
+  function sweepEmptyChats(): void {
+    for (const entry of chats.unused(EMPTY_CHAT_MIN_AGE_MS)) {
+      if (isBusy(entry.id) || queuedByChat.has(entry.id)) continue;
+      if (getRecentHistory(entry.id, 1).length > 0) continue;
+      if (handlers.deleteChat(entry.id)) {
+        log("native", `Swept empty chat ${entry.id}`);
+      }
+    }
+  }
+
   // ── Bridge server wiring ─────────────────────────────────────────────────
 
   const handlers: BridgeServerHandlers = {
@@ -1292,6 +1320,15 @@ export function createNativeFrontend(
       const gatewayPort = await gateway.start(19876);
       log("native", `Gateway on :${gatewayPort}`);
       chats.restore();
+      emptyChatSweep = setInterval(() => {
+        try {
+          sweepEmptyChats();
+        } catch (err) {
+          logError("native", "Empty-chat sweep failed", err);
+        }
+      }, EMPTY_CHAT_SWEEP_INTERVAL_MS);
+      // Housekeeping must never be the reason the process stays alive.
+      emptyChatSweep.unref?.();
       await server.start();
       const fingerprint = server.getFingerprint();
       // Tell the mesh how this bridge is reachable — everything a generated
@@ -1320,6 +1357,10 @@ export function createNativeFrontend(
     },
 
     async stop() {
+      if (emptyChatSweep) {
+        clearInterval(emptyChatSweep);
+        emptyChatSweep = null;
+      }
       unregisterMeshTransport?.();
       unregisterMeshTransport = null;
       mesh.setBridgeInfo(null);

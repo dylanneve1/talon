@@ -393,6 +393,7 @@ class AppState extends ChangeNotifier {
   // ── Commands ────────────────────────────────────────────────────────────────
 
   Future<void> selectChat(String chatId) async {
+    if (chatId != selectedChatId) unawaited(_reapUnusedChats(keep: chatId));
     selectedChatId = chatId;
     markRead(chatId);
     notifyListeners();
@@ -472,6 +473,7 @@ class AppState extends ChangeNotifier {
 
   /// Narrow layout: return to the chat list.
   void clearSelection() {
+    unawaited(_reapUnusedChats());
     selectedChatId = null;
     notifyListeners();
   }
@@ -488,14 +490,52 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Chats this client created that have never carried a message. Tapping
+  /// "New chat" creates a real chat on the daemon immediately, so opening one
+  /// and backing out used to leave an empty row in the list forever. Leaving
+  /// such a chat deletes it (see [_reapUnusedChats]); the daemon sweeps any
+  /// that outlive the app as a backstop.
+  ///
+  /// Scoped to chats THIS client created on purpose: another client's fresh
+  /// chat is none of our business, and a chat whose history simply hasn't been
+  /// fetched yet must never be mistaken for an empty one.
+  final Set<String> _unusedChats = {};
+
   Future<void> newChat() async {
     final c = await _client?.createChat();
     if (c == null) return;
     // chat_created event will also arrive; select eagerly for snappiness.
     _upsertChat(c);
+    _unusedChats.add(c.id);
+    // Leaving the previous untouched chat for a brand-new one still counts as
+    // leaving it — otherwise tapping "New chat" twice strands the first.
+    unawaited(_reapUnusedChats(keep: c.id));
     selectedChatId = c.id;
     _loadedHistory.add(c.id);
     notifyListeners();
+  }
+
+  /// Delete every untouched chat except [keep]. Called whenever the user
+  /// leaves a conversation (selecting another, or backing out to the list).
+  ///
+  /// A chat only qualifies while it is still in [_unusedChats] — anything that
+  /// has sent, queued, or received a message has already been struck off, so
+  /// nothing with content can be reached from here.
+  Future<void> _reapUnusedChats({String? keep}) async {
+    final doomed = _unusedChats.where((id) => id != keep).toList();
+    if (doomed.isEmpty) return;
+    for (final id in doomed) {
+      _unusedChats.remove(id);
+      if (isTurnRunning(id) || queuedFor(id) != null) continue;
+      if (messagesFor(id).isNotEmpty) continue;
+      // Best-effort: a failed delete just leaves the row for the daemon's
+      // own sweep, so it never needs to surface as an error in the chat.
+      try {
+        await _client?.deleteChat(id);
+      } catch (e) {
+        AppLog.warn('app_state', 'auto-delete of empty chat failed', e);
+      }
+    }
   }
 
   ClientChat? _chatById(String chatId) {
@@ -529,6 +569,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> deleteChat(String chatId) async {
+    _unusedChats.remove(chatId);
     final client = _client;
     if (client == null) return;
     // chat_deleted event reconciles state.
@@ -547,6 +588,9 @@ class AppState extends ChangeNotifier {
     if (chatId == null || client == null) return false;
     // Text may be empty when an image is attached.
     if (text.trim().isEmpty && attachmentPath == null) return false;
+    // The user committed to this chat: it is no longer an untouched one, even
+    // if the send fails or the reply is slow to arrive.
+    _unusedChats.remove(chatId);
     // Always hand it to the daemon: if a turn is already running for this chat
     // the daemon parks it as the queued follow-up (synced to every client) and
     // auto-sends it at turn end, rather than interrupting. So the app doesn't
@@ -1122,6 +1166,8 @@ class AppState extends ChangeNotifier {
   }
 
   void _onMessage(String chatId, ClientMessage m) {
+    // It has content now — never a candidate for auto-cleanup again.
+    _unusedChats.remove(chatId);
     final list = _messages.putIfAbsent(chatId, () => []);
     if (list.any((x) => x.id == m.id)) return; // dedupe re-delivery
     list.add(m);

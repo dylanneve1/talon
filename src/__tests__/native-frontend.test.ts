@@ -137,6 +137,42 @@ describe("NativeChats registry", () => {
     expect(derived).toBeUndefined();
     expect(fresh.title).toBe(DEFAULT_CHAT_TITLE);
   });
+
+  // "New chat" creates a real chat the moment it's tapped, so an abandoned one
+  // used to sit in every client's list forever. unused() is what the daemon's
+  // periodic sweep reaps.
+  it("reports chats that were created but never used, oldest first", () => {
+    const chats = new NativeChats();
+    const now = Date.now();
+    const abandoned = chats.create();
+    const alsoAbandoned = chats.create();
+    const talked = chats.create();
+    abandoned.createdAt = now - 3 * 60 * 60_000;
+    alsoAbandoned.createdAt = now - 2 * 60 * 60_000;
+    talked.createdAt = now - 4 * 60 * 60_000;
+    chats.touch(talked.id, "a real message");
+
+    const stale = chats.unused(60 * 60_000, now);
+    expect(stale.map((c) => c.id)).toEqual([abandoned.id, alsoAbandoned.id]);
+
+    // A fresh one is protected by the grace period — someone may be typing
+    // into it right now.
+    const justMade = chats.create();
+    expect(chats.unused(60 * 60_000, now).map((c) => c.id)).not.toContain(
+      justMade.id,
+    );
+  });
+
+  it("keeps a used chat sweepable-proof even after its history is cleared", () => {
+    // A reset chat has no history either; only `used` tells the two apart,
+    // and a deliberate reset must never look like an abandoned "New chat".
+    const chats = new NativeChats();
+    const entry = chats.create();
+    entry.createdAt = Date.now() - 24 * 60 * 60_000;
+    chats.touch(entry.id, "hello");
+    entry.preview = "";
+    expect(chats.unused(60 * 60_000)).toHaveLength(0);
+  });
 });
 
 describe("native bridge discovery", () => {

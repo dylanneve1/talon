@@ -31,6 +31,78 @@ void main() {
     return AppState(prefs, narrowLayout: narrowLayout);
   }
 
+  group('AppState empty-chat cleanup', () {
+    // "New chat" creates a real chat on the daemon the moment it's tapped, so
+    // opening one and backing out used to leave an empty row in the list
+    // forever. Leaving an untouched chat now deletes it.
+    test('an untouched new chat is deleted when you leave it', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge), narrowLayout: true);
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+
+      await state.newChat();
+      final fresh = state.selectedChatId!;
+      expect(fresh, isNot('c1'));
+
+      // Back to the list without sending anything.
+      state.clearSelection();
+      await _waitFor(() => bridge.deletedChats.contains(fresh));
+      await _waitFor(() => !state.chats.any((c) => c.id == fresh));
+      // The chat that has a message is untouched.
+      expect(state.chats.any((c) => c.id == 'c1'), isTrue);
+    });
+
+    test('a chat that carried a message is never auto-deleted', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge), narrowLayout: true);
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+
+      await state.newChat();
+      final fresh = state.selectedChatId!;
+      await bridge.emit({
+        'kind': 'message',
+        'chatId': fresh,
+        'message': {
+          'id': 'm-fresh',
+          'chatId': fresh,
+          'role': 'user',
+          'text': 'keep me',
+          'ts': 40,
+        },
+      });
+      await _waitFor(() => state.messagesFor(fresh).isNotEmpty);
+
+      state.clearSelection();
+      // Give the reaper a chance to misbehave before asserting it didn't.
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(bridge.deletedChats, isEmpty);
+      expect(state.chats.any((c) => c.id == fresh), isTrue);
+    });
+
+    test('creating a second new chat sweeps the first', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge), narrowLayout: true);
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+
+      await state.newChat();
+      final first = state.selectedChatId!;
+      await state.newChat();
+      final second = state.selectedChatId!;
+
+      await _waitFor(() => bridge.deletedChats.contains(first));
+      expect(bridge.deletedChats, isNot(contains(second)));
+    });
+  });
+
   group('AppState bridge integration', () {
     test('start reaches connected and hello populates chats/status', () async {
       final bridge = await MockBridge.start();

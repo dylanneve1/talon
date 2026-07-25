@@ -18,6 +18,10 @@ class MockBridge {
   late final HttpServer _server;
   late final int _port;
   final List<_SseClient> _streams = [];
+  /// Chat ids the client asked to delete, in order — lets a test assert the
+  /// app cleaned up after itself.
+  final List<String> deletedChats = [];
+
   final List<Map<String, dynamic>> chats = [
     {
       'id': 'c1',
@@ -159,6 +163,18 @@ class MockBridge {
       messages[id] = [];
       unawaited(emit({'kind': 'chat_created', 'chat': chat}));
       return _json(req.response, 200, {'chat': chat});
+    }
+    if (req.method == 'POST' && path == '/chats/delete') {
+      final body = await _readJson(req);
+      final id = body['chatId']?.toString() ?? '';
+      final existed = chats.any((c) => c['id'] == id);
+      chats.removeWhere((c) => c['id'] == id);
+      messages.remove(id);
+      if (existed) {
+        deletedChats.add(id);
+        unawaited(emit({'kind': 'chat_deleted', 'chatId': id}));
+      }
+      return _json(req.response, 200, {'ok': existed});
     }
     if (req.method == 'GET' && path == '/history') {
       final chatId = req.uri.queryParameters['chatId'] ?? '';

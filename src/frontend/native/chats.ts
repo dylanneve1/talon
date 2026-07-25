@@ -27,6 +27,14 @@ export type ChatEntry = {
   createdAt: number;
   lastActive: number;
   preview: string;
+  /**
+   * False until a message actually lands in this chat (see {@link
+   * NativeChats.touch}). "New chat" creates a real chat the moment it's
+   * tapped, so a client that opens one and backs out leaves a permanent empty
+   * row in every list — this flag is what lets the sweeper tell "never used"
+   * apart from "used, then reset" (a reset chat has no history either).
+   */
+  used: boolean;
 };
 
 /** The placeholder title a chat carries until it earns a real one. */
@@ -55,6 +63,9 @@ export class NativeChats {
         createdAt: info.createdAt || Date.now(),
         lastActive: info.lastActive || Date.now(),
         preview: recent.length ? previewOf(recent[recent.length - 1].text) : "",
+        // Restored from a persisted session: it has carried a turn, even if a
+        // later reset cleared its history.
+        used: true,
       };
       this.index(entry);
     }
@@ -70,6 +81,7 @@ export class NativeChats {
       createdAt: Date.now(),
       lastActive: Date.now(),
       preview: "",
+      used: false,
     };
     this.index(entry);
     if (trimmed) setSessionName(id, trimmed);
@@ -87,6 +99,7 @@ export class NativeChats {
       createdAt: Date.now(),
       lastActive: Date.now(),
       preview: "",
+      used: false,
     };
     this.index(entry);
     return entry;
@@ -135,8 +148,24 @@ export class NativeChats {
     const entry = this.byId.get(id);
     if (!entry) return undefined;
     entry.lastActive = Date.now();
+    entry.used = true;
     if (preview !== undefined) entry.preview = previewOf(preview);
     return entry;
+  }
+
+  /**
+   * Chats that were created but never carried a message, and have been that
+   * way for at least [minAgeMs] — the "New chat" someone opened and left.
+   * Oldest first, so a sweep drops the stalest rows first.
+   *
+   * Emptiness is judged by {@link ChatEntry.used}, not by history: a chat
+   * whose session was reset has no history either, and deleting THAT would
+   * throw away a conversation the user deliberately kept.
+   */
+  unused(minAgeMs: number, now: number = Date.now()): ChatEntry[] {
+    return [...this.byId.values()]
+      .filter((e) => !e.used && now - e.createdAt >= minAgeMs)
+      .sort((a, b) => a.createdAt - b.createdAt);
   }
 
   private index(entry: ChatEntry): void {
