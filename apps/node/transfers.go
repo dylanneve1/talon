@@ -12,13 +12,15 @@ import (
 // uploadStream POSTs a file's bytes to /devices/file as one raw request.
 // The one-time transfer token authorizes exactly this direction+path pair
 // on the daemon side; the bearer token still rides along like every route.
+// deviceId names the redeemer so the daemon can check the token against the
+// device it was minted for — a token that leaked elsewhere is refused.
 func (n *Node) uploadStream(
 	ctx context.Context,
 	token string,
 	body io.Reader,
 	size int64,
 ) (int64, error) {
-	q := url.Values{"transfer": {token}}
+	q := url.Values{"transfer": {token}, "deviceId": {n.DeviceID}}
 	req, err := http.NewRequestWithContext(
 		ctx, http.MethodPost, n.apiURL("/devices/file", q), body,
 	)
@@ -49,7 +51,7 @@ func (n *Node) downloadStream(
 	token string,
 	dst io.Writer,
 ) (int64, error) {
-	q := url.Values{"transfer": {token}}
+	q := url.Values{"transfer": {token}, "deviceId": {n.DeviceID}}
 	req, err := http.NewRequestWithContext(
 		ctx, http.MethodGet, n.apiURL("/devices/file", q), nil,
 	)

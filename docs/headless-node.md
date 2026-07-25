@@ -14,12 +14,19 @@ and shipping Flutter to a headless box is heavy. The bridge protocol is
 deliberately client-agnostic (`src/frontend/native/protocol.ts`), so a mesh
 device only needs four HTTP touchpoints:
 
-| Touchpoint                     | Purpose                                    |
-| ------------------------------ | ------------------------------------------ |
-| `POST /devices/register`       | registration + 60s heartbeat (presence)    |
-| `GET /events` (SSE)            | receive `device_command` events            |
-| `POST /devices/command-result` | answer commands by correlation id          |
-| `GET/POST /devices/file`       | streamed transfers via one-time tokens     |
+| Touchpoint                     | Purpose                                 |
+| ------------------------------ | --------------------------------------- |
+| `POST /devices/register`       | registration + 60s heartbeat (presence) |
+| `GET /events?deviceId=` (SSE)  | receive `device_command` events         |
+| `POST /devices/command-result` | answer commands by correlation id       |
+| `GET/POST /devices/file`       | streamed transfers via one-time tokens  |
+
+Each device names itself with `deviceId` on the event stream and on
+`/devices/file`. Commands are addressed to the claiming client rather than
+broadcast (their params carry transfer tokens and command lines), and a
+transfer token is only redeemable by the device it was minted for. Every
+command result must carry its `deviceId` too — an unattributed answer is
+dropped rather than resolving another device's pending command.
 
 talon-node implements exactly that in ~stdlib Go: static binary, no runtime
 dependencies, outbound-only networking, TLS pinned to the bridge cert's

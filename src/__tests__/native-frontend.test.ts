@@ -449,8 +449,9 @@ describe("native mesh bridge routes", () => {
       storeLocation: (body) => registry.storeLocation(body),
       listDevices: () => registry.list(),
       completeCommand: () => false,
-      acceptFileUpload: (t, body) => transfers.acceptUpload(t, body),
-      openFileDownload: (t) => transfers.openDownload(t),
+      acceptFileUpload: (t, body, from) =>
+        transfers.acceptUpload(t, body, from),
+      openFileDownload: (t, from) => transfers.openDownload(t, from),
       openNodeInstall: () => null,
       openNodeBinary: () => null,
     };
@@ -536,6 +537,48 @@ describe("native mesh bridge routes", () => {
         `http://127.0.0.1:${port}/devices/file?transfer=nope`,
       );
       expect(unauthed.status).toBe(401);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("refuses a transfer token redeemed by a device it wasn't minted for", async () => {
+    const { server, port, transfers, dir } = await startMeshServer();
+    try {
+      const auth = { Authorization: "Bearer secret" };
+      const payload = Buffer.alloc(1024, 3);
+
+      // A token minted for dev1 is not a capability another mesh member can
+      // use, even holding the (shared) bridge bearer token.
+      const dest = join(dir, "bound.bin");
+      const pull = transfers.createPull("dev1", dest);
+      const stolen = await fetch(
+        `http://127.0.0.1:${port}/devices/file?transfer=${pull.token}&deviceId=dev2`,
+        { method: "POST", headers: auth, body: payload },
+      );
+      expect(stolen.status).toBe(409);
+      // …and the rejected attempt must not have burned the real device's
+      // single-use token.
+      const real = await fetch(
+        `http://127.0.0.1:${port}/devices/file?transfer=${pull.token}&deviceId=dev1`,
+        { method: "POST", headers: auth, body: payload },
+      );
+      expect(real.status).toBe(200);
+      await expect(pull.done).resolves.toBe(payload.length);
+
+      const src = join(dir, "bound-src.bin");
+      await fsWriteFile(src, payload);
+      const push = transfers.createPush("dev1", src);
+      const stolenDown = await fetch(
+        `http://127.0.0.1:${port}/devices/file?transfer=${push.token}&deviceId=dev2`,
+        { headers: auth },
+      );
+      expect(stolenDown.status).toBe(404);
+      const realDown = await fetch(
+        `http://127.0.0.1:${port}/devices/file?transfer=${push.token}&deviceId=dev1`,
+        { headers: auth },
+      );
+      expect(realDown.status).toBe(200);
     } finally {
       await server.stop();
     }

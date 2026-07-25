@@ -286,6 +286,12 @@ export type BridgeEvent =
    * target device executes it and answers via POST /devices/command-result
    * with the same `id` as `commandId`. Additive in v1 — app builds that
    * predate the command channel simply ignore the event.
+   *
+   * Addressed, not broadcast: params carry one-time transfer tokens, exec
+   * command lines and (on the chunked fallback) file bodies, so the frame
+   * goes only to the SSE client(s) that claimed this `deviceId` via
+   * `GET /events?deviceId=…`. Clients that claim no id still receive
+   * commands for devices nobody claimed, so pre-claim builds keep working.
    */
   | {
       kind: "device_command";

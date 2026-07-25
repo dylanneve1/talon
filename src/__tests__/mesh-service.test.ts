@@ -998,6 +998,129 @@ describe("MeshService hardening", () => {
     expect(result.message).toContain("did not answer");
   });
 
+  it("drops a command result that names no device at all", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["exec"],
+    });
+    let anonymousAccepted: boolean | undefined;
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(() => {
+          // Omitting deviceId used to SKIP the ownership check entirely, so
+          // any client could answer for the target. Unattributable now means
+          // unaccepted — the exec times out rather than returning this stdout.
+          anonymousAccepted = service.completeCommand({
+            commandId: cmd.id,
+            ok: true,
+            data: { stdout: "forged", exitCode: 0 },
+          });
+        }),
+    });
+
+    const target = service.chooseDevice("phone")!;
+    const result = await service.sendCommand(target, "exec", {}, 150);
+    expect(anonymousAccepted).toBe(false);
+    expect(result.ok).toBe(false);
+    expect(result.data).toBeUndefined();
+    expect(result.message).toContain("did not answer");
+  });
+
+  it("refuses a transfer token redeemed under another device's name", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["download_file"],
+    });
+    const dir = await mkdtemp(join(tmpdir(), "talon-token-bind-"));
+    const src = join(dir, "src.bin");
+    await fsWriteFile(src, Buffer.alloc(4096, 5));
+
+    let stolen: unknown = "not tried";
+    let served: string | undefined;
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(async () => {
+          const token = String(cmd.params.token);
+          // Another mesh member that got hold of the token cannot redeem it…
+          stolen = await service.openFileDownload(token, "laptop");
+          // …and the attempt must not burn it for the rightful device.
+          const file = await service.openFileDownload(token, "phone");
+          served = file?.path;
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: file !== null,
+            data: { bytesWritten: file?.size ?? 0 },
+          });
+        }),
+    });
+
+    const res = await service.pushFileToDevice("phone", src, "/sdcard/in.bin");
+    expect(stolen).toBeNull();
+    expect(served).toBe(src);
+    expect(res.ok).toBe(true);
+  });
+
+  it("refuses an upload streamed under another device's name", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["upload_file"],
+    });
+    const dir = await mkdtemp(join(tmpdir(), "talon-token-bind-up-"));
+    const dest = join(dir, "pulled.bin");
+    const payload = Buffer.alloc(2048, 1);
+
+    let stolen: { ok: boolean; error?: string } | undefined;
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(async () => {
+          const token = String(cmd.params.token);
+          // A peer cannot write the daemon-side destination with its own body…
+          stolen = await service.acceptFileUpload(
+            token,
+            Readable.from(Buffer.alloc(2048, 9)),
+            "laptop",
+          );
+          // …and the real device's upload still lands.
+          const up = await service.acceptFileUpload(
+            token,
+            Readable.from(payload),
+            "phone",
+          );
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: up.ok,
+            data: up.ok ? { bytes: up.bytes } : {},
+          });
+        }),
+    });
+
+    const res = await service.pullFileFromDevice(
+      "phone",
+      "/sdcard/x.bin",
+      dest,
+    );
+    expect(stolen?.ok).toBe(false);
+    expect(res.ok).toBe(true);
+    expect((await fsReadFile(dest)).equals(payload)).toBe(true);
+  });
+
   it("resolves device names separator-insensitively and prefers the online duplicate", async () => {
     const service = await tempService();
     // Stale registration from a reinstall — same phone, old id, offline.
@@ -1185,6 +1308,89 @@ describe("MeshService registry hygiene", () => {
     const res = await service.removeDevice("no-such-thing");
     expect(res.ok).toBe(false);
     expect(res.text).toContain('No mesh device matches "no-such-thing"');
+  });
+});
+
+describe("MeshService registry bounds", () => {
+  it("refuses an over-long device id and clamps the display fields", async () => {
+    const service = await tempService();
+    // The id is the identity key — a 200KB id is refused outright rather
+    // than truncated onto (or over) some other device's entry.
+    await expect(
+      service.register({
+        id: "x".repeat(200_000),
+        name: "Huge",
+        platform: "linux",
+        appVersion: "1.0.0",
+      }),
+    ).rejects.toThrow(/Invalid device registration/);
+
+    const stored = await service.register({
+      id: "node-1",
+      name: "N".repeat(5_000),
+      platform: "linux",
+      appVersion: "9".repeat(5_000),
+    });
+    expect(stored.name.length).toBe(128);
+    expect(stored.appVersion.length).toBe(64);
+    const { devices } = await service.list();
+    expect(devices).toHaveLength(1);
+  });
+
+  it("caps the registry, evicting the least-recently-seen device", async () => {
+    const service = await tempService();
+    // 130 registrations into a 128-device registry, oldest first: the two
+    // stalest go, everything newer survives.
+    const base = Date.now() - 200 * 60_000;
+    for (let i = 0; i < 130; i++) {
+      await service.register(
+        {
+          id: `node-${i}`,
+          name: `Node ${i}`,
+          platform: "linux",
+          appVersion: "1.0.0",
+        },
+        base + i * 60_000,
+      );
+    }
+    const { devices } = await service.list();
+    expect(devices).toHaveLength(128);
+    const ids = new Set(devices.map((d) => d.id));
+    expect(ids.has("node-0")).toBe(false);
+    expect(ids.has("node-1")).toBe(false);
+    expect(ids.has("node-2")).toBe(true);
+    expect(ids.has("node-129")).toBe(true);
+  });
+
+  it("bounds locations reported by ids that never registered", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+    });
+    await service.storeLocation({
+      deviceId: "phone",
+      lat: 53.1,
+      lon: -6.2,
+      ts: 1_000,
+    });
+    // 40 fixes from ids that never registered: only the newest 16 orphans
+    // are kept, and a registered device is never displaced by them.
+    for (let i = 0; i < 40; i++) {
+      await service.storeLocation({
+        deviceId: `ghost-${i}`,
+        lat: 1,
+        lon: 1,
+        ts: 10_000 + i,
+      });
+    }
+    const { locations } = await service.list();
+    expect(locations).toHaveLength(17);
+    expect(locations.some((l) => l.deviceId === "phone")).toBe(true);
+    expect(locations.some((l) => l.deviceId === "ghost-0")).toBe(false);
+    expect(locations.some((l) => l.deviceId === "ghost-39")).toBe(true);
   });
 });
 

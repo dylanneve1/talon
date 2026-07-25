@@ -8,6 +8,7 @@
  */
 
 import { resolve } from "node:path";
+import { logWarn } from "../../util/log.js";
 import { dirs } from "../../util/paths.js";
 import { readArray, writePrivateJson } from "./persist.js";
 import {
@@ -32,6 +33,33 @@ const LOCATION_FILE = resolve(dirs.root, "mesh-locations.json");
 const HISTORY_FILE = resolve(dirs.root, "mesh-history.json");
 /** Newest fixes kept per device (~a day of 5-minute periodic reports). */
 const MAX_HISTORY_PER_DEVICE = 500;
+/**
+ * Registry bounds. Registrations and location reports are client-supplied
+ * strings that the daemon persists forever and rewrites in full on every
+ * heartbeat — without ceilings, one misbehaving (or malicious) client can
+ * grow the sidecars until every mesh operation crawls. The caps are far
+ * above anything a real device reports: ids are UUIDs (36 chars), names are
+ * human device names, versions are semver-ish.
+ */
+const MAX_ID_CHARS = 128;
+const MAX_NAME_CHARS = 128;
+const MAX_VERSION_CHARS = 64;
+const MAX_PROVIDER_CHARS = 32;
+/**
+ * Devices kept in the registry. Well past any plausible personal mesh, and
+ * with the per-device history bound it also caps the history sidecar.
+ * Reaching it evicts the least-recently-seen entry rather than refusing the
+ * newcomer: a live device re-registers every ~60s and takes its slot back,
+ * so the mesh stays usable even when the cap is being pushed against.
+ */
+const MAX_DEVICES = 128;
+/**
+ * Location entries for device ids that never registered. A fix can legitimately
+ * arrive just before the first registration lands, so these aren't refused —
+ * but they're the one path where an unknown id creates persisted state, so the
+ * set is kept tiny and the stalest orphan is evicted to make room.
+ */
+const MAX_UNREGISTERED_LOCATIONS = 16;
 const PLATFORMS = new Set<DevicePlatform>([
   "android",
   "macos",
@@ -72,6 +100,12 @@ export class MeshRegistry {
       .filter((l): l is DeviceLocation => l !== null)) {
       this.appendHistory(fix);
     }
+    // Sidecars written before the caps existed (or edited by hand) get
+    // trimmed on the way in, so an oversized file is a one-boot problem
+    // rather than permanent state. No write here — load() only reads; the
+    // next mutation persists the trimmed maps.
+    this.enforceDeviceCap();
+    this.enforceOrphanLocationCap();
   }
 
   async register(
@@ -107,6 +141,7 @@ export class MeshRegistry {
       this.history.delete(id);
       evicted = true;
     }
+    if (this.enforceDeviceCap()) evicted = true;
     await this.persistDevices();
     if (evicted) {
       await this.persistLocations();
@@ -159,9 +194,67 @@ export class MeshRegistry {
       await this.persistDevices();
     }
     this.appendHistory(loc);
+    this.enforceOrphanLocationCap();
     await this.persistLocations();
     await this.persistHistory();
     return loc;
+  }
+
+  /**
+   * Drop least-recently-seen devices until the registry is inside MAX_DEVICES,
+   * taking their location + history with them (an evicted device leaves no
+   * residue). Returns whether anything went, so callers know the location and
+   * history sidecars need rewriting too.
+   */
+  private enforceDeviceCap(): boolean {
+    if (this.devices.size <= MAX_DEVICES) return false;
+    const stalest = [...this.devices.values()]
+      .sort((a, b) => a.lastSeen - b.lastSeen)
+      .slice(0, this.devices.size - MAX_DEVICES);
+    for (const device of stalest) {
+      this.devices.delete(device.id);
+      this.locations.delete(device.id);
+      this.history.delete(device.id);
+    }
+    logWarn(
+      "mesh",
+      `Device registry at its ${MAX_DEVICES}-device cap — evicted ${stalest
+        .map((d) => `${d.name} [${d.id}]`)
+        .join(", ")} (least recently seen)`,
+    );
+    return true;
+  }
+
+  /**
+   * Bound the state an id that never registered can create: locations for
+   * unknown device ids past MAX_UNREGISTERED_LOCATIONS are dropped
+   * stalest-first, with their history. Registered devices are untouched —
+   * their entries are already bounded by the device cap.
+   */
+  private enforceOrphanLocationCap(): boolean {
+    let dropped = false;
+    const orphans = [...this.locations.values()]
+      .filter((l) => !this.devices.has(l.deviceId))
+      .sort((a, b) => a.ts - b.ts);
+    if (orphans.length > MAX_UNREGISTERED_LOCATIONS) {
+      for (const loc of orphans.slice(
+        0,
+        orphans.length - MAX_UNREGISTERED_LOCATIONS,
+      )) {
+        this.locations.delete(loc.deviceId);
+        this.history.delete(loc.deviceId);
+      }
+      dropped = true;
+    }
+    // A fix always writes a location before its history entry, so a history
+    // key belonging to neither a device nor a location can only come from a
+    // hand-edited (or tampered) sidecar — it would otherwise be immortal.
+    for (const id of this.history.keys()) {
+      if (this.devices.has(id) || this.locations.has(id)) continue;
+      this.history.delete(id);
+      dropped = true;
+    }
+    return dropped;
   }
 
   /** Fixes for one device since `sinceTs`, oldest first. */
@@ -225,10 +318,16 @@ function sanitizeDevice(
   requireCore: boolean,
 ): DeviceInfo | null {
   const id = stringField(body.id);
-  const name = stringField(body.name);
-  const appVersion = stringField(body.appVersion);
+  // Display-only fields are clamped: an absurd name costs the device its
+  // label, not its place on the mesh. The id is the registry's identity key,
+  // so it is REFUSED rather than clamped — truncating it would quietly merge
+  // two devices (or a device and an attacker's near-miss) onto one entry.
+  const name = stringField(body.name)?.slice(0, MAX_NAME_CHARS);
+  const appVersion = stringField(body.appVersion)?.slice(0, MAX_VERSION_CHARS);
   const platform = stringField(body.platform) as DevicePlatform | undefined;
-  if ((requireCore || id !== undefined) && !id) return null;
+  if ((requireCore || id !== undefined) && (!id || id.length > MAX_ID_CHARS)) {
+    return null;
+  }
   if ((requireCore || name !== undefined) && !name) return null;
   if ((requireCore || appVersion !== undefined) && !appVersion) return null;
   if (
@@ -266,6 +365,9 @@ function sanitizeLocation(
   if (!deviceId || !Number.isFinite(lat) || !Number.isFinite(lon) || !ts) {
     return null;
   }
+  // Same identity-key reasoning as sanitizeDevice: a fix keyed by a clamped
+  // id would attach to the wrong device's timeline.
+  if (deviceId.length > MAX_ID_CHARS) return null;
   if (lat! < -90 || lat! > 90 || lon! < -180 || lon! > 180) return null;
   return toDeviceLocation({
     deviceId,
@@ -285,7 +387,7 @@ function sanitizeLocation(
       : {}),
     ts,
     ...(stringField(body.provider)
-      ? { provider: stringField(body.provider) }
+      ? { provider: stringField(body.provider)!.slice(0, MAX_PROVIDER_CHARS) }
       : {}),
     ...(numberField(body.batteryPct) !== undefined
       ? { batteryPct: numberField(body.batteryPct) }

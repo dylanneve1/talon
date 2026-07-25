@@ -132,6 +132,11 @@ class MeshService {
     await stop();
     _running = true;
     if (!prefs.meshSharing) return;
+    // Tell the client who we are before anything opens a stream: the daemon
+    // addresses device_command frames (transfer tokens, exec command lines,
+    // file bodies) to the claiming client only, and checks transfer tokens
+    // against the device they were minted for.
+    client.meshDeviceId = await deviceId();
     await _foregroundStarter();
     try {
       await register();

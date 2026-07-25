@@ -53,6 +53,7 @@ export type LogComponent =
   | "teams"
   | "discord"
   | "native"
+  | "mesh"
   | "config"
   | "access"
   | "github"

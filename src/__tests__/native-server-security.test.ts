@@ -11,6 +11,7 @@ import {
   BridgeServer,
   type BridgeServerHandlers,
 } from "../frontend/native/server.js";
+import type { BridgeEvent } from "../frontend/native/protocol.js";
 
 const handlers: BridgeServerHandlers = {
   status: () => ({
@@ -186,5 +187,135 @@ describe("bridge server security posture", () => {
     expect(ok.status).toBe(200);
     expect(await ok.text()).toContain("echo install");
     expect((await get(port, "/node/binary?provision=wrong")).status).toBe(404);
+  });
+});
+
+/**
+ * Device commands carry one-time transfer tokens, exec command lines and —
+ * on the chunked fallback — whole base64 file bodies. They used to go to
+ * every SSE client with each client filtering by its own id, which is
+ * courtesy rather than enforcement. These drive the real transport: a live
+ * server, real SSE connections, real frames on the wire.
+ */
+describe("bridge server device addressing", () => {
+  let server: BridgeServer | null = null;
+  const streams: SseStream[] = [];
+
+  afterEach(async () => {
+    for (const s of streams.splice(0)) s.close();
+    await server?.stop();
+    server = null;
+  });
+
+  type SseStream = { text: () => string; close: () => void };
+
+  /** Open a real /events stream, accumulating frames as they arrive. */
+  async function openEvents(
+    port: number,
+    deviceId?: string,
+  ): Promise<SseStream> {
+    const query = deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : "";
+    const res = await fetch(`http://127.0.0.1:${port}/events${query}`, {
+      headers: { Authorization: "Bearer secret" },
+    });
+    expect(res.status).toBe(200);
+    const reader = res.body!.getReader();
+    let text = "";
+    void (async () => {
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        text += decoder.decode(value, { stream: true });
+      }
+    })().catch(() => {
+      /* stream closed — the test is done with it */
+    });
+    const stream: SseStream = {
+      text: () => text,
+      close: () => void reader.cancel().catch(() => {}),
+    };
+    streams.push(stream);
+    return stream;
+  }
+
+  /** Let the frames written by sendToDevice reach the sockets. */
+  const settle = (): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, 100));
+
+  const get = (port: number, path: string, token?: string) =>
+    fetch(`http://127.0.0.1:${port}${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+
+  const command = (deviceId: string, token: string): BridgeEvent => ({
+    kind: "device_command",
+    id: "cmd-1",
+    deviceId,
+    name: "download_file",
+    params: { token, path: "/sdcard/secret.bin" },
+  });
+
+  it("delivers a device command only to the client that claimed the device", async () => {
+    server = new BridgeServer(
+      { host: "127.0.0.1", port: 0, token: "secret", startedAt: "boot" },
+      handlers,
+    );
+    const port = await server.start();
+    const phone = await openEvents(port, "phone");
+    const laptop = await openEvents(port, "laptop");
+
+    server.sendToDevice("phone", command("phone", "one-time-token"));
+    await settle();
+
+    expect(phone.text()).toContain("one-time-token");
+    expect(laptop.text()).not.toContain("one-time-token");
+    expect(laptop.text()).not.toContain("device_command");
+    // Non-addressed events still reach everyone.
+    server.broadcast({ kind: "typing", chatId: "c1", on: true });
+    await settle();
+    expect(laptop.text()).toContain("typing");
+  });
+
+  it("keeps unclaimed clients working without showing them addressed traffic", async () => {
+    server = new BridgeServer(
+      { host: "127.0.0.1", port: 0, token: "secret", startedAt: "boot" },
+      handlers,
+    );
+    const port = await server.start();
+    // A companion build from before the claim existed, plus a modern one.
+    const legacy = await openEvents(port);
+    const phone = await openEvents(port, "phone");
+
+    // Nobody claims "tablet", so the legacy client is the only audience left
+    // — that fallback is what keeps pre-claim builds reachable.
+    server.sendToDevice("tablet", command("tablet", "tablet-token"));
+    await settle();
+    expect(legacy.text()).toContain("tablet-token");
+
+    // But a claimed device's traffic never reaches it.
+    server.sendToDevice("phone", command("phone", "phone-token"));
+    await settle();
+    expect(phone.text()).toContain("phone-token");
+    expect(legacy.text()).not.toContain("phone-token");
+  });
+
+  it("passes the caller's claimed device id to the transfer routes", async () => {
+    const seen: Array<string | undefined> = [];
+    server = new BridgeServer(
+      { host: "127.0.0.1", port: 0, token: "secret", startedAt: "boot" },
+      {
+        ...handlers,
+        openFileDownload: async (_token, fromDeviceId) => {
+          seen.push(fromDeviceId);
+          return null;
+        },
+      },
+    );
+    const port = await server.start();
+
+    await get(port, "/devices/file?transfer=t1&deviceId=phone", "secret");
+    await get(port, "/devices/file?transfer=t1", "secret");
+    expect(seen).toEqual(["phone", undefined]);
   });
 });

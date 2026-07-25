@@ -81,11 +81,19 @@ class ConnectionConfig {
     return '$baseUrl$path${sep}token=${Uri.encodeQueryComponent(t)}';
   }
 
-  String eventsUrl() {
+  /// The SSE URL. [deviceId] claims this device's mesh identity on the
+  /// stream: the daemon delivers `device_command` frames — which carry
+  /// one-time transfer tokens, exec command lines and file bodies — only to
+  /// the client that claimed the target id, instead of to every connected
+  /// device. Omitted for plain UI connections (nothing to address).
+  String eventsUrl({String? deviceId}) {
     final t = token;
-    return t == null || t.isEmpty
-        ? '$baseUrl/events'
-        : '$baseUrl/events?token=${Uri.encodeQueryComponent(t)}';
+    final q = <String>[
+      if (t != null && t.isNotEmpty) 'token=${Uri.encodeQueryComponent(t)}',
+      if (deviceId != null && deviceId.isNotEmpty)
+        'deviceId=${Uri.encodeQueryComponent(deviceId)}',
+    ];
+    return q.isEmpty ? '$baseUrl/events' : '$baseUrl/events?${q.join('&')}';
   }
 
   Map<String, String> authHeaders([Map<String, String>? extra]) {

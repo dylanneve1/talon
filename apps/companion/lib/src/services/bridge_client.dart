@@ -33,6 +33,13 @@ class BridgeClient {
   String? _seenFingerprint;
   bool _pinRejected = false;
 
+  /// This device's mesh id, when it has one. Claimed on the SSE GET so the
+  /// daemon addresses `device_command` frames to this client alone, and sent
+  /// with streamed transfers so the daemon can check a transfer token against
+  /// the device it was minted for. Set before [connect]; a null id simply
+  /// makes this a plain UI connection.
+  String? meshDeviceId;
+
   BridgeClient(this.config);
 
   /// Fingerprint of the certificate seen on the most recent TLS handshake —
@@ -106,7 +113,10 @@ class BridgeClient {
     final client = _newClient();
     _sseClient = client;
 
-    final req = http.Request('GET', Uri.parse(config.eventsUrl()))
+    final req = http.Request(
+      'GET',
+      Uri.parse(config.eventsUrl(deviceId: meshDeviceId)),
+    )
       ..headers['Accept'] = 'text/event-stream'
       ..headers.addAll(config.authHeaders());
 
@@ -233,7 +243,10 @@ class BridgeClient {
   ) async {
     final req = http.StreamedRequest(
       'POST',
-      _u('/devices/file', {'transfer': token}),
+      _u('/devices/file', {
+        'transfer': token,
+        if (meshDeviceId != null) 'deviceId': meshDeviceId!,
+      }),
     )
       ..headers.addAll(config.authHeaders())
       ..headers['Content-Type'] = 'application/octet-stream'
@@ -268,8 +281,13 @@ class BridgeClient {
     String token,
     Future<void> Function(List<int> chunk) onChunk,
   ) async {
-    final req = http.Request('GET', _u('/devices/file', {'transfer': token}))
-      ..headers.addAll(config.authHeaders());
+    final req = http.Request(
+      'GET',
+      _u('/devices/file', {
+        'transfer': token,
+        if (meshDeviceId != null) 'deviceId': meshDeviceId!,
+      }),
+    )..headers.addAll(config.authHeaders());
     final res = await _http.send(req);
     if (res.statusCode != 200) {
       final body = await res.stream.bytesToString();

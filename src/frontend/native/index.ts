@@ -1192,8 +1192,10 @@ export function createNativeFrontend(
     storeLocation: (body) => mesh.storeLocation(body),
     listDevices: () => mesh.list(),
     completeCommand: (body) => mesh.completeCommand(body),
-    acceptFileUpload: (token, body) => mesh.acceptFileUpload(token, body),
-    openFileDownload: (token) => mesh.openFileDownload(token),
+    acceptFileUpload: (token, body, fromDeviceId) =>
+      mesh.acceptFileUpload(token, body, fromDeviceId),
+    openFileDownload: (token, fromDeviceId) =>
+      mesh.openFileDownload(token, fromDeviceId),
     openNodeInstall: (token) => mesh.openNodeInstall(token),
     openNodeBinary: (token) => mesh.openNodeBinary(token),
   };
@@ -1249,13 +1251,17 @@ export function createNativeFrontend(
     async init() {
       await mesh.load();
       // Plug this bridge in as the mesh's transport: locates and device
-      // commands (from ANY frontend's mesh tool calls) fan out to every
-      // connected companion client as SSE events; each client filters by
-      // its own device id.
+      // commands (from ANY frontend's mesh tool calls) leave as SSE events.
+      //
+      // A locate is a bare "who's there?" — no secret in the frame, and
+      // pre-command app builds rely on receiving it — so it still fans out.
+      // A command is the opposite: its params carry transfer tokens, exec
+      // command lines and (on the chunked fallback) file bodies, so it goes
+      // to the target device's own client(s) only.
       unregisterMeshTransport = mesh.registerTransport({
         locate: (deviceId) => broadcast({ kind: "locate", deviceId }),
         command: (command) =>
-          broadcast({
+          server.sendToDevice(command.deviceId, {
             kind: "device_command",
             id: command.id,
             deviceId: command.deviceId,

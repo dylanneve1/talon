@@ -270,20 +270,31 @@ export class MeshService {
    *
    * The result must come from the device the command was sent to: a reply
    * whose deviceId names a DIFFERENT device is dropped (a confused or
-   * misbehaving companion must not be able to answer for its peers). A
-   * missing deviceId is tolerated for older app builds.
+   * misbehaving companion must not be able to answer for its peers).
+   *
+   * An ABSENT deviceId is dropped too. It used to be tolerated "for older app
+   * builds", but omitting the field skipped the ownership check entirely —
+   * which is exactly what a spoofer would do to feed the model fabricated
+   * exec stdout or a fake install success. The alternative (accept it when
+   * only one command is pending) was rejected: it still cannot attribute the
+   * reply, it merely narrows the window to whenever the mesh is idle, which
+   * is most of the time. Nothing real is lost — `deviceId` has always been
+   * part of the command-result wire contract (protocol/fixtures/mesh_v1.json,
+   * asserted by daemon, node and companion alike) and both shipped clients
+   * send it. An unattributable reply now leaves the command to time out with
+   * the honest "did not answer" rather than resolving with someone's data.
    */
   completeCommand(body: Record<string, unknown>): boolean {
     const commandId = typeof body.commandId === "string" ? body.commandId : "";
     const pending = this.pendingCommands.get(commandId);
     if (!pending) return false;
     const from = typeof body.deviceId === "string" ? body.deviceId : "";
-    if (from && from !== pending.deviceId) return false;
+    if (from !== pending.deviceId) return false;
     const { resolve } = pending;
     this.pendingCommands.delete(commandId);
     resolve({
       commandId,
-      deviceId: typeof body.deviceId === "string" ? body.deviceId : "",
+      deviceId: from,
       ok: body.ok === true,
       ...(typeof body.message === "string" && body.message.trim()
         ? { message: body.message.trim().slice(0, 2_000) }
@@ -587,21 +598,25 @@ export class MeshService {
 
   // ── Streaming transfer bridge surface ─────────────────────────────────────
   // The HTTP routes on the native bridge delegate here; the token is the
-  // entire authorization (single-use, device- and path-bound).
+  // entire authorization (single-use, device- and path-bound). `fromDeviceId`
+  // is the caller's self-declared identity — checked against the device the
+  // token was minted for, so a leaked token can't be redeemed by a peer.
 
   /** POST /devices/file — a device streams a pull's file body up. */
   acceptFileUpload(
     token: string,
     body: Readable,
+    fromDeviceId?: string,
   ): Promise<{ ok: true; bytes: number } | { ok: false; error: string }> {
-    return this.transfers.acceptUpload(token, body);
+    return this.transfers.acceptUpload(token, body, fromDeviceId);
   }
 
   /** GET /devices/file — a device asks for a push's file body. */
   openFileDownload(
     token: string,
+    fromDeviceId?: string,
   ): Promise<{ path: string; size: number } | null> {
-    return this.transfers.openDownload(token);
+    return this.transfers.openDownload(token, fromDeviceId);
   }
 
   /** Streaming is per-command capability — old app builds fall back. */

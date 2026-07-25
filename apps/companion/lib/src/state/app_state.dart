@@ -257,6 +257,10 @@ class AppState extends ChangeNotifier {
     // profile this attempt uses; TOFU below adopts one when none is set.
     BridgeTrust.pin(cfg.tls ? cfg.fingerprint : null);
     final client = BridgeClient(cfg);
+    // Claim our mesh identity on this stream (when one has been minted) so
+    // device commands are addressed to us rather than shouted at every
+    // connected device; _startMesh sets it too, for the first-ever connect.
+    client.meshDeviceId = prefs.meshDeviceId;
     _client = client;
     _activeConfig = cfg;
 

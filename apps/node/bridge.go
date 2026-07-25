@@ -278,8 +278,12 @@ func (n *Node) heartbeatLoop(ctx context.Context) {
 // addressed to this device. Blocks until the stream errors or ctx is done.
 // Each frame is `data: <json>\n\n` (standard SSE, no event names).
 func (n *Node) consumeEvents(ctx context.Context) error {
+	// Name ourselves on the stream: the daemon addresses device_command
+	// frames (which carry transfer tokens and command lines) to the claiming
+	// client alone instead of shouting them at every connected device.
+	q := url.Values{"deviceId": {n.DeviceID}}
 	req, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, n.apiURL("/events", nil), nil,
+		ctx, http.MethodGet, n.apiURL("/events", q), nil,
 	)
 	if err != nil {
 		return err

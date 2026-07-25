@@ -26,6 +26,8 @@
  * The registry never trusts the HTTP caller with a path — the token IS the
  * authorization, and it only reaches the device over the authed mesh
  * channel (the HTTP routes additionally sit behind the bridge bearer token).
+ * The device binding is enforced on the HTTP leg too: a caller that names
+ * itself must name the device the token was minted for (see take()).
  */
 
 import { randomBytes } from "node:crypto";
@@ -115,12 +117,15 @@ export class TransferStore {
    * Bridge route: a device is streaming a pull's file body up. Writes to a
    * temp file and renames into place, so a dropped connection can't leave a
    * half-written destination. Resolves the pull's `done` promise.
+   *
+   * `fromDeviceId` is the device the HTTP caller says it is (see take()).
    */
   async acceptUpload(
     token: string,
     body: Readable,
+    fromDeviceId?: string,
   ): Promise<{ ok: true; bytes: number } | { ok: false; error: string }> {
-    const t = this.take(token, "pull");
+    const t = this.take(token, "pull", fromDeviceId);
     if (!t)
       return { ok: false, error: "Unknown or already-used transfer token." };
     const tmp = `${t.localPath}.part-${randomBytes(4).toString("hex")}`;
@@ -148,8 +153,9 @@ export class TransferStore {
    */
   async openDownload(
     token: string,
+    fromDeviceId?: string,
   ): Promise<{ path: string; size: number } | null> {
-    const t = this.take(token, "push");
+    const t = this.take(token, "push", fromDeviceId);
     if (!t) return null;
     try {
       const s = await stat(t.localPath);
@@ -164,11 +170,34 @@ export class TransferStore {
     }
   }
 
-  /** Validate + latch a token for its HTTP leg. */
-  private take(token: string, direction: Transfer["direction"]) {
+  /**
+   * Validate + latch a token for its HTTP leg.
+   *
+   * `fromDeviceId` is the device the caller claims to be (the `deviceId`
+   * query param on /devices/file). A token is minted for exactly one device,
+   * so a claim naming a DIFFERENT device is refused — a token that leaked to
+   * another mesh member can't be redeemed under that member's own identity.
+   * The refusal happens before the single-use latch, so a wrong claim can't
+   * burn the real device's token either.
+   *
+   * A caller that claims nothing is still served. Requiring the claim would
+   * break the transfer that ships the client build able to make it:
+   * `update_device`/`update_node` push the new binary over `download_file`,
+   * so a daemon upgraded ahead of its fleet would refuse the very transfer
+   * that updates the fleet. Since the token only ever reaches the target
+   * device (over the addressed command channel) and is single-use with a
+   * 10-minute TTL, tolerating an unclaimed leg costs little; once the fleet
+   * advertises the claim, dropping this line makes the binding mandatory.
+   */
+  private take(
+    token: string,
+    direction: Transfer["direction"],
+    fromDeviceId?: string,
+  ) {
     this.sweep();
     const t = this.transfers.get(token);
     if (!t || t.direction !== direction || t.consumed) return null;
+    if (fromDeviceId && fromDeviceId !== t.deviceId) return null;
     if (Date.now() - t.createdAt > TOKEN_TTL_MS) {
       this.cancel(token);
       return null;

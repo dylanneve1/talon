@@ -133,14 +133,17 @@ export type BridgeServerHandlers = {
     | Promise<{ devices: DeviceInfo[]; locations: DeviceLocation[] }>;
   /** A device answered a device_command; true when a call was waiting. */
   completeCommand(body: Record<string, unknown>): boolean;
-  /** A device streams a pull-transfer's file body up (raw request body). */
+  /** A device streams a pull-transfer's file body up (raw request body).
+   *  `fromDeviceId` is the caller's claimed identity, when it sent one. */
   acceptFileUpload(
     token: string,
     body: IncomingMessage,
+    fromDeviceId?: string,
   ): Promise<{ ok: true; bytes: number } | { ok: false; error: string }>;
   /** Resolve a push-transfer token to the file to stream down, or null. */
   openFileDownload(
     token: string,
+    fromDeviceId?: string,
   ): Promise<{ path: string; size: number } | null>;
   /** Resolve a node-provisioning token to its installer script, or null. */
   openNodeInstall(token: string): { script: string; filename: string } | null;
@@ -152,6 +155,12 @@ const SSE_PING_MS = 25_000;
 const MAX_BODY_BYTES = 256 * 1024;
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const PORT_FALLBACKS = 5;
+/**
+ * Longest device id a client may claim (`?deviceId=…`). Matches the
+ * registry's own id cap — a longer id can never name a real device, and the
+ * claim is held for the life of a connection, so it stays a bounded key.
+ */
+const MAX_DEVICE_ID_CHARS = 128;
 
 // Failed-auth lockout: after this many wrong tokens from one address inside
 // the window, that address gets 429s until the window lapses. The token's
@@ -173,7 +182,13 @@ type AuthState = "ok" | "anonymous" | "bad";
 
 export class BridgeServer {
   private server: Server | null = null;
-  private clients = new Set<ServerResponse>();
+  /**
+   * Live SSE connections → the mesh device id each one claimed on connect
+   * (undefined for clients that didn't claim one: desktop UIs, and companion
+   * builds from before the claim existed). The claim is what makes
+   * `sendToDevice` addressable rather than a shout.
+   */
+  private clients = new Map<ServerResponse, string | undefined>();
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private port = 0;
   private tlsIdentity: BridgeTlsIdentity | null = null;
@@ -213,8 +228,50 @@ export class BridgeServer {
   /** Push an event to every connected SSE client. */
   broadcast(event: BridgeEvent): void {
     if (this.clients.size === 0) return;
+    this.write(this.clients.keys(), event);
+  }
+
+  /**
+   * Push an event to the client(s) that claimed `deviceId` — the delivery
+   * path for anything addressed to ONE device.
+   *
+   * Device commands are not public: their params carry one-time transfer
+   * tokens, exec command lines, remote paths, and — on the chunked fallback —
+   * whole base64 file bodies. Broadcasting them handed every connected client
+   * another device's secrets and relied on each client discarding what wasn't
+   * addressed to it, which is courtesy, not enforcement.
+   *
+   * A claim is an ADDRESS, not a credential: any client holding the bridge
+   * token could claim any id, and the bridge token is (still) the only trust
+   * boundary here. What this buys is that a device no longer passively
+   * receives traffic meant for its peers.
+   *
+   * Clients that claimed nothing are the fallback audience, and only when the
+   * target claimed nothing either: a companion build that predates the claim
+   * can't be addressed, and dropping its commands would take the mesh offline
+   * for it. So an updated device's traffic never reaches them — the fallback
+   * shrinks to nothing as the fleet updates.
+   */
+  sendToDevice(deviceId: string, event: BridgeEvent): void {
+    if (this.clients.size === 0) return;
+    const claimed: ServerResponse[] = [];
+    const unclaimed: ServerResponse[] = [];
+    for (const [res, id] of this.clients) {
+      if (id === deviceId) claimed.push(res);
+      else if (id === undefined) unclaimed.push(res);
+    }
+    if (claimed.length === 0) {
+      logDebug(
+        "native",
+        `No SSE client claims device ${deviceId} — delivering to ${unclaimed.length} unclaimed client(s)`,
+      );
+    }
+    this.write(claimed.length > 0 ? claimed : unclaimed, event);
+  }
+
+  private write(targets: Iterable<ServerResponse>, event: BridgeEvent): void {
     const payload = `data: ${JSON.stringify(event)}\n\n`;
-    for (const res of this.clients) {
+    for (const res of targets) {
       try {
         res.write(payload);
       } catch {
@@ -245,7 +302,7 @@ export class BridgeServer {
       : createServer(onRequest);
 
     this.pingTimer = setInterval(() => {
-      for (const res of this.clients) {
+      for (const res of this.clients.keys()) {
         try {
           res.write(": ping\n\n");
         } catch {
@@ -301,7 +358,7 @@ export class BridgeServer {
 
   async stop(): Promise<void> {
     clearInterval(this.pingTimer);
-    for (const res of this.clients) {
+    for (const res of this.clients.keys()) {
       try {
         res.end();
       } catch {
@@ -425,7 +482,10 @@ export class BridgeServer {
     }
 
     try {
-      if (method === "GET" && path === "/events") return this.openStream(res);
+      // A mesh client names itself here so device-addressed events reach it
+      // alone (see sendToDevice); UI clients simply omit it.
+      if (method === "GET" && path === "/events")
+        return this.openStream(res, deviceIdParam(url));
 
       if (method === "GET" && path === "/chats")
         return this.json(res, 200, { chats: this.handlers.listChats() });
@@ -549,12 +609,15 @@ export class BridgeServer {
         const token = url.searchParams.get("transfer") ?? "";
         if (!token)
           return this.json(res, 400, { ok: false, error: "transfer required" });
+        // The caller names itself so the token's device binding can be
+        // checked (see core/mesh/transfers.ts take()).
+        const from = deviceIdParam(url);
         if (method === "POST") {
-          const result = await this.handlers.acceptFileUpload(token, req);
+          const result = await this.handlers.acceptFileUpload(token, req, from);
           return this.json(res, result.ok ? 200 : 409, result);
         }
         if (method === "GET") {
-          const file = await this.handlers.openFileDownload(token);
+          const file = await this.handlers.openFileDownload(token, from);
           if (!file)
             return this.json(res, 404, {
               ok: false,
@@ -725,7 +788,7 @@ export class BridgeServer {
     }
   }
 
-  private openStream(res: ServerResponse): void {
+  private openStream(res: ServerResponse, deviceId?: string): void {
     res.writeHead(200, {
       ...this.corsHeaders(),
       "Content-Type": "text/event-stream",
@@ -752,8 +815,11 @@ export class BridgeServer {
     } catch (err) {
       logError("native", "Failed to replay live turn to new client", err);
     }
-    this.clients.add(res);
-    logDebug("native", `SSE client connected (${this.clients.size} total)`);
+    this.clients.set(res, deviceId);
+    logDebug(
+      "native",
+      `SSE client connected${deviceId ? ` as device ${deviceId}` : ""} (${this.clients.size} total)`,
+    );
     res.on("close", () => {
       this.clients.delete(res);
       logDebug("native", `SSE client left (${this.clients.size} total)`);
@@ -878,6 +944,16 @@ export class BridgeServer {
 
 function asString(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
+}
+
+/**
+ * The `deviceId` a mesh client claims on `/events` and `/devices/file`.
+ * Undefined when absent or blank — every consumer treats "no claim" as the
+ * legacy case, so an empty string must never look like a claimed id.
+ */
+function deviceIdParam(url: URL): string | undefined {
+  const raw = (url.searchParams.get("deviceId") ?? "").trim();
+  return raw ? raw.slice(0, MAX_DEVICE_ID_CHARS) : undefined;
 }
 
 /** Parse a positive-integer query param; undefined when absent/invalid. */
