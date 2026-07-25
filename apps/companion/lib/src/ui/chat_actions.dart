@@ -68,7 +68,7 @@ Future<void> showChatActionsSheet(
         const SnackBar(content: Text('Conversation copied as Markdown')),
       );
     case 'reset':
-      await state.resetChat(chat.id);
+      await confirmResetSession(context, state, chat);
     case 'delete':
       await confirmDeleteChat(context, state, chat);
   }
@@ -122,6 +122,60 @@ Future<void> promptRenameChat(
   if (name != null && name.trim().isNotEmpty) {
     await state.renameChat(chat.id, name.trim());
   }
+}
+
+/// Reset confirmation, then the reset itself.
+///
+/// Reset is not undoable — the daemon drops the session, the in-process backend
+/// memory AND the stored transcript (see `resetChat` in
+/// src/frontend/native/index.ts). It lives here, beside [confirmDeleteChat], so
+/// every surface that offers a reset asks the same question: the action sheet,
+/// the conversation header's overflow menu, and the context sheet's
+/// "Reset session" button all route through this. Before it existed the context
+/// sheet confirmed and the two menus did not, which is a worse failure than
+/// either being consistently confirm-free — the same words did different things
+/// depending on where you tapped them.
+Future<void> confirmResetSession(
+  BuildContext context,
+  AppState state,
+  ClientChat chat,
+) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: TalonColors.surface,
+      title: const Text('Reset session?'),
+      content: Text(
+        'Talon forgets everything said in "${chat.title}" and starts from an '
+        'empty context window. The stored transcript is cleared too, so this '
+        "can't be undone.",
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          // Amber, not the delete dialog's red: this drops context, it doesn't
+          // destroy the chat. Foreground is left to the theme's onPrimary,
+          // same as confirmDeleteChat.
+          style: FilledButton.styleFrom(backgroundColor: TalonColors.warn),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Reset session'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true || !context.mounted) return;
+  // Grab the messenger before the daemon round-trip: touching `context` after
+  // the await is what `use_build_context_synchronously` guards against, and a
+  // reset can outlive this route (the user may pop back to the chat list while
+  // it's still in flight).
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  await state.resetChat(chat.id);
+  messenger?.showSnackBar(
+    const SnackBar(content: Text('Session reset — starting a fresh context.')),
+  );
 }
 
 /// Delete confirmation. Removes the chat through [AppState.deleteChat] when

@@ -22,8 +22,12 @@ that speaks the protocol works.
 - Per-chat **model** + **reasoning effort** + **session reset**
 - **Settings sync** — read and change the daemon's own config (default model,
   display name, timezone, pulse/heartbeat/dream) and see live status
+- `⌘K` command palette — run an action, jump to a chat, search messages
 - Remote bridge profiles for phones or other machines
-- Modern dark, glassy theme
+- Light and dark palettes with a personalizable accent
+
+See [docs/companion-ui.md](../../docs/companion-ui.md) for a visual tour of the
+main surfaces and the reasoning behind their layout.
 
 ## Installing (macOS)
 

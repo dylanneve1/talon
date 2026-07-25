@@ -10,6 +10,7 @@ import 'activity_card.dart';
 import 'brand.dart';
 import 'chat_actions.dart';
 import 'composer.dart';
+import 'context_sheet.dart';
 import 'message_bubble.dart';
 import 'model_sheet.dart';
 import 'voice_mode_screen.dart';
@@ -544,127 +545,163 @@ class _Header extends StatelessWidget {
                 ),
               ],
       ),
-      // Auto-detect available width instead of hard-coding a platform check:
-      // a desktop window with the sidebar open gives the chat pane less room
-      // than the same window fullscreen, and the phone is always narrow. Below
-      // the breakpoint we fold model + reasoning-effort into a single pill so
-      // the bar stops squishing on mobile; the context% pill always stays (the
-      // ring readout is worth its width). Above it, keep them separate.
+      // One structure at every width now, instead of two layouts that agreed
+      // on almost nothing. The wide bar used to carry a plain title plus a
+      // context pill, a model pill and an effort pill — four bordered things
+      // fighting the title — while the narrow bar folded model + effort into
+      // the title's subtitle. Folding won, so it applies everywhere: the title
+      // stays the loudest element, the right edge holds exactly two controls
+      // (context, overflow), and the model/effort sheet is one tap on the
+      // identity block. LayoutBuilder still measures the pane (a desktop window
+      // with the sidebar open gives the chat less room than the same window
+      // fullscreen), but now only to shrink the context pill on a narrow bar —
+      // it no longer swaps one layout for another.
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 560;
-          final modelLabel = model.isEmpty ? 'model' : model;
-          if (compact) {
-            return Row(
-              children: [
-                if (showBack)
-                  IconButton(
-                    onPressed: onBack,
-                    tooltip: 'Back to chats',
-                    visualDensity: VisualDensity.compact,
-                    icon: Icon(Icons.adaptive.arrow_back, size: 21),
-                  ),
-                Expanded(
-                  child: InkWell(
-                    key: const Key('conversation-identity'),
-                    onTap: () => openModelSheet(context, state, chat),
-                    borderRadius: TalonRadius.rSm,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 3,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            chat.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TalonType.title.copyWith(fontSize: 16),
-                          ),
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Container(
-                                width: 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: state.conn == ConnState.connected
-                                      ? TalonColors.ok
-                                      : TalonColors.bad,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  '$modelLabel · $effort',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: TalonColors.textFaint,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                if (chat.context?.known == true) ...[
-                  _ContextChip(context: chat.context!, dense: true),
-                  const SizedBox(width: 2),
-                ],
-                _ChatMenu(state: state, chat: chat),
-              ],
-            );
-          }
+          final info = chat.context;
           return Row(
             children: [
               if (showBack)
                 IconButton(
                   onPressed: onBack,
                   tooltip: 'Back to chats',
+                  // Compact density at every width: the identity block sets the
+                  // bar's height, and a standard-density button would be taller
+                  // than it and push the whole header out for nothing.
+                  visualDensity: VisualDensity.compact,
                   // Platform-adaptive: Material arrow on Android, iOS chevron
                   // on Apple platforms.
-                  icon: Icon(Icons.adaptive.arrow_back, size: 20),
+                  icon: Icon(Icons.adaptive.arrow_back, size: 21),
                 ),
               Expanded(
-                child: Text(
-                  chat.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 15.5, fontWeight: FontWeight.w700),
+                child: _Identity(
+                  title: chat.title,
+                  model: model.isEmpty ? 'model' : model,
+                  effort: effort,
+                  connected: state.conn == ConnState.connected,
+                  onTap: () => openModelSheet(context, state, chat),
                 ),
               ),
-              if (chat.context?.known == true) ...[
-                _ContextChip(context: chat.context!),
-                const SizedBox(width: 6),
-              ],
-              ...[
-                _Chip(
-                  icon: Icons.memory,
-                  label: modelLabel,
-                  onTap: () => openModelSheet(context, state, chat),
-                ),
-                const SizedBox(width: 6),
-                _Chip(
-                  icon: Icons.tune,
-                  label: effort,
-                  onTap: () => openModelSheet(context, state, chat),
+              // Absent whenever the daemon reports no figure (older bridges,
+              // and every chat between a reset and its first turn).
+              if (info != null && info.known) ...[
+                const SizedBox(width: TalonSpace.sm),
+                _ContextChip(
+                  info: info,
+                  dense: compact,
+                  onTap: () => openContextSheet(context, state, chat),
                 ),
               ],
               _ChatMenu(state: state, chat: chat),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// The header's identity block: the conversation title over a hairline
+/// subtitle carrying the connection dot, the model and the reasoning effort.
+/// The whole block is one target that opens the model/effort sheet.
+///
+/// It keeps `Key('conversation-identity')` on the [InkWell] rather than on the
+/// widget itself so a test that taps the key lands on the actual gesture
+/// target, not on a wrapper whose centre could drift as the block's layout
+/// changes.
+class _Identity extends StatelessWidget {
+  final String title;
+  final String model;
+  final String effort;
+  final bool connected;
+  final VoidCallback onTap;
+
+  const _Identity({
+    required this.title,
+    required this.model,
+    required this.effort,
+    required this.connected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      // The header paints its own opaque surface, so ink on the Scaffold's
+      // Material underneath would be invisible — same trick as _StarterChip.
+      color: Colors.transparent,
+      child: InkWell(
+        key: const Key('conversation-identity'),
+        onTap: onTap,
+        borderRadius: TalonRadius.rSm,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: TalonSpace.xs,
+            vertical: 3,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TalonType.title.copyWith(fontSize: 16),
+              ),
+              const SizedBox(height: TalonSpace.xxs),
+              Row(
+                children: [
+                  _ConnDot(connected: connected),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      '$model · $effort',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: TalonColors.textFaint,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  // The only cue that this line is a control now that the wide
+                  // layout has no bordered model pill to imply it.
+                  const SizedBox(width: TalonSpace.xxs),
+                  Icon(Icons.expand_more,
+                      size: 13, color: TalonColors.textFaint),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Connection dot in the identity subtitle. On a phone this is the header's
+/// only connection signal (there is no sidebar pill), so it carries a
+/// semantics label too — a 6px colour difference is nothing to a screen reader
+/// or a grayscale display. When the link is genuinely down, [_ConnBanner]
+/// spells it out in words immediately below the bar.
+class _ConnDot extends StatelessWidget {
+  final bool connected;
+  const _ConnDot({required this.connected});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: connected ? 'Connected' : 'Not connected',
+      child: Container(
+        width: 6,
+        height: 6,
+        decoration: BoxDecoration(
+          color: connected ? TalonColors.ok : TalonColors.bad,
+          shape: BoxShape.circle,
+        ),
       ),
     );
   }
@@ -683,7 +720,7 @@ class _ChatMenu extends StatelessWidget {
       onSelected: (v) async {
         switch (v) {
           case 'reset':
-            await state.resetChat(chat.id);
+            await confirmResetSession(context, state, chat);
             break;
           case 'export':
             final messenger = ScaffoldMessenger.of(context);
@@ -746,59 +783,88 @@ class _MenuRow extends StatelessWidget {
   }
 }
 
-/// Compact context-window readout: a tiny fill ring + percentage. Turns the
-/// warn color once the window is ≥80% full. Tooltip shows the raw token
-/// figures. Purely informational — no tap action.
+/// Context-window readout: a small fill ring, the percentage, and — once the
+/// window is ≥80% full — an exclamation glyph, because the warn state used to
+/// be carried by amber alone.
+///
+/// Now a button: it opens [openContextSheet]. It was informational-only, which
+/// made it the one place in the app that knew the window was filling up and the
+/// one place that offered nothing to do about it. The tooltip stays for a
+/// hovering desktop pointer (cheaper than a sheet for "how full is it?"), but a
+/// tooltip is not an affordance on touch, so the figures now have a route that
+/// works with a finger.
 class _ContextChip extends StatelessWidget {
-  final ContextInfo context;
+  final ContextInfo info;
   final bool dense;
-  const _ContextChip({required this.context, this.dense = false});
+  final VoidCallback onTap;
 
-  static String _fmt(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(n >= 10000 ? 0 : 1)}k';
-    return '$n';
-  }
+  const _ContextChip({
+    required this.info,
+    required this.dense,
+    required this.onTap,
+  });
 
   @override
-  Widget build(BuildContext ctx) {
-    final color = context.warn ? TalonColors.warn : TalonColors.textDim;
-    final tip = context.max > 0
-        ? 'Context: ${_fmt(context.used)} / ${_fmt(context.max)} tokens (${context.pct}%)'
-        : 'Context: ${_fmt(context.used)} tokens';
+  Widget build(BuildContext context) {
+    final color = info.warn ? TalonColors.warn : TalonColors.textDim;
+    final figures = info.max > 0
+        ? '${formatTokens(info.used)} / ${formatTokens(info.max)} tokens'
+            ' (${info.pct}%)'
+        : '${formatTokens(info.used)} tokens';
     return Tooltip(
-      message: tip,
+      message: 'Context: $figures — tap for details',
       child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: dense ? 8 : 10,
-          vertical: dense ? 5 : 6,
-        ),
         decoration: BoxDecoration(
-          color: TalonColors.glassFill,
-          borderRadius: BorderRadius.circular(999),
+          color: info.warn
+              ? TalonColors.warn.withValues(alpha: 0.12)
+              : TalonColors.glassFill,
+          borderRadius: TalonRadius.rPill,
           border: Border.all(
-            color: context.warn ? TalonColors.warn : TalonColors.glassStroke,
+            color: info.warn ? TalonColors.warn : TalonColors.glassStroke,
           ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: dense ? 12 : 13,
-              height: dense ? 12 : 13,
-              child: CircularProgressIndicator(
-                value: (context.pct.clamp(0, 100)) / 100,
-                strokeWidth: 2.4,
-                backgroundColor: TalonColors.glassStroke,
-                valueColor: AlwaysStoppedAnimation(color),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: TalonRadius.rPill,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: dense ? TalonSpace.sm : 10,
+                vertical: dense ? 5 : 6,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: dense ? 12 : 13,
+                    height: dense ? 12 : 13,
+                    child: CircularProgressIndicator(
+                      value: info.pct.clamp(0, 100) / 100,
+                      strokeWidth: 2.4,
+                      backgroundColor: TalonColors.glassStroke,
+                      valueColor: AlwaysStoppedAnimation(color),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${info.pct}%',
+                    style: TextStyle(
+                      fontSize: dense ? 11 : 12,
+                      color: color,
+                      fontWeight:
+                          info.warn ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                  if (info.warn) ...[
+                    const SizedBox(width: TalonSpace.xxs),
+                    Icon(Icons.priority_high_rounded,
+                        size: dense ? 12 : 13, color: TalonColors.warn),
+                  ],
+                ],
               ),
             ),
-            const SizedBox(width: 6),
-            Text(
-              '${context.pct}%',
-              style: TextStyle(fontSize: dense ? 11 : 12, color: color),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -966,45 +1032,6 @@ class _QueuedAction extends StatelessWidget {
       visualDensity: VisualDensity.compact,
       color: color ?? TalonColors.textDim,
       onPressed: onTap,
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  const _Chip({required this.icon, required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 170),
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-        decoration: BoxDecoration(
-          color: TalonColors.glassFill,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: TalonColors.glassStroke),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: TalonColors.textDim),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: TalonColors.textDim),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

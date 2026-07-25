@@ -19,11 +19,12 @@ bool get _isMac => defaultTargetPlatform == TargetPlatform.macOS;
 List<_ShortcutEntry> _entries() {
   final mod = _isMac ? '⌘' : 'Ctrl';
   return [
-    _ShortcutEntry('$mod K', 'Quick switcher — jump to a chat or search messages'),
+    _ShortcutEntry(
+        '$mod K', 'Command palette — run an action, jump to a chat, search'),
     _ShortcutEntry('$mod N', 'New chat'),
     const _ShortcutEntry('Esc', 'Close the open conversation / dialog'),
-    const _ShortcutEntry('↑ / ↓', 'Move selection in quick switcher'),
-    const _ShortcutEntry('Enter', 'Open the highlighted result'),
+    const _ShortcutEntry('↑ / ↓', 'Move selection in the command palette'),
+    const _ShortcutEntry('Enter', 'Run the highlighted action / open result'),
     const _ShortcutEntry('?', 'Show this shortcuts list'),
   ];
 }

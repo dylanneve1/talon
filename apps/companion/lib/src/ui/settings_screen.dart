@@ -19,6 +19,7 @@ import 'connect_screen.dart';
 import 'extensions_screen.dart';
 import 'glass.dart';
 import 'logs_screen.dart';
+import 'motion.dart';
 
 /// Severity for a diagnostics check row.
 enum _Health { ok, warn, bad, info }
@@ -30,6 +31,44 @@ enum _Health { ok, warn, bad, info }
 class SettingsScreen extends StatefulWidget {
   final AppState state;
   const SettingsScreen({super.key, required this.state});
+
+  /// Width at which the ten stacked cards become a chapter rail plus a detail
+  /// pane. Higher than the app shell's 820 on purpose: that breakpoint only
+  /// has to fit a 308px chat list beside a conversation that reads fine at any
+  /// width, whereas this route has to fit the rail *and* leave the card column
+  /// the ~560 it was tuned for — [_railWidth] 248 + the 24 gutter + 24 of
+  /// padding either side = 320 of overhead, so 880 is the first width where
+  /// nothing gets squeezed. 900 rounds that up to a real window size.
+  static const double _railBreakpoint = 900;
+
+  /// Fixed rail width. Narrower than the sidebar's 308 because these rows are
+  /// a glyph, a chapter name and one line of contents rather than an avatar
+  /// plus a message preview; 248 still holds those at the 1.3× end of the
+  /// text-size slider.
+  static const double _railWidth = 248;
+
+  /// Pane width at which a chapter's cards split into two columns. Two columns
+  /// of 448 is the narrowest that keeps a card honest — the widest fixed label
+  /// gutter inside one is 128px, so below this the second column starts eating
+  /// the values. Landing here means a 1240px window is already two-up, which
+  /// covers every common laptop size; anything narrower gets one column that
+  /// simply fills the pane, so there is no width where the cards sit in a
+  /// ribbon with dead space beside them.
+  static const double _twoColumnMin = 920;
+
+  /// Cap on a *single* column, for the 900–1240 band. Wider than the phone's
+  /// 560 because a lone column should use the pane it has, but not unbounded:
+  /// past ~720 a switch row's label and its toggle drift far enough apart to
+  /// stop reading as one control.
+  static const double _maxCardWidth = 720;
+
+  /// Cap on the rail + pane pair, which then centres in anything wider. Sized
+  /// so the widest useful composition — rail plus two 560px card columns —
+  /// fits exactly: 248 + 24 gutter + (560 + 24 + 560) + 24 padding either
+  /// side. Left uncapped, a maximised 4K window would stretch every switch row
+  /// until the label and its toggle were a hand-span apart.
+  static const double _maxContentWidth =
+      _railWidth + TalonSpace.xl + 2 * 560 + TalonSpace.xl + 2 * TalonSpace.xl;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -60,6 +99,13 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   final _name = TextEditingController();
   final _tz = TextEditingController();
+
+  /// Which chapter the wide layout is showing, keyed by title. Titles are
+  /// unique and are what the rail draws, so there is no parallel id to keep in
+  /// sync; a title that no longer exists (Agent, before the config lands) falls
+  /// back to the first available chapter at build time rather than through a
+  /// setState.
+  String _selectedSection = 'Overview';
 
   /// Whether Talon currently holds Android's digital-assistant role
   /// (null = unknown/loading). Android only.
@@ -432,17 +478,28 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
             ],
           ),
-          body: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                // Status, Appearance, diagnostics, and connection data are
-                // already local. Paint them on the first frame; only the
-                // daemon-backed cards below use a loading placeholder.
-                child: _body(),
-              ),
-            ),
+          // Two forms of the same screen. On a phone the single column is
+          // right and stays untouched; on a desktop window it was a ribbon of
+          // cards in a sea of empty space with no way to reach section eight
+          // except scrolling past seven, so past the breakpoint the sections
+          // split into a rail and an independently scrolling pane.
+          body: LayoutBuilder(
+            builder: (context, constraints) =>
+                constraints.maxWidth >= SettingsScreen._railBreakpoint
+                    ? _masterDetail()
+                    : Center(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(20),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 560),
+                            // Status, Appearance, diagnostics, and connection
+                            // data are already local. Paint them on the first
+                            // frame; only the daemon-backed cards below use a
+                            // loading placeholder.
+                            child: _body(),
+                          ),
+                        ),
+                      ),
           ),
         ),
       ),
@@ -467,142 +524,11 @@ class _SettingsScreenState extends State<SettingsScreen>
         if (cfg == null && _loading)
           const _SettingsSkeleton()
         else if (cfg == null)
-          _Section(
-            title: 'Settings unavailable',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _error ?? 'Could not read settings from the daemon.',
-                  style: TextStyle(color: TalonColors.textFaint),
-                ),
-                if (_error != null && AppLog.diagnose(_error!) != null) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: TalonColors.accent.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.lightbulb_outline,
-                          size: 16,
-                          color: TalonColors.accent,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            AppLog.diagnose(_error!)!,
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              color: TalonColors.textDim,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () async {
-                      final dump =
-                          '${_error ?? ''}\n\n--- recent log ---\n${AppLog.dump()}';
-                      await Clipboard.setData(ClipboardData(text: dump));
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Diagnostics copied to clipboard'),
-                          ),
-                        );
-                      }
-                    },
-                    icon: const Icon(Icons.copy_all_outlined, size: 16),
-                    label: const Text('Copy diagnostics'),
-                  ),
-                ),
-              ],
-            ),
-          )
+          _unavailableCard()
         else ...[
-          _Section(
-            title: 'General',
-            child: Column(
-              children: [
-                _ModelRow(
-                  state: widget.state,
-                  cfg: cfg,
-                  onPick: (id) => _apply({'model': id}),
-                ),
-                const SizedBox(height: 14),
-                _textRow(
-                  'Display name',
-                  _name,
-                  onSubmit: (v) => _apply({'botDisplayName': v}),
-                ),
-                const SizedBox(height: 14),
-                _textRow(
-                  'Timezone',
-                  _tz,
-                  hint: 'e.g. Europe/London',
-                  onSubmit: (v) => _apply({'timezone': v}),
-                ),
-              ],
-            ),
-          ),
+          _generalCard(cfg),
           const SizedBox(height: 16),
-          _Section(
-            title: 'Background agents',
-            child: Column(
-              children: [
-                _switchRow(
-                  'Pulse',
-                  'Proactive check-ins when something matters',
-                  _eff('pulse', cfg.pulse),
-                  (v) => _apply({'pulse': v}),
-                ),
-                if (_eff('pulse', cfg.pulse))
-                  _intervalRow(
-                    'Pulse interval',
-                    '${(_eff('pulseIntervalMs', cfg.pulseIntervalMs) / 60000).round()} min',
-                    (_eff('pulseIntervalMs', cfg.pulseIntervalMs) / 60000)
-                        .round(),
-                    min: 1,
-                    onChange: (m) => _apply({'pulseIntervalMs': m * 60000}),
-                  ),
-                const Divider(height: 22),
-                _switchRow(
-                  'Heartbeat',
-                  'Periodic goal advancement',
-                  _eff('heartbeat', cfg.heartbeat),
-                  (v) => _apply({'heartbeat': v}),
-                ),
-                if (_eff('heartbeat', cfg.heartbeat))
-                  _intervalRow(
-                    'Heartbeat interval',
-                    '${_eff('heartbeatIntervalMinutes', cfg.heartbeatIntervalMinutes)} min',
-                    _eff(
-                      'heartbeatIntervalMinutes',
-                      cfg.heartbeatIntervalMinutes,
-                    ),
-                    min: 5,
-                    onChange: (m) => _apply({'heartbeatIntervalMinutes': m}),
-                  ),
-                const Divider(height: 22),
-                _switchRow(
-                  'Dream',
-                  'Memory consolidation + diary',
-                  _eff('dream', cfg.dream),
-                  (v) => _apply({'dream': v}),
-                ),
-              ],
-            ),
-          ),
+          _backgroundAgentsCard(cfg),
           const SizedBox(height: 16),
           if (widget.state.status.hasCapability('plugins-skills')) ...[
             _extensionsCard(),
@@ -620,6 +546,390 @@ class _SettingsScreenState extends State<SettingsScreen>
         _connectionCard(),
         const SizedBox(height: 24),
       ],
+    );
+  }
+
+  // ── Wide layout: chapter rail + detail pane ───────────────────────────────
+
+  /// The rail's chapters.
+  ///
+  /// Three of them, not one per card, and that is the whole point: ten rail
+  /// entries meant nine panes holding a single short card, which traded "a
+  /// narrow ribbon in a sea of empty space" for "a small card in a sea of empty
+  /// space". Grouped this way every pane carries four-ish cards across two
+  /// columns and actually fills the window. The grouping is also the honest one
+  /// — Overview is "is this thing healthy and what is it", Agent is everything
+  /// the daemon owns, This device is the local prefs (theme, voice, and mesh,
+  /// whose switches are all `prefs`-backed and about *this* machine).
+  ///
+  /// Each chapter declares its cards as columns rather than a flat list, so the
+  /// two-up split is authored where the content is known instead of guessed
+  /// from measured heights at layout time. Flattened in order, a chapter's
+  /// columns give the same sequence the phone column paints — which is what
+  /// [_detailPane] falls back to when the pane is too narrow to go two-up.
+  ///
+  /// Conditionality is unchanged from the single column: Voice only where the
+  /// voice service exists, Mesh and the whole Agent chapter only once a config
+  /// snapshot has landed, Extensions only with the daemon's `plugins-skills`
+  /// capability. Until the snapshot arrives, Overview carries the skeleton (or
+  /// the failure copy) directly under the status card — Overview is the default
+  /// selection, so a cold open still shows the load state in place.
+  List<_SettingsSection> _sections(ConfigSnapshot? cfg) => [
+        _SettingsSection(
+          title: 'Overview',
+          subtitle: 'Health, version & endpoint',
+          icon: Icons.monitor_heart_outlined,
+          columns: () => [
+            [
+              _statusCard(cfg),
+              if (cfg == null && _loading)
+                const _SettingsSkeleton()
+              else if (cfg == null)
+                _unavailableCard(),
+              _diagnosticsCard(cfg),
+            ],
+            [_aboutCard(cfg), _connectionCard()],
+          ],
+        ),
+        if (cfg != null) _agentSection(cfg),
+        _SettingsSection(
+          title: 'This device',
+          subtitle: 'Theme, voice & mesh sharing',
+          icon: Icons.devices_outlined,
+          columns: () => [
+            [_appearanceCard(), if (VoiceService.supported) _voiceCard()],
+            [if (cfg != null) _meshCard()],
+          ],
+        ),
+      ];
+
+  /// The daemon's own chapter. Split out so [cfg] arrives here already
+  /// non-null: the alternative is card closures that lean on a nullable local
+  /// staying promoted across a closure boundary, which is a needlessly subtle
+  /// thing to depend on.
+  _SettingsSection _agentSection(ConfigSnapshot cfg) => _SettingsSection(
+        title: 'Agent',
+        subtitle: 'Model, background work & tools',
+        icon: Icons.auto_awesome_outlined,
+        columns: () => [
+          [_generalCard(cfg), _backgroundAgentsCard(cfg)],
+          [
+            if (widget.state.status.hasCapability('plugins-skills'))
+              _extensionsCard(),
+            _controlsCard(),
+          ],
+        ],
+      );
+
+  Widget _masterDetail() {
+    // Same cached-snapshot fallback as the column: the local cards have to
+    // paint on the first frame, before the config fetch resolves.
+    final cfg = _cfg ?? widget.state.appConfig;
+    final sections = _sections(cfg);
+    // Fall back to the first chapter when the remembered title has gone — a
+    // failed refresh can retire the whole Agent chapter under you.
+    final selected = sections.firstWhere(
+      (s) => s.title == _selectedSection,
+      orElse: () => sections.first,
+    );
+    return Align(
+      // Top-aligned, not centred: a settings page starts at the top. Centring
+      // is horizontal only, for the case where the window is wider than the
+      // widest composition this screen has any use for.
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints:
+            const BoxConstraints(maxWidth: SettingsScreen._maxContentWidth),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+              TalonSpace.xl, TalonSpace.sm, TalonSpace.xl, TalonSpace.xl),
+          child: Row(
+            // start, not stretch: stretching gave the rail the window's full
+            // height, which left a few hundred pixels of empty glass below the
+            // last chapter and read as an unfinished panel. Hugging its content
+            // means both columns simply end where their content does.
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: SettingsScreen._railWidth,
+                child: _rail(sections, selected.title),
+              ),
+              const SizedBox(width: TalonSpace.xl),
+              Expanded(child: _detailPane(selected)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The chapter rail: a compact glass panel echoing the chat sidebar's.
+  ///
+  /// The list is [Flexible] around a shrink-wrapping [ListView] rather than
+  /// [Expanded]: that way the panel is exactly as tall as its chapters, but a
+  /// short window (or a 1.3× text scale) still scrolls instead of overflowing.
+  Widget _rail(List<_SettingsSection> sections, String selectedTitle) {
+    final still = reduceMotion(context);
+    return Glass(
+      radius: TalonRadius.lg,
+      blur: 24,
+      padding: const EdgeInsets.fromLTRB(
+          TalonSpace.sm, TalonSpace.md, TalonSpace.sm, TalonSpace.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(
+                left: TalonSpace.sm, bottom: TalonSpace.sm),
+            child: Text('SECTIONS', style: TalonType.eyebrow),
+          ),
+          Flexible(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              shrinkWrap: true,
+              children: [
+                for (final (i, section) in sections.indexed)
+                  // Keyed by title so the entrance plays once per tile and the
+                  // frequent AppState-driven rebuilds of this screen never
+                  // restart the cascade mid-flight.
+                  EntranceFx(
+                    key: ValueKey('rail-${section.title}'),
+                    enabled: !still,
+                    from: const Offset(-0.1, 0),
+                    delay: TalonMotion.stagger * i.clamp(0, 8),
+                    child: _RailTile(
+                      title: section.title,
+                      subtitle: section.subtitle,
+                      icon: section.icon,
+                      selected: section.title == selectedTitle,
+                      onTap: () => setState(
+                        () => _selectedSection = section.title,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The selected chapter's cards, scrolling independently of the rail so a
+  /// long chapter can't push the rail off screen.
+  ///
+  /// Two columns once the pane can afford them, one otherwise — and the
+  /// one-column form flattens the chapter's columns in order, so it reads as
+  /// the same running order as the phone. Empty columns are dropped first:
+  /// This device's second column is just the Mesh card, which doesn't exist
+  /// until the daemon answers, and an empty column would otherwise reserve half
+  /// the pane for nothing.
+  Widget _detailPane(_SettingsSection section) {
+    final columns = [
+      for (final column in section.columns())
+        if (column.isNotEmpty) column,
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final twoUp = columns.length > 1 &&
+            constraints.maxWidth >= SettingsScreen._twoColumnMin;
+        return SingleChildScrollView(
+          // Keyed by chapter: a fresh Scrollable starts at the top instead of
+          // inheriting the previous chapter's offset, and remounting the
+          // subtree is also what re-plays the pane entrance below.
+          key: ValueKey('settings-pane-${section.title}'),
+          padding: const EdgeInsets.only(bottom: TalonSpace.xl),
+          child: EntranceFx(
+            enabled: !reduceMotion(context),
+            // A whisper from the right — enough to read as a pane swap, not
+            // enough to feel like the whole screen moved.
+            from: const Offset(0.015, 0),
+            child: twoUp
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final (i, column) in columns.indexed) ...[
+                        if (i > 0) const SizedBox(width: TalonSpace.xl),
+                        Expanded(child: _cardStack(column)),
+                      ],
+                    ],
+                  )
+                // Align first: the pane hands down a *tight* width, and a bare
+                // ConstrainedBox can't shrink below an incoming tight minimum —
+                // it would silently ignore the cap. Align loosens it and keeps
+                // the column against the rail rather than adrift mid-pane.
+                : Align(
+                    alignment: Alignment.topLeft,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                          maxWidth: SettingsScreen._maxCardWidth),
+                      child: _cardStack(
+                        [for (final column in columns) ...column],
+                      ),
+                    ),
+                  ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _cardStack(List<Widget> cards) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (i, card) in cards.indexed) ...[
+            if (i > 0) const SizedBox(height: TalonSpace.lg),
+            card,
+          ],
+        ],
+      );
+
+  // ── Cards shared by both layouts ──────────────────────────────────────────
+
+  /// Shown in place of the daemon-backed cards when the config fetch failed.
+  /// Carries whatever [AppLog.diagnose] can infer from the error plus a
+  /// one-tap dump, because "Settings unavailable" on its own tells a user
+  /// filing a bug nothing at all.
+  Widget _unavailableCard() {
+    return _Section(
+      title: 'Settings unavailable',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _error ?? 'Could not read settings from the daemon.',
+            style: TextStyle(color: TalonColors.textFaint),
+          ),
+          if (_error != null && AppLog.diagnose(_error!) != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: TalonColors.accent.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.lightbulb_outline,
+                    size: 16,
+                    color: TalonColors.accent,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      AppLog.diagnose(_error!)!,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: TalonColors.textDim,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () async {
+                final dump =
+                    '${_error ?? ''}\n\n--- recent log ---\n${AppLog.dump()}';
+                await Clipboard.setData(ClipboardData(text: dump));
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Diagnostics copied to clipboard'),
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.copy_all_outlined, size: 16),
+              label: const Text('Copy diagnostics'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _generalCard(ConfigSnapshot cfg) {
+    return _Section(
+      title: 'General',
+      child: Column(
+        children: [
+          _ModelRow(
+            state: widget.state,
+            cfg: cfg,
+            onPick: (id) => _apply({'model': id}),
+          ),
+          const SizedBox(height: 14),
+          _textRow(
+            'Display name',
+            _name,
+            onSubmit: (v) => _apply({'botDisplayName': v}),
+          ),
+          const SizedBox(height: 14),
+          _textRow(
+            'Timezone',
+            _tz,
+            hint: 'e.g. Europe/London',
+            onSubmit: (v) => _apply({'timezone': v}),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _backgroundAgentsCard(ConfigSnapshot cfg) {
+    return _Section(
+      title: 'Background agents',
+      child: Column(
+        children: [
+          _switchRow(
+            'Pulse',
+            'Proactive check-ins when something matters',
+            _eff('pulse', cfg.pulse),
+            (v) => _apply({'pulse': v}),
+          ),
+          if (_eff('pulse', cfg.pulse))
+            _intervalRow(
+              'Pulse interval',
+              '${(_eff('pulseIntervalMs', cfg.pulseIntervalMs) / 60000).round()} min',
+              (_eff('pulseIntervalMs', cfg.pulseIntervalMs) / 60000).round(),
+              min: 1,
+              onChange: (m) => _apply({'pulseIntervalMs': m * 60000}),
+            ),
+          const Divider(height: 22),
+          _switchRow(
+            'Heartbeat',
+            'Periodic goal advancement',
+            _eff('heartbeat', cfg.heartbeat),
+            (v) => _apply({'heartbeat': v}),
+          ),
+          if (_eff('heartbeat', cfg.heartbeat))
+            _intervalRow(
+              'Heartbeat interval',
+              '${_eff('heartbeatIntervalMinutes', cfg.heartbeatIntervalMinutes)} min',
+              _eff(
+                'heartbeatIntervalMinutes',
+                cfg.heartbeatIntervalMinutes,
+              ),
+              min: 5,
+              onChange: (m) => _apply({'heartbeatIntervalMinutes': m}),
+            ),
+          const Divider(height: 22),
+          _switchRow(
+            'Dream',
+            'Memory consolidation + diary',
+            _eff('dream', cfg.dream),
+            (v) => _apply({'dream': v}),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2172,6 +2482,168 @@ class _SettingsSkeleton extends StatelessWidget {
         const SizedBox(height: TalonSpace.lg),
         card(4),
       ],
+    );
+  }
+}
+
+/// One chapter in the wide layout's rail: what the rail draws, and a builder
+/// for the cards the detail pane paints, grouped into the columns they should
+/// occupy when the pane is wide enough for two.
+///
+/// [subtitle] is doing real work rather than decoration: the chapter names are
+/// deliberately broad, so it is the line that tells someone hunting for
+/// "diagnostics" or "timezone" which chapter to open.
+///
+/// [columns] is a callback rather than a built list because only the selected
+/// chapter is ever constructed. Building all of them eagerly to show one would
+/// throw away the main win of this layout, and several cards are not free: the
+/// Mesh card walks the device list, the Status card formats uptime.
+class _SettingsSection {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final List<List<Widget>> Function() columns;
+
+  const _SettingsSection({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.columns,
+  });
+}
+
+/// A rail entry, wearing the sidebar chat tile's hover / selected / pressed
+/// treatment so the app's two rails read as the same piece of furniture.
+///
+/// Built on [InkWell] rather than the sidebar's bare GestureDetector because
+/// this rail is the only route to a section in the wide layout, so it has to be
+/// tab-reachable and Enter-activatable. Every ink colour is transparent,
+/// though: the splash would land on the Scaffold's far-off Material, beneath
+/// the glass panel this sits in, so the visible states are painted here
+/// instead — including the focus ring, which is why `onFocusChange` is wired up
+/// rather than left to `focusColor`.
+class _RailTile extends StatefulWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _RailTile({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  State<_RailTile> createState() => _RailTileState();
+}
+
+class _RailTileState extends State<_RailTile> {
+  bool _hover = false;
+  bool _pressed = false;
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = widget.selected;
+    final border = selected
+        ? TalonColors.accent.withValues(alpha: 0.35)
+        : (_focused
+            ? TalonColors.accent.withValues(alpha: 0.55)
+            : Colors.transparent);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: TalonSpace.xxs),
+      child: Semantics(
+        button: true,
+        selected: selected,
+        child: InkWell(
+          onTap: widget.onTap,
+          onHover: (v) => setState(() => _hover = v),
+          onHighlightChanged: (v) => setState(() => _pressed = v),
+          onFocusChange: (v) => setState(() => _focused = v),
+          borderRadius: TalonRadius.rMd,
+          hoverColor: Colors.transparent,
+          focusColor: Colors.transparent,
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+          child: AnimatedScale(
+            scale: _pressed ? 0.975 : 1.0,
+            duration: TalonMotion.fast,
+            curve: TalonMotion.emphasized,
+            child: AnimatedContainer(
+              duration: TalonMotion.fast,
+              curve: TalonMotion.standard,
+              padding: const EdgeInsets.all(TalonSpace.sm),
+              decoration: BoxDecoration(
+                borderRadius: TalonRadius.rMd,
+                color: selected
+                    ? TalonColors.accent.withValues(alpha: 0.14)
+                    : (_hover ? TalonColors.surface : Colors.transparent),
+                border: Border.all(color: border),
+              ),
+              child: Row(
+                children: [
+                  // The same accent-tinted glyph square the status card's stat
+                  // tiles wear, so the rail reads as part of the same set.
+                  AnimatedContainer(
+                    duration: TalonMotion.fast,
+                    width: 34,
+                    height: 34,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? TalonColors.accent.withValues(alpha: 0.18)
+                          : TalonColors.surfaceHi,
+                      borderRadius: TalonRadius.rSm,
+                    ),
+                    child: Icon(
+                      widget.icon,
+                      size: 18,
+                      color:
+                          selected ? TalonColors.accent : TalonColors.textDim,
+                    ),
+                  ),
+                  const SizedBox(width: TalonSpace.md - 2),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight:
+                                selected ? FontWeight.w700 : FontWeight.w600,
+                            color: selected
+                                ? TalonColors.text
+                                : TalonColors.textDim,
+                          ),
+                        ),
+                        const SizedBox(height: TalonSpace.xxs),
+                        Text(
+                          widget.subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            height: 1.3,
+                            color: TalonColors.textFaint,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

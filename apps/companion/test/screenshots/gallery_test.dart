@@ -300,6 +300,38 @@ class _FakePrefsBacking {
   static late final SharedPreferences instance;
 }
 
+/// A daemon snapshot for the settings screens — without one the status card
+/// has no stat tiles to draw and every daemon-owned section stays unlisted,
+/// since there is no live daemon behind the gallery.
+const ConfigSnapshot _demoConfig = ConfigSnapshot(
+  backend: 'claude',
+  frontend: 'telegram',
+  model: 'opus',
+  modelDisplay: 'Opus 4.8',
+  botDisplayName: 'Claudius',
+  timezone: '',
+  pulse: false,
+  pulseIntervalMs: 300000,
+  heartbeat: true,
+  heartbeatIntervalMinutes: 60,
+  dream: false,
+  editable: [
+    'model',
+    'botDisplayName',
+    'timezone',
+    'pulse',
+    'heartbeat',
+    'dream',
+    'pulseIntervalMs',
+    'heartbeatIntervalMinutes',
+  ],
+  healthy: true,
+  uptimeMs: 176400000,
+  sessions: 63,
+  messages: 43,
+  memoryMb: 168,
+);
+
 Widget _app(Widget home) {
   final base = buildTalonTheme();
   return MaterialApp(
@@ -395,39 +427,48 @@ void main() {
     TalonTheme.mode.value = ThemeMode.light;
     TalonTheme.apply(Brightness.light);
     final state = _demoState(narrow: true);
-    // Seed a demo snapshot so the status card renders its stat tiles (there's
-    // no live daemon in the gallery).
-    state.appConfig = const ConfigSnapshot(
-      backend: 'claude',
-      frontend: 'telegram',
-      model: 'opus',
-      modelDisplay: 'Opus 4.8',
-      botDisplayName: 'Claudius',
-      timezone: '',
-      pulse: false,
-      pulseIntervalMs: 300000,
-      heartbeat: true,
-      heartbeatIntervalMinutes: 60,
-      dream: false,
-      editable: [
-        'model',
-        'botDisplayName',
-        'timezone',
-        'pulse',
-        'heartbeat',
-        'dream',
-        'pulseIntervalMs',
-        'heartbeatIntervalMinutes',
-      ],
-      healthy: true,
-      uptimeMs: 176400000,
-      sessions: 63,
-      messages: 43,
-      memoryMb: 168,
-    );
+    state.appConfig = _demoConfig;
     addTearDown(state.dispose);
     await tester.pumpWidget(_app(SettingsScreen(state: state)));
     await _shoot(tester, 'phone_settings');
+  });
+
+  // The wide settings layout had no gallery case at all, which is exactly how
+  // it went unnoticed that ten stacked cards were rendering into a 560px
+  // ribbon on a 1440px window. Both brightnesses, since the rail's
+  // selected-tile fill is one of the tints most likely to misread on white.
+  testWidgets('desktop · settings (section rail)', (tester) async {
+    _desktop(tester);
+    final state = _demoState(narrow: false);
+    state.appConfig = _demoConfig;
+    addTearDown(state.dispose);
+    await tester.pumpWidget(_app(SettingsScreen(state: state)));
+    await _shoot(tester, 'desktop_settings');
+  });
+
+  // Overview is the default chapter; Agent is the densest one, so it's the
+  // case that actually proves the two-column pane carries real content rather
+  // than one card and a lot of air.
+  testWidgets('desktop · settings (agent chapter)', (tester) async {
+    _desktop(tester);
+    final state = _demoState(narrow: false);
+    state.appConfig = _demoConfig;
+    addTearDown(state.dispose);
+    await tester.pumpWidget(_app(SettingsScreen(state: state)));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Agent'));
+    await _shoot(tester, 'desktop_settings_agent');
+  });
+
+  testWidgets('desktop · settings (section rail, light)', (tester) async {
+    _desktop(tester);
+    TalonTheme.mode.value = ThemeMode.light;
+    TalonTheme.apply(Brightness.light);
+    final state = _demoState(narrow: false);
+    state.appConfig = _demoConfig;
+    addTearDown(state.dispose);
+    await tester.pumpWidget(_app(SettingsScreen(state: state)));
+    await _shoot(tester, 'desktop_settings_light');
   });
 
   testWidgets('phone · plugins', (tester) async {
@@ -497,6 +538,45 @@ void main() {
     addTearDown(state.dispose);
     await tester.pumpWidget(_app(RootView(state: state)));
     await _shoot(tester, 'phone_chat_light');
+  });
+
+  // Cmd+K is bound in AppShell, so driving it through the real key binding
+  // (rather than calling openQuickSwitcher directly) also proves the binding
+  // still reaches the palette. Ctrl is the chord on the test platform.
+  testWidgets('desktop · command palette', (tester) async {
+    _desktop(tester);
+    final state = _demoState(narrow: false, select: 'c1');
+    addTearDown(state.dispose);
+    await tester.pumpWidget(_app(RootView(state: state)));
+    await tester.pump(const Duration(milliseconds: 300));
+    // CallbackShortcuts only sees keys bubbling from a focused descendant, and
+    // nothing in a freshly pumped tree holds focus — so the chord has to be
+    // typed at something. The composer is the field a real user would already
+    // be in, and it sits inside the same shortcuts scope.
+    await tester.tap(find.byType(TextField).last);
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await _shoot(tester, 'desktop_command_palette');
+  });
+
+  // The context pill used to be a tooltip-only dead end, so its figures were
+  // unreachable on touch. `c1` is seeded at 45% (see _chat), which is the
+  // healthy branch; the warn branch is a separate case so both palettes of the
+  // badge get eyes on them.
+  testWidgets('phone · context sheet', (tester) async {
+    _phone(tester);
+    final state = _demoState(narrow: true, select: 'c1');
+    addTearDown(state.dispose);
+    await tester.pumpWidget(_app(RootView(state: state)));
+    // On the narrow layout the conversation is a pushed route, not a pane, so
+    // the header (and its pill) only exist once that route has settled — a
+    // single short pump lands mid-transition and finds nothing to tap.
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('45%'));
+    await _shoot(tester, 'phone_context_sheet');
   });
 
   testWidgets('desktop · two-pane', (tester) async {
