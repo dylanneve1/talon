@@ -15,7 +15,7 @@
 
 import { describe, it, expect, afterEach } from "vitest";
 import http from "node:http";
-import { BridgeServer } from "../frontend/native/server.ts";
+import { BridgeServer } from "../frontend/native/server.js";
 
 type Res = { status: number; acao: string | undefined };
 
@@ -57,7 +57,12 @@ let server: BridgeServer | null = null;
 
 async function start(opts: Record<string, unknown> = {}): Promise<number> {
   server = new BridgeServer(
-    { host: "127.0.0.1", port: 0, ...opts },
+    {
+      host: "127.0.0.1",
+      port: 0,
+      startedAt: new Date(0).toISOString(),
+      ...opts,
+    },
     handlers as never,
   );
   await server.start();
