@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/login.ts",
+    "src/__tests__/**/*.test.ts",
+    "src/__tests__/fixtures/test-mcp-server.ts",
+    "src/__tests__/integration/stub-claude/fake-claude.mjs",
+    "src/__tests__/integration/stub-codex/fake-codex.mjs",
+    "src/__tests__/integration/stub-harness/**",
+    "src/__tests__/integration/stub-openai/**",
+    "src/__tests__/integration/telegram-live/discover-chat.mjs",
+    "scripts/**",
+    "native/**/build.mjs",
+    "native/scheduler-core/embed.mjs",
+    ".github/scripts/**"
+  ],
+  "project": ["src/**/*.ts", "scripts/**/*.ts"],
+  "ignoreDependencies": ["@playwright/mcp", "@brave/brave-search-mcp-server"]
+}
