@@ -374,7 +374,7 @@ class _LogsScreenState extends State<LogsScreen> {
         controller: _scroll,
         child: ListView.builder(
           controller: _scroll,
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+          padding: EdgeInsets.fromLTRB(12, 0, 12, 16 + navInset(context)),
           physics: const AlwaysScrollableScrollPhysics(),
           itemCount: rows.length,
           itemBuilder: (context, i) => _row(rows[i], i),

@@ -179,7 +179,8 @@ class _ModelSheetState extends State<_ModelSheet> {
                             style: TextStyle(color: TalonColors.textFaint)))
                     : ListView.builder(
                         controller: scroll,
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
+                        padding: EdgeInsets.fromLTRB(
+                            12, 0, 12, 20 + navInset(context)),
                         itemCount: models.length,
                         itemBuilder: (context, i) {
                           final m = models[i];

@@ -171,7 +171,8 @@ class _ExtensionListScreenState<T> extends State<_ExtensionListScreen<T>> {
             onRefresh: _load,
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(20),
+              padding:
+                  EdgeInsets.fromLTRB(20, 20, 20, 20 + navInset(context)),
               child: Align(
                 alignment: Alignment.topCenter,
                 child: ConstrainedBox(

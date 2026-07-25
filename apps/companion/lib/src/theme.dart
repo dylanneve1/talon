@@ -322,6 +322,17 @@ class TalonDensity {
   static double get tap => touch ? 48 : 36;
 }
 
+/// The system navigation bar's height at the bottom of this screen (0 where
+/// there isn't one — desktop, or a device with hardware keys).
+///
+/// Phone surfaces run edge-to-edge: content scrolls UNDER the bar, because
+/// Android draws it transparent over the app and stopping short of it leaves
+/// a dead band. The cost is that every scrolling surface has to add this to
+/// its bottom padding, so the last row can still be scrolled clear of the
+/// gesture pill. Uses `padding` rather than `viewPadding` on purpose: with
+/// the keyboard up the bar is behind it, and the inset is genuinely gone.
+double navInset(BuildContext context) => MediaQuery.of(context).padding.bottom;
+
 /// Spacing scale — an 8pt grid (with a 2/4 half-step for tight insets). Snap
 /// every padding/gap to one of these so the layout reads as a system rather
 /// than a pile of hand-tuned magic numbers.

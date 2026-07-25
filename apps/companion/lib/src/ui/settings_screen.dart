@@ -491,7 +491,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ? _masterDetail()
                     : Center(
                         child: SingleChildScrollView(
-                          padding: const EdgeInsets.all(20),
+                          // Bottom inset: this screen runs under the
+                          // navigation bar like every other phone surface.
+                          padding: EdgeInsets.fromLTRB(
+                              20, 20, 20, 20 + navInset(context)),
                           child: ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 560),
                             // Status, Appearance, diagnostics, and connection
@@ -741,7 +744,8 @@ class _SettingsScreenState extends State<SettingsScreen>
           // inheriting the previous chapter's offset, and remounting the
           // subtree is also what re-plays the pane entrance below.
           key: ValueKey('settings-pane-${section.title}'),
-          padding: const EdgeInsets.only(bottom: TalonSpace.xl),
+          padding:
+              EdgeInsets.only(bottom: TalonSpace.xl + navInset(context)),
           child: EntranceFx(
             enabled: !reduceMotion(context),
             // A whisper from the right — enough to read as a pane swap, not
@@ -2891,7 +2895,7 @@ class _ModelRow extends StatelessWidget {
       builder: (ctx) => SizedBox(
         height: MediaQuery.of(ctx).size.height * 0.7,
         child: ListView(
-          padding: const EdgeInsets.all(12),
+          padding: EdgeInsets.fromLTRB(12, 12, 12, 12 + navInset(ctx)),
           children: [
             for (final m in state.models)
               ListTile(

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
+import '../services/haptics.dart';
 import '../theme.dart';
 
 /// Result of an image upload: the relative render path + on-disk path.
@@ -123,6 +124,10 @@ class _ComposerState extends State<Composer> {
     if ((text.isEmpty && bytes == null) || !widget.enabled || _uploading) {
       return;
     }
+    // A send is the one irreversible thing this control does: acknowledge it
+    // in the hand, the same way the FAB and long-presses do. Silent on
+    // desktop (the engine no-ops) and gated by the Settings haptics switch.
+    Haptics.selection();
     final name = _pendingName ?? 'image.jpg';
     _controller.clear();
     setState(() {
