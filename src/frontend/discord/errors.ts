@@ -18,13 +18,24 @@ type DiscordAPIErrorLike = {
   rawError?: { code?: number };
 };
 
-/** Extract numeric JSON error code, if this looks like a DiscordAPIError. */
-function discordErrorCode(err: unknown): number | null {
-  if (!err || typeof err !== "object") return null;
-  const e = err as DiscordAPIErrorLike;
+/**
+ * Extract numeric JSON error code, if this looks like a DiscordAPIError.
+ *
+ * Walks the `cause` chain, which is what makes this work at all on the
+ * primary send paths. Those run inside `withRetry`, which rethrows
+ * `classify(err)` — a TalonError carrying only the message, with the
+ * DiscordAPIError demoted to `cause`. A shallow look therefore found no
+ * code and every curated message below was dead on `send_message`,
+ * `reply_to`, `send_message_with_buttons`, the media sends, and
+ * forward/copy: the agent got a bare "Missing Permissions" instead of
+ * being told which permission and on what.
+ */
+function discordErrorCode(err: unknown, depth = 0): number | null {
+  if (depth > 5 || !err || typeof err !== "object") return null;
+  const e = err as DiscordAPIErrorLike & { cause?: unknown };
   if (typeof e.code === "number") return e.code;
   if (typeof e.rawError?.code === "number") return e.rawError.code;
-  return null;
+  return discordErrorCode(e.cause, depth + 1);
 }
 
 /**
