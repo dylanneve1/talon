@@ -371,6 +371,14 @@ Future<void> _shoot(WidgetTester tester, String name) async {
 void _phone(WidgetTester tester) {
   tester.view.physicalSize = const Size(1080, 2280);
   tester.view.devicePixelRatio = 2.75;
+  // Real system insets (status bar + gesture navigation bar), in physical
+  // pixels. Without them the gallery renders a phone that has neither, which
+  // is exactly the case where "does the list run under the nav bar?" and
+  // "does the FAB clear it?" can't be seen.
+  tester.view.padding =
+      const FakeViewPadding(top: 132, bottom: 66);
+  tester.view.viewPadding =
+      const FakeViewPadding(top: 132, bottom: 66);
   // Widget tests force TargetPlatform.android, so touch density is already
   // what this shot would get on a real phone — pin it anyway so the gallery
   // never depends on that default.

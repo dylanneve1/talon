@@ -211,25 +211,44 @@ class _SidebarState extends State<Sidebar> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Padding(
+                  // Left edge shared with the search field and the tiles;
+                  // right edge 0 so the settings target runs to the screen
+                  // edge and its glyph lands on the same 12px margin as
+                  // everything else in the column.
                   padding: const EdgeInsets.fromLTRB(
-                      TalonSpace.lg, TalonSpace.sm, TalonSpace.sm, 0),
+                      TalonSpace.md, TalonSpace.sm, 0, 0),
                   child: Row(
                     children: [
                       const BrandMark(size: 32),
                       const SizedBox(width: TalonSpace.md),
-                      // Weighted over the trailing gap so a longer bot name
-                      // ("Claudius") gets the room before the spacer does.
-                      Flexible(flex: 4, child: _wordmark(size: 20)),
+                      // Identity + status share ONE expanded slot, so all the
+                      // slack lives inside it and the settings button stays
+                      // pinned to the right edge. (A Flexible wordmark beside
+                      // a Spacer split that slack between them, which parked
+                      // the gear short of the edge — and the longer the bot
+                      // name, the further short.)
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Flexible(child: _wordmark(size: 20)),
+                            const SizedBox(width: TalonSpace.sm),
+                            StatusPill(state: widget.state, compact: true),
+                          ],
+                        ),
+                      ),
                       const SizedBox(width: TalonSpace.sm),
-                      StatusPill(state: widget.state, compact: true),
-                      const Spacer(),
                       IconButton(
                         tooltip: 'Settings',
                         onPressed: () => _openSettings(context),
                         iconSize: 24,
-                        constraints: BoxConstraints(
-                          minWidth: TalonDensity.tap,
-                          minHeight: TalonDensity.tap,
+                        // A full 48dp target that ends at the screen edge:
+                        // zero padding + fixed box, so the glyph itself sits
+                        // 12px in rather than the ~20px the default padding
+                        // pushed it to.
+                        padding: EdgeInsets.zero,
+                        constraints: BoxConstraints.tightFor(
+                          width: TalonDensity.tap,
+                          height: TalonDensity.tap,
                         ),
                         icon: Icon(Icons.settings_outlined,
                             color: TalonColors.textDim),
@@ -244,8 +263,8 @@ class _SidebarState extends State<Sidebar> {
                 ),
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: TalonSpace.sm),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: TalonSpace.xs),
                     child: _groupedList(context),
                   ),
                 ),
@@ -253,7 +272,11 @@ class _SidebarState extends State<Sidebar> {
             ),
             Positioned(
               right: TalonSpace.lg,
-              bottom: TalonSpace.lg,
+              // Above the navigation bar the list scrolls under. Uses
+              // padding (not viewPadding) so it rides the keyboard's edge
+              // when the search field is focused instead of hovering an
+              // inset that is no longer there.
+              bottom: TalonSpace.lg + MediaQuery.of(context).padding.bottom,
               child: _NewChatFab(
                 extended: _fabExtended,
                 onTap: widget.state.newChat,
@@ -324,9 +347,11 @@ class _SidebarState extends State<Sidebar> {
     final reduceMotion = MediaQuery.of(context).disableAnimations;
 
     final list = ListView(
-      // Room under the last tile for the floating action button.
+      // Room under the last tile for the floating action button AND for the
+      // navigation bar the list now scrolls beneath — without it the last
+      // chat would come to rest under the gesture pill.
       padding: widget.mobile
-          ? const EdgeInsets.only(bottom: 84)
+          ? EdgeInsets.only(bottom: 84 + MediaQuery.of(context).padding.bottom)
           : EdgeInsets.zero,
       children: [
         for (final group in groups) ...[

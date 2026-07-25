@@ -72,6 +72,52 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
+  testWidgets('the list runs under the navigation bar, the FAB clears it',
+      (tester) async {
+    // Android draws the navigation bar transparently over the app, so the
+    // chat list should scroll *behind* it rather than stopping at a solid
+    // band — while every target stays above it.
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.padding = const FakeViewPadding(top: 24, bottom: 48);
+    tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 48);
+    addTearDown(tester.view.reset);
+
+    final state = await seededState();
+    addTearDown(state.dispose);
+    await tester.pumpWidget(host(AppShell(state: state)));
+    await tester.pumpAndSettle();
+
+    // The scroll view itself reaches the bottom of the screen…
+    final listRect = tester.getRect(find.byType(ListView));
+    expect(listRect.bottom, 800);
+    // …and pads its content clear of both the nav bar and the FAB.
+    final list = tester.widget<ListView>(find.byType(ListView));
+    expect(list.padding, isNotNull);
+    expect((list.padding as EdgeInsets).bottom, greaterThanOrEqualTo(48 + 60));
+    // The button is a target, so it sits above the bar, not under it.
+    expect(tester.getRect(find.text('New chat')).bottom, lessThan(800 - 48));
+
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('the settings button is pinned to the right edge',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final state = await seededState();
+    addTearDown(state.dispose);
+    await tester.pumpWidget(host(AppShell(state: state)));
+    await tester.pumpAndSettle();
+
+    // Regression: identity + status shared the row's slack with a Spacer,
+    // which parked the gear well short of the edge.
+    final gear = tester.getRect(find.byIcon(Icons.settings_outlined));
+    expect(gear.right, greaterThan(400 - 20));
+
+    await tester.pump(const Duration(seconds: 3));
+  });
+
   testWidgets('empty phone home explains the floating button', (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
