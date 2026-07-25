@@ -7,6 +7,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'bridge_client.dart';
 import 'log.dart';
 import 'mesh_service.dart';
+import 'message_notifications.dart';
 import 'prefs.dart';
 
 /// Android background mesh: the foreground service owns the ENTIRE mesh loop.
@@ -96,10 +97,12 @@ class MeshBackgroundRunner {
     final client = BridgeClient(prefs.connection);
     _client = client;
     _mesh = MeshService(prefs, client, onRegistered: _stampAlive);
+    _seedChatTitles(prefs);
     // BridgeClient surfaces stream drops as errors on [events]; the mesh's
-    // own subscription only consumes data events, so watch errors here.
+    // own subscription only consumes *device command* events, so this one
+    // watches errors (reconnect) and the chat events the mesh ignores.
     _drops = client.events.listen(
-      (_) {},
+      _onEvent,
       onError: (Object e) {
         if (_disposed) return;
         _connected = false;
@@ -108,6 +111,96 @@ class MeshBackgroundRunner {
     );
     await _startMesh();
     await _connect();
+  }
+
+  /// Chat id → title, so a notification can be headed by the conversation's
+  /// name instead of an opaque id. Seeded from the UI's offline snapshot and
+  /// kept current from the event stream.
+  final Map<String, String> _chatTitles = {};
+
+  void _seedChatTitles(Prefs prefs) {
+    try {
+      final chats = prefs.snapshot?['chats'];
+      if (chats is! List) return;
+      for (final c in chats) {
+        if (c is! Map) continue;
+        final id = c['id'];
+        final title = c['title'];
+        if (id is String && title is String) _chatTitles[id] = title;
+      }
+    } catch (e) {
+      AppLog.warn('mesh_bg', 'chat title seed failed', e);
+    }
+  }
+
+  /// Chat events ride the *same* SSE stream as device commands (the daemon
+  /// broadcasts them to every client, device-claiming or not) but MeshService
+  /// only routes `device_command`. Without this handler an assistant reply
+  /// arrives on the device with the UI dead and is dropped on the floor.
+  void _onEvent(Map<String, dynamic> e) {
+    final kind = e['kind'];
+    switch (kind) {
+      case 'hello':
+        final chats = e['chats'];
+        if (chats is List) {
+          for (final c in chats) {
+            if (c is Map && c['id'] is String && c['title'] is String) {
+              _chatTitles[c['id'] as String] = c['title'] as String;
+            }
+          }
+        }
+        return;
+      case 'chat_created':
+      case 'chat_updated':
+        final chat = e['chat'];
+        if (chat is Map && chat['id'] is String && chat['title'] is String) {
+          _chatTitles[chat['id'] as String] = chat['title'] as String;
+        }
+        return;
+      case 'chat_deleted':
+        final id = e['chatId'];
+        if (id is String) _chatTitles.remove(id);
+        return;
+      case 'message':
+        unawaited(_maybeNotify(e));
+        return;
+      default:
+        return;
+    }
+  }
+
+  /// Notify on the canonical assistant `message` — not on `delta` (a firehose)
+  /// and not on `turn_end` (which carries stats, no text). One message event is
+  /// emitted per finished assistant reply, which is exactly the granularity a
+  /// notification wants.
+  Future<void> _maybeNotify(Map<String, dynamic> e) async {
+    if (_disposed || !MessageNotifications.supported) return;
+    final chatId = e['chatId'];
+    final msg = e['message'];
+    if (chatId is! String || msg is! Map) return;
+    if (msg['role'] != 'assistant') return;
+    final text = msg['text'];
+    if (text is! String || text.trim().isEmpty) return;
+
+    final prefs = _prefs;
+    if (prefs == null) return;
+    // Both flags are written by the UI isolate, which has its own
+    // SharedPreferences cache — reload or we read a stale snapshot of a
+    // setting the user just changed (or a foreground state from minutes ago).
+    try {
+      await prefs.reload();
+    } catch (_) {
+      // A failed reload just means slightly stale flags; still worth notifying.
+    }
+    if (!prefs.messageNotifications) return;
+    // Don't notify for a reply the user is watching arrive.
+    if (prefs.uiForeground) return;
+
+    await MessageNotifications.showMessage(
+      chatId: chatId,
+      title: _chatTitles[chatId] ?? 'Talon',
+      body: text,
+    );
   }
 
   /// (Re)start the mesh loop: registers with the daemon and (re)subscribes to

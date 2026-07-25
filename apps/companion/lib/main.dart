@@ -7,6 +7,7 @@ import 'src/services/bridge_trust.dart';
 import 'src/services/dynamic_accent.dart';
 import 'src/services/haptics.dart';
 import 'src/services/mesh_background.dart';
+import 'src/services/message_notifications.dart';
 import 'src/services/prefs.dart';
 import 'src/services/voice.dart';
 import 'src/services/windows_tray.dart';
@@ -63,6 +64,12 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // The background mesh isolate reads this flag to decide whether a reply
+    // needs a notification. We are on screen right now by definition.
+    unawaited(widget.state.prefs.setUiForeground(true));
+    unawaited(
+      MessageNotifications.ensureInitialized(onSelect: _openChatFromTap),
+    );
     // Theme-mode / accent changes (Settings) re-resolve the palette and
     // rebuild; text-scale changes rebuild to re-apply the root TextScaler.
     TalonTheme.mode.addListener(_onThemeChanged);
@@ -108,9 +115,28 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
     _navigatorKey.currentState?.push(VoiceModeScreen.route(state));
   }
 
+  /// Tapped a message notification: open that conversation.
+  Future<void> _openChatFromTap(String chatId) async {
+    final state = widget.state;
+    if (!state.prefs.onboarded) return;
+    await state.selectChat(chatId);
+    await MessageNotifications.clearChat(chatId);
+  }
+
+  /// Resume does two jobs: mirror foreground state into prefs for the
+  /// background isolate (which shares no memory with us and would otherwise
+  /// notify for replies the user is watching stream in), and re-read the
+  /// platform accent in case the wallpaper changed while we were away.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refreshDynamicAccent();
+    final foreground = state == AppLifecycleState.resumed;
+    unawaited(widget.state.prefs.setUiForeground(foreground));
+    if (foreground) {
+      final chatId = widget.state.selectedChatId;
+      // Anything waiting in the shade for the chat now on screen is read.
+      if (chatId != null) unawaited(MessageNotifications.clearChat(chatId));
+      unawaited(_refreshDynamicAccent());
+    }
   }
 
   /// Pull the platform accent into the palette while "Wallpaper" is the

@@ -148,6 +148,28 @@ class Prefs {
   Future<void> setMeshBgStartedAt(int epochMs) =>
       _sp.setInt(_kMeshBgStartedAt, epochMs);
 
+  // ── Notifications ─────────────────────────────────────────────────────────
+
+  static const _kMessageNotifications = 'notify.messages.v1';
+  static const _kUiForeground = 'ui.foreground.v1';
+
+  /// Post a system notification when an assistant reply lands while the app is
+  /// backgrounded. Default **off**: it needs the runtime POST_NOTIFICATIONS
+  /// grant and it is the kind of thing a user should opt into, not discover.
+  bool get messageNotifications => _sp.getBool(_kMessageNotifications) ?? false;
+  Future<void> setMessageNotifications(bool v) =>
+      _sp.setBool(_kMessageNotifications, v);
+
+  /// Whether the UI isolate currently has the app in front of the user.
+  ///
+  /// Written by the UI on every [AppLifecycleState] change and read by the
+  /// background mesh isolate, which has no other way to know: the two isolates
+  /// share no memory, so SharedPreferences is the cheap cross-isolate flag.
+  /// Without it you get a notification for a reply you are actively watching
+  /// stream in.
+  bool get uiForeground => _sp.getBool(_kUiForeground) ?? false;
+  Future<void> setUiForeground(bool v) => _sp.setBool(_kUiForeground, v);
+
   // ── Read markers ──────────────────────────────────────────────────────────
 
   Map<String, int> _decodeLastRead() {

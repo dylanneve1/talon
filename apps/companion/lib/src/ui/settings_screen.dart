@@ -11,6 +11,7 @@ import '../models/bridge_models.dart';
 import '../services/autostart.dart';
 import '../services/dynamic_accent.dart';
 import '../services/haptics.dart';
+import '../services/message_notifications.dart';
 import '../services/log.dart';
 import '../services/mesh_background.dart';
 import '../services/voice.dart';
@@ -1525,6 +1526,15 @@ class _SettingsScreenState extends State<SettingsScreen>
                 if (v) Haptics.selection();
               },
             ),
+            if (MessageNotifications.supported) ...[
+              const SizedBox(height: 6),
+              _switchRow(
+                'Message notifications',
+                'Notify when a reply arrives while Talon is in the background',
+                widget.state.prefs.messageNotifications,
+                _setMessageNotifications,
+              ),
+            ],
           ],
         ],
       ),
@@ -1538,6 +1548,25 @@ class _SettingsScreenState extends State<SettingsScreen>
     final seed = _wallpaperAccent;
     if (seed == null) return TalonColors.surfaceHi;
     return TalonAccents.derive(TalonTheme.palette, seed).accent;
+  }
+
+  /// Enabling asks for POST_NOTIFICATIONS first — a toggle that reads "on"
+  /// while the OS silently drops every notification is worse than no toggle.
+  Future<void> _setMessageNotifications(bool v) async {
+    Haptics.selection();
+    if (v && !await MessageNotifications.requestPermission()) {
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Notifications are blocked in Android settings'),
+        ),
+      );
+      return;
+    }
+    await widget.state.prefs.setMessageNotifications(v);
+    if (!mounted) return;
+    setState(() {});
   }
 
   void _setAccent(Color? seed) {
