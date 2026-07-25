@@ -40,9 +40,12 @@ export type ScheduledMessage = {
   /** Epoch ms when the message should be sent. */
   fireAt: number;
   createdAt: number;
-  /** Telegram: numeric message id to reply to. */
-  replyTo?: number;
-  /** Telegram: inline keyboard rows. */
+  /**
+   * Message id to reply to, in the owning frontend's native shape:
+   * numeric for Telegram, a snowflake string for Discord.
+   */
+  replyTo?: number | string;
+  /** Inline keyboard / button rows to replay at fire time. */
   rows?: ScheduledButtonRow[];
 };
 

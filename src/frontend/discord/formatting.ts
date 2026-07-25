@@ -58,12 +58,27 @@ export function suppressMentions(text: string): string {
 }
 
 /**
- * Slice a string to `max` user-visible characters without splitting multi-byte
- * code points (emoji, CJK) on a UTF-16 surrogate boundary. Used for Discord
- * `customId`, `label`, `value`, etc. where Discord measures char count.
+ * Slice a string so it satisfies a Discord length limit, without splitting a
+ * surrogate pair. Used for `customId`, `label`, `value`, etc.
+ *
+ * `max` counts UTF-16 code units, because that is what Discord (and
+ * discord.js's validators, which call `String.length`) measure. Counting
+ * code points instead — `Array.from(text).slice(0, max)` — silently
+ * overshoots for any astral character: 80 code points of emoji is 160 code
+ * units, so the guard passed and discord.js then threw
+ * `ExpectedConstraintError: Invalid string length`, taking the whole message
+ * with it. The guard worked precisely when it wasn't needed and failed when
+ * it was.
  */
 export function safeSlice(text: string, max: number): string {
-  return Array.from(text).slice(0, max).join("");
+  if (text.length <= max) return text;
+  let out = "";
+  // Iterating a string yields whole code points, so a pair is never split.
+  for (const char of text) {
+    if (out.length + char.length > max) break;
+    out += char;
+  }
+  return out;
 }
 
 /** Simple HTML-style escape used when displaying raw text inside code blocks. */

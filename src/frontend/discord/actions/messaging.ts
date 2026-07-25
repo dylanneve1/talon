@@ -6,7 +6,11 @@
 import type { Client } from "discord.js";
 import { withRetry } from "../../../core/engine/gateway.js";
 import { sendChunked } from "../handlers/index.js";
-import { suppressMentions, DISCORD_MAX_TEXT } from "../formatting.js";
+import {
+  suppressMentions,
+  splitMessage,
+  DISCORD_MAX_TEXT,
+} from "../formatting.js";
 import { log, logError } from "../../../util/log.js";
 import {
   saveScheduled,
@@ -24,6 +28,41 @@ import type { DiscordActionHandlers } from "./types.js";
 /** Longest schedulable delay: 24h. Timers re-arm from the store on boot. */
 const MAX_DELAY_SEC = 24 * 60 * 60;
 
+/**
+ * Deliver one scheduled entry, replaying whatever it was scheduled with.
+ *
+ * The `send` tool documents that "buttons and reply threading survive the
+ * delay — the schedule handler replays them at fire time". Discord's path
+ * used to call `sendChunked(c, entry.text)` and drop both, so a scheduled
+ * message with buttons arrived bare while the caller had been told ok:true.
+ */
+async function fireScheduled(
+  channel: Awaited<ReturnType<typeof resolveChannel>>,
+  entry: ScheduledMessage,
+): Promise<void> {
+  if (!channel) return;
+  const replyTo =
+    entry.replyTo !== undefined ? String(entry.replyTo) : undefined;
+  if (!entry.rows || entry.rows.length === 0) {
+    await sendChunked(channel, entry.text, replyTo);
+    return;
+  }
+  const components = buildButtonRows(entry.rows);
+  const chunks = splitMessage(suppressMentions(entry.text), DISCORD_MAX_TEXT);
+  for (let i = 0; i < chunks.length; i++) {
+    if (!channel.isSendable()) return;
+    const last = i === chunks.length - 1;
+    await channel.send({
+      content: chunks[i],
+      ...(last ? { components } : {}),
+      allowedMentions: { parse: [] },
+      ...(i === 0 && replyTo
+        ? { reply: { messageReference: replyTo, failIfNotExists: false } }
+        : {}),
+    });
+  }
+}
+
 /** Arm a timer for a stored entry; fires, then cleans up store + map. */
 function armScheduled(
   client: Client,
@@ -34,7 +73,7 @@ function armScheduled(
   const timer = setTimeout(async () => {
     try {
       const c = await resolveChannel(client, Number(entry.chatId));
-      if (c) await sendChunked(c, entry.text);
+      if (c) await fireScheduled(c, entry);
     } catch (err) {
       logError(
         "discord",
@@ -189,25 +228,44 @@ export const messagingHandlers: DiscordActionHandlers = {
       }>
     >;
     gateway.incrementMessages(chatId);
-    const components = buildButtonRows(rows);
-    const safe = suppressMentions(text).slice(0, DISCORD_MAX_TEXT);
     if (!channel!.isSendable())
       return { ok: false, error: "Channel not sendable" };
     return tryAction("send_message_with_buttons", async () => {
-      const sent = await withRetry(
-        () =>
-          channel!.send({
-            content: safe,
-            components,
-            allowedMentions: { parse: [] },
-          }) as Promise<{ id: string }>,
-      );
-      return { ok: true, message_id: sent.id };
+      // buildButtonRows is inside tryAction on purpose: it can still reject a
+      // row, and escaping here would bypass the action's error mapping and
+      // lose the text as well as the buttons.
+      const components = buildButtonRows(rows);
+      // Chunk rather than slice. `.slice(0, 2000)` dropped everything past
+      // the limit mid-word and still answered ok:true, so the model never
+      // learned its reply had been cut — while the SAME text without buttons
+      // went through sendChunked and arrived whole.
+      const chunks = splitMessage(suppressMentions(text), DISCORD_MAX_TEXT);
+      const ids: string[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        const last = i === chunks.length - 1;
+        const sent = await withRetry(
+          () =>
+            channel!.send({
+              content: chunks[i],
+              // Buttons belong on the final chunk: they act on the whole
+              // message, and Discord would render a set per chunk otherwise.
+              ...(last ? { components } : {}),
+              allowedMentions: { parse: [] },
+            }) as Promise<{ id: string }>,
+        );
+        ids.push(sent.id);
+      }
+      return { ok: true, message_id: ids[0], message_ids: ids };
     });
   },
 
   schedule_message: (body, chatId, { client, scheduledMessages }) => {
     const text = String(body.text ?? "");
+    const rows = body.rows as ScheduledMessage["rows"];
+    const replyTo =
+      typeof body.reply_to_message_id === "string"
+        ? body.reply_to_message_id
+        : undefined;
     // NaN (e.g. delay_seconds: "5m") must fall back to the default, not
     // propagate: setTimeout(fn, NaN) fires immediately.
     const requested = Number(body.delay_seconds ?? 60);
@@ -222,6 +280,8 @@ export const messagingHandlers: DiscordActionHandlers = {
       text,
       fireAt: Date.now() + delaySec * 1000,
       createdAt: Date.now(),
+      replyTo,
+      rows,
     };
     // Persist before arming: if we crash between the two, the restore
     // path delivers it; the reverse order could lose it forever.
