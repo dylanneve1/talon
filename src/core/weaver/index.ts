@@ -1,13 +1,9 @@
-export { Thread, type Warp, type ThreadSnapshot } from "./thread.js";
-export { ThreadSession, type SessionSummary } from "./thread-session.js";
+export { Thread, type ThreadSnapshot } from "./thread.js";
+
 export { Loom, type ContextRegistry } from "./loom.js";
-export { carryTurnEvents, type EventSink } from "./shuttle.js";
-export { startTypingLoop, TYPING_REFRESH_MS } from "./typing-loop.js";
-export {
-  resolveWarp,
-  type WarpResolution,
-  type WarpResolverDeps,
-} from "./warp-resolver.js";
+export { carryTurnEvents } from "./shuttle.js";
+export { startTypingLoop } from "./typing-loop.js";
+export { resolveWarp } from "./warp-resolver.js";
 export {
   Weaver,
   getActiveLoom,

@@ -35,27 +35,8 @@ import { createProcMount } from "./mounts/proc.js";
 import { Vfs } from "./vfs.js";
 
 export { Vfs } from "./vfs.js";
-export { createFileMount } from "./mounts/files.js";
-export { createProcMount, type ProcMountDeps } from "./mounts/proc.js";
-export { createPluginsMount, type PluginView } from "./mounts/plugins.js";
-export { syncNamespaceDir, type NsDirSync } from "./nsdir.js";
-export {
-  isNamespaceFsMounted,
-  mountNamespaceFs,
-  namespaceFsStatus,
-  serveNamespaceRequest,
-  unmountNamespaceFs,
-  type FuseStatus,
-  type MountOptions,
-} from "./fusefs.js";
-export type {
-  VfsErrorCode,
-  VfsMount,
-  VfsNodeKind,
-  VfsResult,
-  VfsStat,
-} from "./types.js";
-export { VFS_MAX_READ_BYTES, vfsError, vfsOk } from "./types.js";
+
+export { mountNamespaceFs, unmountNamespaceFs } from "./fusefs.js";
 
 function pluginViews(): PluginView[] {
   const modules: PluginView[] = registry.all.map(({ plugin, path }) => ({

@@ -13,15 +13,6 @@
  * including the `_deps` test seam.
  */
 
-export type {
-  PluginPathEntry,
-  PluginMcpEntry,
-  PluginEntry,
-  TalonPlugin,
-  LoadedPlugin,
-  McpServerConfig,
-} from "./types.js";
-export { isPathPlugin, isMcpPlugin } from "./types.js";
 export { _deps } from "./registry.js";
 export {
   loadPlugins,

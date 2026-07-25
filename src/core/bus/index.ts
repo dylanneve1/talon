@@ -9,12 +9,4 @@
  */
 
 export { TalonBus, bus } from "./bus.js";
-export type {
-  PublishedEvent,
-  TalonEvent,
-  TalonEventType,
-  TaskSettledEvent,
-  TaskStartedEvent,
-  TurnCompletedEvent,
-  TurnStartedEvent,
-} from "./events.js";
+export type { PublishedEvent, TalonEvent } from "./events.js";

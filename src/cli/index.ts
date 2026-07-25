@@ -38,14 +38,6 @@ import { mainMenu } from "./menu.js";
 
 export * from "./context.js";
 export * from "./config.js";
-export { runSetup } from "./setup.js";
-export { showStatus, formatUptime } from "./status.js";
-export { viewConfig } from "./config-view.js";
-export { tailLogs, formatLogLine } from "./logs.js";
-export { runDoctor } from "./doctor.js";
-export { startChat } from "./chat.js";
-export { daemonStart, daemonStop, daemonRestart } from "./daemon.js";
-export { mainMenu } from "./menu.js";
 
 /** Every dispatchable subcommand — the unknown-command suggester's vocabulary. */
 const CLI_COMMANDS = [
