@@ -18,6 +18,99 @@ import {
 import { sendText, toPositiveId } from "./shared.js";
 import { TELEGRAM_MAX_TEXT, type TelegramActionHandlers } from "./types.js";
 
+// ── Inline keyboards ─────────────────────────────────────────────────────────
+
+/**
+ * Telegram caps `callback_data` at 64 BYTES, not characters
+ * (https://core.telegram.org/bots/api#inlinekeyboardbutton). Exceeding it
+ * fails the whole sendMessage with BUTTON_DATA_INVALID — the message never
+ * arrives, buttons and all.
+ *
+ * Bytes rather than chars matters: a 21-character Japanese label is already
+ * over budget, so non-Latin keyboards break far sooner than English ones.
+ */
+const CALLBACK_DATA_MAX_BYTES = 64;
+
+type ButtonSpec = { text: string; url?: string; callback_data?: string };
+
+/** The two inline-button shapes this module emits. */
+type BuiltButton =
+  { text: string; url: string } | { text: string; callback_data: string };
+
+/** Byte length of `text` when UTF-8 encoded. */
+function utf8Bytes(text: string): number {
+  return Buffer.byteLength(text, "utf8");
+}
+
+/** Longest prefix of `text` that fits `maxBytes`, never splitting a code point. */
+function truncateUtf8(text: string, maxBytes: number): string {
+  if (utf8Bytes(text) <= maxBytes) return text;
+  let out = "";
+  let used = 0;
+  for (const char of text) {
+    const size = utf8Bytes(char);
+    if (used + size > maxBytes) break;
+    out += char;
+    used += size;
+  }
+  return out;
+}
+
+/**
+ * Resolve one button's callback data.
+ *
+ * An EXPLICIT `callback_data` is semantic — the model dispatches on the exact
+ * value it chose — so an over-long one is reported rather than truncated;
+ * handing the callback handler a different string than the model expects
+ * would be a silent behaviour change. The `text` fallback carries no such
+ * contract, so it is truncated to fit.
+ */
+function callbackDataFor(
+  btn: ButtonSpec,
+): { data: string } | { error: string } {
+  if (btn.callback_data !== undefined) {
+    const bytes = utf8Bytes(btn.callback_data);
+    if (bytes > CALLBACK_DATA_MAX_BYTES) {
+      return {
+        error:
+          `callback_data for button "${btn.text}" is ${bytes} bytes; ` +
+          `Telegram allows at most ${CALLBACK_DATA_MAX_BYTES}. Use a short ` +
+          `token (e.g. "opt_a") and keep the wording in the button text.`,
+      };
+    }
+    return { data: btn.callback_data };
+  }
+  return { data: truncateUtf8(btn.text, CALLBACK_DATA_MAX_BYTES) };
+}
+
+/**
+ * Build an inline keyboard from button rows, enforcing the callback_data
+ * cap. Returns an error message instead of a keyboard when the model
+ * supplied explicit data that cannot be sent.
+ *
+ * Exported as a unit seam — every button path in this module routes
+ * through it, so the cap is testable without a live Bot.
+ */
+export function buildInlineKeyboard(
+  rows: ButtonSpec[][],
+): { keyboard: BuiltButton[][] } | { error: string } {
+  const keyboard: BuiltButton[][] = [];
+  for (const row of rows) {
+    const built: BuiltButton[] = [];
+    for (const btn of row) {
+      if (btn.url) {
+        built.push({ text: btn.text, url: btn.url });
+        continue;
+      }
+      const resolved = callbackDataFor(btn);
+      if ("error" in resolved) return { error: resolved.error };
+      built.push({ text: btn.text, callback_data: resolved.data });
+    }
+    keyboard.push(built);
+  }
+  return { keyboard };
+}
+
 // ── Scheduled sends (persistent) ─────────────────────────────────────────────
 
 /** Longest schedulable delay: 24h. Timers re-arm from the store on boot. */
@@ -27,13 +120,18 @@ const MAX_DELAY_SEC = 24 * 60 * 60;
 async function fireScheduled(bot: Bot, entry: ScheduledMessage): Promise<void> {
   const chatId = Number(entry.chatId);
   if (entry.rows) {
-    const keyboard = entry.rows.map((row) =>
-      row.map((btn) =>
-        btn.url
-          ? { text: btn.text, url: btn.url }
-          : { text: btn.text, callback_data: btn.callback_data ?? btn.text },
-      ),
-    );
+    // Validated at schedule time; rebuilt here so entries persisted by an
+    // older build (or edited on disk) still can't fail the send.
+    const built = buildInlineKeyboard(entry.rows);
+    if ("error" in built) {
+      logWarn(
+        "bot",
+        `Scheduled message ${entry.id} has bad buttons: ${built.error}`,
+      );
+      await sendText(bot, chatId, entry.text, entry.replyTo);
+      return;
+    }
+    const keyboard = built.keyboard;
     await bot.api.sendMessage(chatId, markdownToTelegramHtml(entry.text), {
       parse_mode: "HTML",
       reply_markup: { inline_keyboard: keyboard },
@@ -211,20 +309,11 @@ export const messagingHandlers: TelegramActionHandlers = {
     if (text.length > TELEGRAM_MAX_TEXT)
       return { ok: false, error: `Text too long` };
     const html = markdownToTelegramHtml(text);
-    const rows = body.rows as Array<
-      Array<{ text: string; url?: string; callback_data?: string }>
-    >;
+    const rows = body.rows as ButtonSpec[][];
+    const built = buildInlineKeyboard(rows);
+    if ("error" in built) return { ok: false, error: built.error };
+    const keyboard = built.keyboard;
     gateway.incrementMessages(chatId);
-    const keyboard = rows.map((row) =>
-      row.map((btn) =>
-        btn.url
-          ? { text: btn.text, url: btn.url }
-          : {
-              text: btn.text,
-              callback_data: btn.callback_data ?? btn.text,
-            },
-      ),
-    );
     try {
       const sent = await bot.api.sendMessage(chatId, html, {
         parse_mode: "HTML",
@@ -243,6 +332,12 @@ export const messagingHandlers: TelegramActionHandlers = {
     const text = String(body.text ?? "");
     const replyTo = toPositiveId(body.reply_to_message_id);
     const rows = body.rows as ScheduledMessage["rows"];
+    // Validate buttons now rather than at fire time — a rejection minutes
+    // later, with the turn long over, is invisible to the model.
+    if (rows) {
+      const built = buildInlineKeyboard(rows);
+      if ("error" in built) return { ok: false, error: built.error };
+    }
     // NaN (e.g. delay_seconds: "5m") must fall back to the default, not
     // propagate: setTimeout(fn, NaN) fires immediately.
     const requested = Number(body.delay_seconds ?? 60);
