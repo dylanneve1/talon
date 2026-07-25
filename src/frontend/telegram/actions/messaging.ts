@@ -131,7 +131,7 @@ async function fireScheduled(bot: Bot, entry: ScheduledMessage): Promise<void> {
         "bot",
         `Scheduled message ${entry.id} has bad buttons: ${built.error}`,
       );
-      await sendText(bot, chatId, entry.text, entry.replyTo);
+      await sendText(bot, chatId, entry.text, replyTo);
       return;
     }
     const keyboard = built.keyboard;
