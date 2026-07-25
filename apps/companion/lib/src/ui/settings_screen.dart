@@ -88,6 +88,12 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool? _autostart;
   bool _autostartBusy = false;
 
+  /// The platform's own accent (Android's wallpaper palette / the desktop
+  /// accent colour), resolved once so the "Wallpaper" swatch can wear the
+  /// colour it would actually apply instead of a placeholder glyph. Null
+  /// while it's resolving, or where the platform has none.
+  Color? _wallpaperAccent;
+
   /// This app's own version, for the About card ('' until loaded).
   String _appVersion = '';
 
@@ -126,6 +132,11 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (Autostart.isSupported) {
       Autostart.isEnabled().then((v) {
         if (mounted) setState(() => _autostart = v);
+      });
+    }
+    if (DynamicAccent.supported) {
+      DynamicAccent.seed().then((seed) {
+        if (mounted && seed != null) setState(() => _wallpaperAccent = seed);
       });
     }
     PackageInfo.fromPlatform().then((info) {
@@ -1426,20 +1437,16 @@ class _SettingsScreenState extends State<SettingsScreen>
                 onTap: () => _setAccent(null),
               ),
               // Material You: match whatever colour the system is already
-              // wearing (Android 12+ wallpaper palette, desktop accent).
+              // wearing (Android 12+ wallpaper palette, desktop accent). The
+              // swatch wears that colour as soon as it resolves — a picture
+              // glyph on grey read as a broken thumbnail, and told you
+              // nothing about what you were about to pick. The sparkle is
+              // the same mark the voice picker uses for "automatic".
               if (DynamicAccent.supported)
                 _AccentSwatch(
                   tooltip: 'Wallpaper',
-                  color: dynamicAccent ? TalonColors.accent : null,
-                  gradient: dynamicAccent
-                      ? null
-                      : LinearGradient(
-                          colors: [
-                            TalonColors.surfaceHi,
-                            TalonColors.glassFill,
-                          ],
-                        ),
-                  icon: Icons.wallpaper_rounded,
+                  color: _wallpaperSwatchColor,
+                  icon: Icons.auto_awesome_rounded,
                   selected: dynamicAccent,
                   onTap: _useWallpaperAccent,
                 ),
@@ -1522,6 +1529,15 @@ class _SettingsScreenState extends State<SettingsScreen>
         ],
       ),
     );
+  }
+
+  /// What the Wallpaper swatch should paint: the accent the palette would
+  /// derive from the system colour (so the swatch predicts the result rather
+  /// than showing the raw seed), or a neutral while it resolves.
+  Color get _wallpaperSwatchColor {
+    final seed = _wallpaperAccent;
+    if (seed == null) return TalonColors.surfaceHi;
+    return TalonAccents.derive(TalonTheme.palette, seed).accent;
   }
 
   void _setAccent(Color? seed) {

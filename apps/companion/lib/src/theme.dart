@@ -154,12 +154,18 @@ class TalonAccents {
 
   /// Preset seeds. The derivation below adapts each one per brightness, so a
   /// single color works on both the near-black and paper-white canvases.
+  /// Nine of them, which — with the default, the system-colour swatch and the
+  /// custom picker — makes twelve tiles: a count that divides evenly by 2, 3,
+  /// 4 and 6, so the swatch grid lands on equal rows at every width instead of
+  /// leaving a hole in the last one. Fuchsia is also the one gap the ramp had:
+  /// rose sits at ~340°, violet at ~260°, and nothing lived between them.
   static const List<(String, Color)> presets = [
     ('Cyan', Color(0xFF38C8F0)),
     ('Emerald', Color(0xFF3ED598)),
     ('Lime', Color(0xFFA3E635)),
     ('Amber', Color(0xFFF5A524)),
     ('Rose', Color(0xFFFF5C8A)),
+    ('Fuchsia', Color(0xFFE879F9)),
     ('Violet', Color(0xFFA78BFA)),
     ('Flame', Color(0xFFFF7A59)),
     ('Graphite', Color(0xFF9BA3B5)),
