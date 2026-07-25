@@ -1205,14 +1205,22 @@ export function createNativeFrontend(
   const bridgeTls = nativeCfg.tls ?? !isLoopbackHost(bridgeHost);
   // Never serve the agent API to the network unauthenticated: a non-loopback
   // bind with no configured token gets a persistent auto-minted one instead.
+  // `?? ` alone would treat an empty string as a configured token and skip
+  // the mint, serving the LAN unauthenticated while looking configured —
+  // easy to hit from `"token": "${BRIDGE_TOKEN}"` with the var unset.
+  const configuredToken =
+    nativeCfg.token !== undefined && nativeCfg.token !== ""
+      ? nativeCfg.token
+      : undefined;
   const bridgeToken =
-    nativeCfg.token ??
+    configuredToken ??
     (isLoopbackHost(bridgeHost) ? undefined : loadOrCreateBridgeToken());
   const server = new BridgeServer(
     {
       host: bridgeHost,
       port: nativeCfg.port ?? 19880,
       token: bridgeToken,
+      allowedOrigins: nativeCfg.allowedOrigins,
       startedAt,
       ...(bridgeTls ? { tls: () => loadOrCreateBridgeTlsIdentity() } : {}),
     },

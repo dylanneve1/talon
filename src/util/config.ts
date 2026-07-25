@@ -174,6 +174,14 @@ const nativeConfigSchema = z
      */
     token: z.string().optional(),
     /**
+     * Origins allowed to call the bridge from a BROWSER. Native clients
+     * (Electron main, Flutter, curl, talon-node) send no Origin header and
+     * never need an entry here. Anything listed gets a matching
+     * Access-Control-Allow-Origin; everything else is refused 403, so a
+     * random web page cannot drive the agent API on the user's machine.
+     */
+    allowedOrigins: z.array(z.string().min(1)).optional(),
+    /**
      * Serve the bridge over TLS with a persistent self-signed certificate
      * (~/.talon/keys/); clients pin its SHA-256 fingerprint on first
      * connect. Defaults to true whenever `host` is not loopback, so remote

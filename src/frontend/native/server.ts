@@ -185,6 +185,9 @@ export class BridgeServer {
       host: string;
       port: number;
       token?: string;
+      /** Origins permitted to call the bridge from a browser. Empty by
+       *  default: native clients send no Origin and need no entry here. */
+      allowedOrigins?: readonly string[];
       startedAt: string;
       /**
        * When present, the bridge serves HTTPS with this identity. A provider
@@ -328,6 +331,29 @@ export class BridgeServer {
     const url = new URL(req.url ?? "/", "http://bridge");
     const path = url.pathname;
     const method = req.method ?? "GET";
+
+    // Origin / Host guard runs before everything, including OPTIONS: a
+    // preflight that answers 204 to any origin is itself the permission
+    // slip the browser is asking for.
+    const origin =
+      typeof req.headers.origin === "string" ? req.headers.origin : undefined;
+    const refusal = this.originGuard(req);
+    if (refusal !== undefined) {
+      res.writeHead(403, {
+        ...this.corsHeaders(),
+        "Content-Type": "application/json",
+      });
+      res.end(JSON.stringify({ ok: false, error: refusal }));
+      return;
+    }
+    // Set once here rather than in corsHeaders(): setHeader values survive
+    // every later writeHead(code, {...}) that does not name the same key,
+    // so each of the ~8 response sites keeps the grant without threading
+    // the origin through all of them.
+    if (origin !== undefined && this.isAllowedOrigin(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+    }
 
     if (method === "OPTIONS") {
       res.writeHead(204, this.corsHeaders());
@@ -824,15 +850,72 @@ export class BridgeServer {
     );
   }
 
+  /**
+   * CORS headers.
+   *
+   * Deliberately NOT `Access-Control-Allow-Origin: *`. The bridge's clients
+   * are native apps (Electron main process, Flutter, curl, talon-node),
+   * which send no `Origin` at all — a wildcard buys them nothing and hands
+   * every web page on the internet a readable cross-origin channel to the
+   * agent API. Only an explicitly configured origin is echoed back.
+   */
   private corsHeaders(): Record<string, string> {
     return {
-      "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Authorization, Content-Type",
       "Access-Control-Max-Age": "86400",
       // Every response states its type; never let a browser guess one.
       "X-Content-Type-Options": "nosniff",
     };
+  }
+
+  /** True when `origin` is on the operator's `native.allowedOrigins` list. */
+  private isAllowedOrigin(origin: string): boolean {
+    return this.opts.allowedOrigins?.includes(origin) ?? false;
+  }
+
+  /**
+   * Reject browser-driven cross-origin requests and DNS-rebinding.
+   *
+   * Two independent checks, because they stop different attacks:
+   *
+   *   - `Origin`: browsers attach it to every cross-origin request and
+   *     scripts cannot forge it. Native clients omit it entirely. So "an
+   *     Origin we did not allow" means "a web page is driving us" — which,
+   *     on the default unauthenticated loopback bind, would let any site
+   *     the user visits POST /send and run tools on this machine.
+   *   - `Host`: a name that resolves to 127.0.0.1 makes the request
+   *     SAME-origin, so no Origin header is sent and the check above never
+   *     fires. Pinning Host to loopback/the configured bind closes that.
+   *
+   * Returns an error string when the request must be refused.
+   */
+  private originGuard(req: IncomingMessage): string | undefined {
+    const origin = req.headers.origin;
+    if (typeof origin === "string" && origin !== "" && origin !== "null") {
+      if (!this.isAllowedOrigin(origin)) {
+        return `Origin ${origin} is not allowed. Add it to native.allowedOrigins to permit browser clients.`;
+      }
+    }
+
+    const host = req.headers.host;
+    if (typeof host === "string" && host !== "") {
+      // Strip the port; bracketed IPv6 keeps its brackets off.
+      const name = host.replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
+      const allowed =
+        name === "127.0.0.1" ||
+        name === "localhost" ||
+        name === "::1" ||
+        name === this.opts.host ||
+        // A wildcard bind is reachable under every local name; the bearer
+        // token is the control there, not the Host header.
+        this.opts.host === "0.0.0.0" ||
+        this.opts.host === "::";
+      if (!allowed) {
+        return `Host ${host} is not recognised for this bridge (DNS-rebinding guard).`;
+      }
+    }
+    return undefined;
   }
 
   private jsonHeaders(): Record<string, string> {
