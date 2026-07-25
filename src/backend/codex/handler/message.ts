@@ -66,6 +66,7 @@ import {
   isCodexOAuthIncompat,
 } from "../models.js";
 import { supportsReasoningLevel } from "../../../core/models/reasoning-levels.js";
+import { toCodexReasoningEffort } from "../effort.js";
 import { markOAuthIncompat } from "../oauth-incompat.js";
 import { readLastRolloutSnapshot } from "../token-usage.js";
 import { activeAborts } from "./state.js";
@@ -283,22 +284,18 @@ export async function handleMessage(
   const supportedReasoningLevels =
     activeModelInfo?.supportedReasoningLevels ?? [];
   const requestedEffort = chatSettings.effort;
+  // Availability check (does this model offer the level?) then vocabulary
+  // translation (can Codex express it?) — the latter is shared with the
+  // one-shot path via `toCodexReasoningEffort` so the two can't drift.
   const modelReasoningEffort =
     requestedEffort &&
-    requestedEffort !== "off" &&
-    requestedEffort !== "max" &&
     supportsReasoningLevel(requestedEffort, supportedReasoningLevels)
-      ? requestedEffort
+      ? toCodexReasoningEffort(requestedEffort)
       : undefined;
   const threadOptions = {
     model: activeModel,
     skipGitRepoCheck: true,
-    ...(modelReasoningEffort
-      ? {
-          modelReasoningEffort: modelReasoningEffort as
-            "minimal" | "low" | "medium" | "high" | "xhigh",
-        }
-      : {}),
+    ...(modelReasoningEffort ? { modelReasoningEffort } : {}),
     ...CODEX_THREAD_PERMISSIONS,
   };
   const thread: Thread = session.sessionId

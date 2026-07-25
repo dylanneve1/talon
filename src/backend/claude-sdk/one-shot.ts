@@ -15,8 +15,9 @@ import { readdir, readFile } from "node:fs/promises";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { OneShotAgentParams, OneShotUsage } from "../../core/types.js";
-import { log } from "../../util/log.js";
+import { log, logWarn } from "../../util/log.js";
 import { ALLOWED_TOOLS_BACKGROUND } from "../../core/constants.js";
+import { EFFORT_MAP } from "./constants.js";
 import { buildMcpServers, buildPluginMcpServers } from "./options.js";
 
 const DEFAULT_SUBPROCESS_KILL_GRACE_MS = 5 * 1000;
@@ -59,14 +60,26 @@ export async function runOneShotAgent(
     systemPrompt,
     workspace,
     model,
+    reasoningEffort,
     contextLabel,
     abortController,
     appendLog,
   } = params;
 
+  // Reasoning effort is opt-in for background runs (config `heartbeatEffort`
+  // / `dreamEffort`). Unset → omit the thinking options entirely so the SDK
+  // keeps whatever default the model ships with, which is what these runs
+  // did before the knob existed. The chat path applies an explicit
+  // `{ thinking: { type: "adaptive" } }` fallback instead because a chat has
+  // a persisted per-chat setting to honour; a one-shot has none.
+  const thinkingConfig = reasoningEffort
+    ? EFFORT_MAP[reasoningEffort]
+    : undefined;
+
   const options = {
     model,
     systemPrompt,
+    ...thinkingConfig,
     cwd: workspace,
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
@@ -80,6 +93,23 @@ export async function runOneShotAgent(
     // inside an unattended pass complicates lifecycle tracking.
     tools: [...ALLOWED_TOOLS_BACKGROUND],
   };
+
+  if (reasoningEffort && !thinkingConfig) {
+    // `minimal` / `xhigh` are Codex-side vocabulary with no Claude
+    // equivalent in EFFORT_MAP — the run proceeds on the model default
+    // rather than failing, but say so in the log so a configured knob that
+    // does nothing isn't silent.
+    logWarn(
+      "agent",
+      `[${contextLabel}] Claude one-shot: effort "${reasoningEffort}" has no ` +
+        `Claude mapping — using the model default`,
+    );
+  } else if (thinkingConfig) {
+    log(
+      "agent",
+      `[${contextLabel}] Claude one-shot effort: ${reasoningEffort}`,
+    );
+  }
 
   const qi = query({
     prompt,

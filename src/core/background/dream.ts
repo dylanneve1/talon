@@ -19,10 +19,11 @@ import { importLegacyJson } from "../../storage/legacy-import.js";
 import { readPromptAsset } from "#prompt-assets";
 import { log, logError, logWarn } from "../../util/log.js";
 import { getDefaultModel } from "../models/catalog.js";
-import type { OneShotAgentParams } from "../types.js";
+import type { OneShotAgentParams, ReasoningEffortLevel } from "../types.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
 import { getSoul } from "../soul/service.js";
 import { taskTable } from "../tasks/index.js";
+import { resolveBackgroundEffort } from "./effort.js";
 import { FailureBackoff } from "./failure-backoff.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -65,6 +66,8 @@ export const dreamFailureBackoff = new FailureBackoff();
 let configRef: {
   model?: string;
   dreamModel?: string;
+  /** Reasoning effort for dream runs. Undefined = backend/model default. */
+  dreamEffort?: ReasoningEffortLevel;
   workspace?: string;
   /** When false, `maybeStartDream` never fires (config `dream: false`). */
   enabled?: boolean;
@@ -86,6 +89,12 @@ export function initDream(cfg: {
   model?: string;
   /** Override model for dream consolidation (e.g. a cheaper model). Falls back to main model. */
   dreamModel?: string;
+  /**
+   * Reasoning effort for dream consolidation (config `dreamEffort`). Unset
+   * leaves the backend/model default in place. Ignored by backends with no
+   * reasoning knob (Kilo, OpenCode).
+   */
+  dreamEffort?: ReasoningEffortLevel;
   workspace?: string;
   /** Gate for automatic dream runs — config `dream` flag. Defaults to enabled. */
   enabled?: boolean;
@@ -242,13 +251,28 @@ If commands fail, log the error and continue — this stage is optional.`
     );
   }
 
+  // Resolved against the dream backend's catalog — an effort level the model
+  // doesn't offer is dropped with a reason instead of reaching the SDK.
+  const effort = await resolveBackgroundEffort({
+    requested: configRef.dreamEffort,
+    model,
+    backend,
+  });
+  if (effort.dropped) {
+    logWarn("dream", effort.dropped);
+  }
+
   // Set up dream log file
   const dreamLogFile = createDreamLogFile();
   appendDreamLog(dreamLogFile, `# Dream Run — ${new Date().toISOString()}\n`);
   appendDreamLog(
     dreamLogFile,
-    `**Trigger:** last_run=${lastRunIso}, model=${model}\n`,
+    `**Trigger:** last_run=${lastRunIso}, model=${model}` +
+      `${effort.effort ? `, effort=${effort.effort}` : ""}\n`,
   );
+  if (effort.dropped) {
+    appendDreamLog(dreamLogFile, `**Effort:** ${effort.dropped}\n`);
+  }
   appendDreamLog(
     dreamLogFile,
     `**Prompt:**\n\`\`\`\n${prompt}\n\`\`\`\n\n---\n`,
@@ -272,6 +296,7 @@ If commands fail, log the error and continue — this stage is optional.`
     systemPrompt,
     workspace,
     model,
+    ...(effort.effort ? { reasoningEffort: effort.effort } : {}),
     contextLabel: "dream",
     abortController,
     // appendDreamLog is sync (writeFileSync) — wrap to satisfy the async

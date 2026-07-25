@@ -467,6 +467,7 @@ export async function initBackendAndDispatcher(
   initDream({
     model: config.model,
     dreamModel: config.dreamModel,
+    dreamEffort: config.dreamEffort,
     workspace: config.workspace,
     enabled: config.dream,
     getBackend: () => getBackendForRole("dream"),
@@ -482,6 +483,7 @@ export async function initBackendAndDispatcher(
   initHeartbeat({
     model: config.model,
     heartbeatModel: config.heartbeatModel,
+    heartbeatEffort: config.heartbeatEffort,
     workspace: config.workspace,
     getBackend: () => getBackendForRole("heartbeat"),
     frontends: frontendNames,

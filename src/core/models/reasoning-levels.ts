@@ -1,13 +1,24 @@
 import type { ReasoningEffortLevel } from "../types.js";
 
+/**
+ * Ascending ladder, weakest reasoning first. This is the ONLY ordering in
+ * the codebase: `normalizeReasoningLevels` re-sorts a model's advertised
+ * levels through it, so every effort picker (Telegram, Discord, native)
+ * renders in this sequence.
+ *
+ * `xhigh` (Codex's ceiling) sits below `max` (Claude's ceiling) so the row
+ * reads low → medium → high → xhigh → max. A single model advertises one
+ * ceiling or the other, never both, so their relative position only ever
+ * matters for how the ladder reads.
+ */
 export const REASONING_LEVEL_ORDER: ReasoningEffortLevel[] = [
   "off",
   "minimal",
   "low",
   "medium",
   "high",
-  "max",
   "xhigh",
+  "max",
 ];
 
 export const REASONING_LEVEL_LABELS: Record<ReasoningEffortLevel, string> = {
@@ -16,8 +27,8 @@ export const REASONING_LEVEL_LABELS: Record<ReasoningEffortLevel, string> = {
   low: "Low",
   medium: "Med",
   high: "High",
-  max: "Max",
   xhigh: "XHigh",
+  max: "Max",
 };
 
 export const REASONING_LEVEL_DESCRIPTIONS: Record<
@@ -29,8 +40,8 @@ export const REASONING_LEVEL_DESCRIPTIONS: Record<
   low: "short reasoning pass",
   medium: "balanced reasoning",
   high: "deeper reasoning, slower",
-  max: "maximum Claude reasoning budget",
   xhigh: "maximum Codex reasoning budget",
+  max: "maximum Claude reasoning budget",
   adaptive: "use the model/backend default",
 };
 

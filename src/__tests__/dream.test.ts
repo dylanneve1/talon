@@ -118,6 +118,7 @@ describe("initDream", () => {
       initDream({
         model: "claude-sonnet-4-6",
         dreamModel: "claude-haiku-4-5",
+        dreamEffort: "low",
         workspace: "/tmp/test-workspace",
         getBackend: () => makeMockBackend(),
       }),
@@ -195,6 +196,48 @@ describe("forceDream", () => {
     });
     await forceDream();
     expect(runOneShotAgentMock.mock.calls[0][0].model).toBe("claude-haiku-4-5");
+  });
+
+  it("passes dreamEffort through to the one-shot params", async () => {
+    initDream({
+      model: "claude-sonnet-4-6",
+      dreamEffort: "low",
+      getBackend: () => makeMockBackend(),
+    });
+    await forceDream();
+    expect(runOneShotAgentMock.mock.calls[0][0].reasoningEffort).toBe("low");
+  });
+
+  it("drops a dreamEffort the model does not advertise (dream still runs)", async () => {
+    initDream({
+      model: "claude-sonnet-4-6",
+      dreamEffort: "xhigh", // Codex-only ceiling, not on a Claude model
+      getBackend: () =>
+        stubBackend({
+          runOneShotAgent: (p) => runOneShotAgentMock(p),
+          getModelInfo: async () =>
+            ({
+              id: "claude-sonnet-4-6",
+              displayName: "Sonnet",
+              aliases: [],
+              provider: "anthropic",
+              selectable: true,
+              supportedReasoningLevels: ["low", "medium", "high"],
+            }) as never,
+        }),
+    });
+    await forceDream();
+    expect(runOneShotAgentMock).toHaveBeenCalledTimes(1);
+    expect(
+      runOneShotAgentMock.mock.calls[0][0].reasoningEffort,
+    ).toBeUndefined();
+  });
+
+  it("omits reasoningEffort when dreamEffort is unset", async () => {
+    await forceDream();
+    expect(
+      runOneShotAgentMock.mock.calls[0][0].reasoningEffort,
+    ).toBeUndefined();
   });
 
   it("rejects when backend has no runOneShotAgent", async () => {

@@ -19,6 +19,12 @@
  * subprocesses to evict — `evictOrphanSubprocesses` is intentionally
  * not implemented for this family.
  *
+ * Note on reasoning effort: `params.reasoningEffort` (config
+ * `heartbeatEffort` / `dreamEffort`) is deliberately unused here. Neither
+ * server's `session.prompt` exposes a reasoning knob — the level is baked
+ * into the provider's model id when it's selectable at all — so the field
+ * is ignored rather than half-honoured.
+ *
  * Note on abort semantics: both SDKs expose `session.abort` but the
  * REST `prompt` endpoint blocks until the underlying provider
  * returns. The heartbeat module's outer abort grace is what actually

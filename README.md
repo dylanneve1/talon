@@ -385,6 +385,10 @@ Config file: `~/.talon/config.json`
 | `pulse`                    | `true`       | Periodic group engagement                                                                                               |
 | `heartbeat`                | `false`      | Background maintenance agent                                                                                            |
 | `heartbeatIntervalMinutes` | `60`         | Heartbeat interval                                                                                                      |
+| `heartbeatModel`           | ---          | Model for the heartbeat agent (falls back to `model`)                                                                   |
+| `heartbeatEffort`          | ---          | Reasoning effort for the heartbeat agent: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Unset = the model's own default |
+| `dreamModel`               | ---          | Model for dream / memory consolidation (falls back to `model`)                                                          |
+| `dreamEffort`              | ---          | Reasoning effort for the dream agent — same levels as `heartbeatEffort`                                                 |
 | `braveApiKey`              | ---          | Brave Search API key                                                                                                    |
 | `timezone`                 | ---          | IANA timezone (e.g. `"Europe/London"`)                                                                                  |
 | `plugins`                  | `[]`         | External plugin packages                                                                                                |
@@ -397,6 +401,18 @@ Config file: `~/.talon/config.json`
 | `memory`                   | ---          | Long-term memory backend selection: `mempalace` or `mem0` (see above)                                                   |
 | `mempalace`                | ---          | Legacy MemPalace plugin config (prefer `memory`)                                                                        |
 | `playwright`               | ---          | Playwright plugin config (see above)                                                                                    |
+
+### Background reasoning effort
+
+`heartbeatEffort` / `dreamEffort` set how hard the background agents think —
+useful when you want unattended goal work to reason harder than a chat turn,
+or hourly heartbeats to stay cheap. Chat effort stays per-chat (`/settings`).
+
+Which levels a model accepts comes from its catalog entry, so the usable set
+differs per model (`max` is Claude's ceiling, `xhigh` is Codex's). A level the
+model doesn't offer is dropped — the run proceeds on the model default, the
+reason is written to the run log, and the boot-time model audit warns about it.
+Backends with no reasoning knob at all (Kilo, OpenCode) ignore the setting.
 
 ---
 

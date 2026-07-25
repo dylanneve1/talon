@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
+import type { ReasoningEffortLevel } from "../core/types.js";
 
 vi.mock("../core/plugin/index.js", () => ({
   getPluginMcpServers: vi.fn(() => ({})),
@@ -362,6 +363,102 @@ describe("codex / runOneShotAgent — extended item-type coverage", () => {
 // a context where there's no chat to deliver an error to.
 
 import { afterEach, beforeEach } from "vitest";
+
+// ── Reasoning effort → Codex thread option ────────────────────────────────
+
+describe("codex / runOneShotAgent — reasoning effort", () => {
+  /**
+   * Run a one-shot with `reasoningEffort` and return the options the
+   * runner handed to `startThread`.
+   *
+   * Availability ("does this model offer that level?") is the caller's job
+   * (core/background/effort.ts) — the runner's only remaining decision is
+   * whether Codex can express the level at all, which is what these assert.
+   */
+  async function threadOptionsFor(
+    reasoningEffort?: ReasoningEffortLevel,
+  ): Promise<Record<string, unknown>> {
+    vi.resetModules();
+    const captured: Record<string, unknown>[] = [];
+    vi.doMock("../core/plugin/index.js", () => ({
+      getPluginMcpServers: vi.fn(() => ({})),
+    }));
+    vi.doMock("@openai/codex-sdk", () => {
+      class MockThread {
+        async runStreamed() {
+          const events = (async function* () {
+            yield { type: "turn.completed" };
+          })();
+          return { events };
+        }
+      }
+      return {
+        Codex: class {
+          startThread(options: Record<string, unknown>) {
+            captured.push(options);
+            return new MockThread();
+          }
+          resumeThread() {
+            return new MockThread();
+          }
+        },
+      };
+    });
+
+    const initMod = await import("../backend/codex/init.js");
+    const runMod = await import("../backend/codex/one-shot.js");
+    initMod.initCodexAgent(
+      {
+        model: "gpt-5-codex",
+        workspace: "/tmp",
+        systemPrompt: "test",
+        frontend: "terminal",
+        openaiApiKey: "test-key",
+      } as never,
+      () => 19876,
+      "terminal",
+    );
+
+    await runMod.runOneShotAgent({
+      prompt: "Hello",
+      systemPrompt: "test",
+      workspace: "/tmp",
+      model: "gpt-5-codex",
+      ...(reasoningEffort ? { reasoningEffort } : {}),
+      contextLabel: "heartbeat",
+      abortController: new AbortController(),
+      appendLog: async () => {},
+    });
+
+    expect(captured).toHaveLength(1);
+    return captured[0];
+  }
+
+  it("passes a Codex-expressible level as modelReasoningEffort", async () => {
+    expect(await threadOptionsFor("high")).toMatchObject({
+      modelReasoningEffort: "high",
+    });
+  });
+
+  it("passes xhigh through (Codex's own ceiling)", async () => {
+    expect(await threadOptionsFor("xhigh")).toMatchObject({
+      modelReasoningEffort: "xhigh",
+    });
+  });
+
+  it("omits the option entirely when no effort is requested", async () => {
+    expect(await threadOptionsFor()).not.toHaveProperty("modelReasoningEffort");
+  });
+
+  it.each(["off", "max"] as const)(
+    "omits the option for %s, which Codex cannot express",
+    async (level) => {
+      expect(await threadOptionsFor(level)).not.toHaveProperty(
+        "modelReasoningEffort",
+      );
+    },
+  );
+});
 
 describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
   let fakeHome: string;

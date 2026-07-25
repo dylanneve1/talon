@@ -162,6 +162,35 @@ describe("config", () => {
       expect(config.pulseIntervalMs).toBe(300000);
     });
 
+    it("reads heartbeatEffort / dreamEffort", async () => {
+      mockFs({
+        botToken: "test-token",
+        heartbeatEffort: "high",
+        dreamEffort: "low",
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.heartbeatEffort).toBe("high");
+      expect(config.dreamEffort).toBe("low");
+    });
+
+    it("leaves background effort unset by default (model default)", async () => {
+      mockFs({ botToken: "test-token" });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.heartbeatEffort).toBeUndefined();
+      expect(config.dreamEffort).toBeUndefined();
+    });
+
+    it("rejects an unknown effort level", async () => {
+      mockFs({ botToken: "test-token", heartbeatEffort: "ludicrous" });
+
+      const { loadConfig } = await import("../util/config.js");
+      expect(() => loadConfig()).toThrow(/heartbeatEffort/);
+    });
+
     it("reads custom maxMessageLength", async () => {
       mockFs({ botToken: "test-token", maxMessageLength: 8000 });
 

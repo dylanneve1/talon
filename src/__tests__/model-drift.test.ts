@@ -64,6 +64,27 @@ function fakeBackend(
   } as unknown as Backend;
 }
 
+/**
+ * Backend whose catalog resolves any pin exactly, to a model advertising
+ * `levels`. Used for the effort half of the audit: `undefined` levels stand
+ * for a catalog that reports no reasoning metadata at all.
+ */
+function fakeBackendWithLevels(levels: string[] | undefined): Backend {
+  return {
+    models: {
+      resolveModelInfo: vi.fn(async () => ({
+        kind: "exact",
+        model: {
+          id: "m",
+          displayName: "M",
+          ...(levels ? { supportedReasoningLevels: levels } : {}),
+        },
+        storedValue: "m",
+      })),
+    },
+  } as unknown as Backend;
+}
+
 function cfg(overrides: Partial<TalonConfig>): TalonConfig {
   return { backend: "claude", model: "default", ...overrides } as TalonConfig;
 }
@@ -120,6 +141,55 @@ describe("auditConfiguredModels", () => {
     expect(
       await auditConfiguredModels(cfg({ model: "default" }), () =>
         fakeBackend({ kind: "missing" }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("flags a heartbeat effort the pinned model does not advertise", async () => {
+    const findings = await auditConfiguredModels(
+      cfg({ heartbeatModel: "m", heartbeatEffort: "xhigh" }),
+      () => fakeBackendWithLevels(["low", "medium", "high"]),
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      role: "heartbeat",
+      configured: "xhigh",
+      kind: "unsupported-effort",
+    });
+    expect(findings[0].message).toContain('"heartbeatEffort" in config.json');
+    expect(findings[0].message).toContain("low, medium, high");
+  });
+
+  it("flags a dream effort the pinned model does not advertise", async () => {
+    const findings = await auditConfiguredModels(
+      cfg({ dreamModel: "m", dreamEffort: "max" }),
+      () => fakeBackendWithLevels(["minimal", "low", "medium", "high"]),
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      role: "dream",
+      configured: "max",
+      kind: "unsupported-effort",
+    });
+    expect(findings[0].message).toContain('"dreamEffort" in config.json');
+  });
+
+  it("is silent for a supported effort", async () => {
+    expect(
+      await auditConfiguredModels(
+        cfg({ heartbeatModel: "m", heartbeatEffort: "high" }),
+        () => fakeBackendWithLevels(["low", "medium", "high"]),
+      ),
+    ).toEqual([]);
+  });
+
+  it("is silent when the model reports no reasoning metadata", async () => {
+    // Absence of metadata is not evidence the level is unsupported —
+    // warning here would fire on every catalog that omits the field.
+    expect(
+      await auditConfiguredModels(
+        cfg({ heartbeatModel: "m", heartbeatEffort: "xhigh" }),
+        () => fakeBackendWithLevels(undefined),
       ),
     ).toEqual([]);
   });

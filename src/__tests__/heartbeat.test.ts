@@ -147,6 +147,7 @@ describe("initHeartbeat", () => {
       initHeartbeat({
         model: "claude-sonnet-4-6",
         heartbeatModel: "claude-haiku-4-5",
+        heartbeatEffort: "high",
         workspace: "/tmp/test-workspace",
         getBackend: () => makeMockBackend(),
         frontends: ["telegram"],
@@ -314,6 +315,57 @@ describe("forceHeartbeat", () => {
     expect(params.contextLabel).toBe("heartbeat");
     expect(params.model).toBe("claude-sonnet-4-6");
     expect(typeof params.appendLog).toBe("function");
+    // No heartbeatEffort configured → the model keeps its own default.
+    expect(params.reasoningEffort).toBeUndefined();
+  });
+
+  it("passes heartbeatEffort through when the model advertises it", async () => {
+    initHeartbeat({
+      model: "claude-sonnet-4-6",
+      heartbeatEffort: "high",
+      getBackend: () =>
+        stubBackend({
+          runOneShotAgent: (p) => runOneShotAgentMock(p),
+          getModelInfo: async () =>
+            ({
+              id: "claude-sonnet-4-6",
+              displayName: "Sonnet",
+              aliases: [],
+              provider: "anthropic",
+              selectable: true,
+              supportedReasoningLevels: ["low", "medium", "high"],
+            }) as never,
+        }),
+    });
+
+    await forceHeartbeat();
+    expect(runOneShotAgentMock.mock.calls[0][0].reasoningEffort).toBe("high");
+  });
+
+  it("drops heartbeatEffort the model does not advertise (run still happens)", async () => {
+    initHeartbeat({
+      model: "claude-sonnet-4-6",
+      heartbeatEffort: "xhigh", // Codex-only ceiling
+      getBackend: () =>
+        stubBackend({
+          runOneShotAgent: (p) => runOneShotAgentMock(p),
+          getModelInfo: async () =>
+            ({
+              id: "claude-sonnet-4-6",
+              displayName: "Sonnet",
+              aliases: [],
+              provider: "anthropic",
+              selectable: true,
+              supportedReasoningLevels: ["low", "medium", "high"],
+            }) as never,
+        }),
+    });
+
+    await forceHeartbeat();
+    expect(runOneShotAgentMock).toHaveBeenCalledTimes(1);
+    expect(
+      runOneShotAgentMock.mock.calls[0][0].reasoningEffort,
+    ).toBeUndefined();
   });
 
   it("preserves previous last_run on failure", async () => {

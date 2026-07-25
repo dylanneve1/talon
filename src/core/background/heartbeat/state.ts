@@ -10,6 +10,7 @@ import { files as pathFiles } from "../../../util/paths.js";
 import { kvGet, kvSet } from "../../../storage/kv.js";
 import { importLegacyJson } from "../../../storage/legacy-import.js";
 import type { Backend } from "../../agent-runtime/capabilities.js";
+import type { ReasoningEffortLevel } from "../../types.js";
 import { FailureBackoff } from "../failure-backoff.js";
 
 export type HeartbeatState = {
@@ -28,6 +29,12 @@ export type HeartbeatState = {
 export type HeartbeatConfig = {
   model?: string;
   heartbeatModel?: string;
+  /**
+   * Reasoning effort for heartbeat runs (config `heartbeatEffort`).
+   * Undefined = backend/model default. Passed straight through to the
+   * one-shot params; backends without a reasoning knob ignore it.
+   */
+  heartbeatEffort?: ReasoningEffortLevel;
   workspace?: string;
   /**
    * Accessor for the active backend — invoked each time a heartbeat fires so

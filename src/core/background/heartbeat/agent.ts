@@ -14,6 +14,7 @@ import { loadSystemTemplate } from "../../prompt/templates.js";
 import { formatGoal, getOpenGoals } from "../../../storage/goal-store.js";
 import { taskTable } from "../../tasks/index.js";
 import type { OneShotAgentParams } from "../../types.js";
+import { resolveBackgroundEffort } from "../effort.js";
 import { hb } from "./state.js";
 
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000; // 10-minute soft cap
@@ -164,6 +165,18 @@ export async function runHeartbeatAgent(
     );
   }
 
+  // Effort is resolved against the heartbeat backend's catalog, not just
+  // copied from config — a level the model doesn't offer is dropped with a
+  // reason rather than handed to the SDK.
+  const effort = await resolveBackgroundEffort({
+    requested: config.heartbeatEffort,
+    model,
+    backend,
+  });
+  if (effort.dropped) {
+    logWarn("heartbeat", effort.dropped);
+  }
+
   // Set up heartbeat log file
   const heartbeatLogFile = await createHeartbeatLogFile();
   await appendHeartbeatLog(
@@ -172,8 +185,15 @@ export async function runHeartbeatAgent(
   );
   await appendHeartbeatLog(
     heartbeatLogFile,
-    `**Trigger:** ${lastRunIso === "never" ? "first run" : `last_run=${lastRunIso}`}, model=${model}\n`,
+    `**Trigger:** ${lastRunIso === "never" ? "first run" : `last_run=${lastRunIso}`}, model=${model}` +
+      `${effort.effort ? `, effort=${effort.effort}` : ""}\n`,
   );
+  if (effort.dropped) {
+    await appendHeartbeatLog(
+      heartbeatLogFile,
+      `**Effort:** ${effort.dropped}\n`,
+    );
+  }
   await appendHeartbeatLog(
     heartbeatLogFile,
     `**Prompt:**\n\`\`\`\n${prompt}\n\`\`\`\n\n---\n`,
@@ -197,6 +217,7 @@ export async function runHeartbeatAgent(
     systemPrompt: buildHeartbeatSystemPrompt(),
     workspace,
     model,
+    ...(effort.effort ? { reasoningEffort: effort.effort } : {}),
     contextLabel: "heartbeat",
     abortController,
     appendLog: (text) => appendHeartbeatLog(heartbeatLogFile, text),

@@ -5,6 +5,7 @@ import { dirs, files as pathFiles } from "./paths.js";
 import { hardenTalonPermissions } from "./harden.js";
 import { setTimezone } from "./time.js";
 import { BACKEND_IDS } from "../core/agent-runtime/model-ref.js";
+import { REASONING_LEVEL_ORDER } from "../core/models/reasoning-levels.js";
 import {
   assembleSystemPrompt,
   joinSystemPromptParts,
@@ -26,6 +27,20 @@ import {
 const BACKEND_ID_ENUM = [...BACKEND_IDS] as [
   (typeof BACKEND_IDS)[number],
   ...(typeof BACKEND_IDS)[number][],
+];
+
+/**
+ * Reasoning-effort literal source for the background-agent knobs
+ * (`heartbeatEffort` / `dreamEffort`). Same trick as `BACKEND_ID_ENUM`:
+ * reuse the single source of truth (`REASONING_LEVEL_ORDER`) so adding a
+ * level to the vocabulary doesn't need a second edit here.
+ *
+ * There is no `"adaptive"` member — leaving the field unset IS adaptive
+ * (the backend/model default), matching how per-chat `effort` behaves.
+ */
+const REASONING_EFFORT_ENUM = [...REASONING_LEVEL_ORDER] as [
+  (typeof REASONING_LEVEL_ORDER)[number],
+  ...(typeof REASONING_LEVEL_ORDER)[number][],
 ];
 
 // ── Config schema ───────────────────────────────────────────────────────────
@@ -317,6 +332,15 @@ const configSchema = z.object({
    */
   backendDefaults: z.record(z.string(), z.string()).optional(),
   dreamModel: z.string().optional(), // Model used for background memory consolidation (defaults to main model)
+  /**
+   * Reasoning effort for the dream / memory-consolidation agent. Unset =
+   * the backend/model default. Pair with `dreamModel` when you want a
+   * cheap model that still thinks hard (or an expensive one that doesn't).
+   *
+   * Honoured by backends with a reasoning knob (Claude SDK, Codex);
+   * silently ignored by Kilo / OpenCode, which have none.
+   */
+  dreamEffort: z.enum(REASONING_EFFORT_ENUM).optional(),
   maxMessageLength: z.number().int().min(100).default(4000),
   concurrency: z.number().int().min(1).max(20).default(1),
   apiId: z.number().int().optional(),
@@ -339,6 +363,16 @@ const configSchema = z.object({
   heartbeat: z.boolean().default(true),
   heartbeatIntervalMinutes: z.number().int().min(5).default(60),
   heartbeatModel: z.string().optional(), // Model for heartbeat agent (defaults to main model)
+  /**
+   * Reasoning effort for the heartbeat agent. Unset = the backend/model
+   * default. Pair with `heartbeatModel` — e.g. `"high"` so unattended
+   * goal work reasons harder than a chat turn, or `"low"` to keep hourly
+   * runs cheap.
+   *
+   * Honoured by backends with a reasoning knob (Claude SDK, Codex);
+   * silently ignored by Kilo / OpenCode, which have none.
+   */
+  heartbeatEffort: z.enum(REASONING_EFFORT_ENUM).optional(),
   braveApiKey: z.string().optional(),
   /**
    * Codex-specific OpenAI API key. Prefer this, CODEX_API_KEY, or

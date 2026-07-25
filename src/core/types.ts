@@ -142,6 +142,16 @@ export type OneShotAgentParams = {
   /** Model id (interpretation is backend-specific). */
   model: string;
   /**
+   * Reasoning effort for the run (config `heartbeatEffort` / `dreamEffort`).
+   * Undefined = let the backend/model pick its own default, which is what
+   * every background run did before the knob existed.
+   *
+   * Honoured by the backends that expose a reasoning knob (Claude SDK
+   * thinking/effort, Codex `modelReasoningEffort`); ignored by the ones
+   * that don't (Kilo, OpenCode).
+   */
+  reasoningEffort?: ReasoningEffortLevel;
+  /**
    * Sentinel chat ID for outbound MCP tool calls (e.g. "heartbeat", "dream").
    * Frontend MCP servers use this to enforce explicit `chat_id` on outbound
    * tools when there's no ambient chat.

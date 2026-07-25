@@ -29,6 +29,7 @@ import {
 import { isChatGptModelMismatchError } from "./auth.js";
 import { chatGptFallbackFor, isCodexOAuthIncompat } from "./models.js";
 import { markOAuthIncompat } from "./oauth-incompat.js";
+import { toCodexReasoningEffort } from "./effort.js";
 
 /**
  * Resolve the effective model for a one-shot run, applying the same
@@ -74,6 +75,7 @@ export async function runOneShotAgent(
     prompt,
     systemPrompt,
     model: requestedModel,
+    reasoningEffort,
     contextLabel,
     abortController,
     appendLog,
@@ -103,9 +105,27 @@ export async function runOneShotAgent(
   }
   log("agent", `[${contextLabel}] Codex one-shot model: ${activeModel}`);
 
+  // Availability was already checked by the caller against the model
+  // catalog (core/background/effort.ts); all that's left is Codex's own
+  // vocabulary, which can't express `off` / `max`.
+  const modelReasoningEffort = toCodexReasoningEffort(reasoningEffort);
+  if (reasoningEffort && !modelReasoningEffort) {
+    logWarn(
+      "agent",
+      `[${contextLabel}] Codex one-shot: effort "${reasoningEffort}" has no ` +
+        `Codex equivalent — using the model default`,
+    );
+  } else if (modelReasoningEffort) {
+    log(
+      "agent",
+      `[${contextLabel}] Codex one-shot effort: ${modelReasoningEffort}`,
+    );
+  }
+
   const thread = codex.startThread({
     model: activeModel,
     skipGitRepoCheck: true,
+    ...(modelReasoningEffort ? { modelReasoningEffort } : {}),
     ...CODEX_THREAD_PERMISSIONS,
   });
 
