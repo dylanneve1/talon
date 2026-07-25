@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.11.0](https://github.com/dylanneve1/talon/compare/v3.10.0...v3.11.0) (2026-07-25)
+
+
+### Features
+
+* **companion:** notify on assistant replies in the background ([#661](https://github.com/dylanneve1/talon/issues/661)) ([d00ccb6](https://github.com/dylanneve1/talon/commit/d00ccb6c4c8b63421b5fe9f5722bc28665b143c4))
+
 ## [3.10.0](https://github.com/dylanneve1/talon/compare/v3.9.1...v3.10.0) (2026-07-25)
 
 
