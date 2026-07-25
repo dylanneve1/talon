@@ -118,17 +118,12 @@ class _ContextSheet extends StatelessWidget {
     final tint = warn ? TalonColors.warn : TalonColors.accent;
 
     return [
-      Center(
-        child: Container(
-          width: 40,
-          height: 4,
-          decoration: BoxDecoration(
-            color: TalonColors.textFaint,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-      ),
-      const SizedBox(height: TalonSpace.lg),
+      // No hand-rolled grabber here: this sheet is opened with
+      // showDragHandle, so Material draws one — and unlike a painted bar it
+      // is a real drag target with its own semantics. Two of them is one too
+      // many (model_sheet and the settings pickers keep theirs; those sheets
+      // are transparent-background and paint their own container, so
+      // Material has nowhere to put one).
       Row(
         children: [
           Icon(Icons.donut_large_rounded, size: 18, color: tint),
