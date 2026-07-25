@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.10.0](https://github.com/dylanneve1/talon/compare/v3.9.1...v3.10.0) (2026-07-25)
+
+
+### Features
+
+* **companion:** phone-first UI — touch density, full-bleed home, Material You ([#660](https://github.com/dylanneve1/talon/issues/660)) ([30fd760](https://github.com/dylanneve1/talon/commit/30fd76059c66a82a1578e25a76ebe638bd126222))
+
 ## [3.9.1](https://github.com/dylanneve1/talon/compare/v3.9.0...v3.9.1) (2026-07-25)
 
 
