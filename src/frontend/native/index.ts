@@ -332,12 +332,17 @@ export function createNativeFrontend(
    */
   async function computeContext(
     chatId: string,
+    opts?: { resolveModel?: boolean },
   ): Promise<ContextInfo | undefined> {
     try {
       const info = getSessionInfo(chatId);
       const u = info.usage;
       let ctxMax = u.contextWindow;
-      if (!ctxMax) {
+      // The model fallback touches the backend pool, which is fine for one
+      // chat the user just opened and wrong for every chat at boot — the
+      // startup warm asks for the cheap path and lets anything it can't
+      // resolve fill in when that chat is next opened.
+      if (!ctxMax && opts?.resolveModel !== false) {
         try {
           const backend = getBackendForChat(chatId);
           const backendId = getBackendIdForChat(chatId);
@@ -371,13 +376,36 @@ export function createNativeFrontend(
   }
 
   /** Recompute a chat's context fill and, if it changed, push it to clients. */
-  async function refreshContext(entry: ChatEntry): Promise<void> {
-    const next = await computeContext(entry.id);
+  async function refreshContext(
+    entry: ChatEntry,
+    opts?: { resolveModel?: boolean },
+  ): Promise<void> {
+    const next = await computeContext(entry.id, opts);
     if (!next) return;
     const prev = contextByChat.get(entry.id);
     if (prev && prev.used === next.used && prev.max === next.max) return;
     contextByChat.set(entry.id, next);
     broadcastChatUpdated(entry);
+  }
+
+  /**
+   * Fill the context cache for chats restored at startup.
+   *
+   * The readout is served from an in-memory map that was only ever written at
+   * turn end, so after a restart every existing chat reported no context at
+   * all — the header chip vanished until that chat ran another turn, which
+   * read as "context usage doesn't save". The numbers themselves are
+   * persisted with the session; only the cache was cold. This re-reads them
+   * for the most recently active chats (bounded, and on the cheap path that
+   * never touches the backend pool); anything it skips or can't resolve is
+   * filled in the moment the chat is opened.
+   */
+  const CONTEXT_WARM_LIMIT = 40;
+
+  async function warmContextCache(): Promise<void> {
+    for (const entry of chats.list().slice(0, CONTEXT_WARM_LIMIT)) {
+      await refreshContext(entry, { resolveModel: false });
+    }
   }
 
   const broadcast = (event: BridgeEvent): void => server.broadcast(event);
@@ -1063,6 +1091,14 @@ export function createNativeFrontend(
       return ok;
     },
     history: (id, opts) => {
+      // Opening a chat is the one moment we know a client wants its numbers:
+      // refresh the context readout on the full path (model fallback and
+      // all), which covers every chat the startup warm skipped or couldn't
+      // resolve. Fire-and-forget — the figure arrives as a chat_updated.
+      const entry = chats.get(id);
+      if (entry && opts?.before === undefined) {
+        void refreshContext(entry).catch(() => {});
+      }
       const limit = Math.min(Math.max(opts?.limit ?? 200, 1), 500);
       const rows =
         opts?.before !== undefined
@@ -1320,6 +1356,10 @@ export function createNativeFrontend(
       const gatewayPort = await gateway.start(19876);
       log("native", `Gateway on :${gatewayPort}`);
       chats.restore();
+      // Non-blocking: a cold cache costs a missing chip, not a broken boot.
+      void warmContextCache().catch((err) =>
+        logError("native", "Context cache warm failed", err),
+      );
       emptyChatSweep = setInterval(() => {
         try {
           sweepEmptyChats();

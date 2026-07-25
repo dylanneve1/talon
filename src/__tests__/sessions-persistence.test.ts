@@ -51,6 +51,7 @@ import {
   getLastBotMessageId,
   setLastBotMessageId,
 } from "../storage/sessions.js";
+import { buildContextDisplay } from "../frontend/shared/status-context.js";
 
 const envBackup = process.env.TALON_DB_PATH;
 
@@ -115,6 +116,39 @@ describe("sessions persistence", () => {
     expect(s.usage.totalResponseMs).toBe(1500);
     expect(s.usage.lastResponseMs).toBe(1500);
     expect(s.usage.fastestResponseMs).toBe(1500);
+  });
+
+  // The companion's context chip is served from an in-memory cache the bridge
+  // fills at turn end, so a restart used to leave every existing chat with no
+  // readout at all ("context usage doesn't save from old chats"). The numbers
+  // behind it are persisted — this is the invariant the bridge's startup warm
+  // relies on when it re-derives the readout for restored chats.
+  it("a reopened session still yields a context readout", () => {
+    recordUsage("ctx-chat", {
+      inputTokens: 1000,
+      outputTokens: 200,
+      cacheRead: 0,
+      cacheWrite: 0,
+      durationMs: 900,
+      model: "claude-opus-4-8",
+      contextTokens: 86_000,
+      contextWindow: 200_000,
+      numApiCalls: 1,
+      costUsd: 0.1,
+    });
+
+    reopen();
+
+    const usage = getSession("ctx-chat").usage;
+    const display = buildContextDisplay({
+      contextTokens: usage.contextTokens,
+      lastPromptTokens: usage.lastPromptTokens,
+      contextWindow: usage.contextWindow,
+    });
+    expect(display.known).toBe(true);
+    expect(display.used).toBe(86_000);
+    expect(display.max).toBe(200_000);
+    expect(display.pct).toBe(43);
   });
 
   it("fastestResponseMs Infinity sentinel round-trips through SQLite", () => {
