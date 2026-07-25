@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.8.2](https://github.com/dylanneve1/talon/compare/v3.8.1...v3.8.2) (2026-07-25)
+
+
+### Code Refactoring
+
+* **companion:** drop per-chat pulse ([#645](https://github.com/dylanneve1/talon/issues/645)) ([3e9a339](https://github.com/dylanneve1/talon/commit/3e9a339eff87c84f8a9025745c9aff85bd2cc1db))
+
 ## [3.8.1](https://github.com/dylanneve1/talon/compare/v3.8.0...v3.8.1) (2026-07-25)
 
 
