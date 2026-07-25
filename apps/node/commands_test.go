@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCappedOutputPassThrough(t *testing.T) {
@@ -77,6 +78,57 @@ func TestExecCwd(t *testing.T) {
 		if resolved, err := filepath.EvalSymlinks(dir); err != nil || got != resolved {
 			t.Fatalf("pwd = %q, want %q", got, dir)
 		}
+	}
+}
+
+// The exit code is read by cmd.Wait(), which must not be allowed to close
+// the output pipes while they are still being drained. When it was, this
+// round trip intermittently came back with an empty stdout or stderr —
+// roughly 1 run in 500, which is exactly often enough to fail a release
+// build and not often enough to catch in a single-shot test. Repeat it
+// until that is no longer a coin flip.
+func TestExecOutputSurvivesExit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix shell test")
+	}
+	if testing.Short() {
+		t.Skip("repetition test")
+	}
+	for i := range 400 {
+		res := cmdExec(context.Background(), map[string]any{
+			"cmd": "echo out; echo err >&2; exit 3",
+		})
+		if got := res.Data["stdout"].(string); !strings.Contains(got, "out") {
+			t.Fatalf("iteration %d: stdout = %q", i, got)
+		}
+		if got := res.Data["stderr"].(string); !strings.Contains(got, "err") {
+			t.Fatalf("iteration %d: stderr = %q", i, got)
+		}
+		if res.Data["exitCode"] != 3 {
+			t.Fatalf("iteration %d: exitCode = %v", i, res.Data["exitCode"])
+		}
+	}
+}
+
+// A backgrounded child inherits the pipes and holds them open after the
+// shell exits. The command must still answer — with the output that did
+// arrive — rather than blocking on a writer that may outlive the node.
+func TestExecReturnsDespiteLingeringWriter(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix shell test")
+	}
+	start := time.Now()
+	res := cmdExec(context.Background(), map[string]any{
+		"cmd": "echo immediate; sleep 30 &",
+	})
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Fatalf("blocked on the lingering writer for %s", elapsed)
+	}
+	if !res.OK {
+		t.Fatalf("not ok: %s", res.Message)
+	}
+	if got := res.Data["stdout"].(string); !strings.Contains(got, "immediate") {
+		t.Fatalf("stdout = %q", got)
 	}
 }
 

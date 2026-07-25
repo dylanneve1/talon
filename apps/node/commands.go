@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -127,13 +128,20 @@ const (
 // cappedOutput keeps the head plus a rolling tail of a stream and counts
 // what it elides, so a chatty command can't balloon memory or the mesh
 // result payload while the stream keeps draining.
+//
+// Guarded by a mutex because the two ends genuinely run concurrently: the
+// copy goroutine in runShell may still be writing a backgrounded child's
+// output when the drain grace lapses and cmdExec reads the result.
 type cappedOutput struct {
+	mu      sync.Mutex
 	head    strings.Builder
 	tail    []byte
 	dropped int
 }
 
 func (c *cappedOutput) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	n := len(p)
 	if room := execOutputHeadBytes - c.head.Len(); room > 0 {
 		take := min(room, len(p))
@@ -151,6 +159,8 @@ func (c *cappedOutput) Write(p []byte) (int, error) {
 }
 
 func (c *cappedOutput) String() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if len(c.tail) == 0 {
 		return c.head.String()
 	}
