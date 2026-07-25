@@ -26,7 +26,7 @@ import {
   BridgeServer,
   type BridgeServerHandlers,
 } from "../frontend/native/server.js";
-import { extractSessionName } from "../backend/shared/session-name.js";
+import { extractSessionName } from "../util/session-name.js";
 import { createNativeActionHandler } from "../frontend/native/actions.js";
 import {
   configSnapshot,

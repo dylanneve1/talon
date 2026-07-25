@@ -24,7 +24,7 @@ import {
 } from "../helpers/index.js";
 import { collectDoctorReport } from "../../../core/doctor.js";
 import { handleAdminCommand } from "../admin.js";
-import { getTodayMetrics } from "../../../util/metrics.js";
+import { getTodayMetrics } from "../../../storage/metrics.js";
 import { isAuthorizedAdmin, type RegisterDeps } from "./state.js";
 import { telegramCommandMenu } from "./definitions.js";
 

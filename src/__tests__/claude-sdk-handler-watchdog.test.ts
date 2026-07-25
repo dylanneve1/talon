@@ -160,7 +160,7 @@ vi.mock("../util/trace.js", () => ({
 }));
 
 const incrementCounterSpy = vi.fn();
-vi.mock("../util/metrics.js", () => ({
+vi.mock("../storage/metrics.js", () => ({
   incrementCounter: (...args: unknown[]) =>
     incrementCounterSpy(...(args as Parameters<typeof incrementCounterSpy>)),
   recordHistogram: vi.fn(),

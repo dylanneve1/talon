@@ -8,7 +8,7 @@ import {
   todayUtc,
   type MetricsGrain,
   type MetricsLatencyAgg,
-} from "../storage/sessions.js";
+} from "./sessions.js";
 
 const legacyCounters = new Map<string, number>();
 

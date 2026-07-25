@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { incrementCounter, getMetrics, resetMetrics } from "../util/metrics.js";
+import { incrementCounter, getMetrics, resetMetrics } from "../storage/metrics.js";
 
 describe("metrics", () => {
   beforeEach(() => resetMetrics());

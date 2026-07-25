@@ -15,7 +15,8 @@
  *     rollups, flow violations) with backend dimensions.
  *   - `prompt-format` — user-prompt formatter ([time] [Name] [msg_id:N]).
  *   - `frontends` — config `frontend` → messaging-frontend list.
- *   - `session-name` — first-message → short session title.
+ *   - `extractSessionName` — re-exported from `util/session-name` so the
+ *     backends keep one import site; the helper itself is frontend-neutral.
  *   - `usage` — cache-hit % + log summarisers.
  *   - `system-prompt` — per-session prompt snapshots + backend suffix
  *     (assembly itself lives in `core/prompt/`).
@@ -59,7 +60,7 @@ export {
   type DeliveryToolNames,
 } from "./delivery-contract.js";
 
-export { extractSessionName } from "./session-name.js";
+export { extractSessionName } from "../../util/session-name.js";
 
 export {
   cacheHitPercent,

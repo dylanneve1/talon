@@ -42,7 +42,7 @@
 
 import { MemorySession } from "@openai/agents";
 import type { AgentInputItem } from "@openai/agents";
-import { incrementCounter } from "../../util/metrics.js";
+import { incrementCounter } from "../../storage/metrics.js";
 
 // ── Public types ───────────────────────────────────────────────────────────
 

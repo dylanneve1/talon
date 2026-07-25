@@ -17,7 +17,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getMetrics, resetMetrics } from "../util/metrics.js";
+import { getMetrics, resetMetrics } from "../storage/metrics.js";
 
 // ── Shared mock state ───────────────────────────────────────────────────────
 

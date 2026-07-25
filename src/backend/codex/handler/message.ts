@@ -22,7 +22,7 @@ import {
 import { getChatSettings } from "../../../storage/chat-settings.js";
 import { log, logError, logWarn } from "../../../util/log.js";
 import { traceMessage } from "../../../util/trace.js";
-import { incrementCounter } from "../../../util/metrics.js";
+import { incrementCounter } from "../../../storage/metrics.js";
 
 import {
   createStreamState,

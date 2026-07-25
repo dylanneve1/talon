@@ -30,7 +30,7 @@
 
 import type { StreamState } from "./stream-state.js";
 import { logWarn } from "../../util/log.js";
-import { incrementCounter } from "../../util/metrics.js";
+import { incrementCounter } from "../../storage/metrics.js";
 
 /** Route the delivery decision selected. */
 export type DeliveryRoute = "tool" | "text-part" | "synthetic-error" | "empty";

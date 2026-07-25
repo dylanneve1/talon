@@ -15,7 +15,7 @@ import {
   getTodayMetrics,
   incrementCounter,
   resetMetrics,
-} from "../util/metrics.js";
+} from "../storage/metrics.js";
 
 beforeEach(() => resetMetrics());
 afterEach(() => resetMetrics());

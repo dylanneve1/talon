@@ -18,7 +18,7 @@
  */
 
 import { log, logWarn } from "../../util/log.js";
-import { incrementCounter } from "../../util/metrics.js";
+import { incrementCounter } from "../../storage/metrics.js";
 
 const interrupts = new Map<string, () => void | Promise<void>>();
 
