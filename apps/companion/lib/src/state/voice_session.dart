@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:collection';
 
-import 'package:flutter/foundation.dart' show ChangeNotifier;
+import 'package:flutter/foundation.dart'
+    show ChangeNotifier, visibleForTesting;
 
 import '../models/bridge_models.dart';
 import '../services/log.dart';
+import '../models/tool_format.dart';
 import '../services/voice.dart';
 import 'app_state.dart';
 
@@ -237,11 +239,37 @@ class VoiceSession extends ChangeNotifier {
     return state.turnFor(id).tools;
   }
 
-  String? get toolLabel {
-    for (final tool in tools.reversed) {
-      if (!tool.done) return tool.name;
+  /// The tool the turn is on right now — the last one still running, or the
+  /// most recent one it finished, so a fast call doesn't flash out of the UI
+  /// the instant it lands. Null before the turn touches a tool at all.
+  ToolActivity? get activeTool {
+    final all = tools;
+    if (all.isEmpty) return null;
+    for (final tool in all.reversed) {
+      if (!tool.done) return tool;
     }
-    return null;
+    return all.last;
+  }
+
+  /// Human phrase for the running tool — "Search emails", not
+  /// `mcp__email-tools__search_emails`. Null when nothing is running.
+  ///
+  /// The screen renders the full [activeTool] card; this stays as the
+  /// one-line form for anything that can only carry a string (a future
+  /// notification, an Android auto surface, a spoken status).
+  String? get toolLabel {
+    final tool = activeTool;
+    return tool == null || tool.done ? null : toolPhrase(tool.name);
+  }
+
+  /// Test/gallery seam: pin the phase (and optionally the captions) without
+  /// driving the whole async state machine through a real engine.
+  @visibleForTesting
+  void debugSetPhase(VoicePhase phase, {String? userText, String? partial}) {
+    _phase = phase;
+    if (userText != null) lastUserText = userText;
+    if (partial != null) this.partial = partial;
+    notifyListeners();
   }
 
   // ── Session control ───────────────────────────────────────────────────────

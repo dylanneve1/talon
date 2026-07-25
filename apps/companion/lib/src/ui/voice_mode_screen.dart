@@ -1,13 +1,17 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show Ticker;
 
+import '../models/bridge_models.dart';
 import '../services/haptics.dart';
 import '../state/app_state.dart';
 import '../state/voice_session.dart';
 import '../theme.dart';
 import 'motion.dart';
+import 'tool_timeline.dart'
+    show fmtToolDuration, toolIcon, toolPhrase, toolServer;
 
 /// Full-screen voice conversation: a living orb that listens, thinks, and
 /// speaks; live captions you can toggle; and the whole agent pipeline (tools
@@ -15,7 +19,14 @@ import 'motion.dart';
 /// "assistant surface", including when Android's assist gesture launches it.
 class VoiceModeScreen extends StatefulWidget {
   final AppState state;
-  const VoiceModeScreen({super.key, required this.state});
+
+  /// Test/gallery seam: run against an already-built session (with a fake
+  /// engine) instead of opening the real microphone. When supplied the screen
+  /// neither starts nor disposes it — whoever injected it owns its lifecycle.
+  @visibleForTesting
+  final VoiceSession? session;
+
+  const VoiceModeScreen({super.key, required this.state, this.session});
 
   /// True while a voice-mode route is mounted. AppShell defers its
   /// conversation-route syncing while this is set (a selection change from
@@ -52,6 +63,7 @@ class VoiceModeScreen extends StatefulWidget {
 class _VoiceModeScreenState extends State<VoiceModeScreen>
     with TickerProviderStateMixin {
   late final VoiceSession _session;
+  late final bool _ownsSession;
   late final AnimationController _ambient;
   late bool _captions;
 
@@ -66,15 +78,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   /// 0 → resting, 1 → finger down on the orb.
   final ValueNotifier<double> _press = ValueNotifier(0);
 
+  /// Last phase seen by [_onPhaseChanged], for edge-triggered feedback.
+  VoicePhase _lastPhase = VoicePhase.idle;
+
   @override
   void initState() {
     super.initState();
     VoiceModeScreen.open.value = true;
     _captions = widget.state.prefs.voiceCaptions;
-    _session = VoiceSession(
-      widget.state,
-      handsFree: widget.state.prefs.voiceHandsFree,
-    );
+    _ownsSession = widget.session == null;
+    _session = widget.session ??
+        VoiceSession(
+          widget.state,
+          handsFree: widget.state.prefs.voiceHandsFree,
+        );
     // One slow clock drives all ambient orb motion; per-phase speeds are
     // derived from it inside the painter.
     _ambient = AnimationController(
@@ -82,7 +99,23 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       duration: const Duration(seconds: 6),
     )..repeat();
     _ticker = createTicker(_followEnergy)..start();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _session.start());
+    _session.addListener(_onPhaseChanged);
+    if (_ownsSession) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _session.start());
+    }
+  }
+
+  /// A single tick the moment the mic actually opens. In voice mode the phone
+  /// is usually not being looked at, so the transition into listening is worth
+  /// one physical cue — it rides the same Settings switch as every other
+  /// haptic, and nothing else in the loop buzzes.
+  void _onPhaseChanged() {
+    final phase = _session.phase;
+    if (phase == _lastPhase) return;
+    if (phase == VoicePhase.listening && _lastPhase != VoicePhase.listening) {
+      Haptics.selection();
+    }
+    _lastPhase = phase;
   }
 
   void _followEnergy(Duration elapsed) {
@@ -105,11 +138,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   @override
   void dispose() {
     VoiceModeScreen.open.value = false;
+    _session.removeListener(_onPhaseChanged);
     _ticker.dispose();
     _ambient.dispose();
     _energy.dispose();
     _press.dispose();
-    _session.dispose();
+    if (_ownsSession) _session.dispose();
     super.dispose();
   }
 
@@ -131,8 +165,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       case VoicePhase.finalizing:
         return 'Got it…';
       case VoicePhase.thinking:
-        final tool = s.toolLabel;
-        return tool != null ? 'Running $tool…' : 'Thinking…';
+        // The tool being run is narrated by the activity card under this
+        // line, in human words and with its own progress — the status line
+        // used to interpolate the raw tool id here, which is how
+        // `mcp__email-tools__search_emails` ended up on screen.
+        return s.activeTool != null ? 'Working…' : 'Thinking…';
       case VoicePhase.speaking:
         return 'Tap to interrupt';
       case VoicePhase.recovering:
@@ -181,7 +218,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                     child: Text(
                       _statusFor(s),
                       key: ValueKey(
-                        '${s.phase}·${s.toolLabel}·${s.muted}·${s.errorText}',
+                        '${s.phase}·${s.activeTool != null}·${s.muted}·'
+                        '${s.errorText}',
                       ),
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -193,6 +231,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                       ),
                     ),
                   ),
+                  // What the agent is actually doing, while it does it.
+                  _toolActivity(s),
                   const Spacer(),
                   _captionsPanel(s),
                   const SizedBox(height: 18),
@@ -253,6 +293,47 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
               ),
               child: orb,
             ),
+    );
+  }
+
+  /// The live tool card. Present only while the turn is actually using a
+  /// tool, so a plain answer keeps the screen as quiet as it is today; it
+  /// grows and fades in under the status line, swaps content in place as the
+  /// turn moves from one call to the next, and folds away when the reply
+  /// starts. AnimatedSize handles the height so the Spacers either side glide
+  /// instead of jumping.
+  Widget _toolActivity(VoiceSession s) {
+    final showing = s.phase == VoicePhase.thinking ? s.activeTool : null;
+    return AnimatedSize(
+      duration: TalonMotion.base,
+      curve: TalonMotion.emphasized,
+      alignment: Alignment.topCenter,
+      child: AnimatedSwitcher(
+        duration: TalonMotion.base,
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeIn,
+        transitionBuilder: (child, anim) => FadeTransition(
+          opacity: anim,
+          child: SlideTransition(
+            position: Tween(begin: const Offset(0, 0.25), end: Offset.zero)
+                .animate(anim),
+            child: child,
+          ),
+        ),
+        child: showing == null
+            ? const SizedBox(width: double.infinity, key: ValueKey('tool-off'))
+            : Padding(
+                // Keyed by tool id: moving from one call to the next
+                // cross-fades two cards instead of mutating one in place, so
+                // a chain of tools reads as a sequence.
+                key: ValueKey('tool-${showing.id}'),
+                padding: const EdgeInsets.only(top: 18),
+                child: _ToolActivityCard(
+                  tool: showing,
+                  step: s.tools.length,
+                ),
+              ),
+      ),
     );
   }
 
@@ -406,6 +487,199 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 }
 
+/// One live tool call, voice-mode flavoured: a tinted glyph for the tool's
+/// subject, the call in human words, and a right edge that says whether it is
+/// still running, finished, or failed. Deliberately one card and not the
+/// chat's full timeline — voice mode is glanced at, not read.
+class _ToolActivityCard extends StatefulWidget {
+  final ToolActivity tool;
+
+  /// How many calls this turn has made, so a multi-step turn can say so.
+  final int step;
+
+  const _ToolActivityCard({required this.tool, required this.step});
+
+  @override
+  State<_ToolActivityCard> createState() => _ToolActivityCardState();
+}
+
+class _ToolActivityCardState extends State<_ToolActivityCard> {
+  Timer? _ticker;
+
+  bool get _failed => widget.tool.error != null;
+  bool get _running => !widget.tool.done && !_failed;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTicker();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ToolActivityCard old) {
+    super.didUpdateWidget(old);
+    _syncTicker();
+  }
+
+  /// Keep the elapsed readout live while the call is in flight, and stop the
+  /// timer the moment it isn't — same contract as the chat timeline's step.
+  void _syncTicker() {
+    if (_running && _ticker == null) {
+      _ticker = Timer.periodic(const Duration(milliseconds: 200), (_) {
+        if (mounted && _running) setState(() {});
+      });
+    } else if (!_running) {
+      _ticker?.cancel();
+      _ticker = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tool = widget.tool;
+    final tint = _failed ? TalonColors.bad : TalonColors.accent;
+    final server = toolServer(tool.name);
+    final detail = [
+      if (server != null) server,
+      fmtToolDuration(tool.elapsed),
+      if (widget.step > 1) 'step ${widget.step}',
+    ].join(' · ');
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
+          decoration: BoxDecoration(
+            color: TalonColors.surface.withValues(
+              alpha: TalonTheme.isDark ? 0.58 : 0.92,
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: _failed
+                  ? TalonColors.bad.withValues(alpha: 0.45)
+                  : TalonColors.glassStroke,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: tint.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(toolIcon(tool.name), size: 18, color: tint),
+              ),
+              const SizedBox(width: TalonSpace.md),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _failed ? '${toolPhrase(tool.name)} failed'
+                          : toolPhrase(tool.name),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w600,
+                        color: _failed ? TalonColors.bad : TalonColors.text,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      detail,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: TalonColors.textFaint,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: TalonSpace.md),
+              _ToolStatusGlyph(running: _running, failed: _failed),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Right edge of the tool card: a thin ring while the call runs, a tick when
+/// it lands, a bang when it fails. The three share a footprint so the swap is
+/// a cross-fade rather than a reflow.
+class _ToolStatusGlyph extends StatelessWidget {
+  final bool running;
+  final bool failed;
+  const _ToolStatusGlyph({required this.running, required this.failed});
+
+  @override
+  Widget build(BuildContext context) {
+    final still = reduceMotion(context);
+    final Widget child;
+    if (running) {
+      child = SizedBox(
+        key: const ValueKey('run'),
+        width: 16,
+        height: 16,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          valueColor: AlwaysStoppedAnimation(TalonColors.accent),
+          value: still ? 0.25 : null,
+        ),
+      );
+    } else {
+      final color = failed ? TalonColors.bad : TalonColors.ok;
+      child = Container(
+        key: ValueKey(failed ? 'fail' : 'done'),
+        width: 18,
+        height: 18,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withValues(alpha: 0.18),
+        ),
+        child: Icon(
+          failed ? Icons.priority_high_rounded : Icons.check_rounded,
+          size: 12,
+          color: color,
+        ),
+      );
+    }
+    return SizedBox(
+      width: 20,
+      height: 20,
+      child: Center(
+        child: AnimatedSwitcher(
+          duration: TalonMotion.fast,
+          transitionBuilder: (c, a) => ScaleTransition(
+            scale: Tween(begin: 0.6, end: 1.0).animate(a),
+            child: FadeTransition(opacity: a, child: c),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
 /// A circular glass control for the bottom row.
 class _RoundControl extends StatelessWidget {
   final IconData icon;
@@ -430,25 +704,72 @@ class _RoundControl extends StatelessWidget {
             : TalonColors.textDim;
     return Tooltip(
       message: label,
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: TalonMotion.fast,
-          width: 58,
-          height: 58,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: active
-                ? TalonColors.accent.withValues(alpha: 0.16)
-                : TalonColors.glassFill,
-            border: Border.all(
+      child: Semantics(
+        button: true,
+        label: label,
+        child: _PressScale(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: TalonMotion.fast,
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
               color: active
-                  ? TalonColors.accent.withValues(alpha: 0.55)
-                  : TalonColors.glassStroke,
+                  ? TalonColors.accent.withValues(alpha: 0.16)
+                  : TalonColors.glassFill,
+              border: Border.all(
+                color: active
+                    ? TalonColors.accent.withValues(alpha: 0.55)
+                    : TalonColors.glassStroke,
+              ),
+            ),
+            // The mic/captions glyphs change with state — swap them through a
+            // scale-fade so the button morphs instead of blinking.
+            child: AnimatedSwitcher(
+              duration: TalonMotion.fast,
+              transitionBuilder: (c, a) => ScaleTransition(
+                scale: Tween(begin: 0.7, end: 1.0).animate(a),
+                child: FadeTransition(opacity: a, child: c),
+              ),
+              child: Icon(icon,
+                  key: ValueKey(icon.codePoint), size: 24, color: tint),
             ),
           ),
-          child: Icon(icon, size: 24, color: tint),
         ),
+      ),
+    );
+  }
+}
+
+/// Wraps a control so it dips under a finger and springs back — the tactile
+/// half of "it feels responsive", and the one thing the voice controls didn't
+/// have (they changed colour on state, but never acknowledged the press).
+class _PressScale extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  const _PressScale({required this.child, required this.onTap});
+
+  @override
+  State<_PressScale> createState() => _PressScaleState();
+}
+
+class _PressScaleState extends State<_PressScale> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _down = true),
+      onTapUp: (_) => setState(() => _down = false),
+      onTapCancel: () => setState(() => _down = false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _down ? 0.9 : 1.0,
+        duration: TalonMotion.fast,
+        curve: TalonMotion.emphasized,
+        child: widget.child,
       ),
     );
   }

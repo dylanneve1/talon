@@ -5,7 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../models/bridge_models.dart';
+import '../models/tool_format.dart';
 import '../theme.dart';
+
+// The pure name helpers live in models/ so non-UI code (the voice session)
+// can format a tool name without importing widgets. Re-exported here because
+// every widget that renders a tool already imports this file.
+export '../models/tool_format.dart';
 import 'motion.dart';
 
 /// The agent's tool activity, rendered as a connected vertical timeline: one
@@ -502,19 +508,52 @@ class _ToolTraceState extends State<ToolTrace> {
 
 // ── Shared formatting helpers ────────────────────────────────────────────────
 
-/// De-noise MCP tool names for display:
-/// `mcp__email-tools__search_emails` → `email · search_emails`.
-/// Non-MCP names (e.g. `Bash`, `Read`) are shown as-is.
-String toolDisplayName(String raw) {
-  if (!raw.startsWith('mcp__')) return raw;
-  final parts = raw.substring(5).split('__');
-  if (parts.length < 2) return raw;
-  var server = parts.first;
-  if (server.endsWith('-tools')) {
-    server = server.substring(0, server.length - '-tools'.length);
+/// A glyph for a tool, matched on the whole raw name so an MCP server's
+/// subject ("email", "market", "device") counts as much as the verb. Specific
+/// matches come first; the fallback is the timeline's own sparkle.
+IconData toolIcon(String raw) {
+  final n = raw.toLowerCase();
+  bool has(List<String> keys) => keys.any(n.contains);
+  if (has(['mail', 'inbox'])) return Icons.mail_outline_rounded;
+  if (has(['calendar', 'event', 'schedule', 'cron', 'remind'])) {
+    return Icons.event_outlined;
   }
-  final tool = parts.sublist(1).join('__');
-  return '$server · $tool';
+  if (has(['weather'])) return Icons.wb_sunny_outlined;
+  if (has(['bash', 'shell', 'exec', 'command', 'terminal'])) {
+    return Icons.terminal_rounded;
+  }
+  if (has(
+      ['browser', 'playwright', 'scrape', 'crawl', 'fetch', 'url', 'web'])) {
+    return Icons.public_rounded;
+  }
+  if (has(['search', 'grep', 'glob', 'find', 'query', 'lookup'])) {
+    return Icons.search_rounded;
+  }
+  if (has(['memory', 'palace', 'drawer', 'recall'])) {
+    return Icons.psychology_outlined;
+  }
+  if (has(['device', 'mesh', 'phone', 'teleport', 'ring'])) {
+    return Icons.smartphone_rounded;
+  }
+  if (has(['market', 'order', 'trade', 'price', 'currency'])) {
+    return Icons.trending_up_rounded;
+  }
+  if (has(['image', 'photo', 'video', 'ffmpeg', 'render', 'sticker'])) {
+    return Icons.image_outlined;
+  }
+  if (has(['github', 'git', 'pull_request', 'commit', 'code'])) {
+    return Icons.code_rounded;
+  }
+  if (has(['send', 'message', 'reply', 'post', 'telegram', 'discord'])) {
+    return Icons.send_rounded;
+  }
+  if (has(['read', 'write', 'edit', 'file', 'document', 'note'])) {
+    return Icons.description_outlined;
+  }
+  if (has(['flight', 'travel', 'transit', 'tfi', 'departure'])) {
+    return Icons.directions_transit_rounded;
+  }
+  return Icons.auto_awesome_outlined;
 }
 
 /// Pick the most telling argument to preview inline next to the tool name.

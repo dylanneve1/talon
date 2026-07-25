@@ -18,12 +18,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:talon_companion/src/models/bridge_models.dart';
 import 'package:talon_companion/src/services/prefs.dart';
 import 'package:talon_companion/src/state/app_state.dart';
+import 'package:talon_companion/src/state/voice_session.dart';
 import 'package:talon_companion/src/theme.dart';
 import 'package:talon_companion/src/ui/connect_screen.dart';
 import 'package:talon_companion/src/ui/extensions_screen.dart';
 import 'package:talon_companion/src/ui/glass.dart';
 import 'package:talon_companion/src/ui/root_view.dart';
 import 'package:talon_companion/src/ui/settings_screen.dart';
+import 'package:talon_companion/src/ui/voice_mode_screen.dart';
+
+import '../fake_voice_engine.dart';
 
 final bool _enabled = Platform.environment['TALON_SCREENSHOTS'] == '1';
 
@@ -428,6 +432,53 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.longPress(find.text('Trip to Kerry'));
     await _shoot(tester, 'phone_chat_actions');
+  });
+
+  // Voice mode mid-tool-call: the case that used to render the raw MCP id
+  // (`mcp__email-tools__search_emails`) into the status line.
+  testWidgets('phone · voice mode (tool call)', (tester) async {
+    _phone(tester);
+    final state = _demoState(narrow: true, select: 'c1');
+    addTearDown(state.dispose);
+    final engine = SilentVoiceEngine();
+    addTearDown(engine.close);
+    final session = VoiceSession(state, handsFree: true, engine: engine);
+    addTearDown(session.dispose);
+
+    final turn = state.turnFor('c1');
+    turn.active = true;
+    turn.tools.add(ToolActivity(
+      id: 'tool-1',
+      name: 'mcp__email-tools__search_emails',
+      input: const {'query': 'flight confirmation'},
+      startedAt: DateTime.now().subtract(const Duration(milliseconds: 2400)),
+    ));
+    session.debugSetPhase(
+      VoicePhase.thinking,
+      userText: 'Did the flight confirmation land in my inbox?',
+    );
+
+    await tester.pumpWidget(
+        _app(VoiceModeScreen(state: state, session: session)));
+    await _shoot(tester, 'phone_voice_tool');
+  });
+
+  testWidgets('phone · voice mode (listening)', (tester) async {
+    _phone(tester);
+    final state = _demoState(narrow: true, select: 'c1');
+    addTearDown(state.dispose);
+    final engine = SilentVoiceEngine();
+    addTearDown(engine.close);
+    final session = VoiceSession(state, handsFree: true, engine: engine);
+    addTearDown(session.dispose);
+    session.debugSetPhase(
+      VoicePhase.listening,
+      partial: 'what does my afternoon look like',
+    );
+
+    await tester.pumpWidget(
+        _app(VoiceModeScreen(state: state, session: session)));
+    await _shoot(tester, 'phone_voice_listening');
   });
 
   testWidgets('phone · settings', (tester) async {
