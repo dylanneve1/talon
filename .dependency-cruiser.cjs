@@ -113,27 +113,45 @@ module.exports = {
 
     // ── Migration targets (warn = visible, ratchets to error) ────────────
     {
-      name: "sessions-owned-by-weaver",
+      name: "backend-sessions-move-to-thread",
       comment:
-        "TARGET (Weaver step 5): only the Weaver owns session state; " +
-        "backends receive a session handle from the Thread's warp instead " +
-        "of importing the store. Ratchets to error when " +
-        "engine/backend-controller/legacy.ts is deleted. Do not add new " +
-        "importers.",
+        "DEFERRED BY DESIGN — see docs/weaver.md 'Non-goals': session " +
+        "writes still run through the store directly, because backends own " +
+        "those callsites and `Thread.session` is a read handle for now. " +
+        "Ratchets to error when QueryParams carries a write-capable " +
+        "ThreadSession and nothing under backend/ imports the store " +
+        "directly. That is ~88 callsites across six backends, so treat the " +
+        "current warnings as a visible debt marker, not an imminent " +
+        "migration. Do not add new importers. " +
+        "(Renamed from sessions-owned-by-weaver: the old name claimed the " +
+        "Weaver owns ALL session state, but `from` only covers backend/ " +
+        "and core/engine/ — eleven frontend modules import the store too " +
+        "and were never flagged. The name now matches what is checked.)",
       severity: "warn",
       from: {
         path: "^src/(backend|core/engine)/",
-        pathNot: "^src/core/engine/backend-controller/",
+        // gateway.ts reads getActiveSessionCount() — fleet cardinality for
+        // /status, not per-chat session ownership. The Thread migration
+        // will not remove it: that count is of persisted rows, while
+        // loom.activeContextCount() counts live Threads.
+        pathNot: "^src/core/engine/gateway\\.ts$",
       },
       to: { path: "^src/storage/sessions\\.ts$" },
     },
     {
       name: "doctor-probes-move-behind-registry",
       comment:
-        "TARGET: doctor.ts checks backend health by importing backend " +
-        "modules directly. Ratchets to error when backends export " +
-        "DoctorCheck providers and the composition root wires them in. " +
-        "Do not add new backend imports here.",
+        "TARGET: doctor.ts hardcodes which backends exist and reaches into " +
+        "them for health probes. The observable symptom is uneven coverage " +
+        "— only claude-sdk and codex are probed, so kilo, opencode, and " +
+        "openai-agents get no doctor checks at all. Ratchets to error when " +
+        "backends contribute their own checks through the registry and " +
+        "doctor composes whatever is bound. NOTE: every violating edge is " +
+        "an `await import()` inside a try block, so there is no load-order " +
+        "or bundle coupling here and nothing is paid when doctor is not " +
+        "run; the cost is purely that adding a backend does not add its " +
+        "checks. Kept visible rather than silenced with dependencyTypesNot " +
+        "for exactly that reason. Do not add new probes. ",
       severity: "warn",
       from: { path: "^src/core/doctor\\.ts$" },
       to: { path: "^src/backend/" },
@@ -152,22 +170,27 @@ module.exports = {
     {
       name: "metrics-read-shape-moves-down",
       comment:
-        "TARGET: util/metrics.ts re-exposes session read shapes from " +
-        "storage/. Either the read shape moves into storage/ proper or " +
-        "this module moves up beside its data. Ratchets to error with " +
-        "that move. Do not add new upward imports.",
-      severity: "warn",
+        "DONE, now enforced: the metrics read shape was a view over the " +
+        "session store misfiled as a leaf utility — it imported nothing " +
+        "except storage/sessions and was imported only from backend/ and " +
+        "frontend/. It now lives at storage/metrics.ts, beside its data. " +
+        "The rule stays as an error so nothing reintroduces a util/ module " +
+        "that reaches up into the layers above it.",
+      severity: "error",
       from: { path: "^src/util/metrics\\.ts$" },
       to: { path: "^src/(core|backend|frontend|storage|cli|plugins)/" },
     },
     {
       name: "frontend-not-to-backend",
       comment:
-        "TARGET: frontends consume turn results through the engine, not by " +
-        "importing backend/shared helpers. Ratchets to error when the " +
-        "Shuttle owns turn choreography and backend/shared shrinks to the " +
-        "adapter contract. Do not add new importers.",
-      severity: "warn",
+        "ENFORCED: frontends consume turn results through the engine, never " +
+        "by importing backend/ directly. The last violation was " +
+        "`extractSessionName`, a 41-line import-free string helper that was " +
+        "simply misfiled under backend/shared; it now lives in " +
+        "util/session-name.ts (still re-exported from the backend/shared " +
+        "barrel, so backends keep one import site). With that gone the " +
+        "boundary is clean, so this is an error rather than a target.",
+      severity: "error",
       from: { path: "^src/frontend/" },
       to: { path: "^src/backend/" },
     },

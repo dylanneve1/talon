@@ -677,7 +677,6 @@ class _ChatMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pulseOn = chat.pulse ?? false;
     return PopupMenuButton<String>(
       icon: Icon(Icons.more_vert, size: 20, color: TalonColors.textDim),
       color: TalonColors.surfaceHi,
@@ -685,9 +684,6 @@ class _ChatMenu extends StatelessWidget {
         switch (v) {
           case 'reset':
             await state.resetChat(chat.id);
-            break;
-          case 'pulse':
-            await state.setPulse(chat.id, !pulseOn);
             break;
           case 'export':
             final messenger = ScaffoldMessenger.of(context);
@@ -715,14 +711,6 @@ class _ChatMenu extends StatelessWidget {
           value: 'export',
           child: _MenuRow(
               icon: Icons.ios_share_outlined, label: 'Copy as Markdown'),
-        ),
-        PopupMenuItem(
-          value: 'pulse',
-          child: _MenuRow(
-            icon:
-                pulseOn ? Icons.notifications_active : Icons.notifications_off,
-            label: pulseOn ? 'Disable pulse' : 'Enable pulse',
-          ),
         ),
         const PopupMenuItem(
           value: 'rename',

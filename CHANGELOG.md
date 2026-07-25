@@ -1,5 +1,37 @@
 # Changelog
 
+## [3.8.2](https://github.com/dylanneve1/talon/compare/v3.8.1...v3.8.2) (2026-07-25)
+
+
+### Code Refactoring
+
+* **companion:** drop per-chat pulse ([#645](https://github.com/dylanneve1/talon/issues/645)) ([3e9a339](https://github.com/dylanneve1/talon/commit/3e9a339eff87c84f8a9025745c9aff85bd2cc1db))
+
+## [3.8.1](https://github.com/dylanneve1/talon/compare/v3.8.0...v3.8.1) (2026-07-25)
+
+
+### Bug Fixes
+
+* **errors:** classify transient transport failures as retryable ([#641](https://github.com/dylanneve1/talon/issues/641)) ([e3c6209](https://github.com/dylanneve1/talon/commit/e3c620987d266334a5bdb013d61224aa17756147))
+* **telegram:** single-message /metrics panel with grain buttons, de-slop /mesh ([#640](https://github.com/dylanneve1/talon/issues/640)) ([d389b0a](https://github.com/dylanneve1/talon/commit/d389b0af8ca12779a4665a947e8e15024af70b30))
+
+
+### Code Refactoring
+
+* **memory:** remove Phase B pre-retrieval, keep memory.md + tool search ([#639](https://github.com/dylanneve1/talon/issues/639)) ([b0f253e](https://github.com/dylanneve1/talon/commit/b0f253e5b26b5aa8a99443faa6923ebbfaa3fc46))
+
+## [3.8.0](https://github.com/dylanneve1/talon/compare/v3.7.0...v3.8.0) (2026-07-25)
+
+
+### Features
+
+* **background:** configurable reasoning effort for heartbeat and dream ([#636](https://github.com/dylanneve1/talon/issues/636)) ([9f7899f](https://github.com/dylanneve1/talon/commit/9f7899fed8841d90c0672817046ca2432e242581))
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump the production-dependencies group with 5 updates ([#634](https://github.com/dylanneve1/talon/issues/634)) ([4e184c9](https://github.com/dylanneve1/talon/commit/4e184c9a013aa376c12567669065f5737262b10c))
+
 ## [3.7.0](https://github.com/dylanneve1/talon/compare/v3.6.3...v3.7.0) (2026-07-24)
 
 

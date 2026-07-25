@@ -26,51 +26,25 @@ export {
   type OpenCodeModelCatalog,
   type OpenCodeModelResolution,
   type ModelButton,
-  getOpenCodeModelCatalog,
-  getOpenCodeModelInfo,
   getOpenCodeModelSelectionValue,
   resolveOpenCodeModelInput,
   getOpenCodeQuickPickModels,
-  getOpenCodeSettingsPresentation,
-  renderOpenCodeModelSummary,
-  renderOpenCodeModelList,
   formatOpenCodeSelectionError,
-  formatOpenCodeUnavailableModel,
 } from "./models/index.js";
 
 // ── Sessions ───────────────────────────────────────────────────────────────
 export {
   summarizeKiloAssistantMessages,
   getKiloSessionSnapshot,
-  getKiloTurnSummary,
-  extractPartsSummary,
-  extractAssistantUsage,
-  rejectPendingQuestions,
   type KiloAssistantInfo,
   type KiloSessionSnapshot,
 } from "./sessions.js";
 
 // ── Server / lifecycle ─────────────────────────────────────────────────────
-export {
-  initKiloAgent,
-  stopKiloServer,
-  ensureServer,
-  ensureSession,
-  ensureChatMcpServer,
-  ensurePluginMcpServers,
-  buildToolOverrides,
-  disconnectChatMcpServer,
-  resolveProviderID,
-  parseStoredKiloModelSelection,
-  KILO_HOSTNAME,
-  KILO_PORT,
-  KILO_BASE_URL,
-  KILO_SYSTEM_PROMPT_SUFFIX,
-  TALON_MCP_SERVER_NAME,
-} from "./server.js";
+export { initKiloAgent, stopKiloServer } from "./server.js";
 
 // ── Handler ────────────────────────────────────────────────────────────────
-export { handleMessage, getActiveSession } from "./handler/index.js";
+export { handleMessage } from "./handler/index.js";
 
 // ── Model provider (Backend adapter) ──────────────────────────────────
 export {

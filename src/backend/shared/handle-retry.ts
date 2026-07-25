@@ -25,7 +25,7 @@
 import type { QueryParams, QueryResult } from "./handler-types.js";
 import { classify, type TalonError } from "../../core/errors.js";
 import { logWarn } from "../../util/log.js";
-import { incrementCounter } from "../../util/metrics.js";
+import { incrementCounter } from "../../storage/metrics.js";
 import { resetSession } from "../../storage/sessions.js";
 import { classifyRetry } from "./model-retry.js";
 import type { AgentEvent } from "../../core/agent-runtime/events.js";

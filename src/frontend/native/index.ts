@@ -69,7 +69,7 @@ import {
 } from "../../core/engine/backend-controller/index.js";
 import { getActiveReasoningLevels } from "../shared/reasoning-levels.js";
 import { NativeChats, DEFAULT_CHAT_TITLE, type ChatEntry } from "./chats.js";
-import { extractSessionName } from "../../backend/shared/session-name.js";
+import { extractSessionName } from "../../util/session-name.js";
 import { BridgeServer, type BridgeServerHandlers } from "./server.js";
 import { createNativeActionHandler } from "./actions.js";
 import { getMeshService } from "../../core/mesh/index.js";

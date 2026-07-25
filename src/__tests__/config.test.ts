@@ -424,40 +424,6 @@ describe("config", () => {
       });
     });
 
-    it("memoryPreRetrieval is absent by default (Phase B ships inert)", async () => {
-      mockFs({ frontend: "terminal" });
-
-      const { loadConfig } = await import("../util/config.js");
-      const config = loadConfig();
-      expect(config.memoryPreRetrieval).toBeUndefined();
-    });
-
-    it("parses memoryPreRetrieval with schema defaults applied", async () => {
-      mockFs({
-        frontend: "terminal",
-        memoryPreRetrieval: { enabled: true },
-      });
-
-      const { loadConfig } = await import("../util/config.js");
-      const config = loadConfig();
-      expect(config.memoryPreRetrieval).toEqual({
-        enabled: true,
-        maxResults: 3,
-        maxChars: 3000,
-        groupPrivateUserFiltering: true,
-      });
-    });
-
-    it("rejects out-of-range memoryPreRetrieval values", async () => {
-      mockFs({
-        frontend: "terminal",
-        memoryPreRetrieval: { enabled: true, maxResults: 0 },
-      });
-
-      const { loadConfig } = await import("../util/config.js");
-      expect(() => loadConfig()).toThrow();
-    });
-
     it("memory.backend=mempalace mirrors settings onto config.mempalace", async () => {
       mockFs({
         frontend: "terminal",

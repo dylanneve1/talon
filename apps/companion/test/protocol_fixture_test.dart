@@ -53,7 +53,10 @@ void main() {
     expect(c.model, 'claude-sonnet-5');
     expect(c.backend, 'claude');
     expect(c.effort, 'high');
-    expect(c.pulse, isTrue);
+    // The fixture still carries `pulse` — the wire shape is unchanged and the
+    // group-chat frontends still use it. This client parses right past it
+    // (see ClientChat.fromJson), so there is nothing to assert here beyond
+    // the fields above surviving its presence.
   });
 
   test('canonical status parses', () {

@@ -26,10 +26,66 @@ export function escapeHtml(text: string): string {
 }
 
 /**
+ * True when every tag in `html` is closed in the order it was opened.
+ *
+ * The inline formatters below are independent regex passes with no
+ * knowledge of each other's spans, so interleaved delimiters
+ * (`**a _b** c_`) emit crossed tags like `<b><i>x</b></i>`. Telegram
+ * refuses to parse those and 400s the whole message, so the caller
+ * checks before committing to the formatted rendering.
+ *
+ * Only tags this module generates are possible here — everything else
+ * was entity-escaped in step 3 — so a plain stack is sufficient.
+ */
+function isWellFormedHtml(html: string): boolean {
+  const stack: string[] = [];
+  const tag = /<(\/?)([a-zA-Z]+)(?:\s[^>]*)?>/g;
+  let match: RegExpExecArray | null;
+  while ((match = tag.exec(html)) !== null) {
+    const [, closing, name] = match;
+    if (closing) {
+      if (stack.pop() !== name) return false;
+    } else {
+      stack.push(name!);
+    }
+  }
+  return stack.length === 0;
+}
+
+/** Apply the inline delimiter passes to already-escaped text. */
+function applyInlineFormatting(input: string): string {
+  let out = input;
+  // Bold+italic: ***text*** — must run before the ** and * passes, which
+  // would otherwise split it into the crossed pair `<b><i>x</b></i>`.
+  out = out.replace(/\*\*\*(.+?)\*\*\*/g, "<b><i>$1</i></b>");
+  // Bold: **text**
+  out = out.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  // Italic: *text* (not preceded by another *)
+  out = out.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<i>$1</i>");
+  // Italic: _text_ (surrounded by non-word or start/end)
+  out = out.replace(/(?<!\w)_(.+?)_(?!\w)/g, "<i>$1</i>");
+  // Links: [text](url) — only safe URL schemes become anchors. Both text
+  // and url were already HTML-escaped by step 3 (quotes included, so the
+  // href attribute can't be broken out of); escaping again here corrupted
+  // every & in a query string into &amp;amp;.
+  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) =>
+    /^https?:\/\//i.test(url) ? `<a href="${url}">${text}</a>` : text,
+  );
+  // Strikethrough: ~~text~~
+  out = out.replace(/~~(.+?)~~/g, "<s>$1</s>");
+  return out;
+}
+
+/**
  * Convert Markdown output to Telegram-safe HTML.
  *
  * Handles: bold, italic, inline code, fenced code blocks, links.
  * Escapes HTML entities in non-formatted text.
+ *
+ * Guarantees well-formed output: when the inline passes would produce
+ * crossed tags, the formatting is dropped rather than emitted, because
+ * Telegram rejects the entire message on a parse error and the caller's
+ * only recourse is a second round-trip with no formatting at all.
  */
 export function markdownToTelegramHtml(text: string): string {
   // Step 1: Extract fenced code blocks to avoid processing their contents.
@@ -59,25 +115,14 @@ export function markdownToTelegramHtml(text: string): string {
   // oxlint-disable-next-line no-control-regex
   processed = processed.replace(/[^`\x00]+/g, (segment) => escapeHtml(segment));
 
-  // Step 4: Apply inline formatting.
-  // Bold: **text**
-  processed = processed.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
-  // Italic: *text* (not preceded by another *)
-  processed = processed.replace(
-    /(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g,
-    "<i>$1</i>",
-  );
-  // Italic: _text_ (surrounded by non-word or start/end)
-  processed = processed.replace(/(?<!\w)_(.+?)_(?!\w)/g, "<i>$1</i>");
-  // Links: [text](url) — only safe URL schemes become anchors. Both text
-  // and url were already HTML-escaped by step 3 (quotes included, so the
-  // href attribute can't be broken out of); escaping again here corrupted
-  // every & in a query string into &amp;amp;.
-  processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) =>
-    /^https?:\/\//i.test(url) ? `<a href="${url}">${text}</a>` : text,
-  );
-  // Strikethrough: ~~text~~
-  processed = processed.replace(/~~(.+?)~~/g, "<s>$1</s>");
+  // Step 4: Apply inline formatting, but only keep it if the result is
+  // actually parseable. `processed` at this point holds escaped text plus
+  // tag-free placeholders, so it is a safe unformatted fallback.
+  const unformatted = processed;
+  processed = applyInlineFormatting(processed);
+  if (!isWellFormedHtml(processed)) {
+    processed = unformatted;
+  }
 
   // Steps 5+6: Restore code spans and fenced blocks. The replacement MUST
   // go through a function: with a string, String.replace interprets $-

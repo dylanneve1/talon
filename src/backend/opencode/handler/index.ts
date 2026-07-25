@@ -2,7 +2,7 @@
  * OpenCode message handler.
  *
  * Split by responsibility (parallel to the kilo handler/ layout):
- *   - `state`   — in-flight session registry (getActiveSession)
+ *   - `state`   — in-flight session registry (activeSessions)
  *   - `turn`    — runOpenCodeTurn + SSE subscription + last-assistant lookup
  *   - `message` — the handleMessage entry point + post-loop accounting
  *
@@ -10,4 +10,3 @@
  */
 
 export { handleMessage } from "./message.js";
-export { getActiveSession } from "./state.js";

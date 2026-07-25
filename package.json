@@ -1,6 +1,6 @@
 {
   "name": "talon-agent",
-  "version": "3.7.0",
+  "version": "3.8.2",
   "description": "Multi-frontend AI agent with full tool access, streaming, cron jobs, and plugin system",
   "author": "Dylan Neve",
   "license": "MIT",
@@ -131,7 +131,6 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@swc/core": "^1.15.46",
     "@types/node": "^26.0.0",
     "@types/write-file-atomic": "^4.0.3",
     "@vitest/coverage-v8": "^4.1.3",

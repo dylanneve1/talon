@@ -7,11 +7,14 @@ import {
   formatModelOptionLabel,
   getTelegramModelOptions,
   isSelectedModel,
-  renderMetricsMessages,
+  renderMeshReport,
+  renderMetricsKeyboard,
+  renderMetricsPanel,
   renderEffortRows,
   renderSettingsKeyboard,
   renderSettingsText,
 } from "../frontend/telegram/helpers/index.js";
+import type { MeshPingResult } from "../core/mesh/service.js";
 
 describe("telegram helpers", () => {
   beforeEach(() => {
@@ -152,41 +155,55 @@ describe("renderSettingsText", () => {
   });
 });
 
-describe("renderMetricsMessages", () => {
+describe("renderMetricsPanel", () => {
   it("formats latency metrics with millisecond precision", () => {
-    const messages = renderMetricsMessages({
-      counters: { queries_total: 7 },
-      histograms: {
-        response_latency_ms: {
-          count: 3,
-          avg: 900,
-          min: 250,
-          max: 2_000,
+    const panel = renderMetricsPanel(
+      {
+        counters: { queries_total: 7 },
+        histograms: {
+          response_latency_ms: {
+            count: 3,
+            avg: 900,
+            min: 250,
+            max: 2_000,
+          },
         },
       },
-    });
+      "all",
+    );
 
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toContain("avg=900ms");
-    expect(messages[0]).toContain("min=250ms");
-    expect(messages[0]).toContain("max=2s");
+    expect(panel).toContain("avg=900ms");
+    expect(panel).toContain("min=250ms");
+    expect(panel).toContain("max=2s");
+  });
+
+  it("titles the panel by grain", () => {
+    const snapshot = { counters: { queries_total: 1 }, histograms: {} };
+    expect(renderMetricsPanel(snapshot, "today")).toContain(
+      "<b>Metrics — today (UTC)</b>",
+    );
+    expect(renderMetricsPanel(snapshot, "all")).toContain(
+      "<b>Metrics — all time</b>",
+    );
   });
 
   it("renders count histograms as plain numbers under Distributions", () => {
-    const messages = renderMetricsMessages({
-      counters: {},
-      histograms: {
-        response_latency_ms: {
-          count: 3,
-          avg: 900,
-          min: 250,
-          max: 2_000,
+    const out = renderMetricsPanel(
+      {
+        counters: {},
+        histograms: {
+          response_latency_ms: {
+            count: 3,
+            avg: 900,
+            min: 250,
+            max: 2_000,
+          },
+          tool_calls_per_turn: { count: 21, avg: 9, min: 1, max: 100 },
         },
-        tool_calls_per_turn: { count: 21, avg: 9, min: 1, max: 100 },
       },
-    });
+      "all",
+    );
 
-    const out = messages.join("\n");
     // Duration histograms stay under Latency with time units…
     expect(out).toContain("<b>Latency</b>");
     expect(out).toContain("avg=900ms");
@@ -197,18 +214,20 @@ describe("renderMetricsMessages", () => {
   });
 
   it("sorts the tool_calls group by count, busiest first", () => {
-    const messages = renderMetricsMessages({
-      counters: {
-        "tool_calls.Read": 3,
-        "tool_calls.Bash": 162,
-        "tool_calls.end_turn": 16,
-        "backend.claude.queries": 3,
-        "backend.codex.queries": 18,
+    const out = renderMetricsPanel(
+      {
+        counters: {
+          "tool_calls.Read": 3,
+          "tool_calls.Bash": 162,
+          "tool_calls.end_turn": 16,
+          "backend.claude.queries": 3,
+          "backend.codex.queries": 18,
+        },
+        histograms: {},
       },
-      histograms: {},
-    });
+      "all",
+    );
 
-    const out = messages.join("\n");
     const bash = out.indexOf(">Bash<");
     const endTurn = out.indexOf(">end_turn<");
     const read = out.indexOf(">Read<");
@@ -221,26 +240,143 @@ describe("renderMetricsMessages", () => {
     );
   });
 
-  it("splits large metrics output into Telegram-safe chunks", () => {
+  it("caps the tool_calls leaderboard and reports the remainder", () => {
     const counters = Object.fromEntries(
-      Array.from({ length: 12 }, (_, i) => [`tool_calls.tool_${i}`, i + 1]),
+      Array.from({ length: 40 }, (_, i) => [`tool_calls.tool_${i}`, 40 - i]),
     );
 
-    const messages = renderMetricsMessages({ counters, histograms: {} }, 160);
+    const out = renderMetricsPanel({ counters, histograms: {} }, "all");
 
-    expect(messages.length).toBeGreaterThan(1);
-    for (const message of messages) {
-      expect(message.length).toBeLessThanOrEqual(160);
-    }
-    expect(messages[0]).toContain("<b>📊 Metrics</b>");
-    expect(
-      messages.slice(1).every((message) => message.includes("(cont.)")),
-    ).toBe(true);
+    // Top 12 by count survive; the other 28 collapse into one line.
+    expect(out).toContain(">tool_0<");
+    expect(out).toContain(">tool_11<");
+    expect(out).not.toContain(">tool_12<");
+    expect(out).toContain("…and 28 more");
+  });
+
+  it("always fits a single message, however long the report", () => {
+    const counters = Object.fromEntries(
+      Array.from({ length: 200 }, (_, i) => [
+        `backend.b${i}.queries`,
+        1_000 + i,
+      ]),
+    );
+
+    const out = renderMetricsPanel({ counters, histograms: {} }, "all", 400);
+
+    expect(out.length).toBeLessThanOrEqual(400);
+    expect(out).toContain("<b>Metrics — all time</b>");
+    expect(out).toMatch(/…and \d+ more/);
   });
 
   it("shows an empty-state message when no metrics exist", () => {
-    expect(renderMetricsMessages({ counters: {}, histograms: {} })).toEqual([
-      "<b>📊 Metrics</b>\n\n<i>No metrics recorded yet.</i>",
+    expect(renderMetricsPanel({ counters: {}, histograms: {} }, "today")).toBe(
+      "<b>Metrics — today (UTC)</b>\n\n<i>No metrics recorded yet.</i>",
+    );
+  });
+});
+
+describe("renderMeshReport", () => {
+  const NOW = 1_700_000_000_000;
+  const device = (
+    over: Partial<MeshPingResult["device"]> & { name: string },
+  ): MeshPingResult["device"] => ({
+    id: over.name,
+    platform: "android",
+    appVersion: "1.0.0",
+    online: true,
+    lastSeen: NOW,
+    ...over,
+  });
+
+  it("groups devices by state instead of tagging each row", () => {
+    const out = renderMeshReport(
+      [
+        {
+          device: device({ name: "Pixel", battery: 87, charging: true }),
+          reachable: true,
+          latencyMs: 42,
+        },
+        {
+          device: device({ name: "Laptop", platform: "linux" }),
+          reachable: false,
+          error: "connection refused",
+        },
+        {
+          device: device({
+            name: "Tablet",
+            online: false,
+            lastSeen: NOW - 90_000,
+          }),
+          reachable: false,
+        },
+      ],
+      NOW,
+    );
+
+    expect(out).toContain("<b>Mesh</b>");
+    expect(out).toContain(
+      "3 devices · 1 responding · 1 unreachable · 1 offline",
+    );
+    expect(out).toContain("<b>Responding</b>");
+    expect(out).toContain("<b>Pixel</b> — android · 42 ms · 87% charging");
+    expect(out).toContain("<b>Unreachable</b>");
+    expect(out).toContain("<b>Laptop</b> — linux · connection refused");
+    expect(out).toContain("<b>Offline</b>");
+    expect(out).toContain("last seen 1m 30s ago");
+  });
+
+  // The report is plain HTML by design — no status dots, battery bolts, or
+  // satellite glyphs. Regressing that is the whole point of this test.
+  it("carries no emoji", () => {
+    const out = renderMeshReport(
+      [
+        {
+          device: device({ name: "Pixel", battery: 12 }),
+          reachable: true,
+          latencyMs: 9,
+        },
+        {
+          device: device({ name: "Old", online: false, lastSeen: NOW - 1_000 }),
+          reachable: false,
+        },
+      ],
+      NOW,
+    );
+    expect(out).not.toMatch(/\p{Extended_Pictographic}/u);
+  });
+
+  it("omits groups that have no devices", () => {
+    const out = renderMeshReport(
+      [{ device: device({ name: "Pixel" }), reachable: true, latencyMs: 5 }],
+      NOW,
+    );
+    expect(out).toContain("1 device · 1 responding");
+    expect(out).toContain("<b>Responding</b>");
+    expect(out).not.toContain("Unreachable");
+    expect(out).not.toContain("Offline");
+  });
+
+  it("shows an empty state when nothing has registered", () => {
+    expect(renderMeshReport([], NOW)).toBe(
+      "<b>Mesh</b>\n\n<i>No devices have registered yet.</i>",
+    );
+  });
+});
+
+describe("renderMetricsKeyboard", () => {
+  it("marks the active grain and offers the other", () => {
+    expect(renderMetricsKeyboard("today")).toEqual([
+      [
+        { text: "✓ Today", callback_data: "metrics:today" },
+        { text: "All time", callback_data: "metrics:all" },
+      ],
+    ]);
+    expect(renderMetricsKeyboard("all")).toEqual([
+      [
+        { text: "Today", callback_data: "metrics:today" },
+        { text: "✓ All time", callback_data: "metrics:all" },
+      ],
     ]);
   });
 });

@@ -39,7 +39,6 @@ import {
   recordTokens,
   finalizeResponseText,
   formatUserPrompt,
-  formatPromptWithRetrievedMemory,
   prepareSystemPrompt,
   extractSessionName,
   summarizeUsage,
@@ -90,18 +89,13 @@ export async function handleMessage(
   await ensureChatMcpServer(oc, chatId);
   await ensurePluginMcpServers(oc, chatId);
 
-  // Build the prompt (time tag + sender + msg_id reference), then wrap it
-  // with any retrieved memory (Phase B). The wrapper goes into the live user
-  // part only — `system` below stays byte-identical to the prepared prompt.
-  const prompt = formatPromptWithRetrievedMemory(
-    formatUserPrompt({
-      text,
-      senderName: senderName ?? "user",
-      isGroup,
-      messageId,
-    }),
-    params.retrievedMemory,
-  );
+  // Build the prompt (time tag + sender + msg_id reference)
+  const prompt = formatUserPrompt({
+    text,
+    senderName: senderName ?? "user",
+    isGroup,
+    messageId,
+  });
 
   // Per-session frozen prompt + OpenCode-specific delivery suffix
   const { text: systemPrompt } = prepareSystemPrompt({

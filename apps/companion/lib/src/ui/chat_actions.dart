@@ -9,7 +9,7 @@ import '../theme.dart';
 /// chat tile) and the dialogs it drives, reused by the chat header's overflow
 /// menu so both surfaces stay in sync.
 ///
-/// Before this existed, rename/reset/pulse/export lived only in the open
+/// Before this existed, rename/reset/export lived only in the open
 /// conversation's overflow menu and delete-from-the-list required a hover —
 /// which doesn't exist on a phone. The sheet makes every chat action reachable
 /// from the list with a long-press.
@@ -18,7 +18,6 @@ Future<void> showChatActionsSheet(
   AppState state,
   ClientChat chat,
 ) async {
-  final pulseOn = chat.pulse ?? false;
   final action = await showModalBottomSheet<String>(
     context: context,
     backgroundColor: TalonColors.surface,
@@ -47,12 +46,6 @@ Future<void> showChatActionsSheet(
           ),
           _sheetTile(ctx, 'rename', Icons.edit_outlined, 'Rename'),
           _sheetTile(
-            ctx,
-            'pulse',
-            pulseOn ? Icons.notifications_off : Icons.notifications_active,
-            pulseOn ? 'Disable pulse' : 'Enable pulse',
-          ),
-          _sheetTile(
               ctx, 'export', Icons.ios_share_outlined, 'Copy as Markdown'),
           _sheetTile(ctx, 'reset', Icons.refresh, 'Reset session'),
           _sheetTile(ctx, 'delete', Icons.delete_outline, 'Delete',
@@ -66,8 +59,6 @@ Future<void> showChatActionsSheet(
   switch (action) {
     case 'rename':
       await promptRenameChat(context, state, chat);
-    case 'pulse':
-      await state.setPulse(chat.id, !pulseOn);
     case 'export':
       final messenger = ScaffoldMessenger.maybeOf(context);
       await Clipboard.setData(

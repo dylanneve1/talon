@@ -92,7 +92,6 @@ ClientChat _chat(
   String title,
   String preview,
   int minutesAgo, {
-  bool pulse = false,
   String? model,
 }) =>
     ClientChat(
@@ -103,7 +102,6 @@ ClientChat _chat(
       preview: preview,
       model: model,
       effort: 'adaptive',
-      pulse: pulse,
       context: id == 'c1'
           ? const ContextInfo(
               known: true, used: 91000, max: 200000, pct: 45, warn: false)
@@ -113,8 +111,7 @@ ClientChat _chat(
 List<ClientChat> _demoChats() => [
       _chat('c1', 'Trip to Kerry', '**Sounds good** — booked for Saturday.', 4,
           model: 'opus'),
-      _chat('c2', 'VPS disk cleanup', 'Freed 3.1G by pruning old builds.', 38,
-          pulse: true),
+      _chat('c2', 'VPS disk cleanup', 'Freed 3.1G by pruning old builds.', 38),
       _chat('c3', 'Flutter back gesture', 'PopScope handles predictive back.',
           60 * 5),
       _chat(

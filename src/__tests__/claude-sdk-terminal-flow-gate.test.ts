@@ -131,7 +131,7 @@ vi.mock("../util/trace.js", () => ({
   traceMessage: vi.fn(),
 }));
 
-vi.mock("../util/metrics.js", () => ({
+vi.mock("../storage/metrics.js", () => ({
   incrementCounter: vi.fn(),
   recordHistogram: vi.fn(),
 }));

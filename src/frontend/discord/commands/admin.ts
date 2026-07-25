@@ -9,7 +9,7 @@ import type { Gateway } from "../../../core/engine/gateway.js";
 import { respawnSelf } from "../../../util/respawn.js";
 import { forceDream } from "../../../core/background/dream.js";
 import { formatDuration, renderMetricsMessages } from "../helpers.js";
-import { getMetrics, getTodayMetrics } from "../../../util/metrics.js";
+import { getMetrics, getTodayMetrics } from "../../../storage/metrics.js";
 import { handleAdminSubcommand } from "../admin.js";
 import { isAdmin } from "../handlers/index.js";
 import { suppressMentions, DISCORD_MAX_TEXT } from "../formatting.js";

@@ -205,8 +205,8 @@ class _SidebarState extends State<Sidebar> {
                 unread: widget.state.hasUnread(chat),
                 onTap: () =>
                     (widget.onSelect ?? widget.state.selectChat)(chat.id),
-                // Touch path to every chat action (rename/pulse/export/
-                // reset/delete) — the hover-only delete affordance doesn't
+                // Touch path to every chat action (rename/export/reset/
+                // delete) — the hover-only delete affordance doesn't
                 // exist on a phone.
                 onLongPress: () =>
                     showChatActionsSheet(context, widget.state, chat),
@@ -496,12 +496,6 @@ class _ChatTileState extends State<_ChatTile> {
                               ),
                             ),
                           ),
-                          if (widget.chat.pulse == true)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 4),
-                              child: Icon(Icons.notifications_active_outlined,
-                                  size: 11, color: TalonColors.textFaint),
-                            ),
                           const SizedBox(width: 6),
                           Text(
                             _relTime(widget.chat.lastActiveTime),

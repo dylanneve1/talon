@@ -37,7 +37,7 @@ import {
   pushLiveUsage,
 } from "../backend/shared/stream-state.js";
 import { recordFailedTurnAccounting } from "../backend/shared/metrics.js";
-import { getMetrics, resetMetrics } from "../util/metrics.js";
+import { getMetrics, resetMetrics } from "../storage/metrics.js";
 
 let chatN = 0;
 let chatId: string;

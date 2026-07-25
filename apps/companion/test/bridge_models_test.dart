@@ -198,14 +198,12 @@ void main() {
         'createdAt': '3',
         'lastActive': 4.8,
         'preview': {'x': true},
-        'pulse': 'yes',
       });
       expect(chat.id, '1');
       expect(chat.title, '2');
       expect(chat.createdAt, 3);
       expect(chat.lastActive, 4);
       expect(chat.preview, '{x: true}');
-      expect(chat.pulse, isNull);
 
       final cfg = ConfigSnapshot.fromJson({
         'pulse': 'bad',
@@ -225,10 +223,11 @@ void main() {
         'createdAt': 1,
         'lastActive': 2,
         'preview': 'hey',
+        // Carried by the daemon for the group-chat frontends; this client
+        // ignores it rather than modelling it.
         'pulse': true,
       });
       expect(chat.title, 'General');
-      expect(chat.pulse, isTrue);
 
       final cfg = ConfigSnapshot.fromJson({
         'backend': 'claude',

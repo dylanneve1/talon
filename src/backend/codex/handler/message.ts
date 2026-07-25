@@ -22,14 +22,13 @@ import {
 import { getChatSettings } from "../../../storage/chat-settings.js";
 import { log, logError, logWarn } from "../../../util/log.js";
 import { traceMessage } from "../../../util/trace.js";
-import { incrementCounter } from "../../../util/metrics.js";
+import { incrementCounter } from "../../../storage/metrics.js";
 
 import {
   createStreamState,
   recordTokens,
   finalizeResponseText,
   formatUserPrompt,
-  formatPromptWithRetrievedMemory,
   prepareSystemPrompt,
   extractSessionName,
   summarizeUsage,
@@ -259,18 +258,12 @@ export async function handleMessage(
     sessionEpoch: session.createdAt,
   });
 
-  // Retrieved memory wraps the FORMATTED live prompt (Phase B): it stays
-  // outside the frozen system prompt, so the first-turn concatenation below
-  // keeps the boundary "cached systemPrompt, separator, live prompt wrapper".
-  const prompt = formatPromptWithRetrievedMemory(
-    formatUserPrompt({
-      text,
-      senderName: senderName ?? "user",
-      isGroup,
-      messageId,
-    }),
-    params.retrievedMemory,
-  );
+  const prompt = formatUserPrompt({
+    text,
+    senderName: senderName ?? "user",
+    isGroup,
+    messageId,
+  });
 
   log("agent", `[${chatId}] <- (${text.length} chars)`);
   traceMessage(chatId, "in", text, { senderName, isGroup });

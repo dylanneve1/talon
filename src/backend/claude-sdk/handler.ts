@@ -22,7 +22,7 @@ import {
 } from "../../storage/sessions.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
-import { incrementCounter } from "../../util/metrics.js";
+import { incrementCounter } from "../../storage/metrics.js";
 import { isTurnTerminator } from "../../core/tools/index.js";
 
 import type { Query } from "@anthropic-ai/claude-agent-sdk";

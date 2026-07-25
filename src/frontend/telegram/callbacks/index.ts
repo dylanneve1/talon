@@ -7,6 +7,7 @@
  *   - `settings` — `settings:*` (effort/proactive + stale-picker handling)
  *   - `pulse`    — `pulse:*`
  *   - `effort`   — `effort:*`
+ *   - `metrics`  — `metrics:*` (today ↔ all-time panel grain)
  *   - `model`    — `model:*` (menu / backend / browse controller)
  *
  * `registerCallbacks` installs one `callback_query:data` listener that
@@ -22,6 +23,7 @@ import type { CallbackDeps } from "./shared.js";
 import { handleSettingsCallback } from "./settings.js";
 import { handlePulseCallback } from "./pulse.js";
 import { handleEffortCallback } from "./effort.js";
+import { handleMetricsCallback } from "./metrics.js";
 import { handleModelCallback } from "./model.js";
 
 export { answerCallbackQuerySafe } from "./shared.js";
@@ -53,6 +55,12 @@ export function registerCallbacks(
     // Handle effort callbacks
     if (data.startsWith("effort:")) {
       await handleEffortCallback(ctx, data, cid, deps);
+      return;
+    }
+
+    // Handle /metrics grain switching (today ↔ all time).
+    if (data.startsWith("metrics:")) {
+      await handleMetricsCallback(ctx, data);
       return;
     }
 

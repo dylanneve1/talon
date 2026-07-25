@@ -7,8 +7,6 @@
  *     null-model guard and per-run override fallback;
  *   - `startTypingLoop` (typing-loop.ts) — keeps the frontend's typing
  *     indicator alive for the duration of the turn;
- *   - `prefetchMemory` (memory-prefetch.ts) — optional fail-closed
- *     palace pre-retrieval for live user messages;
  *   - `carryTurnEvents` (shuttle.ts) — pumps the backend's AgentEvent
  *     stream into the frontend sink, settles delivery acks, captures
  *     the result and rethrows error terminators.
@@ -22,13 +20,11 @@ import { randomBytes } from "node:crypto";
 import type { Backend } from "../agent-runtime/capabilities.js";
 import type { AgentResult } from "../agent-runtime/events.js";
 import type { ModelRef } from "../agent-runtime/model-ref.js";
-import type { MemoryRetriever } from "../memory/retrieval.js";
 import type { ContextManager, ExecuteParams, ExecuteResult } from "../types.js";
 import { bus } from "../bus/index.js";
 import { taskTable, type TaskHandle } from "../tasks/index.js";
 import { log, logDebug, logWarn } from "../../util/log.js";
 import { Loom } from "./loom.js";
-import { prefetchMemory } from "./memory-prefetch.js";
 import { carryTurnEvents } from "./shuttle.js";
 import type { Thread, ThreadSnapshot } from "./thread.js";
 import { startTypingLoop } from "./typing-loop.js";
@@ -52,13 +48,6 @@ export type WeaverDeps = {
   ) => Promise<ModelRef | null>;
   context: ContextManager;
   sendTyping: (chatId: number, stringId?: string) => Promise<void>;
-  /**
-   * Optional memory pre-retrieval (Phase B). Called for `source: "message"`
-   * turns after model/backend resolution and context acquisition, before
-   * `runChatTurn(...)`. Fail-closed: errors are logged and the turn runs
-   * without injected memory. Absent dep ⇒ prompts byte-identical to before.
-   */
-  retrieveMemory?: MemoryRetriever;
 };
 
 export class Weaver {
@@ -163,7 +152,7 @@ export class Weaver {
     params: ExecuteParams,
     task: TaskHandle,
   ): Promise<ExecuteResult> {
-    const { context, retrieveMemory } = this.deps;
+    const { context } = this.deps;
     const backend = this.deps.getBackend(params.chatId);
     const reqId = randomBytes(4).toString("hex");
 
@@ -237,17 +226,6 @@ export class Weaver {
         );
       }
 
-      const retrievedMemory =
-        retrieveMemory && params.source === "message"
-          ? await prefetchMemory(retrieveMemory, {
-              chatId: params.chatId,
-              text: params.prompt,
-              senderName: params.senderName,
-              isGroup: params.isGroup,
-              reqId,
-            })
-          : undefined;
-
       const stream = backend.chat.runChatTurn({
         chatId: params.chatId,
         model: warp.ref,
@@ -255,7 +233,6 @@ export class Weaver {
         senderName: params.senderName,
         isGroup: params.isGroup,
         messageId: params.messageId,
-        retrievedMemory,
       });
       const agentResult = await carryTurnEvents(stream, params.onEvent);
 

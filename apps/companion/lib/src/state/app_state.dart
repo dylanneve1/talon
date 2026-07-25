@@ -691,17 +691,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> setPulse(String chatId, bool on) async {
-    final chat = _chatById(chatId);
-    if (chat != null && chat.pulse != on) {
-      chat.pulse = on;
-      notifyListeners();
-    }
-    final client = _client;
-    if (client == null) return;
-    await _command(chatId, 'Pulse toggle', client.setPulse(chatId, on));
-  }
-
   // Mesh pref setters notify TWICE: once right after the (local, fast) pref
   // write so the toggle flips instantly, and again after `_meshPrefsChanged`
   // — which can spend seconds syncing the Android foreground service — so
