@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.8.1](https://github.com/dylanneve1/talon/compare/v3.8.0...v3.8.1) (2026-07-25)
+
+
+### Bug Fixes
+
+* **errors:** classify transient transport failures as retryable ([#641](https://github.com/dylanneve1/talon/issues/641)) ([e3c6209](https://github.com/dylanneve1/talon/commit/e3c620987d266334a5bdb013d61224aa17756147))
+* **telegram:** single-message /metrics panel with grain buttons, de-slop /mesh ([#640](https://github.com/dylanneve1/talon/issues/640)) ([d389b0a](https://github.com/dylanneve1/talon/commit/d389b0af8ca12779a4665a947e8e15024af70b30))
+
+
+### Code Refactoring
+
+* **memory:** remove Phase B pre-retrieval, keep memory.md + tool search ([#639](https://github.com/dylanneve1/talon/issues/639)) ([b0f253e](https://github.com/dylanneve1/talon/commit/b0f253e5b26b5aa8a99443faa6923ebbfaa3fc46))
+
 ## [3.8.0](https://github.com/dylanneve1/talon/compare/v3.7.0...v3.8.0) (2026-07-25)
 
 
