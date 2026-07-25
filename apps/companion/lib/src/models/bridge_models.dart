@@ -305,7 +305,6 @@ class ClientChat {
   String? model;
   String? backend;
   String? effort;
-  bool? pulse;
   ContextInfo? context;
   QueuedMessage? queued;
 
@@ -318,7 +317,6 @@ class ClientChat {
     this.model,
     this.backend,
     this.effort,
-    this.pulse,
     this.context,
     this.queued,
   });
@@ -332,7 +330,13 @@ class ClientChat {
         model: j['model'] is String ? j['model'] as String : null,
         backend: j['backend'] is String ? j['backend'] as String : null,
         effort: j['effort'] is String ? j['effort'] as String : null,
-        pulse: j['pulse'] is bool ? j['pulse'] as bool : null,
+        // The wire still carries `pulse` (the daemon keeps a per-chat flag for
+        // the group-chat frontends), but this client deliberately ignores it:
+        // pulse re-dispatches a chat's UNADDRESSED new messages so the model
+        // can decide whether to chime in, which only means something in a room
+        // with other humans in it. Every message in a companion chat is
+        // dispatched the moment it's sent, so there is never a backlog for
+        // pulse to notice. See src/core/background/pulse.ts.
         context: j['context'] is Map
             ? ContextInfo.fromJson(
                 (j['context'] as Map).cast<String, dynamic>())
@@ -355,7 +359,6 @@ class ClientChat {
         if (model != null) 'model': model,
         if (backend != null) 'backend': backend,
         if (effort != null) 'effort': effort,
-        if (pulse != null) 'pulse': pulse,
         if (context != null) 'context': context!.toJson(),
       };
 }

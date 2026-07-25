@@ -19,7 +19,7 @@ that speaks the protocol works.
 - Multiple chats with a time-grouped, searchable history sidebar (ChatGPT-style)
 - Live streaming replies, with the model's reasoning and tool calls shown inline
 - Full Markdown rendering (code blocks, tables, lists, links)
-- Per-chat **model** + **reasoning effort** + **pulse** + **session reset**
+- Per-chat **model** + **reasoning effort** + **session reset**
 - **Settings sync** — read and change the daemon's own config (default model,
   display name, timezone, pulse/heartbeat/dream) and see live status
 - Remote bridge profiles for phones or other machines

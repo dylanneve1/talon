@@ -210,9 +210,6 @@ class BridgeClient {
     return j['ok'] == true;
   }
 
-  Future<void> setPulse(String chatId, bool on) =>
-      _postJson('/chats/pulse', {'chatId': chatId, 'on': on});
-
   Future<void> registerDevice(Map<String, dynamic> device) =>
       _postJson('/devices/register', device);
 
