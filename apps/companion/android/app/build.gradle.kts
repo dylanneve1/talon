@@ -16,6 +16,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications compiles against java.time (used for
+        // scheduled/zoned notifications) and publishes AAR metadata that fails
+        // the build unless the consuming app desugars those APIs. Required for
+        // minSdk < 26; harmless above it.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -77,6 +82,10 @@ kotlin {
 }
 
 dependencies {
+    // Backports java.time et al. so flutter_local_notifications' AAR metadata
+    // check passes (see isCoreLibraryDesugaringEnabled above).
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+
     // Shizuku (optional elevated privilege for the mesh exec channel). The
     // client binds to the Shizuku app when it's installed and running; absent
     // that, the Dart layer falls back to app-UID execution, so these deps are
