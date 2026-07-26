@@ -78,3 +78,36 @@ export const meshHandlers: SharedActionHandlers = {
       body.bridge_url,
     ),
 };
+
+/**
+ * Mesh actions are chat-free: every handler above reads `body` and the
+ * daemon-wide mesh registry, and not one of them takes the `chatId` the
+ * gateway threads through. Requiring an active chat context to reach them is
+ * therefore incidental to the transport, not a property of the action — and
+ * it makes the whole mesh unreachable from heartbeat/background runs, which
+ * have no ambient chat and no `chat_id` parameter on these tools to promote.
+ *
+ * The gateway consults this set before chat resolution so `list_devices`,
+ * `device_exec` and friends work from any run mode. Kept as an explicit
+ * export (rather than `Object.keys(meshHandlers)`) so adding a handler that
+ * *does* need a chat is a deliberate opt-out rather than a silent inclusion.
+ */
+export const chatFreeActions: ReadonlySet<string> = new Set([
+  "list_devices",
+  "get_device_location",
+  "get_device_history",
+  "ring_device",
+  "remove_device",
+  "get_device_status",
+  "device_exec",
+  "device_list_dir",
+  "device_stat",
+  "device_read_file",
+  "device_write_file",
+  "device_pull_file",
+  "device_push_file",
+  "update_device",
+  "update_node",
+  "get_node_binary",
+  "make_node_install_link",
+]);

@@ -287,6 +287,34 @@ describe("gateway HTTP server", () => {
       expect(body.ok).toBe(false);
       expect(body.error).toContain("No active chat context");
     });
+
+    // Regression: the mesh is the only command channel a heartbeat run has to
+    // a remote box, and its handlers ignore chatId entirely — so they must not
+    // be gated behind an active chat context the way send_message is.
+    it("serves mesh actions with no chat context at all", async () => {
+      const { body } = await post({ action: "list_devices" });
+      expect(body.error).not.toBe("No active chat context");
+      expect(body.ok).toBe(true);
+    });
+
+    it("serves mesh actions when _chatId is the heartbeat sentinel", async () => {
+      const { body } = await post({
+        action: "list_devices",
+        _chatId: "heartbeat",
+      });
+      expect(body.error).not.toBe("No active chat context");
+      expect(body.ok).toBe(true);
+    });
+
+    // The bypass is scoped: a non-mesh action still needs a chat.
+    it("still requires a chat context for non-mesh actions", async () => {
+      const { body } = await post({
+        action: "list_cron_jobs",
+        _chatId: "heartbeat",
+      });
+      expect(body.ok).toBe(false);
+      expect(body.error).toContain("No active chat context");
+    });
   });
 
   describe("concurrent chat contexts via HTTP", () => {

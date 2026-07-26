@@ -31,7 +31,7 @@ import { scriptHandlers } from "./scripts.js";
 import { skillHandlers } from "./skills.js";
 import { pluginHandlers } from "./plugins.js";
 import { modelHandlers } from "./models.js";
-import { meshHandlers } from "./mesh.js";
+import { meshHandlers, chatFreeActions } from "./mesh.js";
 import { nativeHandlers } from "./native.js";
 
 // Null-prototype so a request `action` of "toString" / "constructor" / etc.
@@ -62,4 +62,29 @@ export async function handleSharedAction(
   return handler(body, chatId, backend);
 }
 
+/**
+ * True when the action needs no chat context at all (see `chatFreeActions`).
+ * The gateway checks this before resolving a chat so mesh tools stay reachable
+ * from heartbeat/background runs.
+ */
+export function isChatFreeAction(action: string): boolean {
+  return chatFreeActions.has(action);
+}
+
+/**
+ * Dispatch a chat-free action. The handler signature still takes a chatId
+ * (they all share one type); chat-free handlers ignore it, and `0` is passed
+ * as an explicit "no chat" sentinel rather than a real id.
+ */
+export async function handleChatFreeAction(
+  body: Record<string, unknown>,
+): Promise<ActionResult | null> {
+  const action = body.action as string;
+  if (!isChatFreeAction(action)) return null;
+  const handler = handlers[action];
+  if (!handler) return null;
+  return handler(body, 0);
+}
+
+export { chatFreeActions };
 export type { SharedActionHandler, SharedActionHandlers } from "./types.js";

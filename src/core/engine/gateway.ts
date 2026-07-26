@@ -20,7 +20,11 @@ import { Loom, getActiveLoom, type ContextRegistry } from "../weaver/index.js";
 import { getHealthStatus } from "../../util/watchdog.js";
 import { getActiveSessionCount } from "../../storage/sessions.js";
 import { log, logError, logDebug } from "../../util/log.js";
-import { handleSharedAction } from "./gateway-actions/index.js";
+import {
+  handleSharedAction,
+  handleChatFreeAction,
+  isChatFreeAction,
+} from "./gateway-actions/index.js";
 import {
   handleHubRequest,
   getHubSessionCount,
@@ -249,6 +253,31 @@ export class Gateway {
     // active-context-required check — the action handler will reach the
     // chat directly via the Telegram Bot API. The legacy context-required
     // path remains for chat-mode calls where `chat_id` is absent.
+    // Chat-free actions (the device mesh) short-circuit routing entirely:
+    // they read daemon-wide state, ignore chatId, and are the only command
+    // channel a heartbeat run has to a remote box. Gating them behind an
+    // active chat made the whole mesh unreachable from background runs —
+    // and unlike send/react they carry no `chat_id` param to promote.
+    const requestedAction =
+      typeof body.action === "string" ? body.action : undefined;
+    if (requestedAction && isChatFreeAction(requestedAction)) {
+      const t0 = Date.now();
+      try {
+        const result = await handleChatFreeAction(body);
+        if (result) {
+          logDebug(
+            "gateway",
+            `${requestedAction} chat=none ${Date.now() - t0}ms (chat-free)`,
+          );
+          return result;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logError("gateway", `${requestedAction} (chat-free) failed: ${msg}`);
+        return { ok: false, error: `${requestedAction}: ${msg}` };
+      }
+    }
+
     const rawChatId = body._chatId ? String(body._chatId) : "";
     const numericId = Number(rawChatId);
     const explicitChatIdProvided = typeof body.chat_id !== "undefined";
