@@ -7,6 +7,12 @@
 
 import { Agent, fetch as undiciFetch } from "undici";
 import type { BridgeFunction } from "./types.js";
+import {
+  scanOutboundAction,
+  secretScanErrorMessage,
+  type SecretScanOptions,
+} from "./secret-scan.js";
+import { knownSecretValues } from "./secret-sources.js";
 
 /** Default wall-clock budget for a bridge action. */
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -51,6 +57,17 @@ function dispatcher(): Agent {
 const BUILTIN_FETCH_HEADERS_CEILING_MS = 300_000;
 
 /**
+ * Per-bridge overrides for the outbound secret scanner.
+ *
+ * Defaults to ON with the host's real credential list. `enabled: false`
+ * is the config escape hatch; `knownSecrets` lets tests supply a hermetic
+ * list instead of touching the filesystem.
+ */
+export type BridgeSecretScanOptions = SecretScanOptions & {
+  enabled?: boolean;
+};
+
+/**
  * Create a bridge caller bound to a default URL and chat.
  *
  * The default `chatId` is what the MCP subprocess was spawned with (the
@@ -70,6 +87,7 @@ const BUILTIN_FETCH_HEADERS_CEILING_MS = 300_000;
 export function createBridge(
   bridgeUrl: string,
   chatId: string,
+  secretScan?: BridgeSecretScanOptions,
 ): BridgeFunction {
   return async (action, params) => {
     const explicitChatId =
@@ -78,6 +96,18 @@ export function createBridge(
         ? String((params as Record<string, unknown>).chat_id)
         : null;
     const effectiveChatId = explicitChatId ?? chatId;
+    // Outbound secret scanning — group-bound messages only, before any
+    // bytes leave the process. Throws so the model must redact and retry;
+    // see secret-scan.ts for why this errors rather than redacting.
+    if (secretScan?.enabled !== false) {
+      const findings = scanOutboundAction(action, params, effectiveChatId, {
+        knownSecrets: secretScan?.knownSecrets ?? knownSecretValues(),
+        allowlist: secretScan?.allowlist,
+      });
+      if (findings.length > 0) {
+        throw new Error(secretScanErrorMessage(action, findings));
+      }
+    }
     const timeoutMs = LONG_ACTION_TIMEOUTS_MS[action] ?? DEFAULT_TIMEOUT_MS;
     const init = {
       method: "POST",
