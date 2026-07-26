@@ -87,9 +87,33 @@ Future<void> _loadRealFonts() async {
   }
 }
 
-int _ts(int minutesAgo) => DateTime.now()
-    .subtract(Duration(minutes: minutesAgo))
-    .millisecondsSinceEpoch;
+/// Anchor for fixture timestamps: **noon today**, not the wall clock.
+///
+/// The sidebar buckets chats by calendar day (TODAY / YESTERDAY / PREVIOUS 7
+/// DAYS / …) against the real `DateTime.now()`, so fixtures built directly
+/// from the wall clock render differently depending on the hour the suite is
+/// run. Goldens generated at 21:45 UTC and re-checked after midnight showed
+/// TODAY→YESTERDAY, PREVIOUS 7 DAYS→PREVIOUS 30 DAYS and 3d→a hard date —
+/// pure clock drift, mistakable for a layout regression.
+///
+/// Noon keeps every offset far from both day boundaries, so the buckets are
+/// stable whatever time of day the gallery is rendered. Measured across a
+/// simulated date boundary (`TZ=Etc/GMT+12` → `TZ=Pacific/Kiritimati`) this
+/// takes the drift from 1.11% / 14383px down to 0.04% / 1041px.
+///
+/// It does NOT make the gallery fully hermetic: the residual is the relative
+/// age labels ("3m", "2h"), which the sidebar computes against the real clock,
+/// so they shift by a digit as the hour advances. Removing that last bit would
+/// mean injecting a clock into the production UI, which is not worth it for a
+/// tool that is explicitly a visual gallery and not a regression gate —
+/// regenerate the goldens, don't diff them across hours.
+DateTime get _anchor {
+  final n = DateTime.now();
+  return DateTime(n.year, n.month, n.day, 12);
+}
+
+int _ts(int minutesAgo) =>
+    _anchor.subtract(Duration(minutes: minutesAgo)).millisecondsSinceEpoch;
 
 ClientChat _chat(
   String id,
@@ -375,10 +399,8 @@ void _phone(WidgetTester tester) {
   // pixels. Without them the gallery renders a phone that has neither, which
   // is exactly the case where "does the list run under the nav bar?" and
   // "does the FAB clear it?" can't be seen.
-  tester.view.padding =
-      const FakeViewPadding(top: 132, bottom: 66);
-  tester.view.viewPadding =
-      const FakeViewPadding(top: 132, bottom: 66);
+  tester.view.padding = const FakeViewPadding(top: 132, bottom: 66);
+  tester.view.viewPadding = const FakeViewPadding(top: 132, bottom: 66);
   // Widget tests force TargetPlatform.android, so touch density is already
   // what this shot would get on a real phone — pin it anyway so the gallery
   // never depends on that default.
@@ -466,8 +488,8 @@ void main() {
       userText: 'Did the flight confirmation land in my inbox?',
     );
 
-    await tester.pumpWidget(
-        _app(VoiceModeScreen(state: state, session: session)));
+    await tester
+        .pumpWidget(_app(VoiceModeScreen(state: state, session: session)));
     await _shoot(tester, 'phone_voice_tool');
   });
 
@@ -484,8 +506,8 @@ void main() {
       partial: 'what does my afternoon look like',
     );
 
-    await tester.pumpWidget(
-        _app(VoiceModeScreen(state: state, session: session)));
+    await tester
+        .pumpWidget(_app(VoiceModeScreen(state: state, session: session)));
     await _shoot(tester, 'phone_voice_listening');
   });
 
