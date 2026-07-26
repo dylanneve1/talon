@@ -107,7 +107,7 @@ const TalonPalette kTalonDark = TalonPalette(
   accentDeep: Color(0xFF5B6BF0),
   text: Color(0xFFEDEEF7),
   textDim: Color(0xFFA6A9C2),
-  textFaint: Color(0xFF6F7392),
+  textFaint: Color(0xFF80839F), // >=4.5:1 on every dark surface
   ok: Color(0xFF49E2A0),
   warn: Color(0xFFFFC56B),
   bad: Color(0xFFFF6B81),
@@ -135,7 +135,7 @@ const TalonPalette kTalonLight = TalonPalette(
   accentDeep: Color(0xFF4453D6), // pressed / border-on-accent
   text: Color(0xFF1B1D2A), // near-black slate
   textDim: Color(0xFF565A70),
-  textFaint: Color(0xFF9095A8),
+  textFaint: Color(0xFF656B81), // >=4.5:1 on every light surface
   ok: Color(0xFF12A150), // healthy green (dot, shield, "Good" pill)
   warn: Color(0xFFA9720A),
   bad: Color(0xFFE5484D), // coral red
