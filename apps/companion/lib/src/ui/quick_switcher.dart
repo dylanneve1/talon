@@ -315,9 +315,8 @@ class _QuickSwitcherState extends State<_QuickSwitcher> {
         ),
       _Command(
         name: 'Refresh from Talon',
-        detail: connected
-            ? 'Re-sync chats and models'
-            : 'Retry the connection now',
+        detail:
+            connected ? 'Re-sync chats and models' : 'Retry the connection now',
         icon: Icons.sync,
         keywords: 'reload reconnect sync',
         run: (_) => state.refresh(),
@@ -433,7 +432,8 @@ class _QuickSwitcherState extends State<_QuickSwitcher> {
       final picks = _selectableIndices(_rows());
       if (picks.isEmpty) return KeyEventResult.handled;
       setState(() {
-        _cursor = (_cursor.clamp(0, picks.length - 1) + (down ? 1 : -1) +
+        _cursor = (_cursor.clamp(0, picks.length - 1) +
+                (down ? 1 : -1) +
                 picks.length) %
             picks.length;
       });
@@ -833,72 +833,76 @@ class _PaletteRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: TalonRadius.rMd,
-      child: AnimatedContainer(
-        duration: TalonMotion.fast,
-        curve: TalonMotion.standard,
-        margin: const EdgeInsets.symmetric(vertical: 1),
-        padding:
-            const EdgeInsets.symmetric(horizontal: TalonSpace.sm, vertical: 7),
-        decoration: BoxDecoration(
-          borderRadius: TalonRadius.rMd,
-          color: selected
-              ? TalonColors.accent.withValues(alpha: 0.14)
-              : Colors.transparent,
-          // Transparent when idle rather than absent, so the 1px stroke doesn't
-          // reflow the row as the highlight moves.
-          border: Border.all(
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: TalonRadius.rMd,
+        child: AnimatedContainer(
+          duration: TalonMotion.fast,
+          curve: TalonMotion.standard,
+          margin: const EdgeInsets.symmetric(vertical: 1),
+          padding: const EdgeInsets.symmetric(
+              horizontal: TalonSpace.sm, vertical: 7),
+          decoration: BoxDecoration(
+            borderRadius: TalonRadius.rMd,
             color: selected
-                ? TalonColors.accent.withValues(alpha: 0.35)
+                ? TalonColors.accent.withValues(alpha: 0.14)
                 : Colors.transparent,
-          ),
-        ),
-        child: Row(
-          children: [
-            leading,
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TalonType.label.copyWith(
-                      color: titleColor ?? TalonColors.text,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (subtitle != null)
-                    // Chat previews and message hits arrive as raw Markdown, so
-                    // they render through the same inline renderer the sidebar
-                    // tiles use — otherwise a preview reads `**Sounds good**`
-                    // here and "Sounds good" three inches to the left. Command
-                    // detail lines are plain author-written strings and take the
-                    // cheaper path.
-                    subtitleMarkdown
-                        ? InlineMarkdownText(
-                            data: subtitle!,
-                            maxLines: 1,
-                            style: TalonType.caption,
-                          )
-                        : Text(
-                            subtitle!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TalonType.caption,
-                          ),
-                ],
-              ),
+            // Transparent when idle rather than absent, so the 1px stroke doesn't
+            // reflow the row as the highlight moves.
+            border: Border.all(
+              color: selected
+                  ? TalonColors.accent.withValues(alpha: 0.35)
+                  : Colors.transparent,
             ),
-            if (trailing != null) ...[
-              const SizedBox(width: TalonSpace.sm),
-              _KeyCap(trailing!),
+          ),
+          child: Row(
+            children: [
+              leading,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TalonType.label.copyWith(
+                        color: titleColor ?? TalonColors.text,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (subtitle != null)
+                      // Chat previews and message hits arrive as raw Markdown, so
+                      // they render through the same inline renderer the sidebar
+                      // tiles use — otherwise a preview reads `**Sounds good**`
+                      // here and "Sounds good" three inches to the left. Command
+                      // detail lines are plain author-written strings and take the
+                      // cheaper path.
+                      subtitleMarkdown
+                          ? InlineMarkdownText(
+                              data: subtitle!,
+                              maxLines: 1,
+                              style: TalonType.caption,
+                            )
+                          : Text(
+                              subtitle!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TalonType.caption,
+                            ),
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: TalonSpace.sm),
+                _KeyCap(trailing!),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

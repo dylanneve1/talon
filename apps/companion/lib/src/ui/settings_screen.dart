@@ -756,8 +756,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           // inheriting the previous chapter's offset, and remounting the
           // subtree is also what re-plays the pane entrance below.
           key: ValueKey('settings-pane-${section.title}'),
-          padding:
-              EdgeInsets.only(bottom: TalonSpace.xl + navInset(context)),
+          padding: EdgeInsets.only(bottom: TalonSpace.xl + navInset(context)),
           child: EntranceFx(
             enabled: !reduceMotion(context),
             // A whisper from the right — enough to read as a pane swap, not
@@ -1026,82 +1025,86 @@ class _SettingsScreenState extends State<SettingsScreen>
             ],
           ),
           const SizedBox(height: 12),
-          InkWell(
-            borderRadius: BorderRadius.circular(18),
-            onTap: _voicesLoading ? null : _openVoicePicker,
-            child: AnimatedContainer(
-              duration: TalonMotion.base,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    TalonColors.accent.withValues(alpha: 0.14),
-                    TalonColors.accent2.withValues(alpha: 0.07),
-                  ],
+          Semantics(
+            button: true,
+            enabled: !_voicesLoading,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: _voicesLoading ? null : _openVoicePicker,
+              child: AnimatedContainer(
+                duration: TalonMotion.base,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      TalonColors.accent.withValues(alpha: 0.14),
+                      TalonColors.accent2.withValues(alpha: 0.07),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: TalonColors.accent.withValues(alpha: 0.26),
+                  ),
                 ),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: TalonColors.accent.withValues(alpha: 0.26),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: TalonColors.accent.withValues(alpha: 0.16),
-                    ),
-                    child: AnimatedSwitcher(
-                      duration: TalonMotion.fast,
-                      child: Icon(
-                        _voicesLoading
-                            ? Icons.hourglass_top_rounded
-                            : Icons.graphic_eq_rounded,
-                        key: ValueKey(_voicesLoading),
-                        color: TalonColors.accent,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: TalonColors.accent.withValues(alpha: 0.16),
+                      ),
+                      child: AnimatedSwitcher(
+                        duration: TalonMotion.fast,
+                        child: Icon(
+                          _voicesLoading
+                              ? Icons.hourglass_top_rounded
+                              : Icons.graphic_eq_rounded,
+                          key: ValueKey(_voicesLoading),
+                          color: TalonColors.accent,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          selected == null
-                              ? 'Best available voice'
-                              : _voiceDisplayName(selected),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            selected == null
+                                ? 'Best available voice'
+                                : _voiceDisplayName(selected),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          selected == null
-                              ? (_voicesLoading
-                                  ? 'Finding voices on this device…'
-                                  : 'Highest-quality voice for your language, '
-                                      'picked automatically')
-                              : _voiceDescription(selected),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: TalonColors.textFaint,
+                          const SizedBox(height: 2),
+                          Text(
+                            selected == null
+                                ? (_voicesLoading
+                                    ? 'Finding voices on this device…'
+                                    : 'Highest-quality voice for your language, '
+                                        'picked automatically')
+                                : _voiceDescription(selected),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: TalonColors.textFaint,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color: TalonColors.textDim,
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: TalonColors.textDim,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -2825,51 +2828,55 @@ class _ControlButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: TalonRadius.rMd,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          borderRadius: TalonRadius.rMd,
-          border: Border.all(color: TalonColors.glassStroke),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: TalonColors.textDim),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+    return Semantics(
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: TalonRadius.rMd,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: TalonRadius.rMd,
+            border: Border.all(color: TalonColors.glassStroke),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: TalonColors.textDim),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.35,
-                      color: TalonColors.textFaint,
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: TalonColors.textFaint,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            if (pending)
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else
-              Icon(Icons.chevron_right, size: 18, color: TalonColors.textFaint),
-          ],
+              if (pending)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Icon(Icons.chevron_right,
+                    size: 18, color: TalonColors.textFaint),
+            ],
+          ),
         ),
       ),
     );
@@ -2977,37 +2984,41 @@ class _ModeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: AnimatedContainer(
-        duration: TalonMotion.fast,
-        height: 36,
-        decoration: BoxDecoration(
-          color: selected ? TalonColors.accent : TalonColors.surface,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected ? TalonColors.accent : TalonColors.glassStroke,
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: AnimatedContainer(
+          duration: TalonMotion.fast,
+          height: 36,
+          decoration: BoxDecoration(
+            color: selected ? TalonColors.accent : TalonColors.surface,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected ? TalonColors.accent : TalonColors.glassStroke,
+            ),
           ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 15,
-              color: selected ? Colors.white : TalonColors.textFaint,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: selected ? Colors.white : TalonColors.textDim,
-                fontSize: 13,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: selected ? Colors.white : TalonColors.textFaint,
               ),
-            ),
-          ],
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected ? Colors.white : TalonColors.textDim,
+                  fontSize: 13,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

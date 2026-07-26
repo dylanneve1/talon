@@ -387,108 +387,112 @@ class _LogsScreenState extends State<LogsScreen> {
     final color = _levelColor(e.level);
     final hasDetail = e.err != null || e.stack != null;
     final expanded = _expanded.contains(index);
-    return InkWell(
-      onTap: hasDetail
-          ? () => setState(() {
-                if (expanded) {
-                  _expanded.remove(index);
-                } else {
-                  _expanded.add(index);
-                }
-              })
-          : null,
-      borderRadius: TalonRadius.rSm,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 5),
-                  child: Container(
-                    width: 7,
-                    height: 7,
-                    decoration:
-                        BoxDecoration(shape: BoxShape.circle, color: color),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  e.ts == 0 ? '—' : _fmtTime(e.time),
-                  style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
-                    fontSize: 11.5,
-                    color: TalonColors.textFaint,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (e.component.isNotEmpty) ...[
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: TalonColors.surfaceHi,
-                      borderRadius: TalonRadius.rPill,
-                    ),
-                    child: Text(
-                      e.component,
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                        color: TalonColors.textDim,
-                      ),
+    return Semantics(
+      button: hasDetail,
+      expanded: hasDetail ? expanded : null,
+      child: InkWell(
+        onTap: hasDetail
+            ? () => setState(() {
+                  if (expanded) {
+                    _expanded.remove(index);
+                  } else {
+                    _expanded.add(index);
+                  }
+                })
+            : null,
+        borderRadius: TalonRadius.rSm,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 5),
+                    child: Container(
+                      width: 7,
+                      height: 7,
+                      decoration:
+                          BoxDecoration(shape: BoxShape.circle, color: color),
                     ),
                   ),
                   const SizedBox(width: 8),
-                ],
-                Expanded(
-                  child: Text(
-                    e.msg.isEmpty ? '—' : e.msg,
+                  Text(
+                    e.ts == 0 ? '—' : _fmtTime(e.time),
                     style: TextStyle(
                       fontFamily: 'JetBrains Mono',
-                      fontSize: 12,
+                      fontSize: 11.5,
+                      color: TalonColors.textFaint,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (e.component.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: TalonColors.surfaceHi,
+                        borderRadius: TalonRadius.rPill,
+                      ),
+                      child: Text(
+                        e.component,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: TalonColors.textDim,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: Text(
+                      e.msg.isEmpty ? '—' : e.msg,
+                      style: TextStyle(
+                        fontFamily: 'JetBrains Mono',
+                        fontSize: 12,
+                        height: 1.45,
+                        color: _isSevere(e.level) ? color : TalonColors.text,
+                      ),
+                    ),
+                  ),
+                  if (hasDetail)
+                    Icon(
+                      expanded ? Icons.expand_less : Icons.expand_more,
+                      size: 15,
+                      color: TalonColors.textFaint,
+                    ),
+                ],
+              ),
+              if (expanded && hasDetail)
+                Container(
+                  margin: const EdgeInsets.only(left: 15, top: 6),
+                  padding: const EdgeInsets.all(10),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: TalonColors.bad.withValues(alpha: 0.07),
+                    borderRadius: TalonRadius.rSm,
+                    border: Border.all(
+                      color: TalonColors.bad.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: SelectableText(
+                    [
+                      if (e.err != null) e.err!,
+                      if (e.stack != null) e.stack!,
+                    ].join('\n\n'),
+                    style: TextStyle(
+                      fontFamily: 'JetBrains Mono',
+                      fontSize: 11.5,
                       height: 1.45,
-                      color: _isSevere(e.level) ? color : TalonColors.text,
+                      color: TalonColors.textDim,
                     ),
                   ),
                 ),
-                if (hasDetail)
-                  Icon(
-                    expanded ? Icons.expand_less : Icons.expand_more,
-                    size: 15,
-                    color: TalonColors.textFaint,
-                  ),
-              ],
-            ),
-            if (expanded && hasDetail)
-              Container(
-                margin: const EdgeInsets.only(left: 15, top: 6),
-                padding: const EdgeInsets.all(10),
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: TalonColors.bad.withValues(alpha: 0.07),
-                  borderRadius: TalonRadius.rSm,
-                  border: Border.all(
-                    color: TalonColors.bad.withValues(alpha: 0.25),
-                  ),
-                ),
-                child: SelectableText(
-                  [
-                    if (e.err != null) e.err!,
-                    if (e.stack != null) e.stack!,
-                  ].join('\n\n'),
-                  style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
-                    fontSize: 11.5,
-                    height: 1.45,
-                    color: TalonColors.textDim,
-                  ),
-                ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -330,50 +330,54 @@ class _ModelRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          color: selected
-              ? TalonColors.accent.withValues(alpha: 0.16)
-              : TalonColors.surface,
-          border: Border.all(
-            color: selected ? TalonColors.accent : Colors.transparent,
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    model.displayName,
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    model.provider,
-                    style:
-                        TextStyle(fontSize: 11.5, color: TalonColors.textFaint),
-                  ),
-                ],
-              ),
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 3),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: selected
+                ? TalonColors.accent.withValues(alpha: 0.16)
+                : TalonColors.surface,
+            border: Border.all(
+              color: selected ? TalonColors.accent : Colors.transparent,
             ),
-            if (model.reasoning)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Icon(Icons.psychology_outlined,
-                    size: 16, color: TalonColors.textFaint),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      model.displayName,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      model.provider,
+                      style: TextStyle(
+                          fontSize: 11.5, color: TalonColors.textFaint),
+                    ),
+                  ],
+                ),
               ),
-            if (selected)
-              Icon(Icons.check_circle, color: TalonColors.accent, size: 18),
-          ],
+              if (model.reasoning)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Icon(Icons.psychology_outlined,
+                      size: 16, color: TalonColors.textFaint),
+                ),
+              if (selected)
+                Icon(Icons.check_circle, color: TalonColors.accent, size: 18),
+            ],
+          ),
         ),
       ),
     );

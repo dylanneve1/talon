@@ -434,13 +434,19 @@ class _JumpToLatest extends StatelessWidget {
       ),
       child: Material(
         color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          customBorder: const CircleBorder(),
-          child: const Padding(
-            padding: EdgeInsets.all(10),
-            child: Icon(Icons.arrow_downward_rounded,
-                size: 18, color: Colors.white),
+        // Icon-only: without an explicit label a screen reader announces
+        // nothing at all here.
+        child: Semantics(
+          button: true,
+          label: 'Scroll to latest message',
+          child: InkWell(
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            child: const Padding(
+              padding: EdgeInsets.all(10),
+              child: Icon(Icons.arrow_downward_rounded,
+                  size: 18, color: Colors.white),
+            ),
           ),
         ),
       ),
@@ -641,51 +647,54 @@ class _Identity extends StatelessWidget {
       // The header paints its own opaque surface, so ink on the Scaffold's
       // Material underneath would be invisible — same trick as _StarterChip.
       color: Colors.transparent,
-      child: InkWell(
-        key: const Key('conversation-identity'),
-        onTap: onTap,
-        borderRadius: TalonRadius.rSm,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: TalonSpace.xs,
-            vertical: 3,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TalonType.title.copyWith(
-                    fontSize: TalonDensity.d(16, 17.5)),
-              ),
-              const SizedBox(height: TalonSpace.xxs),
-              Row(
-                children: [
-                  _ConnDot(connected: connected),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      '$model · $effort',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: TalonColors.textFaint,
-                        fontSize: TalonDensity.d(11, 12.5),
-                        fontWeight: FontWeight.w500,
+      child: Semantics(
+        button: true,
+        child: InkWell(
+          key: const Key('conversation-identity'),
+          onTap: onTap,
+          borderRadius: TalonRadius.rSm,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: TalonSpace.xs,
+              vertical: 3,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TalonType.title
+                      .copyWith(fontSize: TalonDensity.d(16, 17.5)),
+                ),
+                const SizedBox(height: TalonSpace.xxs),
+                Row(
+                  children: [
+                    _ConnDot(connected: connected),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        '$model · $effort',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: TalonColors.textFaint,
+                          fontSize: TalonDensity.d(11, 12.5),
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
-                  ),
-                  // The only cue that this line is a control now that the wide
-                  // layout has no bordered model pill to imply it.
-                  const SizedBox(width: TalonSpace.xxs),
-                  Icon(Icons.expand_more,
-                      size: 13, color: TalonColors.textFaint),
-                ],
-              ),
-            ],
+                    // The only cue that this line is a control now that the wide
+                    // layout has no bordered model pill to imply it.
+                    const SizedBox(width: TalonSpace.xxs),
+                    Icon(Icons.expand_more,
+                        size: 13, color: TalonColors.textFaint),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -824,57 +833,65 @@ class _ContextChip extends StatelessWidget {
         ? '${formatTokens(info.used)} / ${formatTokens(info.max)} tokens'
             ' (${info.pct}%)'
         : '${formatTokens(info.used)} tokens';
-    return Tooltip(
-      message: 'Context: $figures — tap for details',
-      child: Container(
-        decoration: BoxDecoration(
-          color: info.warn
-              ? TalonColors.warn.withValues(alpha: 0.12)
-              : TalonColors.glassFill,
-          borderRadius: TalonRadius.rPill,
-          border: Border.all(
-            color: info.warn ? TalonColors.warn : TalonColors.glassStroke,
-          ),
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
+    // The chip renders only "42%", which is meaningless read aloud on its own,
+    // so the label carries the same sentence the tooltip does and replaces the
+    // bare percentage rather than sitting alongside it.
+    return Semantics(
+      button: true,
+      label: 'Context: $figures',
+      excludeSemantics: true,
+      child: Tooltip(
+        message: 'Context: $figures — tap for details',
+        child: Container(
+          decoration: BoxDecoration(
+            color: info.warn
+                ? TalonColors.warn.withValues(alpha: 0.12)
+                : TalonColors.glassFill,
             borderRadius: TalonRadius.rPill,
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: dense ? TalonSpace.sm : 10,
-                vertical: dense ? 5 : 6,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: dense ? 12 : 13,
-                    height: dense ? 12 : 13,
-                    child: CircularProgressIndicator(
-                      value: info.pct.clamp(0, 100) / 100,
-                      strokeWidth: 2.4,
-                      backgroundColor: TalonColors.glassStroke,
-                      valueColor: AlwaysStoppedAnimation(color),
+            border: Border.all(
+              color: info.warn ? TalonColors.warn : TalonColors.glassStroke,
+            ),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: TalonRadius.rPill,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: dense ? TalonSpace.sm : 10,
+                  vertical: dense ? 5 : 6,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: dense ? 12 : 13,
+                      height: dense ? 12 : 13,
+                      child: CircularProgressIndicator(
+                        value: info.pct.clamp(0, 100) / 100,
+                        strokeWidth: 2.4,
+                        backgroundColor: TalonColors.glassStroke,
+                        valueColor: AlwaysStoppedAnimation(color),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${info.pct}%',
-                    style: TextStyle(
-                      fontSize: dense ? 11 : 12,
-                      color: color,
-                      fontWeight:
-                          info.warn ? FontWeight.w700 : FontWeight.w500,
+                    const SizedBox(width: 6),
+                    Text(
+                      '${info.pct}%',
+                      style: TextStyle(
+                        fontSize: dense ? 11 : 12,
+                        color: color,
+                        fontWeight:
+                            info.warn ? FontWeight.w700 : FontWeight.w500,
+                      ),
                     ),
-                  ),
-                  if (info.warn) ...[
-                    const SizedBox(width: TalonSpace.xxs),
-                    Icon(Icons.priority_high_rounded,
-                        size: dense ? 12 : 13, color: TalonColors.warn),
+                    if (info.warn) ...[
+                      const SizedBox(width: TalonSpace.xxs),
+                      Icon(Icons.priority_high_rounded,
+                          size: dense ? 12 : 13, color: TalonColors.warn),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -1227,38 +1244,42 @@ class _StarterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final chip = Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: TalonRadius.rMd,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(
-              TalonSpace.sm, TalonSpace.sm, TalonSpace.md, TalonSpace.sm),
-          decoration: BoxDecoration(
-            color: TalonColors.glassFill,
-            borderRadius: TalonRadius.rMd,
-            border: Border.all(color: TalonColors.glassStroke),
-            boxShadow: TalonShadows.soft,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Accent-tinted icon well, so the starters read as actions.
-              Container(
-                width: 28,
-                height: 28,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: TalonColors.accent.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(9),
+    final chip = Semantics(
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: TalonRadius.rMd,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(
+                TalonSpace.sm, TalonSpace.sm, TalonSpace.md, TalonSpace.sm),
+            decoration: BoxDecoration(
+              color: TalonColors.glassFill,
+              borderRadius: TalonRadius.rMd,
+              border: Border.all(color: TalonColors.glassStroke),
+              boxShadow: TalonShadows.soft,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Accent-tinted icon well, so the starters read as actions.
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: TalonColors.accent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child:
+                      Icon(starter.icon, size: 15, color: TalonColors.accent),
                 ),
-                child: Icon(starter.icon, size: 15, color: TalonColors.accent),
-              ),
-              const SizedBox(width: TalonSpace.sm),
-              Text(starter.label,
-                  style: TalonType.label.copyWith(color: TalonColors.text)),
-            ],
+                const SizedBox(width: TalonSpace.sm),
+                Text(starter.label,
+                    style: TalonType.label.copyWith(color: TalonColors.text)),
+              ],
+            ),
           ),
         ),
       ),
