@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.11.1](https://github.com/dylanneve1/talon/compare/v3.11.0...v3.11.1) (2026-07-26)
+
+
+### Bug Fixes
+
+* **companion:** anchor screenshot-gallery fixtures to noon, not the wall clock ([#665](https://github.com/dylanneve1/talon/issues/665)) ([419f255](https://github.com/dylanneve1/talon/commit/419f255cebc06c62c8634fc2acec662306937fab))
+
 ## [3.11.0](https://github.com/dylanneve1/talon/compare/v3.10.0...v3.11.0) (2026-07-25)
 
 
