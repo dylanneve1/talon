@@ -272,29 +272,49 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         ),
       ),
     );
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => _press.value = 1,
-      onTapCancel: () => _press.value = 0,
-      onTapUp: (_) => _press.value = 0,
-      onTap: () {
-        Haptics.medium();
-        s.onOrbTap();
-      },
-      child: still
-          ? orb
-          : TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0.72, end: 1.0),
-              duration: const Duration(milliseconds: 620),
-              curve: Curves.easeOutBack,
-              builder: (context, value, child) => Transform.scale(
-                scale: value,
-                child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
+    // The orb is a CustomPaint: to a screen reader it is a blank rectangle
+    // unless we say what it is. The label carries the phase because the same
+    // tap means something different in each one (see [VoiceSession.onOrbTap]).
+    return Semantics(
+      button: true,
+      label: _orbSemanticLabel(s.phase),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => _press.value = 1,
+        onTapCancel: () => _press.value = 0,
+        onTapUp: (_) => _press.value = 0,
+        onTap: () {
+          Haptics.medium();
+          s.onOrbTap();
+        },
+        child: still
+            ? orb
+            : TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.72, end: 1.0),
+                duration: const Duration(milliseconds: 620),
+                curve: Curves.easeOutBack,
+                builder: (context, value, child) => Transform.scale(
+                  scale: value,
+                  child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
+                ),
+                child: orb,
               ),
-              child: orb,
-            ),
+      ),
     );
   }
+
+  /// What tapping the orb does *right now*, in the user's terms.
+  static String _orbSemanticLabel(VoicePhase phase) => switch (phase) {
+        VoicePhase.idle => 'Start talking',
+        VoicePhase.arming ||
+        VoicePhase.listening =>
+          'Listening. Tap to finish speaking',
+        VoicePhase.finalizing => 'Finishing your message',
+        VoicePhase.thinking => 'Talon is thinking',
+        VoicePhase.speaking => 'Talon is speaking. Tap to interrupt',
+        VoicePhase.recovering => 'Reconnecting',
+        VoicePhase.error => 'Voice mode error. Tap to retry',
+      };
 
   /// The live tool card. Present only while the turn is actually using a
   /// tool, so a plain answer keeps the screen as quiet as it is today; it
@@ -588,7 +608,8 @@ class _ToolActivityCardState extends State<_ToolActivityCard> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      _failed ? '${toolPhrase(tool.name)} failed'
+                      _failed
+                          ? '${toolPhrase(tool.name)} failed'
                           : toolPhrase(tool.name),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

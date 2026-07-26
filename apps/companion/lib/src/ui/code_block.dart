@@ -91,32 +91,38 @@ class _CodeBlockState extends State<CodeBlock> {
                   ),
                 ),
                 const Spacer(),
-                InkWell(
-                  onTap: _copy,
-                  borderRadius: TalonRadius.rSm,
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _copied ? Icons.check : Icons.copy_rounded,
-                          size: 13,
-                          color:
-                              _copied ? TalonColors.ok : TalonColors.textFaint,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          _copied ? 'Copied' : 'Copy',
-                          style: TextStyle(
-                            fontSize: 11,
+                // No label: the chip's own "Copy"/"Copied" text is the
+                // announcement — adding one would make it say both.
+                Semantics(
+                  button: true,
+                  child: InkWell(
+                    onTap: _copy,
+                    borderRadius: TalonRadius.rSm,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _copied ? Icons.check : Icons.copy_rounded,
+                            size: 13,
                             color: _copied
                                 ? TalonColors.ok
                                 : TalonColors.textFaint,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 5),
+                          Text(
+                            _copied ? 'Copied' : 'Copy',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: _copied
+                                  ? TalonColors.ok
+                                  : TalonColors.textFaint,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -158,7 +164,6 @@ class _CodeBlockState extends State<CodeBlock> {
     );
   }
 }
-
 
 /// Horizontal code scroller whose overflowing edge fades out — the cue that
 /// there's more off-screen. A hard clip at the panel border reads as

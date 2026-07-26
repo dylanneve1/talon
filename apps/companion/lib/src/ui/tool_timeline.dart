@@ -262,17 +262,22 @@ class _ToolStepState extends State<ToolStep> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          InkWell(
-            onTap: _expandable
-                ? () => setState(() {
-                      _expanded = !_expanded;
-                      _userToggled = true;
-                    })
-                : null,
-            borderRadius: TalonRadius.rSm,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: header,
+          Semantics(
+            button: _expandable,
+            enabled: _expandable,
+            expanded: _expandable ? _expanded : null,
+            child: InkWell(
+              onTap: _expandable
+                  ? () => setState(() {
+                        _expanded = !_expanded;
+                        _userToggled = true;
+                      })
+                  : null,
+              borderRadius: TalonRadius.rSm,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: header,
+              ),
             ),
           ),
           AnimatedSize(
@@ -443,44 +448,48 @@ class _ToolTraceState extends State<ToolTrace> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
-          onTap: () => setState(() => _open = !_open),
-          borderRadius: TalonRadius.rSm,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AnimatedRotation(
-                  duration: TalonMotion.fast,
-                  turns: _open ? 0.25 : 0,
-                  child: Icon(Icons.chevron_right,
-                      size: 16, color: TalonColors.textFaint),
-                ),
-                const SizedBox(width: TalonSpace.xs),
-                Icon(
-                  failed > 0
-                      ? Icons.error_outline
-                      : Icons.auto_awesome_outlined,
-                  size: 13,
-                  color: failed > 0 ? TalonColors.bad : TalonColors.textFaint,
-                ),
-                const SizedBox(width: 6),
-                // Flexible + ellipsis: on a phone-width bubble the summary
-                // ("Worked for 4.2s · 3 steps") can exceed the row and an
-                // unconstrained Text overflows the RenderFlex.
-                Flexible(
-                  child: Text(
-                    _summary(tools.length, failed, total),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: TalonColors.textFaint,
-                      fontSize: 12,
+        Semantics(
+          button: true,
+          expanded: _open,
+          child: InkWell(
+            onTap: () => setState(() => _open = !_open),
+            borderRadius: TalonRadius.rSm,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedRotation(
+                    duration: TalonMotion.fast,
+                    turns: _open ? 0.25 : 0,
+                    child: Icon(Icons.chevron_right,
+                        size: 16, color: TalonColors.textFaint),
+                  ),
+                  const SizedBox(width: TalonSpace.xs),
+                  Icon(
+                    failed > 0
+                        ? Icons.error_outline
+                        : Icons.auto_awesome_outlined,
+                    size: 13,
+                    color: failed > 0 ? TalonColors.bad : TalonColors.textFaint,
+                  ),
+                  const SizedBox(width: 6),
+                  // Flexible + ellipsis: on a phone-width bubble the summary
+                  // ("Worked for 4.2s · 3 steps") can exceed the row and an
+                  // unconstrained Text overflows the RenderFlex.
+                  Flexible(
+                    child: Text(
+                      _summary(tools.length, failed, total),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: TalonColors.textFaint,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

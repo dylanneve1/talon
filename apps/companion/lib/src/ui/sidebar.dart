@@ -712,21 +712,25 @@ class _ChatTileState extends State<_ChatTile> {
                 // targets — this 15px glyph is not.
                 if (!TalonDensity.touch)
                   AnimatedOpacity(
-                  duration: TalonMotion.fast,
-                  opacity: (_hover || selected) ? 1 : 0,
-                  child: IgnorePointer(
-                    ignoring: !(_hover || selected),
-                    child: InkWell(
-                      onTap: widget.onDelete,
-                      borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.all(2),
-                        child: Icon(Icons.close,
-                            size: 15, color: TalonColors.textFaint),
+                    duration: TalonMotion.fast,
+                    opacity: (_hover || selected) ? 1 : 0,
+                    child: IgnorePointer(
+                      ignoring: !(_hover || selected),
+                      child: Semantics(
+                        button: true,
+                        label: 'Delete chat',
+                        child: InkWell(
+                          onTap: widget.onDelete,
+                          borderRadius: BorderRadius.circular(6),
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Icon(Icons.close,
+                                size: 15, color: TalonColors.textFaint),
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
           ),

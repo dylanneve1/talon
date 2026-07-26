@@ -337,47 +337,51 @@ class _InlineImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _openFull(context),
-      child: ClipRRect(
-        borderRadius: TalonRadius.rMd,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 340, maxHeight: 420),
-          child: Image.network(
-            url,
-            // contain, not cover: cover cropped anything non-square into an
-            // arbitrary window, which is what made history images look wrong.
-            // contain keeps the full frame at its natural aspect ratio.
-            fit: BoxFit.contain,
-            loadingBuilder: (context, child, progress) {
-              if (progress == null) return child;
-              return Container(
-                width: 220,
-                height: 160,
+    return Semantics(
+      button: true,
+      label: 'Attached image. Open full screen',
+      child: GestureDetector(
+        onTap: () => _openFull(context),
+        child: ClipRRect(
+          borderRadius: TalonRadius.rMd,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 340, maxHeight: 420),
+            child: Image.network(
+              url,
+              // contain, not cover: cover cropped anything non-square into an
+              // arbitrary window, which is what made history images look wrong.
+              // contain keeps the full frame at its natural aspect ratio.
+              fit: BoxFit.contain,
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return Container(
+                  width: 220,
+                  height: 160,
+                  alignment: Alignment.center,
+                  color: TalonColors.surface,
+                  child: const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                );
+              },
+              errorBuilder: (context, _, __) => Container(
+                width: 200,
+                height: 110,
                 alignment: Alignment.center,
                 color: TalonColors.surface,
-                child: const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.broken_image_outlined,
+                        size: 18, color: TalonColors.textFaint),
+                    const SizedBox(width: TalonSpace.sm),
+                    Text('Image unavailable',
+                        style: TextStyle(
+                            color: TalonColors.textFaint, fontSize: 12.5)),
+                  ],
                 ),
-              );
-            },
-            errorBuilder: (context, _, __) => Container(
-              width: 200,
-              height: 110,
-              alignment: Alignment.center,
-              color: TalonColors.surface,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.broken_image_outlined,
-                      size: 18, color: TalonColors.textFaint),
-                  const SizedBox(width: TalonSpace.sm),
-                  Text('Image unavailable',
-                      style: TextStyle(
-                          color: TalonColors.textFaint, fontSize: 12.5)),
-                ],
               ),
             ),
           ),
@@ -406,6 +410,7 @@ class _InlineImage extends StatelessWidget {
                 right: TalonSpace.lg,
                 child: IconButton(
                   onPressed: () => Navigator.of(context).pop(),
+                  tooltip: 'Close image',
                   icon: const Icon(Icons.close, color: Colors.white),
                 ),
               ),
@@ -448,23 +453,28 @@ class _MessageActionsState extends State<_MessageActions> {
       child: Row(
         children: [
           if (m.text.isNotEmpty)
-            InkWell(
-              onTap: _copy,
-              borderRadius: TalonRadius.rSm,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(_copied ? Icons.check : Icons.copy_rounded,
-                        size: 14, color: TalonColors.textFaint),
-                    const SizedBox(width: 5),
-                    Text(
-                      _copied ? 'Copied' : 'Copy',
-                      style: TextStyle(
-                          fontSize: 11.5, color: TalonColors.textFaint),
-                    ),
-                  ],
+            // Text child announces itself; this only adds the missing role.
+            Semantics(
+              button: true,
+              child: InkWell(
+                onTap: _copy,
+                borderRadius: TalonRadius.rSm,
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(_copied ? Icons.check : Icons.copy_rounded,
+                          size: 14, color: TalonColors.textFaint),
+                      const SizedBox(width: 5),
+                      Text(
+                        _copied ? 'Copied' : 'Copy',
+                        style: TextStyle(
+                            fontSize: 11.5, color: TalonColors.textFaint),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

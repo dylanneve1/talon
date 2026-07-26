@@ -321,15 +321,20 @@ class _ComposerState extends State<Composer> {
             Positioned(
               top: -6,
               right: -6,
-              child: GestureDetector(
-                onTap: _clearAttachment,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: TalonColors.surfaceHi,
-                    shape: BoxShape.circle,
+              child: Semantics(
+                button: true,
+                label: 'Remove attached image',
+                child: GestureDetector(
+                  onTap: _clearAttachment,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: TalonColors.surfaceHi,
+                      shape: BoxShape.circle,
+                    ),
+                    padding: const EdgeInsets.all(2),
+                    child:
+                        const Icon(Icons.close, size: 15, color: Colors.white),
                   ),
-                  padding: const EdgeInsets.all(2),
-                  child: const Icon(Icons.close, size: 15, color: Colors.white),
                 ),
               ),
             ),
@@ -375,24 +380,28 @@ class _VoiceButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: 'Voice mode',
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: TalonDensity.d(40, 46),
-          height: TalonDensity.d(40, 46),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [TalonColors.accent, TalonColors.accentDeep],
+    return Semantics(
+      button: true,
+      label: 'Voice mode',
+      child: Tooltip(
+        message: 'Voice mode',
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: TalonDensity.d(40, 46),
+            height: TalonDensity.d(40, 46),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [TalonColors.accent, TalonColors.accentDeep],
+              ),
+              borderRadius: BorderRadius.circular(TalonDensity.d(14, 16)),
+              boxShadow: TalonShadows.glow,
             ),
-            borderRadius: BorderRadius.circular(TalonDensity.d(14, 16)),
-            boxShadow: TalonShadows.glow,
+            child: Icon(Icons.mic_rounded,
+                color: Colors.white, size: TalonDensity.d(20, 22)),
           ),
-          child: Icon(Icons.mic_rounded,
-              color: Colors.white, size: TalonDensity.d(20, 22)),
         ),
       ),
     );
@@ -423,13 +432,17 @@ class _StopButton extends StatelessWidget {
             color: TalonColors.text, size: TalonDensity.d(22, 24)),
       ),
     );
-    return Tooltip(
-      message: 'Stop generating',
-      child: reduceMotion
-          ? button
-          : button
-              .animate(onPlay: (c) => c.repeat(reverse: true))
-              .fadeIn(begin: 0.75, duration: 850.ms, curve: Curves.easeInOut),
+    return Semantics(
+      button: true,
+      label: 'Stop generating',
+      child: Tooltip(
+        message: 'Stop generating',
+        child: reduceMotion
+            ? button
+            : button
+                .animate(onPlay: (c) => c.repeat(reverse: true))
+                .fadeIn(begin: 0.75, duration: 850.ms, curve: Curves.easeInOut),
+      ),
     );
   }
 }
@@ -461,49 +474,54 @@ class _SendButtonState extends State<_SendButton> {
     // Springs up to full size + full colour when actionable, dips under the
     // finger, softens to a flat idle state when empty, and shows a spinner
     // while the attached image uploads.
-    return GestureDetector(
-      onTapDown: active ? (_) => setState(() => _pressed = true) : null,
-      onTapUp: active ? (_) => setState(() => _pressed = false) : null,
-      onTapCancel: active ? () => setState(() => _pressed = false) : null,
-      onTap: active ? widget.onTap : null,
-      child: AnimatedScale(
-        scale: _pressed
-            ? 0.88
-            : colored
-                ? 1.0
-                : 0.9,
-        duration: TalonMotion.fast,
-        curve: TalonMotion.emphasized,
-        child: AnimatedContainer(
-          duration: TalonMotion.base,
-          curve: TalonMotion.standard,
-          width: TalonDensity.d(40, 46),
-          height: TalonDensity.d(40, 46),
-          decoration: BoxDecoration(
-            gradient: colored
-                ? LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [TalonColors.accent, TalonColors.accentDeep],
+    return Semantics(
+      button: true,
+      enabled: active,
+      label: busy ? 'Sending, image uploading' : 'Send message',
+      child: GestureDetector(
+        onTapDown: active ? (_) => setState(() => _pressed = true) : null,
+        onTapUp: active ? (_) => setState(() => _pressed = false) : null,
+        onTapCancel: active ? () => setState(() => _pressed = false) : null,
+        onTap: active ? widget.onTap : null,
+        child: AnimatedScale(
+          scale: _pressed
+              ? 0.88
+              : colored
+                  ? 1.0
+                  : 0.9,
+          duration: TalonMotion.fast,
+          curve: TalonMotion.emphasized,
+          child: AnimatedContainer(
+            duration: TalonMotion.base,
+            curve: TalonMotion.standard,
+            width: TalonDensity.d(40, 46),
+            height: TalonDensity.d(40, 46),
+            decoration: BoxDecoration(
+              gradient: colored
+                  ? LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [TalonColors.accent, TalonColors.accentDeep],
+                    )
+                  : null,
+              color: colored ? null : TalonColors.surfaceHi,
+              borderRadius: BorderRadius.circular(TalonDensity.d(14, 16)),
+              boxShadow: colored ? TalonShadows.glow : null,
+            ),
+            child: busy
+                ? const Padding(
+                    padding: EdgeInsets.all(11),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(Colors.white),
+                    ),
                   )
-                : null,
-            color: colored ? null : TalonColors.surfaceHi,
-            borderRadius: BorderRadius.circular(TalonDensity.d(14, 16)),
-            boxShadow: colored ? TalonShadows.glow : null,
-          ),
-          child: busy
-              ? const Padding(
-                  padding: EdgeInsets.all(11),
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(Colors.white),
+                : Icon(
+                    Icons.arrow_upward_rounded,
+                    color: colored ? Colors.white : TalonColors.textFaint,
+                    size: TalonDensity.d(20, 22),
                   ),
-                )
-              : Icon(
-                  Icons.arrow_upward_rounded,
-                  color: colored ? Colors.white : TalonColors.textFaint,
-                  size: TalonDensity.d(20, 22),
-                ),
+          ),
         ),
       ),
     );

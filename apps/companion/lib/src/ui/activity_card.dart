@@ -170,29 +170,33 @@ class _ReasoningStripState extends State<_ReasoningStrip> {
     if (!_expanded) {
       return Padding(
         padding: const EdgeInsets.only(bottom: TalonSpace.sm),
-        child: InkWell(
-          onTap: () => setState(() => _userExpanded = true),
-          borderRadius: TalonRadius.rPill,
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: TalonSpace.md, vertical: 5),
-            decoration: BoxDecoration(
-              color: TalonColors.glassFill,
-              borderRadius: TalonRadius.rPill,
-              border: Border.all(color: TalonColors.glassStroke),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.bubble_chart_outlined,
-                    size: 13, color: TalonColors.textFaint),
-                const SizedBox(width: 6),
-                Text(
-                  'Thought — tap to expand',
-                  style:
-                      TextStyle(fontSize: 11.5, color: TalonColors.textFaint),
-                ),
-              ],
+        child: Semantics(
+          button: true,
+          expanded: false,
+          child: InkWell(
+            onTap: () => setState(() => _userExpanded = true),
+            borderRadius: TalonRadius.rPill,
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: TalonSpace.md, vertical: 5),
+              decoration: BoxDecoration(
+                color: TalonColors.glassFill,
+                borderRadius: TalonRadius.rPill,
+                border: Border.all(color: TalonColors.glassStroke),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.bubble_chart_outlined,
+                      size: 13, color: TalonColors.textFaint),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Thought — tap to expand',
+                    style:
+                        TextStyle(fontSize: 11.5, color: TalonColors.textFaint),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -246,9 +250,14 @@ class _ReasoningStripState extends State<_ReasoningStrip> {
     // While the reply streams, the expanded strip stays tappable to fold
     // back down (the pill re-expands it).
     final Widget body = widget.condensed
-        ? GestureDetector(
-            onTap: () => setState(() => _userExpanded = false),
-            child: strip,
+        ? Semantics(
+            button: true,
+            expanded: true,
+            label: 'Hide activity',
+            child: GestureDetector(
+              onTap: () => setState(() => _userExpanded = false),
+              child: strip,
+            ),
           )
         : strip;
     if (MediaQuery.of(context).disableAnimations) return body;
