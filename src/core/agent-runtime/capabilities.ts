@@ -51,6 +51,8 @@ export interface ChatRunParams {
   model: ModelRef;
   text: string;
   senderName: string;
+  /** Sender's platform handle without `@` (Telegram username, Discord username). */
+  senderHandle?: string;
   isGroup?: boolean;
   /** Provider message ID. Telegram is numeric; Discord snowflakes are strings. */
   messageId?: number | string;

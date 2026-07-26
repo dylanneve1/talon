@@ -10,7 +10,7 @@
  * doesn't" drift that motivated the shared-framework refactor.
  *
  * Examples:
- *   group:  "[2026-05-15 11:01:23] [Dylan] [msg_id:2485]: actual text"
+ *   group:  "[2026-05-15 11:01:23] [Dylan (@dylanneve1)] [msg_id:2485]: actual text"
  *   DM:     "[2026-05-15 11:01:23] [msg_id:2485] actual text"
  *   DM (no msg_id): "[2026-05-15 11:01:23] actual text"
  */
@@ -25,6 +25,13 @@ export type PromptFormatInputs = {
   text: string;
   /** Display name of the sender (e.g. "Dylan"). */
   senderName: string;
+  /**
+   * Platform handle of the sender WITHOUT the leading `@` (e.g. `dylanneve1`).
+   * Rendered next to the display name in group chats so the model can address
+   * or mention someone correctly — display names are not addressable, handles
+   * are. Absent for users who have no handle set.
+   */
+  senderHandle?: string;
   /** True when the chat is a group; influences whether the `[Name]` label is included. */
   isGroup?: boolean;
   /** Provider message id (Telegram numeric, Discord snowflake string). */
@@ -47,11 +54,11 @@ export function formatUserPrompt(inputs: PromptFormatInputs): string {
     inputs.messageId !== undefined ? ` [msg_id:${inputs.messageId}]` : "";
 
   if (inputs.isGroup) {
-    return joinNonEmpty(
-      timeTag,
-      `[${inputs.senderName}]${msgIdHint}:`,
-      inputs.text,
-    );
+    const handle = inputs.senderHandle?.trim().replace(/^@+/, "");
+    const who = handle
+      ? `${inputs.senderName} (@${handle})`
+      : inputs.senderName;
+    return joinNonEmpty(timeTag, `[${who}]${msgIdHint}:`, inputs.text);
   }
 
   // DM: no [Name] label needed (Telegram already shows sender)

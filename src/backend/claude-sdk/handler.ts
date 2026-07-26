@@ -151,7 +151,7 @@ export async function* runChatTurn(
 ): AsyncIterable<AgentEvent> {
   const config = getConfig();
 
-  const { chatId, text, senderName, isGroup } = params;
+  const { chatId, text, senderName, senderHandle, isGroup } = params;
   const session = getSession(chatId);
   const t0 = Date.now();
 
@@ -196,6 +196,7 @@ export async function* runChatTurn(
   let prompt = formatUserPrompt({
     text,
     senderName: senderName ?? "user",
+    senderHandle,
     isGroup,
     messageId: params.messageId,
   });

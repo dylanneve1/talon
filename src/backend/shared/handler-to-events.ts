@@ -82,6 +82,7 @@ export async function* handlerToEvents(
     model: params.model.id,
     text: params.text,
     senderName: params.senderName,
+    senderHandle: params.senderHandle,
     isGroup: params.isGroup,
     messageId: params.messageId,
     onStreamDelta: (accumulated) => {

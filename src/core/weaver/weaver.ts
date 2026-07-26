@@ -231,6 +231,7 @@ export class Weaver {
         model: warp.ref,
         text: params.prompt,
         senderName: params.senderName,
+        senderHandle: params.senderHandle,
         isGroup: params.isGroup,
         messageId: params.messageId,
       });

@@ -77,6 +77,50 @@ describe("formatUserPrompt", () => {
     expect(out).toBe("no time");
   });
 
+  it("group with a handle: `[time] [Name (@handle)] [msg_id:N]: text`", () => {
+    const out = formatUserPrompt({
+      text: "ping me properly",
+      senderName: "Paweł",
+      senderHandle: "PawiX25",
+      isGroup: true,
+      messageId: 7,
+    });
+    expect(out).toContain("[Paweł (@PawiX25)] [msg_id:7]:");
+  });
+
+  it("a handle that already carries @ is not doubled up", () => {
+    const out = formatUserPrompt({
+      text: "hi",
+      senderName: "Risen",
+      senderHandle: "@RisenID",
+      isGroup: true,
+    });
+    expect(out).toContain("[Risen (@RisenID)]:");
+    expect(out).not.toContain("@@");
+  });
+
+  it("blank handle falls back to the bare name", () => {
+    const out = formatUserPrompt({
+      text: "hi",
+      senderName: "Risen",
+      senderHandle: "   ",
+      isGroup: true,
+    });
+    expect(out).toContain("[Risen]:");
+    expect(out).not.toContain("(@");
+  });
+
+  it("DMs stay handle-free — Telegram already shows who is talking", () => {
+    const out = formatUserPrompt({
+      text: "dm",
+      senderName: "Dylan",
+      senderHandle: "dylanneve1",
+      isGroup: false,
+      messageId: 3,
+    });
+    expect(out).not.toContain("@dylanneve1");
+  });
+
   it("string messageId works (Discord snowflake)", () => {
     const out = formatUserPrompt({
       text: "snowflake",

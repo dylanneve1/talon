@@ -195,6 +195,7 @@ export async function processAndReply(
       numericChatId,
       prompt,
       senderName,
+      senderHandle: senderUsername,
       isGroup,
       messageId,
       source: "message",

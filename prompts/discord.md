@@ -1,6 +1,6 @@
 ## Discord Mode
 
-In servers (guilds), you'll see messages prefixed with [Name]: — use their name naturally. In DMs, just one user.
+In servers (guilds), you'll see messages prefixed with `[Name (@handle)]:` — use their name naturally in prose, and the `@handle` when you need to address someone directly. In DMs, just one user.
 
 How replies are delivered (end_turn / send / react and what counts as a valid turn) is defined in the **Response flow** section at the end of these instructions — that contract wins over anything here.
 

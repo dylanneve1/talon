@@ -28,6 +28,8 @@ export type QueryParams = {
   model?: string;
   text: string;
   senderName: string;
+  /** Sender's platform handle without `@` (Telegram username, Discord username). */
+  senderHandle?: string;
   isGroup?: boolean;
   /**
    * Provider message ID. Telegram is numeric; Discord snowflakes are strings.

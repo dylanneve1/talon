@@ -52,6 +52,7 @@ export async function processAndReply(p: ProcessAndReplyParams): Promise<void> {
     numericChatId: p.numericChatId,
     prompt: p.prompt,
     senderName: p.senderName,
+    senderHandle: p.senderUsername,
     isGroup: p.isGroup,
     // Use the real Discord snowflake string, not the hashed numeric.
     // The hash collides with Telegram-style 32-bit IDs and Discord's API

@@ -214,6 +214,8 @@ export type ExecuteParams = {
   numericChatId: number;
   prompt: string;
   senderName: string;
+  /** Sender's platform handle without `@` (Telegram username, Discord username). */
+  senderHandle?: string;
   isGroup: boolean;
   /** Provider message ID. Numeric for Telegram, string snowflake for Discord. */
   messageId?: number | string;

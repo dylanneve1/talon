@@ -200,6 +200,7 @@ export async function handleMessage(
     chatId,
     text,
     senderName,
+    senderHandle,
     isGroup,
     messageId,
     onTextBlock,
@@ -261,6 +262,7 @@ export async function handleMessage(
   const prompt = formatUserPrompt({
     text,
     senderName: senderName ?? "user",
+    senderHandle,
     isGroup,
     messageId,
   });
