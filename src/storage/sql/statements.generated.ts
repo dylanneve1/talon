@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS history_messages (
   msg_id          INTEGER NOT NULL,
   sender_id       INTEGER NOT NULL,
   sender_name     TEXT    NOT NULL,
+  -- Platform handle without \`@\` (Telegram username / Discord username).
+  -- Null for users who have none — display names are not addressable, so
+  -- this is what a later reader needs to actually mention someone.
+  sender_handle   TEXT,
   text            TEXT    NOT NULL,
   reply_to_msg_id INTEGER,
   timestamp       INTEGER NOT NULL,
@@ -293,6 +297,9 @@ export const dbSql = {
 -- attempts this on every open and swallows "duplicate column name" /
 -- "no such table" (fresh databases get the column via schema.sql).
 ALTER TABLE media_index ADD COLUMN content_hash TEXT`,
+  addHistorySenderHandleColumn: `-- Column reconciliation for databases that shipped before sender handles
+-- were recorded. Fresh databases get the column via schema.sql.
+ALTER TABLE history_messages ADD COLUMN sender_handle TEXT`,
   addSessionsMetricsColumn: `-- Column reconciliation for databases that shipped before per-session
 -- metrics existed. Fresh databases get the column via schema.sql.
 ALTER TABLE sessions ADD COLUMN metrics TEXT NOT NULL DEFAULT '{"lifetime":{"counters":{"queries":0,"toolCalls":0,"turnsWithTools":0,"apiCalls":0,"inputTokens":0,"outputTokens":0,"cacheReadTokens":0,"cacheWriteTokens":0,"failedTurns":0,"flowViolationRetries":0,"flowViolationCapExhausted":0,"trailingTextDropped":0},"latency":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"toolCallsByName":{},"backend":{},"cacheHitPercent":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"toolCallsPerTurn":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"apiCallsPerTurn":{"count":0,"sumMs":0,"minMs":null,"maxMs":0}},"buckets":{}}'`,
@@ -326,16 +333,16 @@ WHERE chat_id = ? AND status IN (/* statuses */)`,
 
 export const historySql = {
   insert: `INSERT OR IGNORE INTO history_messages
-  (chat_id, msg_id, sender_id, sender_name, text, reply_to_msg_id,
-   timestamp, media_type, sticker_file_id, file_path)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  recent: `SELECT msg_id, sender_id, sender_name, text, reply_to_msg_id,
+  (chat_id, msg_id, sender_id, sender_name, sender_handle, text,
+   reply_to_msg_id, timestamp, media_type, sticker_file_id, file_path)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  recent: `SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
        timestamp, media_type, sticker_file_id, file_path
 FROM history_messages
 WHERE chat_id = ? ORDER BY id DESC LIMIT ?`,
   recentBefore: `-- Scroll-back pagination: the window of messages strictly older than a
 -- given msg_id, newest-first (the repository reverses to chronological).
-SELECT msg_id, sender_id, sender_name, text, reply_to_msg_id,
+SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
        timestamp, media_type, sticker_file_id, file_path
 FROM history_messages
 WHERE chat_id = ? AND msg_id < ? ORDER BY id DESC LIMIT ?`,
@@ -343,23 +350,23 @@ WHERE chat_id = ? AND msg_id < ? ORDER BY id DESC LIMIT ?`,
   deleteChat: `DELETE FROM history_messages WHERE chat_id = ?`,
   searchFts: `-- The match param must already be a valid FTS5 expression
 -- (see history.ts ftsQuery).
-SELECT msg_id, sender_id, sender_name, text, reply_to_msg_id,
+SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
        timestamp, media_type, sticker_file_id, file_path
 FROM history_messages
 WHERE chat_id = ?
   AND id IN (SELECT rowid FROM history_fts WHERE history_fts MATCH ?)
 ORDER BY id DESC LIMIT ?`,
   bySenderName: `-- The fragment param is LIKE-escaped by the repository (backslash escape).
-SELECT msg_id, sender_id, sender_name, text, reply_to_msg_id,
+SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
        timestamp, media_type, sticker_file_id, file_path
 FROM history_messages
 WHERE chat_id = ? AND lower(sender_name) LIKE ? ESCAPE '\\'
 ORDER BY id DESC LIMIT ?`,
-  byMsgId: `SELECT msg_id, sender_id, sender_name, text, reply_to_msg_id,
+  byMsgId: `SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
        timestamp, media_type, sticker_file_id, file_path
 FROM history_messages
 WHERE chat_id = ? AND msg_id = ? ORDER BY id DESC LIMIT 1`,
-  bySenderId: `SELECT msg_id, sender_id, sender_name, text, reply_to_msg_id,
+  bySenderId: `SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
        timestamp, media_type, sticker_file_id, file_path
 FROM history_messages
 WHERE chat_id = ? AND sender_id = ? ORDER BY id DESC LIMIT ?`,
@@ -369,7 +376,13 @@ WHERE chat_id = ? AND sender_id = ? ORDER BY id DESC LIMIT ?`,
        COUNT(*) AS message_count,
        (SELECT sender_name FROM history_messages i
         WHERE i.chat_id = o.chat_id AND i.sender_id = o.sender_id
-        ORDER BY i.id DESC LIMIT 1) AS name
+        ORDER BY i.id DESC LIMIT 1) AS name,
+       -- Most recent NON-NULL handle: people set a username long after
+       -- their first message, and the newest row may predate it.
+       (SELECT i.sender_handle FROM history_messages i
+        WHERE i.chat_id = o.chat_id AND i.sender_id = o.sender_id
+          AND i.sender_handle IS NOT NULL
+        ORDER BY i.id DESC LIMIT 1) AS handle
 FROM history_messages o
 WHERE chat_id = ?
 GROUP BY sender_id

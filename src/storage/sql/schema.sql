@@ -11,6 +11,10 @@ CREATE TABLE IF NOT EXISTS history_messages (
   msg_id          INTEGER NOT NULL,
   sender_id       INTEGER NOT NULL,
   sender_name     TEXT    NOT NULL,
+  -- Platform handle without `@` (Telegram username / Discord username).
+  -- Null for users who have none — display names are not addressable, so
+  -- this is what a later reader needs to actually mention someone.
+  sender_handle   TEXT,
   text            TEXT    NOT NULL,
   reply_to_msg_id INTEGER,
   timestamp       INTEGER NOT NULL,

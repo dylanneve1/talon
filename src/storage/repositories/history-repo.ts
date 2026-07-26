@@ -13,6 +13,12 @@ export type HistoryMessage = {
   msgId: number;
   senderId: number;
   senderName: string;
+  /**
+   * Platform handle without `@` (Telegram username / Discord username).
+   * Undefined for users who have none. Display names can't be mentioned;
+   * this is the addressable form a later reader needs.
+   */
+  senderHandle?: string;
   text: string;
   replyToMsgId?: number;
   timestamp: number;
@@ -27,6 +33,7 @@ type Row = {
   msg_id: number;
   sender_id: number;
   sender_name: string;
+  sender_handle: string | null;
   text: string;
   reply_to_msg_id: number | null;
   timestamp: number;
@@ -40,6 +47,7 @@ function rowToMessage(row: Row): HistoryMessage {
     msgId: row.msg_id,
     senderId: row.sender_id,
     senderName: row.sender_name,
+    senderHandle: row.sender_handle ?? undefined,
     text: row.text,
     replyToMsgId: row.reply_to_msg_id ?? undefined,
     timestamp: row.timestamp,
@@ -57,6 +65,7 @@ export function insert(chatId: string, msg: HistoryMessage): void {
       msg.msgId,
       msg.senderId,
       msg.senderName,
+      msg.senderHandle ?? null,
       msg.text,
       msg.replyToMsgId ?? null,
       msg.timestamp,
@@ -168,6 +177,8 @@ export function latestMsgId(chatId: string): number | undefined {
 export type KnownUser = {
   senderId: number;
   name: string;
+  /** Latest known platform handle without `@`, if the user has one. */
+  handle?: string;
   lastSeen: number;
   messageCount: number;
 };
@@ -181,10 +192,12 @@ export function knownUsers(chatId: string): KnownUser[] {
     last_seen: number;
     message_count: number;
     name: string;
+    handle: string | null;
   }>;
   return rows.map((r) => ({
     senderId: r.sender_id,
     name: r.name,
+    handle: r.handle ?? undefined,
     lastSeen: r.last_seen,
     messageCount: r.message_count,
   }));

@@ -10,6 +10,11 @@ PRAGMA wal_checkpoint(TRUNCATE)
 -- "no such table" (fresh databases get the column via schema.sql).
 ALTER TABLE media_index ADD COLUMN content_hash TEXT
 
+-- name: addHistorySenderHandleColumn
+-- Column reconciliation for databases that shipped before sender handles
+-- were recorded. Fresh databases get the column via schema.sql.
+ALTER TABLE history_messages ADD COLUMN sender_handle TEXT
+
 -- name: addSessionsMetricsColumn
 -- Column reconciliation for databases that shipped before per-session
 -- metrics existed. Fresh databases get the column via schema.sql.

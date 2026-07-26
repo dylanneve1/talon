@@ -147,7 +147,10 @@ async function pulseChat(chatId: string): Promise<void> {
     .map((m) => {
       const time = formatSmartTimestamp(m.timestamp);
       const media = m.mediaType ? ` [${m.mediaType}]` : "";
-      return `[msg:${m.msgId} ${time}] ${m.senderName}${media}: ${m.text.slice(0, 200)}`;
+      const who = m.senderHandle
+        ? `${m.senderName} (@${m.senderHandle})`
+        : m.senderName;
+      return `[msg:${m.msgId} ${time}] ${who}${media}: ${m.text.slice(0, 200)}`;
     })
     .join("\n");
 

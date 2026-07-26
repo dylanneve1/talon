@@ -684,3 +684,51 @@ describe("history", () => {
     });
   });
 });
+
+describe("sender handles", () => {
+  const chatId = () => `handle-${Math.random().toString(36).slice(2)}`;
+
+  it("round-trips the handle through storage", () => {
+    const id = chatId();
+    pushMessage(
+      id,
+      makeMsg({ msgId: 1, senderName: "Paweł", senderHandle: "PawiX25" }),
+    );
+    expect(getRecentHistory(id)[0].senderHandle).toBe("PawiX25");
+  });
+
+  it("formats history as `Name (@handle)` so a reader can mention them", () => {
+    const id = chatId();
+    pushMessage(
+      id,
+      makeMsg({ msgId: 1, senderName: "Paweł", senderHandle: "PawiX25" }),
+    );
+    expect(getRecentFormatted(id)).toContain("Paweł (@PawiX25)");
+  });
+
+  it("leaves handle-less users exactly as before", () => {
+    const id = chatId();
+    pushMessage(id, makeMsg({ msgId: 1, senderName: "Anon" }));
+    const out = getRecentFormatted(id);
+    expect(out).toContain("Anon");
+    expect(out).not.toContain("(@");
+  });
+
+  it("known users carry the latest non-null handle", () => {
+    const id = chatId();
+    // First message predates the username being set — the newest row is
+    // NOT the one that knows the handle.
+    pushMessage(id, makeMsg({ msgId: 1, senderId: 7, senderName: "Risen" }));
+    pushMessage(
+      id,
+      makeMsg({
+        msgId: 2,
+        senderId: 7,
+        senderName: "Risen",
+        senderHandle: "RisenID",
+      }),
+    );
+    pushMessage(id, makeMsg({ msgId: 3, senderId: 7, senderName: "Risen" }));
+    expect(getKnownUsers(id)).toContain("Risen (@RisenID)");
+  });
+});

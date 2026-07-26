@@ -142,7 +142,13 @@ function formatMessage(m: HistoryMessage): string {
     : "";
   const fileTag = m.filePath ? ` (file: ${m.filePath})` : "";
   const time = formatSmartTimestamp(m.timestamp);
-  return `[msg:${m.msgId} ${time}] ${m.senderName}${replyTag}${mediaTag}${stickerTag}${fileTag}: ${m.text}`;
+  // The handle rides along with the name: a reader deciding to mention
+  // someone (a scheduled message, a heartbeat-composed reply) has no other
+  // way to learn it, and a display name notifies nobody.
+  const who = m.senderHandle
+    ? `${m.senderName} (@${m.senderHandle})`
+    : m.senderName;
+  return `[msg:${m.msgId} ${time}] ${who}${replyTag}${mediaTag}${stickerTag}${fileTag}: ${m.text}`;
 }
 
 export function getRecentFormatted(chatId: string, limit = 20): string {
@@ -209,7 +215,7 @@ export function getKnownUsers(chatId: string): string {
   return users
     .map(
       (u) =>
-        `${u.name} (user_id: ${u.senderId}) — ${u.messageCount} msgs, last seen ${formatRelativeAge(u.lastSeen)}`,
+        `${u.name}${u.handle ? ` (@${u.handle})` : ""} (user_id: ${u.senderId}) — ${u.messageCount} msgs, last seen ${formatRelativeAge(u.lastSeen)}`,
     )
     .join("\n");
 }

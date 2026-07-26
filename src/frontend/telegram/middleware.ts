@@ -28,6 +28,10 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
   bot.on("message", (ctx, next) => {
     const chatId = String(ctx.chat.id);
     const sender = getSenderName(ctx.from);
+    // The handle is the only addressable form of a user — persist it with
+    // every row so later readers (history views, heartbeat-composed
+    // messages) can mention someone instead of guessing.
+    const senderHandle = ctx.from?.username;
     const senderId = ctx.from?.id ?? 0;
     const msgId = ctx.message.message_id;
     const replyToMsgId = ctx.message.reply_to_message?.message_id;
@@ -44,6 +48,7 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
         msgId,
         senderId,
         senderName: sender,
+        senderHandle,
         text: ctx.message.text,
         replyToMsgId,
         timestamp,
@@ -53,6 +58,7 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
         msgId,
         senderId,
         senderName: sender,
+        senderHandle,
         text: ctx.message.caption || "(photo)",
         replyToMsgId,
         timestamp,
@@ -64,6 +70,7 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
         msgId,
         senderId,
         senderName: sender,
+        senderHandle,
         text: ctx.message.caption || `(sent ${name})`,
         replyToMsgId,
         timestamp,
@@ -74,6 +81,7 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
         msgId,
         senderId,
         senderName: sender,
+        senderHandle,
         text: "(voice message)",
         replyToMsgId,
         timestamp,
@@ -84,6 +92,7 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
         msgId,
         senderId,
         senderName: sender,
+        senderHandle,
         text: ctx.message.sticker.emoji || "(sticker)",
         replyToMsgId,
         timestamp,
@@ -95,6 +104,7 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
         msgId,
         senderId,
         senderName: sender,
+        senderHandle,
         text: ctx.message.caption || "(video)",
         replyToMsgId,
         timestamp,
@@ -105,6 +115,7 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
         msgId,
         senderId,
         senderName: sender,
+        senderHandle,
         text: ctx.message.caption || "(GIF)",
         replyToMsgId,
         timestamp,
@@ -117,6 +128,7 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
         msgId,
         senderId,
         senderName: sender,
+        senderHandle,
         text: ctx.message.caption || `(audio: ${title})`,
         replyToMsgId,
         timestamp,
@@ -127,6 +139,7 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
         msgId,
         senderId,
         senderName: sender,
+        senderHandle,
         text: "(video note)",
         replyToMsgId,
         timestamp,
@@ -137,6 +150,7 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
         msgId,
         senderId,
         senderName: sender,
+        senderHandle,
         text: `(shared location: ${ctx.message.location.latitude}, ${ctx.message.location.longitude})`,
         replyToMsgId,
         timestamp,
@@ -152,6 +166,7 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
         msgId,
         senderId,
         senderName: sender,
+        senderHandle,
         text: `(shared contact: ${name})`,
         replyToMsgId,
         timestamp,

@@ -40,6 +40,9 @@ export function registerMiddleware(client: Client, config: TalonConfig): void {
     const numericMessageId = deriveNumericChatId(msg.id);
     const senderId = deriveNumericChatId(msg.author.id);
     const senderName = getSenderName(msg);
+    // Display names aren't addressable; the username is. Persist it so
+    // later readers can mention the person rather than guess a handle.
+    const senderHandle = msg.author.username;
     const replyToMsgId = msg.reference?.messageId
       ? deriveNumericChatId(msg.reference.messageId)
       : undefined;
@@ -59,6 +62,7 @@ export function registerMiddleware(client: Client, config: TalonConfig): void {
         msgId: numericMessageId,
         senderId,
         senderName,
+        senderHandle,
         text: msg.content || `(${mediaType})`,
         replyToMsgId,
         timestamp,
@@ -69,6 +73,7 @@ export function registerMiddleware(client: Client, config: TalonConfig): void {
         msgId: numericMessageId,
         senderId,
         senderName,
+        senderHandle,
         text: msg.content,
         replyToMsgId,
         timestamp,

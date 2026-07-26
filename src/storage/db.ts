@@ -85,6 +85,11 @@ function ensureSchema(database: SqlDatabase): void {
     /* duplicate column or no such table — both mean nothing to do */
   }
   try {
+    database.exec(dbSql.addHistorySenderHandleColumn);
+  } catch {
+    /* duplicate column or no such table — both mean nothing to do */
+  }
+  try {
     database.exec(dbSql.addSessionsMetricsColumn);
   } catch {
     /* duplicate column or no such table — both mean nothing to do */
