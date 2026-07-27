@@ -30,6 +30,12 @@ vi.mock("../util/log.js", () => ({
 
 vi.mock("../core/engine/gateway-actions/index.js", () => ({
   handleSharedAction: vi.fn(async () => null),
+  // The gateway consults these before resolving a chat. Omitting
+  // them from the mock makes the module export `undefined` and the
+  // call site throws a TypeError, which surfaces as an unrelated
+  // "routing broke" failure rather than a missing-mock one.
+  isChatFreeAction: vi.fn(() => false),
+  handleChatFreeAction: vi.fn(async () => null),
 }));
 
 vi.mock("../core/plugin/index.js", () => ({

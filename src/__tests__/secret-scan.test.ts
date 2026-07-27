@@ -64,8 +64,14 @@ describe("scanText — patterns", () => {
   const cases: Array<[string, string]> = [
     ["private-key-block", "-----BEGIN OPENSSH PRIVATE KEY-----\nabc"],
     ["anthropic-api-key", "sk-ant-api03-AAAAAAAAAAAAAAAAAAAA"],
-    ["github-token", "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123"],
-    ["slack-token", "xoxb-123456789012-abcdefghijkl"],
+    // NB: these two are assembled at runtime rather than written as
+    // literals. They are fake, but they have the exact shape real ones
+    // do, so a literal here trips the repo's own gitleaks job in CI —
+    // which is the correct behaviour from gitleaks and a poor reason to
+    // weaken .gitleaks.toml. The interpolated form matches the style
+    // already used by the google/telegram cases below.
+    ["github-token", `ghp_${"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123"}`],
+    ["slack-token", `xoxb-${"123456789012"}-${"abcdefghijkl"}`],
     ["aws-access-key-id", "AKIAIOSFODNN7EXAMPLE"],
     ["google-api-key", `AIza${"a".repeat(35)}`],
     ["telegram-bot-token", `123456789:AA${"x".repeat(32)}`],

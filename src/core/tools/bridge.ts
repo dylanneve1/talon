@@ -13,6 +13,7 @@ import {
   type SecretScanOptions,
 } from "./secret-scan.js";
 import { knownSecretValues } from "./secret-sources.js";
+import { TalonError } from "../errors.js";
 
 /** Default wall-clock budget for a bridge action. */
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -105,7 +106,14 @@ export function createBridge(
         allowlist: secretScan?.allowlist,
       });
       if (findings.length > 0) {
-        throw new Error(secretScanErrorMessage(action, findings));
+        // `forbidden`, not `bad_request`: the call is refused on policy,
+        // and it must never be retried with the same content — a retry
+        // would just re-attempt the leak. The message names the rule
+        // only, so it stays safe to log and to echo back to the model.
+        throw new TalonError(secretScanErrorMessage(action, findings), {
+          reason: "forbidden",
+          retryable: false,
+        });
       }
     }
     const timeoutMs = LONG_ACTION_TIMEOUTS_MS[action] ?? DEFAULT_TIMEOUT_MS;
