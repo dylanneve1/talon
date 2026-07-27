@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.12.0](https://github.com/dylanneve1/talon/compare/v3.11.1...v3.12.0) (2026-07-27)
+
+
+### Features
+
+* **prompt:** carry the sender's [@handle](https://github.com/handle) into group prompts ([#666](https://github.com/dylanneve1/talon/issues/666)) ([3eaa95f](https://github.com/dylanneve1/talon/commit/3eaa95fcbbcdf6b48388773cf414a93a280a1488))
+
 ## [3.11.1](https://github.com/dylanneve1/talon/compare/v3.11.0...v3.11.1) (2026-07-26)
 
 
