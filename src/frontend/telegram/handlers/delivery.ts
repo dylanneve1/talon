@@ -5,12 +5,12 @@
 
 import type { Bot } from "grammy";
 import type { TalonConfig } from "../../../util/config.js";
-import { markdownToTelegramHtml } from "../formatting.js";
 import { execute } from "../../../core/engine/dispatcher.js";
 import { toolInputToRecord } from "../../../core/agent-runtime/events.js";
 import { appendDailyLogResponse } from "../../../storage/daily-log.js";
 import { stripMcpPrefix } from "../../../core/tools/index.js";
 import { logWarn } from "../../../util/log.js";
+import { sendText } from "../actions/shared.js";
 import { trackDmUser } from "./access.js";
 
 export async function sendHtml(
@@ -112,7 +112,7 @@ function createStreamCallbacks(
   };
 
   const onTextBlock = async (text: string) => {
-    await sendHtml(bot, chatId, markdownToTelegramHtml(text), _replyToId);
+    await sendText(bot, chatId, text, _replyToId);
     appendDailyLogResponse("Talon", text, { chatTitle });
     state.lastSentLength = 0;
     state.sentTextBlock = true;

@@ -360,6 +360,7 @@ interface BotApiSpy {
   unpinChatMessage: ReturnType<typeof vi.fn>;
   forwardMessage: ReturnType<typeof vi.fn>;
   copyMessage: ReturnType<typeof vi.fn>;
+  sendRichMessage: ReturnType<typeof vi.fn>;
   sendMessage: ReturnType<typeof vi.fn>;
   sendChatAction: ReturnType<typeof vi.fn>;
 }
@@ -373,6 +374,7 @@ function makeBotSpy(): { bot: Bot; api: BotApiSpy } {
     unpinChatMessage: vi.fn(async () => true),
     forwardMessage: vi.fn(async () => ({ message_id: 999 })),
     copyMessage: vi.fn(async () => ({ message_id: 1000 })),
+    sendRichMessage: vi.fn(async () => ({ message_id: 1001 })),
     sendMessage: vi.fn(async () => ({ message_id: 1001 })),
     sendChatAction: vi.fn(async () => true),
   };
@@ -525,7 +527,7 @@ describe("createTelegramActionHandler", () => {
     expect(result).toEqual({ ok: true, message_id: 1000 });
   });
 
-  it("edit_message → bot.api.editMessageText(chatId, message_id, html, opts)", async () => {
+  it("edit_message → bot.api.editMessageText with native Rich Markdown", async () => {
     await handler(
       { action: "edit_message", message_id: 2081, text: "**bold**" },
       chatId,
@@ -535,8 +537,7 @@ describe("createTelegramActionHandler", () => {
     const call = api.editMessageText.mock.calls[0]!;
     expect(call[0]).toBe(chatId);
     expect(call[1]).toBe(2081);
-    expect(typeof call[2]).toBe("string");
-    expect(call[3]).toEqual({ parse_mode: "HTML" });
+    expect(call[2]).toEqual({ markdown: "**bold**" });
   });
 
   it("edit_message rejects text > TELEGRAM_MAX_TEXT (4096)", async () => {
@@ -561,7 +562,7 @@ describe("createTelegramActionHandler", () => {
     expect(api.sendChatAction).toHaveBeenCalledWith(chatId, "typing");
   });
 
-  it("send_message → withRetry → bot.api.sendMessage with HTML and reply_to", async () => {
+  it("send_message → bot.api.sendRichMessage with Markdown and reply_to", async () => {
     const result = await handler(
       {
         action: "send_message",
@@ -571,14 +572,14 @@ describe("createTelegramActionHandler", () => {
       chatId,
     );
 
-    expect(api.sendMessage).toHaveBeenCalledTimes(1);
+    expect(api.sendRichMessage).toHaveBeenCalledTimes(1);
+    expect(api.sendMessage).not.toHaveBeenCalled();
     expect(gateway.incrementMessages).toHaveBeenCalledWith(chatId);
-    const call = api.sendMessage.mock.calls[0]!;
+    const call = api.sendRichMessage.mock.calls[0]!;
     expect(call[0]).toBe(chatId);
-    expect(typeof call[1]).toBe("string");
+    expect(call[1]).toEqual({ markdown: "hello" });
     expect(call[2]).toMatchObject({
       reply_parameters: { message_id: 2081 },
-      parse_mode: "HTML",
     });
     expect(result).toEqual({ ok: true, message_id: 1001 });
   });
@@ -595,10 +596,42 @@ describe("createTelegramActionHandler", () => {
       },
       chatId,
     );
-    const call = api.sendMessage.mock.calls[0]!;
+    const call = api.sendRichMessage.mock.calls[0]!;
     expect(call[2]).toMatchObject({
       reply_parameters: { message_id: 2081 },
     });
+  });
+
+  it("send_message passes URL asterisks untouched to native Rich Markdown", async () => {
+    const text =
+      "[song](https://chomikuj.pl/Jak+Si*c4*99+Bawi*c4*85+Ludzie.mp3)";
+
+    await handler({ action: "send_message", text }, chatId);
+
+    expect(api.sendRichMessage).toHaveBeenCalledWith(
+      chatId,
+      { markdown: text },
+      expect.any(Object),
+    );
+    expect(api.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("send_message falls back to legacy HTML when Rich Messages are unavailable", async () => {
+    api.sendRichMessage.mockRejectedValueOnce(
+      new Error("Method not supported"),
+    );
+
+    const result = await handler(
+      { action: "send_message", text: "**still formatted**" },
+      chatId,
+    );
+
+    expect(api.sendMessage).toHaveBeenCalledWith(
+      chatId,
+      "<b>still formatted</b>",
+      expect.objectContaining({ parse_mode: "HTML" }),
+    );
+    expect(result).toEqual({ ok: true, message_id: 1001 });
   });
 
   it("schedule_message returns a schedule id and keeps a timer", async () => {

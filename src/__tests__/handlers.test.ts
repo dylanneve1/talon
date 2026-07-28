@@ -559,6 +559,7 @@ const {
 // Shared mock objects used across all handler integration tests
 const mockBot = {
   api: {
+    sendRichMessage: vi.fn(async () => ({ message_id: 1 })),
     sendMessage: vi.fn(async () => ({ message_id: 1 })),
     sendChatAction: vi.fn(async () => {}),
     setMessageReaction: vi.fn(async () => {}),
@@ -1995,10 +1996,11 @@ describe("processAndReply — onToolUse callback triggers appendDailyLogResponse
   }
 });
 
-describe("createStreamCallbacks — onTextBlock delivers message via sendHtml", () => {
-  it("calls sendMessage when execute invokes onTextBlock", async () => {
+describe("createStreamCallbacks — onTextBlock delivers native Rich Markdown", () => {
+  it("calls sendRichMessage when execute invokes onTextBlock", async () => {
     const sendMsgCount = () =>
-      (mockBot.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.length;
+      (mockBot.api.sendRichMessage as ReturnType<typeof vi.fn>).mock.calls
+        .length;
 
     executeMock.mockImplementationOnce(
       async (params: Record<string, unknown>) => {
@@ -2041,7 +2043,8 @@ describe("createStreamCallbacks — onTextBlock delivers message via sendHtml", 
 
   it("does not send the same OpenCode response twice when onTextBlock already delivered it", async () => {
     const sendMsgCount = () =>
-      (mockBot.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.length;
+      (mockBot.api.sendRichMessage as ReturnType<typeof vi.fn>).mock.calls
+        .length;
 
     executeMock.mockImplementationOnce(
       async (params: Record<string, unknown>) => {

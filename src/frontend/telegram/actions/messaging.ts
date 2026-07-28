@@ -135,10 +135,8 @@ async function fireScheduled(bot: Bot, entry: ScheduledMessage): Promise<void> {
       return;
     }
     const keyboard = built.keyboard;
-    await bot.api.sendMessage(chatId, markdownToTelegramHtml(entry.text), {
-      parse_mode: "HTML",
-      reply_markup: { inline_keyboard: keyboard },
-      reply_parameters: replyTo ? { message_id: replyTo } : undefined,
+    await sendText(bot, chatId, entry.text, replyTo, {
+      inline_keyboard: keyboard,
     });
   } else {
     await sendText(bot, chatId, entry.text, replyTo);
@@ -249,11 +247,21 @@ export const messagingHandlers: TelegramActionHandlers = {
     const html = markdownToTelegramHtml(text);
     await withRetry(async () => {
       try {
-        await bot.api.editMessageText(chatId, Number(body.message_id), html, {
-          parse_mode: "HTML",
+        await bot.api.editMessageText(chatId, Number(body.message_id), {
+          markdown: text,
         });
-      } catch {
-        await bot.api.editMessageText(chatId, Number(body.message_id), text);
+      } catch (richErr) {
+        logWarn(
+          "bot",
+          `Rich Markdown edit failed; retrying with legacy HTML (chat=${chatId}): ${richErr instanceof Error ? richErr.message : richErr}`,
+        );
+        try {
+          await bot.api.editMessageText(chatId, Number(body.message_id), html, {
+            parse_mode: "HTML",
+          });
+        } catch {
+          await bot.api.editMessageText(chatId, Number(body.message_id), text);
+        }
       }
     });
     return { ok: true };
@@ -309,24 +317,15 @@ export const messagingHandlers: TelegramActionHandlers = {
     const text = String(body.text ?? "");
     if (text.length > TELEGRAM_MAX_TEXT)
       return { ok: false, error: `Text too long` };
-    const html = markdownToTelegramHtml(text);
     const rows = body.rows as ButtonSpec[][];
     const built = buildInlineKeyboard(rows);
     if ("error" in built) return { ok: false, error: built.error };
     const keyboard = built.keyboard;
     gateway.incrementMessages(chatId);
-    try {
-      const sent = await bot.api.sendMessage(chatId, html, {
-        parse_mode: "HTML",
-        reply_markup: { inline_keyboard: keyboard },
-      });
-      return { ok: true, message_id: sent.message_id };
-    } catch {
-      const sent = await bot.api.sendMessage(chatId, text, {
-        reply_markup: { inline_keyboard: keyboard },
-      });
-      return { ok: true, message_id: sent.message_id };
-    }
+    const messageId = await sendText(bot, chatId, text, undefined, {
+      inline_keyboard: keyboard,
+    });
+    return { ok: true, message_id: messageId };
   },
 
   schedule_message: (body, chatId, { bot, scheduledMessages }) => {
