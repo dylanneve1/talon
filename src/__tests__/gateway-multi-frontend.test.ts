@@ -13,6 +13,8 @@ vi.mock("../core/plugin/index.js", () => ({
 
 vi.mock("../core/engine/gateway-actions/index.js", () => ({
   handleSharedAction: vi.fn(async () => null),
+  isChatFreeAction: vi.fn(() => false),
+  handleChatFreeAction: vi.fn(async () => null),
 }));
 
 vi.mock("../util/watchdog.js", () => ({
