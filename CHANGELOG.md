@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.12.1](https://github.com/dylanneve1/talon/compare/v3.12.0...v3.12.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* **gateway:** let mesh actions run without a chat context ([#669](https://github.com/dylanneve1/talon/issues/669)) ([6078a66](https://github.com/dylanneve1/talon/commit/6078a66888d3e74c848f76b12bd371bf550328a5))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump the dev-dependencies group with 2 updates ([#672](https://github.com/dylanneve1/talon/issues/672)) ([23d76d6](https://github.com/dylanneve1/talon/commit/23d76d6ee05f5c4dfa591a0d073214544c484b7f))
+* **deps:** Bump the production-dependencies group with 4 updates ([#673](https://github.com/dylanneve1/talon/issues/673)) ([e8f5635](https://github.com/dylanneve1/talon/commit/e8f5635b8f6e63d5212f3e0999e82463a9aa5b01))
+
 ## [3.12.0](https://github.com/dylanneve1/talon/compare/v3.11.1...v3.12.0) (2026-07-27)
 
 
