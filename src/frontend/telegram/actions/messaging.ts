@@ -15,7 +15,12 @@ import {
   MAX_OVERDUE_MS,
   type ScheduledMessage,
 } from "../../../storage/scheduled-store.js";
-import { sendText, toPositiveId } from "./shared.js";
+import {
+  noteRichMessageFailure,
+  richMessagesAvailable,
+  sendText,
+  toPositiveId,
+} from "./shared.js";
 import { TELEGRAM_MAX_TEXT, type TelegramActionHandlers } from "./types.js";
 
 // ── Inline keyboards ─────────────────────────────────────────────────────────
@@ -244,24 +249,26 @@ export const messagingHandlers: TelegramActionHandlers = {
         ok: false,
         error: `Text too long (max ${TELEGRAM_MAX_TEXT})`,
       };
-    const html = markdownToTelegramHtml(text);
     await withRetry(async () => {
-      try {
-        await bot.api.editMessageText(chatId, Number(body.message_id), {
-          markdown: text,
-        });
-      } catch (richErr) {
-        logWarn(
-          "bot",
-          `Rich Markdown edit failed; retrying with legacy HTML (chat=${chatId}): ${richErr instanceof Error ? richErr.message : richErr}`,
-        );
+      if (richMessagesAvailable()) {
         try {
-          await bot.api.editMessageText(chatId, Number(body.message_id), html, {
-            parse_mode: "HTML",
+          await bot.api.editMessageText(chatId, Number(body.message_id), {
+            markdown: text,
           });
-        } catch {
-          await bot.api.editMessageText(chatId, Number(body.message_id), text);
+          return;
+        } catch (richErr) {
+          noteRichMessageFailure(richErr, `edit chat=${chatId}`);
         }
+      }
+      try {
+        await bot.api.editMessageText(
+          chatId,
+          Number(body.message_id),
+          markdownToTelegramHtml(text),
+          { parse_mode: "HTML" },
+        );
+      } catch {
+        await bot.api.editMessageText(chatId, Number(body.message_id), text);
       }
     });
     return { ok: true };
