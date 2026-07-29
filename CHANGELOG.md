@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.12.2](https://github.com/dylanneve1/talon/compare/v3.12.1...v3.12.2) (2026-07-29)
+
+
+### Bug Fixes
+
+* **telegram:** use native Rich Markdown delivery ([#678](https://github.com/dylanneve1/talon/issues/678)) ([9aa6eda](https://github.com/dylanneve1/talon/commit/9aa6edab72a57261f8b1e4fb1fc7108a9063acb1))
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump the production-dependencies group with 2 updates ([#675](https://github.com/dylanneve1/talon/issues/675)) ([e852ff2](https://github.com/dylanneve1/talon/commit/e852ff21ff8fd460a2bf31bbf3a8259273518596))
+
 ## [3.12.1](https://github.com/dylanneve1/talon/compare/v3.12.0...v3.12.1) (2026-07-28)
 
 
