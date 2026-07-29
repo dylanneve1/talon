@@ -17,6 +17,7 @@ import {
 } from "../../../storage/scheduled-store.js";
 import {
   noteRichMessageFailure,
+  prefersHtmlEntities,
   richMessagesAvailable,
   sendText,
   toPositiveId,
@@ -250,7 +251,7 @@ export const messagingHandlers: TelegramActionHandlers = {
         error: `Text too long (max ${TELEGRAM_MAX_TEXT})`,
       };
     await withRetry(async () => {
-      if (richMessagesAvailable()) {
+      if (richMessagesAvailable() && !prefersHtmlEntities(text)) {
         try {
           await bot.api.editMessageText(chatId, Number(body.message_id), {
             markdown: text,

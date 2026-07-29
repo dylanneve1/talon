@@ -52,8 +52,18 @@ function isWellFormedHtml(html: string): boolean {
   return stack.length === 0;
 }
 
+/** `\x00URLn\x00` → the stashed URL, or undefined when it isn't a placeholder. */
+function resolveUrlPlaceholder(
+  target: string,
+  urls: string[],
+): string | undefined {
+  // oxlint-disable-next-line no-control-regex
+  const match = /^\x00URL(\d+)\x00$/.exec(target);
+  return match ? urls[Number(match[1])] : undefined;
+}
+
 /** Apply the inline delimiter passes to already-escaped text. */
-function applyInlineFormatting(input: string): string {
+function applyInlineFormatting(input: string, urls: string[]): string {
   let out = input;
   // Bold+italic: ***text*** — must run before the ** and * passes, which
   // would otherwise split it into the crossed pair `<b><i>x</b></i>`.
@@ -64,13 +74,16 @@ function applyInlineFormatting(input: string): string {
   out = out.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<i>$1</i>");
   // Italic: _text_ (surrounded by non-word or start/end)
   out = out.replace(/(?<!\w)_(.+?)_(?!\w)/g, "<i>$1</i>");
-  // Links: [text](url) — only safe URL schemes become anchors. Both text
-  // and url were already HTML-escaped by step 3 (quotes included, so the
-  // href attribute can't be broken out of); escaping again here corrupted
-  // every & in a query string into &amp;amp;.
-  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) =>
-    /^https?:\/\//i.test(url) ? `<a href="${url}">${text}</a>` : text,
-  );
+  // Links: [text](url) — only safe URL schemes become anchors. The target
+  // arrives as a `\x00URLn\x00` placeholder (step 2b), so the passes above
+  // never saw the URL's own punctuation; resolve it back here. Both text and
+  // url were already HTML-escaped (quotes included, so the href attribute
+  // can't be broken out of); escaping again here corrupted every & in a
+  // query string into &amp;amp;.
+  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, target) => {
+    const url = resolveUrlPlaceholder(target, urls) ?? target;
+    return /^https?:\/\//i.test(url) ? `<a href="${url}">${text}</a>` : text;
+  });
   // Strikethrough: ~~text~~
   out = out.replace(/~~(.+?)~~/g, "<s>$1</s>");
   return out;
@@ -110,6 +123,23 @@ export function markdownToTelegramHtml(text: string): string {
     return placeholder;
   });
 
+  // Step 2b: Stash link targets. The emphasis passes run before the link
+  // pass and have no idea what a URL is, so punctuation inside the target
+  // used to be consumed as a delimiter: a Chomikuj path like
+  // `Jak+Si*c4*99+Bawi*c4*85+Ludzie.mp3` reads as two italic runs, the
+  // resulting tags cross, and the well-formedness guard then discards the
+  // formatting for the *whole* message. Placeholders carry no delimiters,
+  // so the URL is invisible to every pass but the link one.
+  const urls: string[] = [];
+  processed = processed.replace(
+    /(\[[^\]\n]*\])\(([^()\s]+)\)/g,
+    (_match, label: string, url: string) => {
+      const placeholder = `\x00URL${urls.length}\x00`;
+      urls.push(escapeHtml(url));
+      return `${label}(${placeholder})`;
+    },
+  );
+
   // Step 3: Escape HTML in remaining plain text (before applying formatting).
   // Escape HTML in plain text segments (skip placeholders marked with \x00)
   // oxlint-disable-next-line no-control-regex
@@ -119,9 +149,16 @@ export function markdownToTelegramHtml(text: string): string {
   // actually parseable. `processed` at this point holds escaped text plus
   // tag-free placeholders, so it is a safe unformatted fallback.
   const unformatted = processed;
-  processed = applyInlineFormatting(processed);
+  processed = applyInlineFormatting(processed, urls);
   if (!isWellFormedHtml(processed)) {
     processed = unformatted;
+  }
+
+  // Step 4b: Restore any link target that never became an anchor — a
+  // non-http scheme, or the unformatted fallback above. Anchors already
+  // resolved their placeholder inline.
+  for (let i = 0; i < urls.length; i++) {
+    processed = processed.replace(`\x00URL${i}\x00`, () => urls[i]!);
   }
 
   // Steps 5+6: Restore code spans and fenced blocks. The replacement MUST

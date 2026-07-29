@@ -119,6 +119,44 @@ describe("markdownToTelegramHtml — $-substitution and escaping regressions", (
   });
 });
 
+describe("markdownToTelegramHtml — delimiters inside link targets", () => {
+  it("does not read asterisks in a URL as emphasis", () => {
+    // The Chomikuj percent-encoding pattern that started this: two `*`
+    // runs inside the path used to be parsed as italics, crossing the
+    // anchor's tags so the guard dropped formatting for the whole message.
+    const url = "https://chomikuj.pl/Jak+Si*c4*99+Bawi*c4*85+Ludzie.mp3";
+    const out = markdownToTelegramHtml(`[song](${url})`);
+    expect(out).toBe(`<a href="${url}">song</a>`);
+    expect(out).not.toContain("<i>");
+  });
+
+  it("keeps surrounding formatting when a URL contains asterisks", () => {
+    const out = markdownToTelegramHtml(
+      "**grab** [it](https://e.com/a*b*c.mp3) now",
+    );
+    expect(out).toBe(
+      '<b>grab</b> <a href="https://e.com/a*b*c.mp3">it</a> now',
+    );
+  });
+
+  it("does not read underscores in a URL as emphasis", () => {
+    const url = "https://en.wikipedia.org/wiki/Foo_bar_baz";
+    const out = markdownToTelegramHtml(`[wiki](${url})`);
+    expect(out).toBe(`<a href="${url}">wiki</a>`);
+  });
+
+  it("still formats markup inside the link label", () => {
+    const out = markdownToTelegramHtml("[**bold** label](https://e.com/x*y)");
+    expect(out).toBe('<a href="https://e.com/x*y"><b>bold</b> label</a>');
+  });
+
+  it("restores the target of a rejected scheme instead of stranding a placeholder", () => {
+    const out = markdownToTelegramHtml("[x](javascript:alert*1*)");
+    expect(out).not.toContain("URL0");
+    expect(out).toBe("x");
+  });
+});
+
 describe("splitMessage", () => {
   it("returns single chunk for short messages", () => {
     const chunks = splitMessage("Hello", 100);
