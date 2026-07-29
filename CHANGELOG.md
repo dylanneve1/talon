@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.12.3](https://github.com/dylanneve1/talon/compare/v3.12.2...v3.12.3) (2026-07-29)
+
+
+### Bug Fixes
+
+* **telegram:** stop emphasis passes from eating link targets ([#680](https://github.com/dylanneve1/talon/issues/680)) ([5e0f992](https://github.com/dylanneve1/talon/commit/5e0f9924c6f27030f49edf5317ecd8eae8189e70))
+
 ## [3.12.2](https://github.com/dylanneve1/talon/compare/v3.12.1...v3.12.2) (2026-07-29)
 
 
