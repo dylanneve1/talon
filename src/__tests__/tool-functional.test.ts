@@ -659,58 +659,19 @@ describe("createTelegramActionHandler", () => {
     expect(api.sendMessage.mock.calls[1]![1]).toBe("<b>two</b>");
   });
 
-  it("send_message routes fenced code down the HTML-entity path", async () => {
-    // A Rich Message renders code as a layout block with no tap-to-copy
-    // affordance; the `pre`/`code` entities from the HTML path keep it.
-    await handler(
-      {
-        action: "send_message",
-        text: "here:\n```ts\nconst x = 1;\n```",
-      },
+  it("send_message keeps fenced code on the Rich path", async () => {
+    // One renderer for everything: delivery must not branch on message
+    // content. Telegram owns markdown parsing, including code blocks.
+    const text = "here:\n```ts\nconst x = 1;\n```";
+
+    await handler({ action: "send_message", text }, chatId);
+
+    expect(api.sendRichMessage).toHaveBeenCalledWith(
       chatId,
+      { markdown: text },
+      expect.any(Object),
     );
-
-    expect(api.sendRichMessage).not.toHaveBeenCalled();
-    expect(api.sendMessage).toHaveBeenCalledTimes(1);
-    const [, html, opts] = api.sendMessage.mock.calls[0]!;
-    expect(html).toContain('<pre><code class="language-ts">');
-    expect(opts).toMatchObject({ parse_mode: "HTML" });
-  });
-
-  it("send_message routes inline code down the HTML-entity path", async () => {
-    await handler(
-      { action: "send_message", text: "run `npm ci` first" },
-      chatId,
-    );
-
-    expect(api.sendRichMessage).not.toHaveBeenCalled();
-    expect(api.sendMessage.mock.calls[0]![1]).toContain("<code>npm ci</code>");
-  });
-
-  it("send_message keeps code-free text on the Rich path", async () => {
-    await handler(
-      { action: "send_message", text: "# Heading\n\n- a\n- b" },
-      chatId,
-    );
-
-    expect(api.sendRichMessage).toHaveBeenCalledTimes(1);
     expect(api.sendMessage).not.toHaveBeenCalled();
-  });
-
-  it("edit_message routes fenced code down the HTML-entity path", async () => {
-    await handler(
-      {
-        action: "edit_message",
-        message_id: 2081,
-        text: "```\nplain\n```",
-      },
-      chatId,
-    );
-
-    expect(api.editMessageText).toHaveBeenCalledTimes(1);
-    const call = api.editMessageText.mock.calls[0]!;
-    expect(call[2]).toBe("<pre><code>plain</code></pre>");
-    expect(call[3]).toEqual({ parse_mode: "HTML" });
   });
 
   it("send_message_with_buttons keeps the inline keyboard on the Rich path", async () => {

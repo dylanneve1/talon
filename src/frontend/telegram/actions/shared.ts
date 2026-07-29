@@ -40,25 +40,9 @@ let richMessagesSupported = true;
 const METHOD_UNAVAILABLE_RE =
   /method not found|not supported|unknown method|unsupported method/i;
 
-/**
- * Fenced blocks and inline code spans.
- *
- * A Rich Message renders these as layout blocks (`RichBlockPreformatted`),
- * which clients draw *without* the tap-to-copy affordance they give a `pre` /
- * `code` message entity. Code exists to be copied, so anything containing it
- * goes down the legacy HTML-entity path instead — that path emits real
- * entities and keeps the copy button.
- */
-const CONTAINS_CODE_RE = /```|`[^`\n]+`/;
-
 /** True while native Rich Markdown delivery is still worth attempting. */
 export function richMessagesAvailable(): boolean {
   return richMessagesSupported;
-}
-
-/** True when `text` should skip Rich Markdown to keep code copyable. */
-export function prefersHtmlEntities(text: string): boolean {
-  return CONTAINS_CODE_RE.test(text);
 }
 
 /**
@@ -102,7 +86,7 @@ export async function sendText(
     );
   }
 
-  if (richMessagesSupported && !prefersHtmlEntities(text)) {
+  if (richMessagesSupported) {
     try {
       const sent = await bot.api.sendRichMessage(
         chatId,
