@@ -19,6 +19,7 @@ import { log, logWarn } from "../../util/log.js";
 import { ALLOWED_TOOLS_BACKGROUND } from "../../core/constants.js";
 import { EFFORT_MAP } from "./constants.js";
 import { buildMcpServers, buildPluginMcpServers } from "./options.js";
+import { warnIfBelowCacheMinimum } from "../shared/cache-telemetry.js";
 
 const DEFAULT_SUBPROCESS_KILL_GRACE_MS = 5 * 1000;
 
@@ -110,6 +111,11 @@ export async function runOneShotAgent(
       `[${contextLabel}] Claude one-shot effort: ${reasoningEffort}`,
     );
   }
+
+  // Background runs are the one path whose prompt can be small enough to
+  // fall under the model's cacheable floor — where nothing is cached and the
+  // API reports no error at all. Chat prompts always clear it.
+  warnIfBelowCacheMinimum(contextLabel, model, `${systemPrompt}\n${prompt}`);
 
   const qi = query({
     prompt,

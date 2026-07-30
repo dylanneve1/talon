@@ -68,6 +68,16 @@ export {
   type TokenUsageSnapshot,
 } from "./usage.js";
 
+// Only what is consumed THROUGH the barrel. Everything else in
+// cache-telemetry.ts is imported from the module directly, matching the
+// barrel discipline the prompt/ barrel was just trimmed to.
+export {
+  formatTurnCache,
+  estimateTurnBlocks,
+  exceedsLookbackWindow,
+  CACHE_LOOKBACK_BLOCKS,
+} from "./cache-telemetry.js";
+
 export {
   prepareSystemPrompt,
   appendBackendSuffix,

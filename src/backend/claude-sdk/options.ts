@@ -26,6 +26,10 @@ import {
   hubPluginServerNames,
 } from "../../core/mcp-hub/index.js";
 import { nonTerminalFrontends, frontendsForChat } from "../shared/frontends.js";
+import {
+  noteToolFingerprint,
+  toolFingerprint,
+} from "../shared/cache-telemetry.js";
 import { log, logError } from "../../util/log.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { ALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
@@ -378,6 +382,24 @@ export function buildSdkOptions(
   const { postToolUseFailureHook, postToolBatchHook } =
     buildTurnTerminatorHooks();
 
+  const builtinTools = config.nativeTools
+    ? ALLOWED_TOOLS_CHAT.filter((t) => !NATIVE_REPLACED_BUILTINS.has(t))
+    : [...ALLOWED_TOOLS_CHAT];
+
+  const mcpServers = {
+    ...buildMcpServers(chatId),
+    ...buildPluginMcpServers(chatId),
+  };
+
+  // Tool definitions render BEFORE the system prompt, so a set that shifts
+  // mid-session invalidates the system prompt and every cached message after
+  // it — the most expensive cache event there is, and one the aggregate
+  // hit-rate can't show. Plugin-provided MCP servers are the mutable part.
+  noteToolFingerprint(
+    chatId,
+    toolFingerprint(builtinTools, Object.keys(mcpServers)),
+  );
+
   const options: Options = {
     model: resolvedActiveModel,
     // Prefer the caller's frozen per-session prompt; fall back to the
@@ -424,16 +446,9 @@ export function buildSdkOptions(
     // teleport onto companion devices), and Agent (sub-agent dispatch) is
     // removed too — the owner prefers the native surface without nested
     // agents. Flip the flag back off to restore the built-ins instantly.
-    tools: config.nativeTools
-      ? ALLOWED_TOOLS_CHAT.filter(
-          (t) => !NATIVE_REPLACED_BUILTINS.has(t as string),
-        )
-      : [...ALLOWED_TOOLS_CHAT],
+    tools: builtinTools,
     ...thinkingConfig,
-    mcpServers: {
-      ...buildMcpServers(chatId),
-      ...buildPluginMcpServers(chatId),
-    },
+    mcpServers,
     hooks: {
       PostToolUseFailure: [{ hooks: [postToolUseFailureHook] }],
       PostToolBatch: [{ hooks: [postToolBatchHook] }],

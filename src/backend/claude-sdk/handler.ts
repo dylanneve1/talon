@@ -64,6 +64,10 @@ import {
   recordTurnMetrics,
   recordFailedTurnAccounting,
   recordFlowViolation,
+  formatTurnCache,
+  exceedsLookbackWindow,
+  estimateTurnBlocks,
+  CACHE_LOOKBACK_BLOCKS,
 } from "../shared/index.js";
 
 // ── Post-result watchdog ────────────────────────────────────────────────────
@@ -577,6 +581,19 @@ export async function* runChatTurn(
 
   state.allResponseText += state.currentBlockText;
 
+  // The aggregate `cache=NN%` can't distinguish a turn that reused the
+  // previous turn's prefix from one that re-wrote it — see
+  // shared/cache-telemetry.ts. Append the cross-turn verdict when the
+  // provider gave us per-request usage to derive it from.
+  if (state.cacheStats && exceedsLookbackWindow(state.toolCalls)) {
+    logWarn(
+      "agent",
+      `[${chatId}] turn emitted ~${estimateTurnBlocks(state.toolCalls)} content ` +
+        `blocks (> ${CACHE_LOOKBACK_BLOCKS} lookback) — the next turn's cache ` +
+        `breakpoint may not find this turn's prefix`,
+    );
+  }
+
   log(
     "agent",
     `[${chatId}] -> (${summarizeUsage(
@@ -586,7 +603,13 @@ export async function* runChatTurn(
         cacheRead: state.sdkCacheRead,
         cacheWrite: state.sdkCacheWrite,
       },
-      { durationMs, toolCalls: state.toolCalls },
+      {
+        durationMs,
+        toolCalls: state.toolCalls,
+        ...(state.cacheStats
+          ? { suffix: formatTurnCache(state.cacheStats) }
+          : {}),
+      },
     )})`,
   );
   traceMessage(chatId, "out", state.allResponseText, {

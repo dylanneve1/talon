@@ -19,6 +19,10 @@ import type { BetaRawContentBlockDeltaEvent } from "@anthropic-ai/sdk/resources/
 import { STREAM_INTERVAL } from "./constants.js";
 import { log } from "../../util/log.js";
 import { checkModelDrift } from "./model-drift.js";
+import {
+  turnCacheStats,
+  type TurnCacheStats,
+} from "../shared/cache-telemetry.js";
 
 // ── Stream state accumulator ────────────────────────────────────────────────
 
@@ -35,6 +39,14 @@ export type StreamState = {
   sdkOutputTokens: number;
   sdkCacheRead: number;
   sdkCacheWrite: number;
+  /**
+   * Per-turn cache behaviour derived from the result message's per-request
+   * `usage.iterations`. Undefined when the provider reported none — the
+   * aggregate totals above cannot distinguish a turn that read the previous
+   * turn's prefix from one that re-wrote it, and that distinction is the
+   * whole cost signal (see shared/cache-telemetry.ts).
+   */
+  cacheStats: TurnCacheStats | undefined;
   lastStreamUpdate: number;
   /**
    * Trailing text from the most recent assistant message — text after all
@@ -101,6 +113,7 @@ export function createStreamState(): StreamState {
     sdkOutputTokens: 0,
     sdkCacheRead: 0,
     sdkCacheWrite: 0,
+    cacheStats: undefined,
     lastStreamUpdate: 0,
     lastTrailingText: "",
     deliveredTextNorms: [],
@@ -332,6 +345,9 @@ export function processResultMessage(
       (last.input_tokens ?? 0) +
       (last.cache_read_input_tokens ?? 0) +
       (last.cache_creation_input_tokens ?? 0);
+    // The same array answers a question the per-turn totals can't: whether
+    // the FIRST request of this turn read a cache or paid to write one.
+    state.cacheStats = turnCacheStats(usage.iterations);
   }
 
   // Read token counts from the ACTIVE model's usage only.
