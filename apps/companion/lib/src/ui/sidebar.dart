@@ -10,6 +10,7 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import 'brand.dart';
 import 'chat_actions.dart';
+import 'empty_state.dart';
 import 'glass.dart';
 import 'markdown.dart';
 import 'motion.dart';
@@ -327,15 +328,19 @@ class _SidebarState extends State<Sidebar> {
           ),
         );
       }
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(TalonSpace.lg),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: TalonColors.textFaint, height: 1.5),
-          ),
-        ),
+      return TalonEmptyState(
+        compact: true,
+        icon: !connected
+            ? Icons.cloud_sync_outlined
+            : (_query.isEmpty
+                ? Icons.forum_outlined
+                : Icons.search_off_outlined),
+        title: label,
+        message: !connected
+            ? null
+            : (_query.isEmpty
+                ? 'New chats will appear here.'
+                : 'No chat title or preview matches “${_query.trim()}”.'),
       );
     }
 
