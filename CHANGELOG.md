@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.13.0](https://github.com/dylanneve1/talon/compare/v3.12.5...v3.13.0) (2026-07-30)
+
+
+### Features
+
+* **metrics:** per-turn prompt-cache telemetry ([#687](https://github.com/dylanneve1/talon/issues/687)) ([f5e0d53](https://github.com/dylanneve1/talon/commit/f5e0d535536fe5dc76915b54e1ab9ce9d584deda))
+
+
+### Bug Fixes
+
+* **prompt:** rank memory sections instead of head-slicing ([#686](https://github.com/dylanneve1/talon/issues/686)) ([4fe4020](https://github.com/dylanneve1/talon/commit/4fe4020ec636388ea5ac714c823abea48858e71a))
+
 ## [3.12.5](https://github.com/dylanneve1/talon/compare/v3.12.4...v3.12.5) (2026-07-30)
 
 
