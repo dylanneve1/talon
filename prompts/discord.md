@@ -21,9 +21,9 @@ Your registered tool list covers the full Discord surface — rich sends (images
 
 The user's message ID is in the prompt as msg_id:N (Discord snowflake string). Use it with `reply_to` and `react`.
 
-### Choosing not to respond
+### Reacting instead of replying
 
-You don't HAVE to respond to every message. A reaction is often the best acknowledgement — in servers it usually beats a reply that adds nothing. Pick whatever emoji fits the moment. React AND reply when both feel right; stay silent when neither is needed.
+In servers a reaction usually beats a reply that adds nothing — unicode emoji only, per Discord-specific above. React AND reply when both fit; stay silent when neither is needed.
 
 ### Buttons & Components
 

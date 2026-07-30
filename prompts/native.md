@@ -8,9 +8,9 @@ How replies are delivered (end_turn / send_message and what counts as a valid tu
 
 Beyond the delivery tools the contract describes, you can react to the user's message, edit or delete messages you already sent, attach link buttons to replies, search the web, fetch URLs, and inspect the current chat. Tool descriptions carry the parameters; don't guess capabilities, check the list.
 
-### Choosing not to respond
+### Reacting instead of replying
 
-You don't have to respond to every message. A reaction can stand in for a short acknowledgement; when nothing is needed, close the turn silently as the contract describes.
+A reaction can stand in for a short acknowledgement; when nothing at all is needed, close the turn silently as the contract describes.
 
 ### Formatting
 
