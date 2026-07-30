@@ -597,10 +597,35 @@ jobs:
         with:
           workspaces: native/talon-fusefs
 
-      - name: Host can mount (fail loudly, never skip silently)
+      # A version banner is not a mount. The old check only proved
+      # /dev/fuse existed and fusermount3 could print --version, so a
+      # runner that had lost the *permission* to mount still walked past
+      # it and surfaced as an opaque assertion failure in the live suite
+      # (2026-07-29: "fusermount3: mount failed: Operation not permitted"
+      # on ubuntu-latest, with this step green). Probe the capability
+      # itself, and print the state a human needs to tell an environment
+      # regression from a code regression.
+      - name: Host FUSE capability (probe, don't assume)
         run: |
+          set -x
           test -e /dev/fuse
+          ls -l /dev/fuse
+          id
           fusermount3 --version || fusermount --version
+          ls -l "$(command -v fusermount3 || command -v fusermount)"
+          cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || true
+          aa-enabled 2>/dev/null || true
+
+      # Ubuntu 24.04 runners restrict unprivileged user namespaces via
+      # AppArmor, which is the usual cause of an EPERM out of fusermount3
+      # for a non-root mount. Relax it when the knob exists; a no-op
+      # everywhere else. Best-effort — the probe above records the state
+      # either way.
+      - name: Relax AppArmor userns restriction (best effort)
+        run: |
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns || true
+          fi
 
       - name: Unit tests (pinned toolchain via rust-toolchain.toml)
         run: cargo test --locked
