@@ -1,5 +1,29 @@
 # Changelog
 
+## [3.14.0](https://github.com/dylanneve1/talon/compare/v3.13.0...v3.14.0) (2026-07-30)
+
+
+### Features
+
+* **companion:** screen-reader semantics for tap targets ([#664](https://github.com/dylanneve1/talon/issues/664)) ([5d98164](https://github.com/dylanneve1/talon/commit/5d98164389520a059c02b10c0b0204ba46c3214c))
+* **companion:** WCAG AA contrast + button roles on text-bearing tap targets ([#668](https://github.com/dylanneve1/talon/issues/668)) ([ee9f724](https://github.com/dylanneve1/talon/commit/ee9f72475ef2ec9cdf3b152ac9f2021f403ac727))
+* **prompts:** identity.md as voice and stances, not adjectives ([#691](https://github.com/dylanneve1/talon/issues/691)) ([39c4fae](https://github.com/dylanneve1/talon/commit/39c4faed3feafb8a4079a4e4b1eb7478baac5ec7))
+
+
+### Bug Fixes
+
+* **prompts:** split live state out of durable memory ([#694](https://github.com/dylanneve1/talon/issues/694)) ([71d8663](https://github.com/dylanneve1/talon/commit/71d8663886f811fbf25bb2a6327c04b7d85600dd))
+
+
+### Miscellaneous Chores
+
+* **deps:** ignore openai major bumps until agents SDK supports v7 ([#677](https://github.com/dylanneve1/talon/issues/677)) ([d5642ee](https://github.com/dylanneve1/talon/commit/d5642ee4e40260474473af277e53cc14021c2555))
+
+
+### Continuous Integration
+
+* **secrets:** pin the secret scan to the checked-out ref's own history ([#695](https://github.com/dylanneve1/talon/issues/695)) ([eac88a9](https://github.com/dylanneve1/talon/commit/eac88a91109b9e4fbce8f8ddbf1b2260bd8c90ab))
+
 ## [3.13.0](https://github.com/dylanneve1/talon/compare/v3.12.5...v3.13.0) (2026-07-30)
 
 
