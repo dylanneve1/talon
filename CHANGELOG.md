@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.12.5](https://github.com/dylanneve1/talon/compare/v3.12.4...v3.12.5) (2026-07-30)
+
+
+### Continuous Integration
+
+* **secrets:** allowlist the secret-scan guard's own fake fixtures ([#688](https://github.com/dylanneve1/talon/issues/688)) ([0023cce](https://github.com/dylanneve1/talon/commit/0023cce3868dc52bf66f4921525dd0054ec0415c))
+
 ## [3.12.4](https://github.com/dylanneve1/talon/compare/v3.12.3...v3.12.4) (2026-07-30)
 
 
