@@ -235,6 +235,7 @@ If commands fail, log the error and continue — this stage is optional.`
       .replace(/\{\{lastRunIso\}\}/g, lastRunIso)
       .replace(/\{\{memoryFile\}\}/g, memoryFile)
       .replace(/\{\{dailyMemoryDir\}\}/g, dirs.dailyMemory)
+      .replace(/\{\{memoryArchiveDir\}\}/g, dirs.memoryArchive)
       .replace(/\{\{mempalaceSection\}\}/g, mempalaceSection);
   } catch {
     throw new Error("Failed to read dream prompt (dream.md)");

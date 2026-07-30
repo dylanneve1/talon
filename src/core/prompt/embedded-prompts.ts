@@ -26,14 +26,15 @@ import asset12 from "../../../prompts/system/cron.md" with { type: "file" };
 import asset13 from "../../../prompts/system/daily-memory.md" with { type: "file" };
 import asset14 from "../../../prompts/system/goals.md" with { type: "file" };
 import asset15 from "../../../prompts/system/heartbeat-agent.md" with { type: "file" };
-import asset16 from "../../../prompts/system/memory-recall.md" with { type: "file" };
-import asset17 from "../../../prompts/system/persistent-memory.md" with { type: "file" };
-import asset18 from "../../../prompts/system/skills.md" with { type: "file" };
-import asset19 from "../../../prompts/system/triggers.md" with { type: "file" };
-import asset20 from "../../../prompts/system/workspace.md" with { type: "file" };
-import asset21 from "../../../prompts/teams.md" with { type: "file" };
-import asset22 from "../../../prompts/telegram.md" with { type: "file" };
-import asset23 from "../../../prompts/terminal.md" with { type: "file" };
+import asset16 from "../../../prompts/system/live-state.md" with { type: "file" };
+import asset17 from "../../../prompts/system/memory-recall.md" with { type: "file" };
+import asset18 from "../../../prompts/system/persistent-memory.md" with { type: "file" };
+import asset19 from "../../../prompts/system/skills.md" with { type: "file" };
+import asset20 from "../../../prompts/system/triggers.md" with { type: "file" };
+import asset21 from "../../../prompts/system/workspace.md" with { type: "file" };
+import asset22 from "../../../prompts/teams.md" with { type: "file" };
+import asset23 from "../../../prompts/telegram.md" with { type: "file" };
+import asset24 from "../../../prompts/terminal.md" with { type: "file" };
 
 /** rel path (posix, under prompts/) → embedded file path (/$bunfs/… when compiled). */
 const ASSETS: Record<string, string> = {
@@ -53,14 +54,15 @@ const ASSETS: Record<string, string> = {
   "system/daily-memory.md": asset13,
   "system/goals.md": asset14,
   "system/heartbeat-agent.md": asset15,
-  "system/memory-recall.md": asset16,
-  "system/persistent-memory.md": asset17,
-  "system/skills.md": asset18,
-  "system/triggers.md": asset19,
-  "system/workspace.md": asset20,
-  "teams.md": asset21,
-  "telegram.md": asset22,
-  "terminal.md": asset23,
+  "system/live-state.md": asset16,
+  "system/memory-recall.md": asset17,
+  "system/persistent-memory.md": asset18,
+  "system/skills.md": asset19,
+  "system/triggers.md": asset20,
+  "system/workspace.md": asset21,
+  "teams.md": asset22,
+  "telegram.md": asset23,
+  "terminal.md": asset24,
 };
 
 /** Read an embedded prompt by its rel path (e.g. "system/cron.md"). */

@@ -708,11 +708,20 @@ describe("config", () => {
       const config = loadConfig();
       expect(config.systemPrompt).toContain("Persistent Memory");
       expect(config.systemPrompt).toContain("truncated");
-      // The whole prompt stays bounded: memory contributes at most the cap.
+      // The point of the cap: the memory FILE contributes at most
+      // MEMORY_INJECT_MAX_CHARS. The section also carries the template's
+      // fixed prose (heading, file pointer, update rules), which is not what
+      // this bound is guarding — so measure the injected content, not the
+      // rendered section, and let the template's wording change freely.
       const memorySection = config.systemPrompt
         .split("Persistent Memory")[1]
         .split("---")[0];
-      expect(memorySection.length).toBeLessThan(MEMORY_INJECT_MAX_CHARS + 500);
+      const injected = memorySection
+        .split("\n")
+        .filter((l) => l.startsWith("remembered fact"))
+        .join("\n");
+      expect(injected.length).toBeGreaterThan(0);
+      expect(injected.length).toBeLessThanOrEqual(MEMORY_INJECT_MAX_CHARS);
     });
 
     it("includes workspace file listing when files exist", async () => {
