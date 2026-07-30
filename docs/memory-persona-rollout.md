@@ -4,7 +4,7 @@ Execution plan for `memory-persona-plan.md`. Fifteen PRs in seven stages. Each P
 is independently shippable, lands its own runtime consumer (no repeats of the soul's
 mistake), and is reviewable on its own.
 
-**Net line count: roughly +3,400 / −4,700.** The codebase gets *smaller* while
+**Net line count: roughly +3,400 / −4,700.** The codebase gets _smaller_ while
 gaining a memory system that works.
 
 Repo conventions every PR here obeys:
@@ -38,9 +38,16 @@ PR 9 is measured. Removed during Stage 6.
 No new architecture. Ships this week. Independent of everything below, and worth
 doing even if the rest is deferred.
 
-### PR 1 — `fix(prompt): rank memory sections instead of head-slicing`
+### PR 1 — `fix(prompt): rank memory sections instead of head-slicing` ✅ done
 
 The single highest value-per-line change in the plan.
+
+**Landed.** On the live 23,396-char file the view emits 9,461 chars: every live
+section present (`## Active Investigations` with its root-cause analysis,
+`## Revisions`, `## Branches to clean up` — all previously below the cut), the
+newest CI-watch snapshot kept, the two stale duplicates dropped and named. That
+is 21% _smaller_ than the old 12k head-slice, so it also cuts the per-turn
+cache-write cost. 14 tests; full suite green.
 
 - **New** `core/prompt/memory-view.ts`: split `memory.md` on `##` headings;
   classify each section into a priority tier; collapse "state families" (headings
@@ -62,7 +69,7 @@ The single highest value-per-line change in the plan.
   today's daily note. This is where "heartbeat dead since 07-10" belongs.
 - `prompts/dream.md`: replace-in-place for status topics; a new dated section for an
   existing topic is forbidden; hard size target for `memory.md` (~10 k chars);
-  replace *"do NOT remove entries just because they're old"* with a decay rule;
+  replace _"do NOT remove entries just because they're old"_ with a decay rule;
   removals append to `memory/archive/YYYY-MM.md` rather than vanishing. New stage:
   daily notes older than 14 days collapse into a monthly summary and the originals
   are deleted.
@@ -71,12 +78,24 @@ The single highest value-per-line change in the plan.
   who owns which file.
 - `npm run build:prompts`, commit the regenerated embed.
 
-### PR 3 — `feat(metrics): per-turn cache read:write telemetry`
+### PR 3 — `feat(metrics): per-turn cache read:write telemetry` ✅ done
 
 Prerequisite for the whole usage conversation — see plan §3.6, which now records
 what the 2026-07-30 investigation settled: **the Agent SDK exposes no cache-TTL
 knob**, so the 1-hour TTL is an upstream ask and prompt size is the only lever
-Talon controls. No behavior change in this PR.
+Talon controls. No behaviour change in this PR.
+
+**Landed** as `backend/shared/cache-telemetry.ts` (25 tests). The accounting line
+now carries `xturn=hit|miss|none reqs=N rw=R`, derived from the result message's
+per-request `usage.iterations` — `xturn` is the field that tracks cost, since the
+turn's first request is the only one that reports whether the previous turn's
+prefix survived. Plus mid-session tool-set change warnings that name the delta,
+a lookback-window flag, and a sub-minimum check on the one-shot paths.
+
+**Read `xturn` first when the data comes in.** Mostly `miss` → the prefix is
+dying between turns and the fix is a smaller prefix (or the upstream TTL ask);
+mostly `hit` → caching is working and the cost is elsewhere; any `none` → that
+prompt isn't cacheable at all.
 
 - `stream.ts` already captures `cache_read_input_tokens` /
   `cache_creation_input_tokens`, and `sessions` already persists the totals. Surface
@@ -84,9 +103,9 @@ Talon controls. No behavior change in this PR.
   (table exists, currently 0 rows).
 - Distinguish **within-turn** from **cross-turn** hits — the measured 8:1 ratio is
   ~11 model requests inside one user turn, which tells you nothing about whether the
-  *next* turn hit. Cross-turn is the number that matters.
+  _next_ turn hit. Cross-turn is the number that matters.
 - Log a hash of the registered tool-name array per turn; warn when it changes
-  *within* a session.
+  _within_ a session.
 - Count content blocks per turn and flag turns over 20 — that is the cache
   lookback-window limit, and Talon's tool-heavy turns are the shape that trips it.
 - Check the one-shot paths (dream, heartbeat, cron) against the model's cacheable
@@ -189,7 +208,7 @@ The PR that makes persona learning frontend-agnostic — what the soul never got
 - Guards: unknown id rejected; dropping a pinned row needs an explicit reason;
   budget enforced; ops per run capped.
 - `prompts/dream.md` rewritten: the dream **emits ops** and never rewrites files. It
-  receives a *worklist* — FTS near-dupe candidates, stale state keys, the
+  receives a _worklist_ — FTS near-dupe candidates, stale state keys, the
   over-budget tail — instead of 23 KB of prose to re-author.
 - Tests: every op; each rejection case; rollback on partial failure.
 - Verify Discord.
@@ -267,12 +286,17 @@ A memory you can see and correct by hand is a memory you will trust.
 
 **Critical path:** 4 → 5 → 8 → 9. That is the spine; everything else hangs off it.
 
-**Ships immediately, in parallel, no dependencies:** PR 1, 2, 3, and 12.
+**Ships immediately, in parallel, no dependencies:** ~~PR 1~~, PR 2, ~~PR 3~~, and
+PR 12.
 
-**Start here:** PR 1 and PR 3 together. PR 1 is the biggest quality win per line in
-the whole plan, and PR 3 buys the week of cache data needed before anyone reasons
-about usage. Neither touches architecture, so neither can be invalidated by a later
-design change.
+**Done:** PR 1 and PR 3. PR 1 was the biggest quality win per line in the plan;
+PR 3 buys the week of cache data needed before anyone reasons about usage.
+Neither touched architecture, so neither can be invalidated by a later design
+change.
+
+**Next:** PR 2 (writer discipline — heartbeat stops writing `memory.md`, dream
+gets a size target and permission to forget) and PR 12 (identity.md as voice +
+stances), both still dependency-free. Then the spine, 4 → 5 → 8 → 9.
 
 Rough sizing: Stage 0 ≈ 600 lines · Stage 1 ≈ 900 · Stage 2 ≈ 500 · Stage 3 ≈ 400 ·
 Stage 4 ≈ 600 · Stage 5 ≈ 400 · Stage 6 ≈ −4,300.
@@ -284,8 +308,8 @@ Stage 4 ≈ 600 · Stage 5 ≈ 400 · Stage 6 ≈ −4,300.
 2. ~~1-hour cache TTL~~ — **settled by investigation.** The Agent SDK
    (`0.3.212`) exposes no cache-control surface, so this is an upstream ask, not a
    config change. Prompt size is the lever we control. See plan §3.6.
-3. **`state.md` — file or kind?** *(open)* PR 2 makes it a file (cheap, immediate);
+3. **`state.md` — file or kind?** _(open)_ PR 2 makes it a file (cheap, immediate);
    PR 4 could absorb it as a `state` kind instead. Recommend the file first, absorb
    later — it de-risks Stage 0 from Stage 1's schedule.
-4. **Default-on timing for `TALON_MEMORY_STORE`** *(open)* — proposed at PR 9, after
+4. **Default-on timing for `TALON_MEMORY_STORE`** _(open)_ — proposed at PR 9, after
    the prompt-size delta is measured against PR 3's baseline.
