@@ -704,7 +704,7 @@ describe("config", () => {
 
       const { loadConfig } = await import("../util/config.js");
       const { MEMORY_INJECT_MAX_CHARS } =
-        await import("../core/prompt/assemble.js");
+        await import("../core/prompt/memory-view.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("Persistent Memory");
       expect(config.systemPrompt).toContain("truncated");

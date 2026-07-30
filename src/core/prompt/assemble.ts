@@ -16,8 +16,9 @@
  *   2. Core behaviour                       ~/.talon/prompts/custom.md,
  *                                           else base.md, else fallback
  *   3. Frontend capabilities                ~/.talon/prompts/<frontend>.md
- *   4. Persistent memory (size-capped)      prompts/system/persistent-memory.md
+ *   4. Persistent memory (ranked, capped)   prompts/system/persistent-memory.md
  *                                           wrapping ~/.talon/workspace/memory/memory.md
+ *                                           via memory-view.ts
  *   5. Memory recall + capability docs      prompts/system/{memory-recall,workspace,...}.md
  *   6. Plugin additions                     plugin.systemPrompt() contributions
  *   (7. Delivery contract — appended by the backend as its suffix,
@@ -57,6 +58,7 @@ import { dirs, files as pathFiles } from "../../util/paths.js";
 import { todayAndYesterday } from "../../util/time.js";
 import { log } from "../../util/log.js";
 import { loadSystemTemplate } from "./templates.js";
+import { renderMemoryView } from "./memory-view.js";
 import { renderWorkspaceListing } from "./workspace-listing.js";
 import { renderSkillsPrompt } from "../../storage/skill-store.js";
 import { renderStickerLibraryPrompt } from "../../storage/sticker-store.js";
@@ -92,17 +94,6 @@ export function joinSystemPromptParts(parts: SystemPromptParts): string {
   return `${parts.staticText}\n\n---\n\n${parts.dynamicText}`;
 }
 
-// ── Tunables ────────────────────────────────────────────────────────────────
-
-/**
- * Cap on how much of `memory.md` is injected into the static prompt.
- * Memory files grow without bound over months of use; injecting all
- * of it bloats EVERY session from its very first turn. 12k chars is
- * roughly 3k tokens — past that, the model gets the head of the file
- * plus a truncation pointer and can Read the rest on demand.
- */
-export const MEMORY_INJECT_MAX_CHARS = 12_000;
-
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function readOptionalFile(path: string): string {
@@ -112,23 +103,6 @@ function readOptionalFile(path: string): string {
     /* ignore */
   }
   return "";
-}
-
-/**
- * Truncate memory content at the cap, snapping back to the previous
- * newline so the cut never lands mid-sentence. Returns the (possibly
- * shortened) content and whether truncation happened.
- */
-function capMemory(content: string): { text: string; truncated: boolean } {
-  if (content.length <= MEMORY_INJECT_MAX_CHARS) {
-    return { text: content, truncated: false };
-  }
-  const head = content.slice(0, MEMORY_INJECT_MAX_CHARS);
-  const lastNewline = head.lastIndexOf("\n");
-  return {
-    text: (lastNewline > 0 ? head.slice(0, lastNewline) : head).trimEnd(),
-    truncated: true,
-  };
 }
 
 let lastLoggedPromptKey = "";
@@ -194,17 +168,21 @@ export function assembleSystemPrompt(
   }
 
   // 4. Persistent memory — size-capped so a memory file that has grown
-  //    for months can't bloat every session from turn 0.
+  //    for months can't bloat every session from turn 0. Over the cap the
+  //    view ranks sections rather than head-slicing, so durable knowledge
+  //    isn't evicted by whatever happens to sit at the top of the file
+  //    (see prompt/memory-view.ts).
   const memory = readOptionalFile(pathFiles.memory);
   if (memory) {
-    const { text, truncated } = capMemory(memory);
+    const { text, truncated, omitted } = renderMemoryView(memory);
     staticParts.push(
       loadSystemTemplate("persistent-memory", {
         content: text,
         truncated: truncated ? "yes" : undefined,
+        omitted: omitted || undefined,
       }),
     );
-    loaded.push(truncated ? "memory(capped)" : "memory");
+    loaded.push(truncated ? "memory(ranked)" : "memory");
   }
 
   // 5. Package-owned behavioural and capability docs. The memory policy
