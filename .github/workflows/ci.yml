@@ -616,6 +616,136 @@ jobs:
           cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || true
           aa-enabled 2>/dev/null || true
 
+      - name: Unit tests (pinned toolchain via rust-toolchain.toml)
+        run: cargo test --locked
+        working-directory: native/talon-warden
+
+      - name: Build the harness
+        run: npm run build:warden
+
+      - name: Warden behavior + trigger supervisor suites (warden path)
+        if: runner.os != 'Windows'
+        run: |
+          npm ci
+          npx vitest run src/__tests__/talon-warden.test.ts \
+            src/__tests__/triggers.test.ts \
+            src/__tests__/triggers-extended.test.ts
+
+      - name: Warden smoke suite (Windows, Job Object path)
+        if: runner.os == 'Windows'
+        run: |
+          npm ci
+          npx vitest run src/__tests__/talon-warden.test.ts
+
+  # ── Blake3 napi addon ──────────────────────────────────────────
+  # blake3-napi (native/blake3-napi) is a per-arch .node library like
+  # the warden is a per-arch binary — nothing to drift-check. Build it
+  # with the pinned toolchain, run its unit tests, then drive the real
+  # artifact through the TS boundary: digest agreement with the wasm
+  # twin, fallback modes, and the media-index consumer. This is the job
+  # of record for the native hashing path (elsewhere the napi tests
+  # self-skip when cargo is absent and hashing uses the wasm fallback).
+  # All three OSes: cdylib loading and mmap behaviour differ, and the
+  # addon must prove it builds + loads on the Windows MSVC toolchain
+  # rather than silently riding the wasm fallback there.
+  napi:
+    name: Blake3 Napi (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/blake3-napi
+
+      - name: Unit tests (pinned toolchain via rust-toolchain.toml)
+        run: cargo test --locked
+        working-directory: native/blake3-napi
+
+      - name: Build the addon
+        run: npm run build:napi
+
+      - name: Addon behavior + wasm parity + media-index consumer
+        # Pin to a single persistent fork. These three files load the
+        # native blake3 .node addon and a real better-sqlite3 handle;
+        # under vitest's default multi-fork pool the per-file worker
+        # churn intermittently dies with "Worker exited unexpectedly"
+        # (the tests themselves pass first). One fork, run sequentially,
+        # removes the concurrent native-addon load/teardown that causes
+        # the flake without changing any test logic.
+        # shell: bash so the multi-line `\` continuations run identically
+        # on Windows (the default shell there is pwsh, which breaks on `\`).
+        shell: bash
+        run: |
+          npm ci
+          npx vitest run --pool=forks --no-file-parallelism --maxWorkers=1 \
+            src/__tests__/blake3-napi.test.ts \
+            src/__tests__/blake3-wasm.test.ts \
+            src/__tests__/media-index.test.ts
+
+  # ── Namespace FUSE addon ───────────────────────────────────────
+  # talon-fusefs (native/talon-fusefs) is a per-arch .node library like
+  # blake3-napi — nothing to drift-check. Build it with the pinned
+  # toolchain, run its unit tests, then drive the REAL artifact through
+  # a live kernel mount: symlink serving, live synthetic reads from
+  # this process and from child processes, EROFS/ENOENT, and clean
+  # unmount. TALON_REQUIRE_FUSE_LIVE=1 turns a silent capability skip
+  # into a failure, so this job can never go green without mounting.
+  # Linux only — the addon mounts through fusermount, a Linux facility;
+  # every other host runs the (also tested) fuseless degradation path.
+  fusefs:
+    name: Namespace FUSE (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/talon-fusefs
+
+      # A version banner is not a mount. The old check only proved
+      # /dev/fuse existed and fusermount3 could print --version, so a
+      # runner that had lost the *permission* to mount still walked past
+      # it and surfaced as an opaque assertion failure in the live suite
+      # (2026-07-29: "fusermount3: mount failed: Operation not permitted"
+      # on ubuntu-latest, with this step green). Probe the capability
+      # itself, and print the state a human needs to tell an environment
+      # regression from a code regression.
+      - name: Host FUSE capability (probe, don't assume)
+        run: |
+          set -x
+          test -e /dev/fuse
+          ls -l /dev/fuse
+          id
+          fusermount3 --version || fusermount --version
+          ls -l "$(command -v fusermount3 || command -v fusermount)"
+          cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || true
+          aa-enabled 2>/dev/null || true
+
       # Ubuntu 24.04 runners restrict unprivileged user namespaces via
       # AppArmor, which is the usual cause of an EPERM out of fusermount3
       # for a non-root mount. Relax it when the knob exists; a no-op
