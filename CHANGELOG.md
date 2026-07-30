@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.12.4](https://github.com/dylanneve1/talon/compare/v3.12.3...v3.12.4) (2026-07-30)
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump the production-dependencies group with 3 updates ([#682](https://github.com/dylanneve1/talon/issues/682)) ([6ed6753](https://github.com/dylanneve1/talon/commit/6ed6753e0ab39af674f9c1a5679b1b4c91b9a8e1))
+
+
+### Continuous Integration
+
+* **fuse:** probe real mount capability; drop the disproven AppArmor step ([#685](https://github.com/dylanneve1/talon/issues/685)) ([34939a9](https://github.com/dylanneve1/talon/commit/34939a9f65f852ef805ab208b8dbb229088e999f))
+
 ## [3.12.3](https://github.com/dylanneve1/talon/compare/v3.12.2...v3.12.3) (2026-07-29)
 
 
