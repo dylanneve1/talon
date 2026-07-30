@@ -811,7 +811,8 @@ jobs:
   # Catches hardcoded credentials anywhere in the working tree —
   # API keys, bot tokens, .env files committed by accident, OAuth
   # secrets in configs, private keys. Runs on every push + PR.
-  # `gitleaks-action@v2` exits non-zero on any finding.
+  # Runs gitleaks directly rather than via gitleaks-action so the scanned
+  # SCOPE is pinned and printed — see the comment on the scan step.
   secrets:
     name: Secret Scan
     runs-on: ubuntu-latest
@@ -825,9 +826,35 @@ jobs:
           # would only catch leaks in the latest commit.
           fetch-depth: 0
 
-      - uses: gitleaks/gitleaks-action@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install gitleaks
+        run: |
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.30.0/gitleaks_8.30.0_linux_x64.tar.gz -o /tmp/gitleaks.tgz
+          echo "79a3ab579b53f71efd634f3aaf7e04a0fa0cf206b7ed434638d1547a2470a66e  /tmp/gitleaks.tgz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+          /tmp/gitleaks version
+
+      - name: Scan this ref's own history
+        run: |
+          # THE SCOPE IS THE POINT.
+          #
+          # gitleaks-action picks the commit range for you, and the range it
+          # picks is not stable: on a plain push it walks `--all` — every ref
+          # the runner fetched, including commits on unmerged PR branches and
+          # even orphaned ones left behind by a rebase; on other pushes it ran
+          # `--log-opts=-1`, i.e. a single commit. Both are reported the same
+          # way, so a green told you nothing about what was actually scanned.
+          #
+          # That coupling is not theoretical: on 2026-07-30 main went red over
+          # a test fixture in commit 819c7473, which is not an ancestor of main
+          # and no longer exists on any branch (#688). main's health should not
+          # depend on other people's in-flight work.
+          #
+          # `--log-opts=HEAD` scans exactly the checked-out ref's own history:
+          # main's history on a push to main, base + PR commits on the
+          # pull_request merge ref. Nothing else. The commit count gitleaks
+          # prints is then a meaningful statement about what passed.
+          /tmp/gitleaks detect --source . --log-opts=HEAD \
+            --redact --verbose --no-banner --exit-code 1
 
   # ── Dependency review (PR-only) ───────────────────────────────
   # On every PR, GitHub's dependency-review-action diffs lockfile changes
