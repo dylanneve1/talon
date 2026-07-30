@@ -11,4 +11,18 @@ generator (src/frontend/native/tls.ts) purely for tests — the key is
 trusted by nothing, signs nothing real, and can be regenerated at will.
 Real key material never belongs in the repo; the runtime bridge identity
 lives in ~/.talon/keys/."""
-paths = ['''apps/companion/test/fixtures/.*\.pem''']
+# Second exception: src/__tests__/secret-scan.test.ts is the test suite for
+# Talon's OWN outbound secret-scanning guard. Its table of vendor token
+# shapes must hold literal, realistic-looking values or the tests prove
+# nothing — they exist to exercise the exact regexes the guard ships. Every
+# entry is a vendor-documentation example (AKIAIOSFODNN7EXAMPLE,
+# ghp_ABCDEF..., xoxb-1234...) and grants nothing anywhere.
+#
+# Note both paths live in ONE [allowlist] table: gitleaks 8.24 ignores the
+# [[allowlists]] array form, so a second table would silently disable the
+# first exception rather than add to it (verified locally against the full
+# --log-opts=--all history).
+paths = [
+  '''apps/companion/test/fixtures/.*\.pem''',
+  '''src/__tests__/secret-scan\.test\.ts''',
+]
