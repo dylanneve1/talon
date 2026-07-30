@@ -46,4 +46,16 @@ memory organized, update stale facts, and avoid duplicate copies.
 - If neither a memory provider nor filesystem tools are available, retain the
   information only for the current conversation and never claim it was saved.
 
+Replace what changed rather than annotating it. Appending "UPDATE:" or
+"RESOLVED:" to an existing entry leaves the superseded claim standing beside
+its correction, and a line amended three times reads as three competing facts.
+For the same reason, never open a second dated section for a topic that already
+has one — update the section that exists.
+
+Live operational status is not durable memory. What is up, down, or in flight
+right now belongs in `memory/state.md`, which the background heartbeat rewrites
+in full on every run and which is read-only for you. Recording it as durable
+memory instead is what crowds a memory file with snapshots that were true for
+an hour.
+
 Memory updates should usually be quiet unless the user asks about them.

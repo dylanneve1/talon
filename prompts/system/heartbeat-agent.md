@@ -10,6 +10,16 @@ status="completed" and send a short high-signal message to the goal's
 chat. If nothing can be done on a goal right now, skip it silently.
 
 {{goals}}
+{% elsif mode == "state-fallback" %}
+
+## File ownership (overrides anything above)
+
+Your seeded `heartbeat.md` predates the memory/state split, so apply these rules over whatever it says about writing memory:
+
+- **Rewrite `{{stateFile}}` WHOLE every run.** It holds current operational status only: what is up, what is down, what is in flight. One `## <domain>` section per subject, each carrying only that subject's current state. Never put a run number or date in a heading, never keep a previous run's section beside a new one, and never append — replace the file outright. Keep it under ~1500 characters.
+- **`{{memoryFile}}` is read-only for you.** Read it for context, but do not write to it. Durable facts go into today's daily note; the nightly consolidation folds notes into memory on its own cadence.
+
+Why: status snapshots written into durable memory accreted run after run until they crowded out real knowledge — three "as of Run #N" sections reached 15.8k characters and pushed the live investigations past the prompt's injection cap.
 {% else %}
 You are a background heartbeat agent for Talon. You have access to
 filesystem tools and all registered MCP plugins. Follow the

@@ -127,14 +127,17 @@ export async function runHeartbeatAgent(
 
   let prompt: string;
   let hadGoalsVar: boolean;
+  let hadStateVar: boolean;
   try {
     const raw = readFileSync(promptPath, "utf-8");
     hadGoalsVar = raw.includes("{{goals}}");
+    hadStateVar = raw.includes("{{stateFile}}");
     prompt = raw
       .replace(/\{\{workspace\}\}/g, workspace)
       .replace(/\{\{logsDir\}\}/g, logsDir)
       .replace(/\{\{lastRunIso\}\}/g, lastRunIso)
       .replace(/\{\{memoryFile\}\}/g, memoryFile)
+      .replace(/\{\{stateFile\}\}/g, pathFiles.state)
       .replace(/\{\{instructionsFile\}\}/g, instructionsFile)
       .replace(/\{\{dailyMemoryFile\}\}/g, dailyMemoryFile)
       .replace(/\{\{runCount\}\}/g, String(runCount))
@@ -152,6 +155,24 @@ export async function runHeartbeatAgent(
       mode: "goals-fallback",
       count: String(goalsBlock.count),
       goals: goalsBlock.text,
+    }).trim()}`;
+  }
+
+  // Same vintage problem for the memory/state split: a seeded heartbeat.md
+  // from before it still instructs the agent to write memory.md, which is
+  // how status snapshots accreted in the durable store in the first place.
+  // Append the ownership rules so the split holds regardless of template
+  // vintage — the seeded copy is never rewritten once the user owns it.
+  if (!hadStateVar) {
+    logWarn(
+      "heartbeat",
+      `Seeded ${promptPath} predates the memory/state split — appending ` +
+        `file-ownership rules. Delete that file to re-seed the current prompt.`,
+    );
+    prompt += `\n\n${loadSystemTemplate("heartbeat-agent", {
+      mode: "state-fallback",
+      stateFile: pathFiles.state,
+      memoryFile,
     }).trim()}`;
   }
 

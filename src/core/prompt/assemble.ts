@@ -19,6 +19,9 @@
  *   4. Persistent memory (ranked, capped)   prompts/system/persistent-memory.md
  *                                           wrapping ~/.talon/workspace/memory/memory.md
  *                                           via memory-view.ts
+ *   4.5 Live state (capped)                 prompts/system/live-state.md
+ *                                           wrapping ~/.talon/workspace/memory/state.md
+ *                                           (heartbeat-owned, rewritten whole)
  *   5. Memory recall + capability docs      prompts/system/{memory-recall,workspace,...}.md
  *   6. Plugin additions                     plugin.systemPrompt() contributions
  *   (7. Delivery contract — appended by the backend as its suffix,
@@ -93,6 +96,18 @@ export function joinSystemPromptParts(parts: SystemPromptParts): string {
   if (!parts.staticText) return parts.dynamicText;
   return `${parts.staticText}\n\n---\n\n${parts.dynamicText}`;
 }
+
+// ── Tunables ────────────────────────────────────────────────────────────────
+
+/**
+ * Cap on the injected `state.md` block. Deliberately much tighter than the
+ * memory cap: this is a status snapshot the heartbeat rewrites every run, so
+ * anything past a couple of thousand chars means the heartbeat is
+ * accumulating history in a file that is supposed to be replaced — the
+ * failure the memory/state split exists to prevent. Truncating loudly is the
+ * signal that it is happening.
+ */
+export const STATE_INJECT_MAX_CHARS = 2_000;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -183,6 +198,26 @@ export function assembleSystemPrompt(
       }),
     );
     loaded.push(truncated ? "memory(ranked)" : "memory");
+  }
+
+  // 4.5. Live state — the heartbeat's rewritten-whole status snapshot, kept
+  //      OUT of memory.md so "as of Run #N" sections can't accrete in the
+  //      durable store and push real knowledge past the cap. Capped hard:
+  //      this is the most volatile content in the static prompt, and a
+  //      status file that grows is the exact failure this split exists to
+  //      prevent.
+  const state = readOptionalFile(pathFiles.state);
+  if (state) {
+    const truncated = state.length > STATE_INJECT_MAX_CHARS;
+    staticParts.push(
+      loadSystemTemplate("live-state", {
+        content: truncated
+          ? state.slice(0, STATE_INJECT_MAX_CHARS).trimEnd()
+          : state,
+        truncated: truncated ? "yes" : undefined,
+      }),
+    );
+    loaded.push(truncated ? "state(capped)" : "state");
   }
 
   // 5. Package-owned behavioural and capability docs. The memory policy

@@ -17,7 +17,11 @@
  *       trigger-runs/          Trigger script bodies + run logs
  *     workspace/               User-facing workspace (memory, uploads, logs)
  *       memory/
+ *         memory.md            Durable memory — the dream agent owns it
+ *         state.md             Live operational status — the heartbeat owns
+ *                              it, rewritten in full each run
  *         daily/               Per-day memory notes (YYYY-MM-DD.md)
+ *         archive/             Pruned memory, kept for audit (YYYY-MM.md)
  *       scripts/               Agent script bodies
  *       skills/                Skill folders (SKILL.md + resources)
  *       uploads/
@@ -56,6 +60,12 @@ export const dirs = {
   memory: resolve(TALON_ROOT, "workspace", "memory"),
   /** Daily memory notes: ~/.talon/workspace/memory/daily/ */
   dailyMemory: resolve(TALON_ROOT, "workspace", "memory", "daily"),
+  /**
+   * Pruned-memory archive: ~/.talon/workspace/memory/archive/
+   * Monthly files the dream agent appends to when it drops an entry, so
+   * forgetting stays auditable instead of silent.
+   */
+  memoryArchive: resolve(TALON_ROOT, "workspace", "memory", "archive"),
   /** Sticker packs: ~/.talon/workspace/stickers/ */
   stickers: resolve(TALON_ROOT, "workspace", "stickers"),
   /** Prompt files: ~/.talon/prompts/ */
@@ -110,6 +120,16 @@ export const files = {
   mediaIndex: resolve(TALON_ROOT, "data", "media-index.json"),
   /** Persistent memory: ~/.talon/workspace/memory/memory.md */
   memory: resolve(TALON_ROOT, "workspace", "memory", "memory.md"),
+  /**
+   * Live operational state: ~/.talon/workspace/memory/state.md
+   *
+   * Separate from `memory.md` on purpose. The heartbeat rewrites this file
+   * whole on every run; nothing appends to it. Keeping status snapshots out
+   * of the durable store is what stops "as of Run #N" sections accreting
+   * there — on the live deployment three of them had grown to 15.8k chars,
+   * pushing the actual knowledge past the prompt's injection cap.
+   */
+  state: resolve(TALON_ROOT, "workspace", "memory", "state.md"),
   /** Self-bootstrapping identity: ~/.talon/workspace/identity.md */
   identity: resolve(TALON_ROOT, "workspace", "identity.md"),
   /** Telegram userbot session: ~/.talon/.user-session */
