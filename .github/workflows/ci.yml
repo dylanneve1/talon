@@ -605,6 +605,17 @@ jobs:
       # on ubuntu-latest, with this step green). Probe the capability
       # itself, and print the state a human needs to tell an environment
       # regression from a code regression.
+      #
+      # What that EPERM was NOT: the obvious suspect is Ubuntu 24.04's
+      # apparmor_restrict_unprivileged_userns, which is present and set
+      # to 1 on these runners. It was A/B tested on 2026-07-30 — the same
+      # commit run with the job matrixed over setting the knob to 0 and
+      # leaving it alone — and BOTH legs passed. The knob is not causal,
+      # so there is deliberately no "relax AppArmor" step here; it would
+      # be a workaround that never worked, and the next person would have
+      # to disprove it again. Re-running main unchanged also passed, so
+      # the failure is intermittent and host-side, not a code defect.
+      # If it recurs, this probe's output is the evidence to start from.
       - name: Host FUSE capability (probe, don't assume)
         run: |
           set -x
@@ -615,17 +626,6 @@ jobs:
           ls -l "$(command -v fusermount3 || command -v fusermount)"
           cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || true
           aa-enabled 2>/dev/null || true
-
-      # Ubuntu 24.04 runners restrict unprivileged user namespaces via
-      # AppArmor, which is the usual cause of an EPERM out of fusermount3
-      # for a non-root mount. Relax it when the knob exists; a no-op
-      # everywhere else. Best-effort — the probe above records the state
-      # either way.
-      - name: Relax AppArmor userns restriction (best effort)
-        run: |
-          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
-            echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns || true
-          fi
 
       - name: Unit tests (pinned toolchain via rust-toolchain.toml)
         run: cargo test --locked
