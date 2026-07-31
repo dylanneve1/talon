@@ -16,8 +16,19 @@ vi.mock("picocolors", () => ({
     red: (s: string) => s,
     bold: (s: string) => s,
     yellow: (s: string) => s,
+    blue: (s: string) => s,
+    magenta: (s: string) => s,
     underline: (s: string) => s,
   },
+}));
+
+const mockGetRecentHistory = vi.fn((_chatId: string, _limit?: number) => [
+  { text: "hello there" },
+  { text: "a reply" },
+]);
+vi.mock("../storage/history.js", () => ({
+  getRecentHistory: (chatId: string, limit?: number) =>
+    mockGetRecentHistory(chatId, limit),
 }));
 
 // Mock storage modules that commands import dynamically.
@@ -226,6 +237,7 @@ describe("built-in commands", () => {
     expect(names).toContain("model");
     expect(names).toContain("effort");
     expect(names).toContain("status");
+    expect(names).toContain("context");
     expect(names).toContain("reset");
     expect(names).toContain("resume");
     expect(names).toContain("rename");
@@ -630,6 +642,67 @@ describe("/status command", () => {
     expect(output).toContain("1,389,045");
     expect(output).toContain("3,675");
     expect(output).toContain("204.8k");
+  });
+});
+
+describe("/context command", () => {
+  beforeEach(() => {
+    clearCommands();
+    registerBuiltinCommands();
+    mockGetRecentHistory.mockClear();
+  });
+
+  it("breaks the window into System / Tools / Conversation + Free", async () => {
+    mockGetSessionInfo.mockReturnValueOnce({
+      turns: 4,
+      usage: {
+        contextTokens: 40_000,
+        contextWindow: 200_000,
+        lastPromptTokens: 40_000,
+      },
+    });
+    const ctx = makeMockContext({
+      config: {
+        model: "claude-sonnet-4-6",
+        // ~2k system tokens (8000 chars / 4).
+        systemPromptParts: { staticText: "s".repeat(8_000), dynamicText: "" },
+      } as unknown as CommandContext["config"],
+    });
+    await tryRunCommand("/context", ctx);
+    const output = (ctx.renderer.writeln as ReturnType<typeof vi.fn>).mock.calls
+      .flat()
+      .join(" ");
+    expect(output).toContain("Context");
+    expect(output).toContain("System");
+    expect(output).toContain("Tools");
+    expect(output).toContain("Conversation");
+    expect(output).toContain("Free");
+    expect(output).toContain("20% used"); // 40k / 200k
+    expect(mockGetRecentHistory).toHaveBeenCalled();
+    expect(ctx.reprompt).toHaveBeenCalled();
+  });
+
+  it("warns and omits Tools appropriately, and never throws before a first turn", async () => {
+    // No contextTokens reported yet: tools can't be derived, but System still
+    // shows and the command must not crash.
+    mockGetSessionInfo.mockReturnValueOnce({
+      turns: 0,
+      usage: { contextTokens: 0, contextWindow: 200_000 },
+    });
+    const ctx = makeMockContext({
+      config: {
+        model: "claude-sonnet-4-6",
+        systemPromptParts: { staticText: "s".repeat(4_000), dynamicText: "" },
+      } as unknown as CommandContext["config"],
+    });
+    await tryRunCommand("/context", ctx);
+    const output = (ctx.renderer.writeln as ReturnType<typeof vi.fn>).mock.calls
+      .flat()
+      .join(" ");
+    expect(output).toContain("System");
+    expect(output).toContain("Free");
+    expect(output).not.toContain("Tools");
+    expect(ctx.reprompt).toHaveBeenCalled();
   });
 });
 
