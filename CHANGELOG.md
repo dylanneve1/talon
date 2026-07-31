@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.15.0](https://github.com/dylanneve1/talon/compare/v3.14.0...v3.15.0) (2026-07-31)
+
+
+### Features
+
+* **terminal:** /context command — context window usage, broken down ([#701](https://github.com/dylanneve1/talon/issues/701)) ([8a2cf77](https://github.com/dylanneve1/talon/commit/8a2cf77226fdbf23960161ac585eb5dc89a0b4d0))
+
 ## [3.14.0](https://github.com/dylanneve1/talon/compare/v3.13.0...v3.14.0) (2026-07-30)
 
 
