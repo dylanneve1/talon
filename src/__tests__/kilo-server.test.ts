@@ -86,12 +86,12 @@ describe("kilo server helpers", () => {
     });
   });
 
-  it("buildToolOverrides returns undefined when no matching chat tools are present", async () => {
+  it("buildToolOverrides disables a rival while current tools are loading", async () => {
     const oc = makeClient();
     oc.tool.ids.mockResolvedValue({ data: ["talon-tools-other_send_message"] });
     await expect(
       buildToolOverrides(oc as never, "talon-tools-chat_1"),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ "talon-tools-other_send_message": false });
   });
 
   it("ensureChatMcpServer registers the chat server with the hub URL", async () => {
@@ -135,46 +135,35 @@ describe("kilo server helpers", () => {
     expect(oc.mcp.disconnect).toHaveBeenCalledTimes(1);
   });
 
-  it("ensureChatMcpServer disconnects OTHER chat MCP servers when switching chats", async () => {
-    // Per-session permission rules block tool *execution* but not
-    // *visibility* — Kilo still lists every connected MCP server's
-    // tools in the model's catalog. So `talon-tools-chat_a` AND
-    // `talon-tools-chat_b` connected at once means a model in chat A
-    // can see and call `talon-tools-chat_b_send`. Holding only one
-    // chat-namespaced server connected at a time is the only way to
-    // hide cross-chat tools. The heartbeat sentinel server is exempt
-    // (always allowed to coexist).
+  it("ensureChatMcpServer retains other chat MCP servers for concurrent turns", async () => {
     const oc = makeClient();
 
     await ensureChatMcpServer(oc as never, "chat-a");
     await ensureChatMcpServer(oc as never, "heartbeat");
     expect(oc.mcp.add).toHaveBeenCalledTimes(2);
 
-    // Switching to chat-b should disconnect chat-a but leave heartbeat
-    // (heartbeat is the sentinel for background agent outbound calls).
+    // Registering chat-b must not disrupt chat-a if its turn is still live.
     await ensureChatMcpServer(oc as never, "chat-b");
 
-    expect(oc.mcp.disconnect).toHaveBeenCalledTimes(1);
-    expect(oc.mcp.disconnect.mock.calls[0][0]).toEqual({
-      name: "talon-tools-chat-a",
-    });
+    expect(oc.mcp.disconnect).not.toHaveBeenCalled();
     // chat-b registered now.
     expect(oc.mcp.add).toHaveBeenCalledTimes(3);
   });
 
-  it("ensureChatMcpServer leaves heartbeat MCP server connected across chat switches", async () => {
+  it("ensureChatMcpServer leaves heartbeat MCP server connected", async () => {
     const oc = makeClient();
 
     await ensureChatMcpServer(oc as never, "heartbeat");
     await ensureChatMcpServer(oc as never, "chat-a");
     await ensureChatMcpServer(oc as never, "chat-b");
 
-    // heartbeat MUST never get disconnected — it's the sentinel for
-    // outbound tool calls from background agents (heartbeat / dream).
+    // No chat registration disconnects any sibling. Per-prompt tool
+    // overrides provide visibility isolation instead.
     const disconnectNames = (
       oc.mcp.disconnect.mock.calls as Array<[{ name: string }]>
     ).map((c) => c[0].name);
     expect(disconnectNames).not.toContain("talon-tools-heartbeat");
+    expect(disconnectNames).not.toContain("talon-tools-chat-a");
   });
 
   it("ensurePluginMcpServers registers all named servers on first call", async () => {
@@ -259,6 +248,7 @@ describe("kilo server helpers", () => {
       { permission: "tool", pattern: "*", action: "allow" },
       { permission: "edit", pattern: "*", action: "allow" },
       { permission: "bash", pattern: "*", action: "allow" },
+      { permission: "external_directory", pattern: "*", action: "allow" },
     ]);
   });
 

@@ -26,7 +26,7 @@
  *      in.
  *   3. `routeDelivery` returns the same route shape for both backends
  *      given equivalent state.
- *   4. The chat MCP visibility rotation behaves identically for both
+ *   4. Concurrent chat MCP registration behaves identically for both
  *      backends' state containers.
  */
 
@@ -125,7 +125,7 @@ function makeRepresentativeEventSequence(sessionId: string): Array<{
           callID: "call-1",
           tool: "send",
           state: {
-            status: "running",
+            status: "completed",
             input: { type: "text", text: "tool-delivered text" },
           },
         },
@@ -458,10 +458,10 @@ describe("backend conformance — routeDelivery", () => {
   });
 });
 
-// ── Conformance: MCP visibility rotation ───────────────────────────────────
+// ── Conformance: concurrent MCP registration ───────────────────────────────
 
-describe("backend conformance — MCP chat-server rotation", () => {
-  it("rotates chat MCP servers identically for both backend states", async () => {
+describe("backend conformance — MCP chat-server retention", () => {
+  it("retains chat MCP servers identically for both backend states", async () => {
     const kiloState = createRemoteServerState<RemoteAgentClient>({
       label: "Kilo",
       hostname: "127.0.0.1",
@@ -481,14 +481,14 @@ describe("backend conformance — MCP chat-server rotation", () => {
       getRegisteredMcpServerNames(opencodeState),
     );
 
-    // Switch to chat B — both should rotate out chat A
+    // Register chat B while chat A may still be running.
     await ensureChatMcpServer(makeMockClient(), kiloState, "chatB");
     await ensureChatMcpServer(makeMockClient(), opencodeState, "chatB");
 
     const kiloNames = getRegisteredMcpServerNames(kiloState).sort();
     const opencodeNames = getRegisteredMcpServerNames(opencodeState).sort();
     expect(kiloNames).toEqual(opencodeNames);
-    expect(kiloNames).toEqual(["talon-tools-chatB"]);
+    expect(kiloNames).toEqual(["talon-tools-chatA", "talon-tools-chatB"]);
   });
 
   it("preserves heartbeat sentinel for both backends symmetrically", async () => {
@@ -509,7 +509,7 @@ describe("backend conformance — MCP chat-server rotation", () => {
     opencodeState.registeredMcpServers.add("talon-tools-heartbeat");
     opencodeState.registeredMcpServers.add("talon-tools-chatA");
 
-    // Switch to chat B
+    // Register chat B without disrupting the existing chat.
     await ensureChatMcpServer(makeMockClient(), kiloState, "chatB");
     await ensureChatMcpServer(makeMockClient(), opencodeState, "chatB");
 
@@ -519,6 +519,6 @@ describe("backend conformance — MCP chat-server rotation", () => {
     expect(kiloNames).toEqual(opencodeNames);
     expect(kiloNames).toContain("talon-tools-heartbeat");
     expect(kiloNames).toContain("talon-tools-chatB");
-    expect(kiloNames).not.toContain("talon-tools-chatA");
+    expect(kiloNames).toContain("talon-tools-chatA");
   });
 });

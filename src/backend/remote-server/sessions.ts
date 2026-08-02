@@ -33,14 +33,13 @@ import { TALON_MCP_SERVER_NAME, getChatMcpServerName } from "./mcp.js";
  *      "No active chat context". Or in the cross-chat case where chat B
  *      IS active, the model in chat A could leak content into chat B.
  *      Deny pattern blocks both. (Visibility is also blocked at the
- *      MCP-registration layer via `ensureChatMcpServer`; this rule is
- *      defense in depth.)
+ *      prompt layer by `buildToolOverrides`; this rule is defense in depth.)
  *
- *   2. Auto-allow built-in tools (`tool *`, `edit *`, `bash *`) so they
+ *   2. Auto-allow built-in tools (`tool *`, `edit *`, `bash *`) and
+ *      workspace paths outside the server process's launch directory so they
  *      don't sit in `permission.asked` waiting for a reply that never
- *      arrives — Talon's question watchdog only handles `question.*`
- *      events, not `permission.*`. Without the allow rule the model's
- *      first `read` call hangs the entire turn.
+ *      arrives. The permission watchdog is a fallback for new categories;
+ *      this rule resolves the known path case without a polling round trip.
  *
  * Rules are evaluated in order; first match wins. (See upstream's
  * `PermissionRule` type — `permission` is the rule category, `pattern`
@@ -58,6 +57,7 @@ export function buildPermissionRuleset(chatId: string): RemotePermissionRule[] {
     { permission: "tool", pattern: "*", action: "allow" },
     { permission: "edit", pattern: "*", action: "allow" },
     { permission: "bash", pattern: "*", action: "allow" },
+    { permission: "external_directory", pattern: "*", action: "allow" },
   ];
 }
 

@@ -193,7 +193,9 @@ export function stopRemoteServer<TClient extends RemoteAgentClient>(
   if (state.serverHandle) {
     state.serverHandle.close();
     state.serverHandle = null;
-    state.client = null;
     log("agent", `${state.label} server stopped`);
   }
+  // Always discard this process's client, including when the server was
+  // reused and is intentionally left running for its external owner.
+  state.client = null;
 }

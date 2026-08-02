@@ -25,6 +25,9 @@
  *     `/status` enrichment).
  *   - {@link rejectPendingQuestions} — auto-respond to upstream questions
  *     (tool-approval → "always", clarifications → reject).
+ *   - {@link approvePendingPermissions} — approve upstream permission asks
+ *     that escaped the session ruleset, preventing headless turns from
+ *     waiting forever for a TUI response.
  */
 
 import { logWarn } from "../../util/log.js";
@@ -138,6 +141,13 @@ export interface RemoteSessionClient extends RemoteAgentClient {
       answers: Array<Array<string>>;
     }): Promise<unknown>;
     reject(args: { requestID: string }): Promise<unknown>;
+  };
+  permission: {
+    list(): Promise<{ data?: unknown }>;
+    reply(args: {
+      requestID: string;
+      reply: "once" | "always" | "reject";
+    }): Promise<unknown>;
   };
 }
 
@@ -536,6 +546,65 @@ export async function rejectPendingQuestions(
       logWarn(
         "agent",
         `[${chatId}] Failed to handle ${backendLabel} question ${requestId}: ${errMsg(err)}`,
+      );
+    }
+  }
+}
+
+/**
+ * Approve pending upstream permission requests for this session.
+ *
+ * Remote agent servers normally resolve these from the permission ruleset
+ * installed at session creation. New permission categories can still appear
+ * upstream, though, and a headless Talon process has no TUI to answer them.
+ * Polling the pending list is therefore a fail-safe: approve each request
+ * once, scoped strictly to the current session, and deduplicate until the
+ * server removes it from the list.
+ */
+export async function approvePendingPermissions(
+  oc: RemoteSessionClient,
+  sessionId: string,
+  chatId: string,
+  seenPermissionIds: Set<string>,
+  backendLabel: string,
+): Promise<void> {
+  const permissionsResp = await oc.permission.list();
+  const pendingPermissions = Array.isArray(permissionsResp.data)
+    ? permissionsResp.data
+    : [];
+
+  for (const request of pendingPermissions) {
+    if (!request || typeof request !== "object") continue;
+
+    const data = request as {
+      id?: string;
+      sessionID?: string;
+      permission?: string;
+      patterns?: string[];
+    };
+    const requestId = data.id;
+    if (!requestId || data.sessionID !== sessionId) continue;
+    if (seenPermissionIds.has(requestId)) continue;
+
+    seenPermissionIds.add(requestId);
+    try {
+      await oc.permission.reply({ requestID: requestId, reply: "once" });
+      const detail = [
+        data.permission,
+        ...(Array.isArray(data.patterns) ? data.patterns : []),
+      ]
+        .filter(Boolean)
+        .join(" ");
+      logWarn(
+        "agent",
+        `[${chatId}] Auto-approved ${backendLabel} permission ${requestId}${
+          detail ? `: ${detail}` : ""
+        }`,
+      );
+    } catch (err) {
+      logWarn(
+        "agent",
+        `[${chatId}] Failed to approve ${backendLabel} permission ${requestId}: ${errMsg(err)}`,
       );
     }
   }

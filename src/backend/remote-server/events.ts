@@ -108,9 +108,21 @@ export async function processStreamEvent(
 ): Promise<ProcessEventOutcome> {
   if (!event || typeof event !== "object") return { kind: "continue" };
   const props = event.properties ?? {};
-  // Scope to our session only
+  // Scope to our session only. OpenCode/Kilo use three wire shapes:
+  // session events put sessionID on properties, part events put it inside
+  // properties.part, and message events put it inside properties.info.
+  // Missing the nested part shape lets a concurrent heartbeat/dream tool
+  // event terminate the active chat turn.
+  const part = props.part as Record<string, unknown> | undefined;
+  const info = props.info as Record<string, unknown> | undefined;
   const evtSessionID =
-    typeof props.sessionID === "string" ? props.sessionID : undefined;
+    typeof props.sessionID === "string"
+      ? props.sessionID
+      : typeof part?.sessionID === "string"
+        ? part.sessionID
+        : typeof info?.sessionID === "string"
+          ? info.sessionID
+          : undefined;
   if (evtSessionID && evtSessionID !== ctx.sessionId) {
     return { kind: "stop", reason: "out_of_scope" };
   }
@@ -246,11 +258,12 @@ async function processPartUpdate(
   const stateObj = part.state as
     { status?: string; input?: Record<string, unknown> } | undefined;
 
-  // Fire onToolUse ONCE when the tool transitions to running or completed
-  // with input available. Subsequent state changes don't re-fire.
+  // Record a tool only after the upstream reports successful completion.
+  // Treating `running` as delivery made failed MCP calls flip end_turn and
+  // suppress fallback text even though nothing reached the user.
   if (
     !stateObj ||
-    (stateObj.status !== "running" && stateObj.status !== "completed") ||
+    stateObj.status !== "completed" ||
     !callID ||
     ctx.seenToolCallIds.has(callID)
   ) {

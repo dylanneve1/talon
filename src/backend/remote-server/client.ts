@@ -35,7 +35,7 @@ export type RemoteMcpServerConfig =
 
 /** Permission-rule shape both SDKs share. */
 export interface RemotePermissionRule {
-  permission: "tool" | "edit" | "bash";
+  permission: "tool" | "edit" | "bash" | "external_directory";
   pattern: string;
   action: "allow" | "deny" | "ask";
 }

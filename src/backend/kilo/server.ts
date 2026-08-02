@@ -312,7 +312,7 @@ export function getConfig(): TalonConfig {
 /**
  * Snapshot of the locally-cached MCP server registrations. Test-only:
  * Kilo's `GET /mcp` returns `{}` regardless of state, so integration
- * tests need this to assert chat-switch isolation actually fired.
+ * tests use this to assert concurrent chat registrations are retained.
  */
 export function getRegisteredMcpServerNames(): string[] {
   return getRegisteredMcpServerNamesShared(state);

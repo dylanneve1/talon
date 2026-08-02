@@ -4,17 +4,15 @@
  * Both OpenCode and Kilo expose the same MCP HTTP API surface
  * (`POST /mcp` to add, `DELETE /mcp/:name` to disconnect) and share the
  * same visibility model upstream: every registered MCP server's tools
- * are visible to every session by default. Per-session permission rules
- * only block *execution*, not *visibility* — which is why Talon has to
- * disconnect rival chat-namespaced MCP servers before connecting the
- * current one, instead of relying on permission rules alone.
+ * are visible to every session by default. Talon keeps namespaced servers
+ * registered concurrently, then scopes visibility per prompt with a tool
+ * override map and execution with per-session permission rules.
  *
  * Functions exported here:
  *
  *   - {@link ensureChatMcpServer} — register the current chat's
- *     `talon-tools-<chatId>` MCP server, disconnecting any other chat's
- *     server in the process. Returns the registered name so callers can
- *     scope tool overrides to this chat alone.
+ *     `talon-tools-<chatId>` MCP server. Returns the registered name so
+ *     callers can scope tool overrides to this chat alone.
  *   - {@link ensurePluginMcpServers} — bulk-register all plugin-provided
  *     MCP servers (`mempalace-tools`, `brave-search`, `github-tools`, …).
  *     These are shared globally (not chat-scoped) and only registered
@@ -45,6 +43,7 @@ import type { RemoteServerState } from "./state.js";
 import { errMsg } from "./state.js";
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
+import { ALL_TOOLS, nativeTools } from "../../core/tools/index.js";
 import {
   frontendForChatId,
   nonTerminalFrontends,
@@ -62,6 +61,15 @@ export const TALON_MCP_SERVER_NAME = "talon-tools";
  * <500ms; the outliers are the ones worth investigating.
  */
 const SLOW_MCP_REGISTRATION_MS = 1000;
+
+/**
+ * OpenCode's `/experimental/tool/ids` endpoint omits dynamically registered
+ * MCP tools despite its API description. Synthesize Talon's known MCP ids so
+ * prompt-level overrides can still isolate concurrently registered chats.
+ */
+const TALON_TOOL_NAMES = [...ALL_TOOLS, ...nativeTools].map(
+  (tool) => tool.name,
+);
 
 // ── Internal helpers ────────────────────────────────────────────────────────
 
@@ -110,15 +118,10 @@ function resolveChatToolFrontend(
  * Ensure the per-chat Talon MCP server is registered with the upstream
  * agent server.
  *
- * Each chat gets its own namespaced MCP server (`talon-tools-<chatId>`)
- * so concurrent chats can't see each other's tool environment. Before
- * connecting the current chat's server we DISCONNECT every other chat's
- * server (except the heartbeat sentinel) — this is the only way to hide
- * cross-chat tools from the model's visible catalog. The model's
- * permission rules deny EXECUTION of cross-chat tools but don't hide
- * them from visibility, so without the disconnect step the model in
- * chat A would see `talon-tools-<chatB>_send` in its tool catalog and
- * try to call it.
+ * Each chat gets its own namespaced MCP server (`talon-tools-<chatId>`).
+ * Servers stay registered across concurrent turns; callers pass the result
+ * of `buildToolOverrides` with each prompt so chat A cannot see chat B's
+ * tools. Session permission rules independently deny cross-chat execution.
  *
  * Best-effort: a registration failure logs a warning but doesn't throw —
  * the conversation can still proceed without Talon-tool access.
@@ -129,30 +132,6 @@ export async function ensureChatMcpServer<TClient extends RemoteAgentClient>(
   chatId: string,
 ): Promise<string> {
   const serverName = getChatMcpServerName(chatId);
-
-  // Rotate out other chat servers BEFORE registering this one. The
-  // heartbeat sentinel server is exempt (it has no real chat to leak
-  // into and stays connected for cron / trigger paths).
-  // Snapshot: rotation removes entries from the live set mid-iteration.
-  for (const other of Array.from(state.registeredMcpServers)) {
-    if (
-      !other.startsWith(`${TALON_MCP_SERVER_NAME}-`) ||
-      other === serverName ||
-      other === `${TALON_MCP_SERVER_NAME}-heartbeat`
-    ) {
-      continue;
-    }
-    try {
-      await client.mcp.disconnect({ name: other });
-      state.registeredMcpServers.delete(other);
-      log("agent", `Disconnected ${other} MCP server (chat switch)`);
-    } catch (err) {
-      logWarn(
-        "agent",
-        `Failed to disconnect ${other} during chat switch: ${errMsg(err)}`,
-      );
-    }
-  }
 
   // Local cache short-circuit. The upstream's GET /mcp returns {} regardless
   // of state, so we trust our own record of what we registered earlier in
@@ -267,9 +246,11 @@ export async function ensurePluginMcpServers<TClient extends RemoteAgentClient>(
  * access at the visibility layer (not just the execution layer that
  * permission rules cover).
  *
- * Returns `undefined` when no chat-scoped tools matched (e.g. MCP
- * registration failed silently above) — caller should skip passing
- * the `tools` field in that case.
+ * When the current chat's tools have not appeared in `tool.ids()` yet, still
+ * returns a map that disables any sibling chat tools already visible. MCP
+ * registration completes asynchronously upstream; returning `undefined` in
+ * that window exposed a concurrent heartbeat/dream toolset to the chat.
+ * Returns `undefined` only when the catalog contains no Talon tools at all.
  */
 export async function buildToolOverrides<TClient extends RemoteAgentClient>(
   client: TClient,
@@ -281,17 +262,26 @@ export async function buildToolOverrides<TClient extends RemoteAgentClient>(
     const toolIds = Array.isArray(toolIdsResp.data) ? toolIdsResp.data : [];
     const overrides: Record<string, boolean> = {};
     const chatToolPrefix = `${chatServerName}_`;
-    let matchedChatTool = false;
+    let matchedTalonTool = false;
+
+    for (const serverName of state.registeredMcpServers) {
+      if (!serverName.startsWith(`${TALON_MCP_SERVER_NAME}-`)) continue;
+      const enabled = serverName === chatServerName;
+      for (const toolName of TALON_TOOL_NAMES) {
+        overrides[`${serverName}_${toolName}`] = enabled;
+      }
+      matchedTalonTool = true;
+    }
 
     for (const toolId of toolIds) {
       if (typeof toolId !== "string" || !isTalonToolID(toolId)) continue;
 
       const enabled = toolId.startsWith(chatToolPrefix);
       overrides[toolId] = enabled;
-      matchedChatTool ||= enabled;
+      matchedTalonTool = true;
     }
 
-    return matchedChatTool ? overrides : undefined;
+    return matchedTalonTool ? overrides : undefined;
   } catch (err) {
     logWarn(
       "agent",
@@ -302,20 +292,16 @@ export async function buildToolOverrides<TClient extends RemoteAgentClient>(
 }
 
 /**
- * Disconnect a per-chat MCP server. Called in handler `finally` blocks
- * to release the chat-namespaced MCP subprocess once the turn ends.
+ * Disconnect a per-chat MCP server. One-shot paths use this to release
+ * their ephemeral context registration once the run ends.
  *
  * Errors are swallowed (the server may already be gone if MCP itself
  * crashed). The local cache entry is removed unconditionally so a
  * future `ensureChatMcpServer` re-registers — otherwise the cache
  * short-circuit would skip a server the upstream no longer has.
  *
- * Note: Kilo's handler deliberately does NOT call this in its
- * per-turn `finally` (the disconnect-others-then-add dance in
- * `ensureChatMcpServer` handles the rotation, and re-registering the
- * same chat's server every turn costs ~800ms of subprocess spawn).
- * OpenCode's handler still calls it for now; the next refactor pass
- * will align both backends on the keep-across-turns policy.
+ * Chat handlers deliberately keep registrations cached across turns;
+ * per-prompt tool overrides provide cross-chat visibility isolation.
  */
 export async function disconnectChatMcpServer<
   TClient extends RemoteAgentClient,
@@ -335,7 +321,7 @@ export async function disconnectChatMcpServer<
 /**
  * Snapshot of the locally-cached MCP server registrations. Test-only:
  * `registeredMcpServers` is module-private state that integration tests
- * need to inspect to assert chat-switch isolation actually fired (the
+ * need to inspect to assert concurrent registrations are retained (the
  * upstream's GET /mcp returns {} regardless of state, so we can't query
  * the server itself).
  */

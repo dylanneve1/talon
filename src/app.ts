@@ -148,13 +148,14 @@ async function gracefulShutdown(signal: string): Promise<void> {
   await shutdownStep("frontends", () =>
     Promise.allSettled(frontends.map((frontend) => frontend.stop())),
   );
-  if (config.backend === "opencode") {
-    await shutdownStep("opencode server", async () => {
-      const { stopOpenCodeServer } =
-        await import("./backend/opencode/index.js");
-      stopOpenCodeServer();
-    });
-  }
+  // Tear down every instantiated backend, including per-chat overrides.
+  // Checking only config.backend orphaned an OpenCode child whenever the
+  // process default was Claude but one chat had switched to OpenCode.
+  await shutdownStep("backend pool", async () => {
+    const { cleanupBackendPool } =
+      await import("./core/engine/backend-controller/index.js");
+    await cleanupBackendPool();
+  });
   // Destroy plugins (cleanup resources)
   if (config.plugins.length > 0) {
     await shutdownStep("plugins", async () => {

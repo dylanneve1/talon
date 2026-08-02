@@ -153,10 +153,9 @@ export async function startFakeRemoteServer(
   };
 
   /**
-   * Pick the talon chat MCP server (named `talon-tools-*`). Use the MOST
-   * RECENT registration — after a chat switch the previous chat's server is
-   * disconnected and its gateway context cleared, so the current chat's server
-   * is the last one added.
+   * Pick the talon chat MCP server (named `talon-tools-*`). The stub executes
+   * turns serially, so the most recent registration matches the prompt's chat;
+   * production additionally scopes the visible catalog per prompt.
    */
   const talonServerName = () => {
     const talon = [...mcpServers.keys()].filter((n) =>
