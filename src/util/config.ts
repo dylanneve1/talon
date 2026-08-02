@@ -340,6 +340,16 @@ const configSchema = z.object({
   allowedUsers: z.array(z.number().int()).optional(), // Whitelist of user IDs allowed to DM the bot
   pulse: z.boolean().default(true),
   pulseIntervalMs: z.number().int().min(60000).default(300000),
+  /**
+   * Warn the admin chat when a subscription rate-limit window crosses
+   * `planAlertThreshold`. Off by default. Needs a backend that reports plan
+   * limits (Claude on a subscription); one message per window per reset
+   * cycle.
+   */
+  planAlerts: z.boolean().default(false),
+  planAlertThreshold: z.number().int().min(1).max(100).default(80),
+  /** Chat that receives plan warnings. Defaults to `adminUserId`. */
+  planAlertChatId: z.string().optional(),
   /** Background memory-consolidation (dream) runs. Mirrors `pulse`/`heartbeat`. */
   dream: z.boolean().default(true),
   /**

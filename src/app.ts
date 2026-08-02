@@ -11,6 +11,7 @@ import { startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
 import { flushDatabase } from "./storage/db.js";
 import { getActiveCount } from "./core/engine/dispatcher.js";
 import { startPulseTimer, stopPulseTimer } from "./core/background/pulse.js";
+import { stopPlanAlerts } from "./core/background/plan-alerts.js";
 import {
   startHeartbeatTimer,
   stopHeartbeatTimer,
@@ -179,6 +180,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
     await awaitHeartbeat();
   });
   await shutdownStep("cron timer", stopCronTimer);
+  await shutdownStep("plan alerts", stopPlanAlerts);
   await shutdownStep("trigger prune timer", () => {
     if (triggerPruneTimer) clearInterval(triggerPruneTimer);
     triggerPruneTimer = null;

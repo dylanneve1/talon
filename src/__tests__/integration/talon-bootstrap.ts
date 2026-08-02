@@ -176,6 +176,8 @@ export async function ensureBooted(args: EnsureBootedArgs = {}): Promise<void> {
     concurrency: 1,
     pulse: false,
     pulseIntervalMs: 300_000,
+    planAlerts: false,
+    planAlertThreshold: 80,
     // Dreams read ~/.talon dream state and fire-and-forget a one-shot
     // agent mid-turn — nondeterministic in tests. Explicitly disabled.
     dream: false,
