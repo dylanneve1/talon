@@ -274,6 +274,24 @@ describe("telegram /model — renderModelMenuText", () => {
     );
     expect(text.toLowerCase()).not.toContain("free-tier");
   });
+
+  // Regression: the OpenCode catalog emits the literal hint
+  // "Hint: use /model <name> to switch." as a status line. Rendered
+  // unescaped, Telegram parsed `<name>` as an HTML start tag and
+  // rejected the whole send with 400 "Unsupported start tag", so
+  // /model and the backend switcher silently did nothing.
+  it("escapes HTML metacharacters in status lines and display names", () => {
+    const text = renderModelMenuText(
+      baseState({
+        activeDisplay: "a<b>&c",
+        statusLines: ["Hint: use /model <name> to switch."],
+      }),
+    );
+    expect(text).toContain("Hint: use /model &lt;name&gt; to switch.");
+    expect(text).toContain("<code>a&lt;b&gt;&amp;c</code>");
+    // Only the tags this function itself emits may remain.
+    expect(text.replace(/<\/?(b|i|code)>/g, "")).not.toMatch(/[<>]/);
+  });
 });
 
 // ── renderModelBrowseKeyboard ──────────────────────────────────────────────
