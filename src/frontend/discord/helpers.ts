@@ -15,6 +15,7 @@ import {
 } from "./formatting.js";
 import type { DoctorReport } from "../../core/doctor.js";
 import type { MeshPingResult } from "../../core/mesh/service.js";
+import type { BackendUsageEntry } from "../shared/plan-usage-report.js";
 import {
   DEFAULT_PULSE_INTERVAL_MS,
   formatDuration,
@@ -275,6 +276,30 @@ export function renderMeshReport(
   section("Responding", responding);
   section("Unreachable", unreachable);
   section("Offline", offline);
+
+  return lines.join("\n");
+}
+
+/** Render the `/usage` report — one block per exposed backend. */
+export function renderUsageMessage(entries: BackendUsageEntry[]): string {
+  const lines = ["**📊 Plan usage**"];
+
+  for (const entry of entries) {
+    const name = entry.label || entry.id;
+    if (!entry.plan) {
+      lines.push("", `**${name}** — _${entry.note ?? ""}_`);
+      continue;
+    }
+    const age = entry.plan.ageLabel ? ` *(${entry.plan.ageLabel})*` : "";
+    const plan = entry.plan.plan ? ` · ${entry.plan.plan}` : "";
+    lines.push("", `**${name}**${plan}${age}`);
+    for (const w of entry.plan.windows) {
+      const reset = w.resetLabel ? ` reset ${w.resetLabel}` : "";
+      lines.push(
+        `  \`${w.label.padEnd(6)}${w.bar} ${String(w.percent).padStart(3)}%\`${reset}`,
+      );
+    }
+  }
 
   return lines.join("\n");
 }

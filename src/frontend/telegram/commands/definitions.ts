@@ -28,6 +28,7 @@ export const TELEGRAM_COMMANDS: ReadonlyArray<{
   { command: "pulse", description: "Conversation engagement settings" },
   { command: "reset", description: "Clear session and start fresh" },
   { command: "restart", description: "Restart the bot (admin)" },
+  { command: "usage", description: "Plan limits across every backend" },
   { command: "metrics", description: "Aggregate performance metrics" },
   {
     command: "doctor",

@@ -99,6 +99,10 @@ export function buildCommandDefinitions(devBuild = false): unknown[] {
       .setDescription("List loaded plugins")
       .toJSON(),
     new SlashCommandBuilder()
+      .setName("usage")
+      .setDescription("Plan limits across every backend")
+      .toJSON(),
+    new SlashCommandBuilder()
       .setName("doctor")
       .setDescription("Environment and native-module health (admin)")
       .toJSON(),

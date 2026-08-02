@@ -7,7 +7,13 @@ import {
   type Client,
   MessageFlags,
 } from "discord.js";
-import { formatDuration, renderMeshReport } from "../helpers.js";
+import {
+  formatDuration,
+  renderMeshReport,
+  renderUsageMessage,
+} from "../helpers.js";
+import type { TalonConfig } from "../../../util/config.js";
+import { collectPlanUsage } from "../../shared/plan-usage-report.js";
 import { getLoadedPlugins } from "../../../core/plugin/index.js";
 import { getMeshService } from "../../../core/mesh/index.js";
 import type { MeshPingResult } from "../../../core/mesh/service.js";
@@ -67,6 +73,20 @@ export async function handleHelp(
     ].join("\n"),
     true,
   );
+}
+
+/**
+ * /usage — plan limits across every exposed backend, not just this chat's.
+ * Not admin-gated: it says how close the shared account is to a wall, which
+ * is exactly what a user hitting one needs to know.
+ */
+export async function handleUsage(
+  i: ChatInputCommandInteraction,
+  config: TalonConfig,
+): Promise<void> {
+  await i.deferReply({ flags: MessageFlags.Ephemeral });
+  const entries = await collectPlanUsage(config);
+  await i.editReply(renderUsageMessage(entries));
 }
 
 export async function handleMesh(

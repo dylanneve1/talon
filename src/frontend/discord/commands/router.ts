@@ -28,6 +28,7 @@ import {
   handlePing,
   handlePlugins,
   handleMesh,
+  handleUsage,
 } from "./info.js";
 import { handleReset, handleStatus } from "./session.js";
 import {
@@ -150,6 +151,8 @@ async function routeSlashCommand(
       return handleDream(interaction);
     case "plugins":
       return handlePlugins(interaction);
+    case "usage":
+      return handleUsage(interaction, config);
     case "doctor":
       return handleDoctor(interaction, config);
     case "mesh":
