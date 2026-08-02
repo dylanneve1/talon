@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.15.1](https://github.com/dylanneve1/talon/compare/v3.15.0...v3.15.1) (2026-08-02)
+
+
+### Bug Fixes
+
+* **remote:** harden OpenCode and Kilo runtime parity ([#705](https://github.com/dylanneve1/talon/issues/705)) ([5a67c0d](https://github.com/dylanneve1/talon/commit/5a67c0d21771fa31f49b1b4fffb76336ca2b3400))
+* **runtime:** harden model menu and restart handoff ([#704](https://github.com/dylanneve1/talon/issues/704)) ([87554b4](https://github.com/dylanneve1/talon/commit/87554b4b5c9dd0cfc9192b7d72eb73ee6112ec63))
+
 ## [3.15.0](https://github.com/dylanneve1/talon/compare/v3.14.0...v3.15.0) (2026-07-31)
 
 
