@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.15.3](https://github.com/dylanneve1/talon/compare/v3.15.2...v3.15.3) (2026-08-02)
+
+
+### Bug Fixes
+
+* **remote:** stop OpenCode and Kilo re-sending progress text at end of turn ([#711](https://github.com/dylanneve1/talon/issues/711)) ([d3be553](https://github.com/dylanneve1/talon/commit/d3be5531f87c2fe730c8838701819050c9851303))
+
 ## [3.15.2](https://github.com/dylanneve1/talon/compare/v3.15.1...v3.15.2) (2026-08-02)
 
 
