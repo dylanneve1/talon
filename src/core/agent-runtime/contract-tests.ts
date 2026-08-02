@@ -272,16 +272,16 @@ export async function assertModelCatalogDefaultShape(
 }
 
 /**
- * Backends that expose `UsageTelemetry` must answer
- * `getSessionSnapshot` with either a `UsageSnapshot` object whose
- * counters are non-negative numbers, or `undefined`. Negative
- * counters or `NaN`s are contract violations.
+ * Backends that implement `getSessionSnapshot` must answer it with
+ * either a `UsageSnapshot` object whose counters are non-negative
+ * numbers, or `undefined`. Negative counters or `NaN`s are contract
+ * violations. Backends that only report plan limits are skipped.
  */
 export async function assertUsageTelemetryShape(
   backend: Backend,
   sessionId = "contract-test-session",
 ): Promise<void> {
-  if (!backend.usage) return;
+  if (!backend.usage?.getSessionSnapshot) return;
   const snapshot = await backend.usage.getSessionSnapshot(sessionId);
   if (snapshot === undefined) return;
   const fields: (keyof typeof snapshot)[] = [

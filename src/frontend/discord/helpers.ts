@@ -20,6 +20,7 @@ export {
   formatDuration,
   formatTokenCount,
   formatBytes,
+  formatUsd,
   formatModelLabel,
 } from "../shared/format.js";
 

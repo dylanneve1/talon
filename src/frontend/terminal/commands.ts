@@ -18,6 +18,7 @@ import {
 import {
   buildCacheDisplay,
   buildContextDisplay,
+  buildPlanDisplay,
   buildContextBreakdown,
   estimateContextTokens,
   apportionCells,
@@ -43,6 +44,7 @@ import {
   setSessionName,
 } from "../../storage/sessions.js";
 import { getLoadedPlugins } from "../../core/plugin/index.js";
+import { getPooledBackend } from "../../core/engine/backend-controller/index.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -429,6 +431,24 @@ export function registerBuiltinCommands(): void {
         ctx.renderer.writeln(
           `  ${pc.dim(`estimated session cost ${formatUsd(u.estimatedCostUsd)}`)}`,
         );
+      }
+
+      const planSource = be?.usage?.getPlanUsage
+        ? be
+        : getPooledBackend("claude");
+      const plan = buildPlanDisplay(
+        await planSource?.usage?.getPlanUsage?.().catch(() => undefined),
+      );
+      if (plan) {
+        ctx.renderer.writeln();
+        ctx.renderer.writeln(
+          `  ${pc.bold("Plan")}${plan.plan ? `  ${plan.plan}` : ""}${plan.ageLabel ? pc.dim(`  (${plan.ageLabel})`) : ""}`,
+        );
+        for (const w of plan.windows) {
+          ctx.renderer.writeln(
+            `  ${w.label.padEnd(6)}${pc.dim(w.bar)} ${String(w.percent).padStart(3)}%${w.resetLabel ? pc.dim(`  reset ${w.resetLabel}`) : ""}`,
+          );
+        }
       }
       if (backendModelLine) {
         ctx.renderer.writeln();

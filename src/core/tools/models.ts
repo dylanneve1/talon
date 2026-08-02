@@ -29,6 +29,15 @@ export const modelTools: ToolDefinition[] = [
   },
 
   {
+    name: "plan_usage",
+    description:
+      "Read your own subscription usage: how much of the 5-hour, weekly, and per-model rate-limit windows is spent, and when each resets. Use it before starting long or expensive work, or when deciding whether to defer something. Only answers on a subscription-backed Anthropic backend; other providers report no plan limits.",
+    schema: {},
+    execute: (_params, bridge) => bridge("plan_usage", {}),
+    tag: "models",
+  },
+
+  {
     name: "list_backends",
     description:
       "List the available backends (providers) and which one this chat is currently using. Useful for understanding the model/provider landscape. Note: a per-job `model` override must stay on this chat's current backend, so use list_models (no argument) to pick a model for a trigger or cron job.",

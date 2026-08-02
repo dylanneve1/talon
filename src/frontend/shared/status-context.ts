@@ -1,4 +1,6 @@
 import type { CacheMetricsSupport } from "../../core/types.js";
+import type { PlanUsage } from "../../core/agent-runtime/capabilities.js";
+import { formatSmartTimestamp, formatRelativeAge } from "../../util/time.js";
 
 // ── /context breakdown ────────────────────────────────────────────────────────
 
@@ -282,5 +284,65 @@ export function buildCacheDisplay(input: {
     read,
     write,
     showsWrite: mode === "readwrite",
+  };
+}
+
+// ── Plan limits ─────────────────────────────────────────────────────────────
+
+/** Figures older than this are labelled with their age in /status. */
+const PLAN_STALE_AFTER_MS = 5 * 60_000;
+
+export interface PlanWindowDisplay {
+  label: string;
+  percent: number;
+  bar: string;
+  /** Local-time reset, absent for windows the plan reports no reset for. */
+  resetLabel: string | undefined;
+}
+
+export interface PlanDisplay {
+  plan: string | undefined;
+  windows: PlanWindowDisplay[];
+  /** Set only once the figures have aged, e.g. "12m ago". */
+  ageLabel: string | undefined;
+}
+
+function planResetLabel(iso: string | undefined): string | undefined {
+  if (!iso) return undefined;
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return undefined;
+  // Windows are reported a second short of the boundary (20:59:59); round to
+  // the minute so the panel reads 21:00, as the plan's own dashboards do.
+  return formatSmartTimestamp(Math.round(ts / 60_000) * 60_000);
+}
+
+/**
+ * Lay out the subscription's rate-limit windows for /status. Returns null
+ * when the backend has nothing to report, so the section disappears rather
+ * than rendering empty bars.
+ */
+export function buildPlanDisplay(
+  usage: PlanUsage | undefined,
+  barLen = 20,
+): PlanDisplay | null {
+  if (!usage || usage.windows.length === 0) return null;
+
+  const age = Date.now() - usage.fetchedAt;
+  return {
+    plan: usage.plan,
+    ageLabel:
+      age > PLAN_STALE_AFTER_MS
+        ? formatRelativeAge(usage.fetchedAt)
+        : undefined,
+    windows: usage.windows.map((w) => {
+      const percent = Math.max(0, Math.min(100, Math.round(w.percent)));
+      const filled = Math.round((percent / 100) * barLen);
+      return {
+        label: w.label,
+        percent,
+        bar: "█".repeat(filled) + "░".repeat(barLen - filled),
+        resetLabel: planResetLabel(w.resetsAt),
+      };
+    }),
   };
 }

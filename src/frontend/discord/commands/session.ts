@@ -13,6 +13,7 @@ import {
   formatDuration,
   formatTokenCount,
   formatBytes,
+  formatUsd,
 } from "../helpers.js";
 import {
   getBackendIdForChat,
@@ -78,8 +79,18 @@ export async function handleStatus(
           `  Read ${formatTokenCount(s.cache.read)}${s.cache.showsWrite ? `  Write ${formatTokenCount(s.cache.write)}` : ""}`,
         ]
       : []),
-    `  Input ${formatTokenCount(s.inputTokens)}  Output ${formatTokenCount(s.outputTokens)}`,
+    `  Input ${formatTokenCount(s.inputTokens)}  Output ${formatTokenCount(s.outputTokens)}${s.costUsd > 0 ? `  Cost ${formatUsd(s.costUsd)}` : ""}`,
     "",
+    ...(s.plan
+      ? [
+          `**Plan**${s.plan.plan ? `  ${s.plan.plan}` : ""}${s.plan.ageLabel ? ` *(${s.plan.ageLabel})*` : ""}`,
+          ...s.plan.windows.map(
+            (w) =>
+              `  \`${w.label.padEnd(6)}${w.bar} ${String(w.percent).padStart(3)}%\`${w.resetLabel ? ` reset ${w.resetLabel}` : ""}`,
+          ),
+          "",
+        ]
+      : []),
     `**Pulse**  ${s.pulseOn ? "on" : "off"}`,
     `**Workspace**  ${formatBytes(s.diskBytes)}`,
     `**Session**   ${s.sessionName ? `"${s.sessionName}" ` : ""}${s.sessionId ? "`" + s.sessionId.slice(0, 8) + "...`" : "_(new)_"} · ${s.sessionAge} old`,

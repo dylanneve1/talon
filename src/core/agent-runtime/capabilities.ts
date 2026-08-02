@@ -199,10 +199,11 @@ export interface ToolRuntime {
 }
 
 /**
- * `/status` enrichment. Backends that track per-session usage
- * (Codex, OpenAI Agents) implement this. Backends without a
- * per-session model (Claude SDK on a fresh subprocess per turn)
- * return `undefined`.
+ * `/status` enrichment. Both members are optional — a backend
+ * implements whichever it can answer. Backends that track per-session
+ * usage (Codex, OpenAI Agents) supply `getSessionSnapshot`; a backend
+ * with no per-session model (Claude SDK on a fresh subprocess per
+ * turn) omits it and may still report plan limits.
  *
  * The snapshot's `contextModelId` carries the resolved-this-turn
  * model id when the SDK can surface it. Frontend `/status` reads
@@ -211,7 +212,7 @@ export interface ToolRuntime {
  * ChatGPT-OAuth).
  */
 export interface UsageTelemetry {
-  getSessionSnapshot(sessionId: string): Promise<
+  getSessionSnapshot?(sessionId: string): Promise<
     | {
         inputTokens?: number;
         outputTokens?: number;
@@ -221,6 +222,31 @@ export interface UsageTelemetry {
       }
     | undefined
   >;
+  /**
+   * Subscription rate-limit windows. Account-level rather than
+   * per-chat: `/status` renders whichever backend can answer, even
+   * when another one is serving the chat. Absent on backends with no
+   * plan concept; resolves `undefined` when the data can't be read.
+   */
+  getPlanUsage?(): Promise<PlanUsage | undefined>;
+}
+
+/** One subscription rate-limit window, as `/status` renders it. */
+export interface PlanWindow {
+  /** Short label — `5h`, `7d`, or the scoped model's display name. */
+  label: string;
+  /** Window utilisation, 0-100. */
+  percent: number;
+  /** ISO timestamp of the next reset, when the plan reports one. */
+  resetsAt?: string;
+}
+
+export interface PlanUsage {
+  /** Subscription tier (`max`, `pro`, …) when known. */
+  plan?: string;
+  windows: PlanWindow[];
+  /** Epoch ms of the read, so renderers can flag figures as aged. */
+  fetchedAt: number;
 }
 
 /**

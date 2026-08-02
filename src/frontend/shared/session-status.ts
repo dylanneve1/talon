@@ -23,11 +23,14 @@ import { isPulseEnabled } from "../../core/background/pulse.js";
 import { getWorkspaceDiskUsage } from "../../util/workspace.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { resolveActiveModelForChat } from "../../core/models/active-model.js";
+import { getPooledBackend } from "../../core/engine/backend-controller/index.js";
 import {
   buildCacheDisplay,
   buildContextDisplay,
+  buildPlanDisplay,
   type CacheDisplay,
   type ContextDisplay,
+  type PlanDisplay,
 } from "./status-context.js";
 import { formatDuration } from "./format.js";
 
@@ -70,8 +73,10 @@ export interface SessionStatusData {
   pulseOn: boolean;
   context: ContextDisplay;
   cache: CacheDisplay | null;
+  plan: PlanDisplay | null;
   inputTokens: number;
   outputTokens: number;
+  costUsd: number;
   turns: number;
   turnsModelLabel: string | undefined;
   lastResponseMs: number;
@@ -157,6 +162,16 @@ export async function collectSessionStatus(
     contextWindow: ctxMax,
   });
 
+  // Plan limits belong to the account, not the chat: fall back to the pooled
+  // Claude backend so the section still shows while another provider serves
+  // this chat.
+  const planSource = backend?.usage?.getPlanUsage
+    ? backend
+    : getPooledBackend("claude");
+  const plan = buildPlanDisplay(
+    await planSource?.usage?.getPlanUsage?.().catch(() => undefined),
+  );
+
   const avgResponseMs =
     info.turns > 0 && u.totalResponseMs
       ? Math.round(u.totalResponseMs / info.turns)
@@ -170,8 +185,10 @@ export async function collectSessionStatus(
     pulseOn: isPulseEnabled(chatId),
     context,
     cache,
+    plan,
     inputTokens,
     outputTokens,
+    costUsd: u.estimatedCostUsd,
     turns: info.turns,
     turnsModelLabel,
     lastResponseMs: u.lastResponseMs || 0,

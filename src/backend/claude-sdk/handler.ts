@@ -36,6 +36,7 @@ import { applyRetryDecisionStream } from "../shared/handle-retry.js";
 import { getConfig } from "./state.js";
 import { buildSdkOptions, getActiveFrontends } from "./options.js";
 import { waitForMcpServersReady } from "./mcp-ready.js";
+import { invalidatePlanUsage } from "./plan-usage.js";
 import { frontendsForChat } from "../shared/frontends.js";
 import {
   createStreamState,
@@ -43,6 +44,7 @@ import {
   isStreamEvent,
   isAssistant,
   isResult,
+  isRateLimitEvent,
   isUserMessage,
   extractToolResults,
   processStreamDelta,
@@ -384,6 +386,14 @@ export async function* runChatTurn(
         continue;
       }
 
+      // The turn just moved the plan's usage — drop the cached windows so
+      // the next /status reads them again instead of showing pre-turn
+      // figures.
+      if (isRateLimitEvent(message)) {
+        invalidatePlanUsage();
+        continue;
+      }
+
       if (isResult(message)) {
         processResultMessage(message, state, options.model ?? activeModel);
         armPostResultWatchdog();
@@ -515,6 +525,7 @@ export async function* runChatTurn(
     contextTokens: state.contextTokens,
     contextWindow: state.contextWindow,
     numApiCalls: state.numApiCalls,
+    costUsd: state.costUsd,
   });
 
   // Set a descriptive session name from the first message.
