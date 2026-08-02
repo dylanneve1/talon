@@ -1,7 +1,7 @@
 /**
  * Unified delivery routing for the remote-server backend family.
  *
- * Both OpenCode and Kilo can reach the user through one of four paths
+ * Both OpenCode and Kilo can reach the user through one of several paths
  * after a turn completes. The decision tree below is identical between
  * them, so it lives here as a shared helper instead of being duplicated
  * in each handler.
@@ -19,7 +19,12 @@
  *     marker, or analogous failure path). Surface as a Talon error
  *     instead of shipping the raw upstream string as a reply.
  *   - `text-part` — model emitted plain assistant text and didn't call
- *     a delivery tool. Ship it through `onTextBlock`.
+ *     a delivery tool. Ship the part the user hasn't already seen through
+ *     `onTextBlock` (see `progress` below).
+ *   - `progress` — every line of the reply already reached the user as a
+ *     mid-turn progress message, so there is nothing left to send. Recorded
+ *     distinctly rather than as `empty`, which means "the model said
+ *     nothing at all".
  *   - `empty` — no tool, no text, no synthetic-error. Surface a concise
  *     notice so the user isn't left staring at silence.
  *
@@ -29,11 +34,13 @@
  */
 
 import type { StreamState } from "./stream-state.js";
+import { undeliveredResponseText } from "./stream-state.js";
 import { logWarn } from "../../util/log.js";
 import { incrementCounter } from "../../storage/metrics.js";
 
 /** Route the delivery decision selected. */
-export type DeliveryRoute = "tool" | "text-part" | "synthetic-error" | "empty";
+export type DeliveryRoute =
+  "tool" | "text-part" | "progress" | "synthetic-error" | "empty";
 
 export class TextBlockDeliveryError extends Error {
   readonly route: DeliveryRoute;
@@ -163,23 +170,41 @@ export async function routeDelivery(
     };
   }
 
-  // Route 3 — plain text part. Ship it.
-  if (responseText && !state.turnTerminated) {
+  // Route 3 — plain text part. Ship only what the user hasn't already seen.
+  //
+  // The remote-server backends flush each pre-tool segment through
+  // `onTextBlock` as a progress message, and `closeCurrentSegment` also folds
+  // that segment into `allResponseText`. Shipping `responseText` wholesale
+  // therefore re-sent every narration line a second time, concatenated — the
+  // doubled-message symptom on a tool-heavy OpenCode/Kilo turn.
+  //
+  // The subtraction is gated on a progress send having actually happened.
+  // `responseText` is an explicit input and callers are not required to derive
+  // it from `state` (several pass a literal), so reading the remainder off
+  // `allResponseText` unconditionally would silently drop their reply.
+  const pending =
+    state.progressDeliveredLen > 0
+      ? undeliveredResponseText(state)
+      : responseText;
+  if (pending && !state.turnTerminated) {
     if (onTextBlock) {
       try {
-        await onTextBlock(responseText);
+        await onTextBlock(pending);
       } catch (err) {
         logWarn("agent", `[${chatId}] onTextBlock failed: ${errMsg(err)}`);
         if (propagateDeliveryFailure) {
-          throw new TextBlockDeliveryError(
-            "text-part",
-            responseText.length,
-            err,
-          );
+          throw new TextBlockDeliveryError("text-part", pending.length, err);
         }
       }
     }
-    return { route: "text-part", chars: responseText.length };
+    return { route: "text-part", chars: pending.length };
+  }
+
+  // Route 3b — the whole reply already reached the user as progress messages.
+  // Nothing left to send; recorded distinctly so the turn isn't misfiled as an
+  // empty completion in the logs or the empty-turn counter.
+  if (responseText && !state.turnTerminated) {
+    return { route: "progress", chars: responseText.length };
   }
 
   // Route 4 — empty turn. The model produced no text (and didn't end_turn):

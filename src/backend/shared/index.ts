@@ -96,6 +96,8 @@ export {
   createStreamState,
   appendText,
   closeCurrentSegment,
+  markProgressDelivered,
+  undeliveredResponseText,
   recordToolUse,
   recordTokens,
   pushLiveUsage,

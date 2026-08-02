@@ -28,6 +28,7 @@
 import {
   appendText,
   closeCurrentSegment,
+  markProgressDelivered,
   recordTokens,
   recordToolUse,
   recordToolCall,
@@ -279,6 +280,10 @@ async function processPartUpdate(
   if (progress && ctx.onTextBlock) {
     try {
       await ctx.onTextBlock(progress);
+      // Only now is this text actually with the user. `closeCurrentSegment`
+      // folded it into `allResponseText`, so without this the end-of-turn
+      // delivery would ship it a second time inside the full transcript.
+      markProgressDelivered(ctx.state);
     } catch (err) {
       // Non-fatal — never break the stream loop on a UI callback. Logged
       // at debug level so a repeatedly-failing frontend is visible to
