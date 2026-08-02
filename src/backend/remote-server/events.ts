@@ -449,7 +449,7 @@ export function finalizePartsIntoState(inputs: FinalizePartsInputs): {
     const callID = typeof part.callID === "string" ? part.callID : "";
     const toolName = typeof part.tool === "string" ? part.tool : "tool";
     if (callID && seenToolCallIds.has(callID)) continue;
-    if (stateObj?.input) {
+    if (stateObj?.status === "completed" && stateObj.input) {
       if (callID) seenToolCallIds.add(callID);
       recordToolUse(state, toolName, stateObj.input);
       toolsProcessed++;

@@ -26,6 +26,7 @@ import {
   finalizePartsIntoState,
 } from "../../remote-server/events.js";
 import { subscribeSseStream } from "../../remote-server/sse-stream.js";
+import { awaitRemoteTurn } from "../../remote-server/turn-timeout.js";
 import { findLastAssistantMessage as findLastAssistantMessageShared } from "../../remote-server/messages.js";
 
 export interface RunOpenCodeTurnInputs {
@@ -111,16 +112,21 @@ export async function runOpenCodeTurn(
   try {
     // Fire and forget — promptAsync returns immediately. The await below
     // is on the SSE close event.
-    await oc.session.promptAsync({
-      sessionID: sessionId,
-      parts: [{ type: "text", text: prompt }],
-      model: { providerID, modelID },
-      system: systemPrompt,
-      ...(toolOverrides ? { tools: toolOverrides } : {}),
-    });
+    await awaitRemoteTurn(
+      (async () => {
+        await oc.session.promptAsync({
+          sessionID: sessionId,
+          parts: [{ type: "text", text: prompt }],
+          model: { providerID, modelID },
+          system: systemPrompt,
+          ...(toolOverrides ? { tools: toolOverrides } : {}),
+        });
 
-    // Await turn completion via SSE.
-    await sseDone;
+        // Await turn completion via SSE.
+        await sseDone;
+      })(),
+      { client: oc, sessionId, chatId, label: "OpenCode" },
+    );
 
     // Read authoritative final state from the messages endpoint.
     const messagesResp = await oc.session.messages({ sessionID: sessionId });
@@ -158,7 +164,10 @@ export async function runOpenCodeTurn(
     throw err;
   } finally {
     sseAbort.abort();
-    await sseDone.catch(() => {});
+    // A dead SSE socket may ignore the local abort flag until another event
+    // arrives. Bound cleanup so a timed-out turn cannot wedge its caller in
+    // the finally block it was meant to escape.
+    await Promise.race([sseDone.catch(() => {}), sleep(1_000)]);
     await questionWatchdog.catch(() => {});
     try {
       await Promise.all([
@@ -217,7 +226,7 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
   // `subscribeSseStream` handles the narrowing with a runtime guard + the
   // subscribe-failed warning.
   const stream = await subscribeSseStream(oc, chatId);
-  if (!stream) return;
+  if (!stream) throw new Error("OpenCode SSE connection unavailable");
 
   try {
     for await (const evt of stream) {

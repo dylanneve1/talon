@@ -23,7 +23,6 @@ import {
 } from "@kilocode/sdk/v2";
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
-import { logWarn } from "../../util/log.js";
 import { buildDeliveryContract } from "../shared/delivery-contract.js";
 import {
   guessProviderID,
@@ -39,6 +38,7 @@ import {
   ensurePluginMcpServers as ensurePluginMcpServersShared,
   buildToolOverrides as buildToolOverridesShared,
   disconnectChatMcpServer as disconnectChatMcpServerShared,
+  refreshPluginMcpServers as refreshPluginMcpServersShared,
   ensureRemoteSession,
   resolveProviderID as resolveProviderIDShared,
   getRegisteredMcpServerNames as getRegisteredMcpServerNamesShared,
@@ -121,35 +121,6 @@ export function initKiloAgent(
   state.config = cfg;
   if (getGatewayPort) state.gatewayPortFn = getGatewayPort;
   if (frontend) state.frontendName = frontend;
-
-  // Pre-warm plugin MCP servers in the background so the first chat
-  // message doesn't pay the ~12s subprocess-spawn cost. We don't pre-warm
-  // chat-namespaced servers (those depend on chatId, not known yet); the
-  // first turn for any chat still incurs ~800ms for that one server, but
-  // the dominant cost (16+ plugin servers in series) is amortised away.
-  // Errors are swallowed — pre-warm is best-effort, the per-turn ensure
-  // still runs and would log any real failures.
-  prewarmPluginMcpServers().catch((err) => {
-    logWarn(
-      "agent",
-      `Plugin MCP pre-warm failed (non-fatal): ${sharedErrMsg(err)}`,
-    );
-  });
-}
-
-/**
- * Background pre-warm of plugin MCP servers. Connects each
- * plugin-provided MCP server to the Kilo HTTP server eagerly so the
- * first turn doesn't spend 12+ seconds spawning subprocesses in
- * series.
- */
-async function prewarmPluginMcpServers(): Promise<void> {
-  const client = await ensureServer();
-  // Sentinel chat id so plugin MCP servers don't bind their bridge calls
-  // to a real chat (those calls would fail the gateway's active-context
-  // check anyway). Plugin tools that need a real chat context get
-  // re-bound when a chat actually starts.
-  await ensurePluginMcpServers(client, "prewarm");
 }
 
 /**
@@ -226,8 +197,9 @@ export function ensurePluginMcpServers(
 export function buildToolOverrides(
   oc: KiloClient,
   chatServerName: string,
+  pluginServerNames: readonly string[] = [],
 ): Promise<Record<string, boolean> | undefined> {
-  return buildToolOverridesShared(oc, state, chatServerName);
+  return buildToolOverridesShared(oc, state, chatServerName, pluginServerNames);
 }
 
 /** Disconnect a per-chat MCP server (explicit teardown for hot-swap paths). */
@@ -236,6 +208,15 @@ export function disconnectChatMcpServer(
   serverName: string,
 ): Promise<void> {
   return disconnectChatMcpServerShared(oc, state, serverName);
+}
+
+export async function refreshPluginMcpServers(chatId: string) {
+  const oc = await ensureServer();
+  return refreshPluginMcpServersShared(oc, state, chatId);
+}
+
+export function updateSystemPrompt(prompt: string): void {
+  if (state.config) state.config.systemPrompt = prompt;
 }
 
 // ── Session management ─────────────────────────────────────────────────────

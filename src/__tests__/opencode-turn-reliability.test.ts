@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { runOpenCodeTurn } from "../backend/opencode/handler/turn.js";
 import { createStreamState } from "../backend/shared/index.js";
+import {
+  awaitRemoteTurn,
+  RemoteTurnTimeoutError,
+} from "../backend/remote-server/turn-timeout.js";
+import { subscribeSseStream } from "../backend/remote-server/sse-stream.js";
 
 async function* turnEvents(): AsyncGenerator<unknown> {
   yield {
@@ -71,5 +76,36 @@ describe("OpenCode turn reliability", () => {
       expect.objectContaining({ tools: toolOverrides }),
     );
     expect(abort).not.toHaveBeenCalled();
+  });
+
+  it("aborts and rejects a remote turn that exceeds its deadline", async () => {
+    const abort = vi.fn(async () => ({ data: true }));
+    const never = new Promise<void>(() => {});
+
+    await expect(
+      awaitRemoteTurn(never, {
+        client: { session: { abort } },
+        sessionId: "stuck-session",
+        chatId: "chat-1",
+        label: "OpenCode",
+        timeoutMs: 10,
+      }),
+    ).rejects.toBeInstanceOf(RemoteTurnTimeoutError);
+    expect(abort).toHaveBeenCalledWith({ sessionID: "stuck-session" });
+  });
+
+  it("retries transient SSE subscription failures before giving up", async () => {
+    async function* events() {
+      yield { payload: { type: "session.idle" } };
+    }
+    const event = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("socket reset"))
+      .mockResolvedValueOnce({ stream: events() });
+
+    await expect(
+      subscribeSseStream({ global: { event } }, "chat-1"),
+    ).resolves.toBeDefined();
+    expect(event).toHaveBeenCalledTimes(2);
   });
 });

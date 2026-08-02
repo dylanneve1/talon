@@ -44,17 +44,24 @@ export async function subscribeSseStream(
   client: SseSubscribableClient,
   chatId: string,
 ): Promise<AsyncIterable<unknown> | undefined> {
-  let result: unknown;
-  try {
-    result = await client.global.event();
-  } catch (err) {
-    logWarn(
-      "agent",
-      `[${chatId}] SSE subscribe failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return undefined;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const stream = narrowSseResult(await client.global.event());
+      if (stream) return stream;
+      lastError = new Error("response did not contain an async event stream");
+    } catch (err) {
+      lastError = err;
+    }
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
+    }
   }
-  return narrowSseResult(result);
+  logWarn(
+    "agent",
+    `[${chatId}] SSE subscribe failed after 3 attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+  );
+  return undefined;
 }
 
 /**

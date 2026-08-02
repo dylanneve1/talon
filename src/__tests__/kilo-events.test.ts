@@ -541,6 +541,37 @@ describe("finalizePartsIntoState — SSE captured tools to skip", () => {
     expect(seen.has("c2")).toBe(true);
   });
 
+  it("does not backfill failed or still-running tools as delivered", () => {
+    const state = createStreamState();
+    const onToolUse = vi.fn();
+    const seen = new Set<string>();
+    const { toolsProcessed } = finalizePartsIntoState({
+      parts: [
+        {
+          type: "tool",
+          callID: "running",
+          tool: "end_turn",
+          state: { status: "running", input: { text: "not sent" } },
+        },
+        {
+          type: "tool",
+          callID: "failed",
+          tool: "send",
+          state: { status: "error", input: { text: "also not sent" } },
+        },
+      ],
+      state,
+      seenToolCallIds: seen,
+      onToolUse,
+    });
+
+    expect(toolsProcessed).toBe(0);
+    expect(state.toolCalls).toBe(0);
+    expect(state.turnTerminated).toBe(false);
+    expect(onToolUse).not.toHaveBeenCalled();
+    expect(seen).toEqual(new Set());
+  });
+
   it("never throws when onToolUse throws", () => {
     const state = createStreamState();
     const onToolUse = vi.fn(() => {

@@ -19,6 +19,8 @@ import {
   type ChatBackend,
   type BackgroundRunner,
   type ModelCatalog,
+  type SystemControl,
+  type ToolRuntime,
   type UsageTelemetry,
 } from "../../core/agent-runtime/capabilities.js";
 
@@ -35,6 +37,8 @@ import {
   getProviderModels as ocGetProviderModels,
   formatModelError as ocFormatModelError,
   listModels as ocListModels,
+  refreshPluginMcpServers as ocRefreshPluginMcpServers,
+  updateSystemPrompt as ocUpdateSystemPrompt,
 } from "./index.js";
 
 const opencodeFactory: BackendFactory = {
@@ -95,6 +99,14 @@ const opencodeFactory: BackendFactory = {
       },
     };
 
+    const tools: ToolRuntime = {
+      refreshTools: (chatId) => ocRefreshPluginMcpServers(chatId),
+    };
+
+    const control: SystemControl = {
+      updateSystemPrompt: (prompt) => ocUpdateSystemPrompt(prompt),
+    };
+
     const backend = composeBackend({
       id: "opencode",
       label: "OpenCode",
@@ -102,7 +114,9 @@ const opencodeFactory: BackendFactory = {
       chat,
       background,
       models,
+      tools,
       usage,
+      control,
     });
 
     return {

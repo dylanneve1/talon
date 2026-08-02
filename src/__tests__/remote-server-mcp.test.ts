@@ -363,8 +363,10 @@ describe("remote-server / mcp helpers", () => {
       });
     });
 
-    it("returns undefined and logs a warning when tool.ids throws", async () => {
+    it("keeps synthesized isolation overrides when tool.ids throws", async () => {
       const state = makeState();
+      state.registeredMcpServers.add("talon-tools-chatA");
+      state.registeredMcpServers.add("talon-tools-chatB");
       const { client } = makeMockClient();
       client.tool.ids = vi.fn(async () => {
         throw new Error("upstream timeout");
@@ -375,7 +377,32 @@ describe("remote-server / mcp helpers", () => {
         state,
         "talon-tools-chatA",
       );
-      expect(overrides).toBeUndefined();
+      expect(overrides).toMatchObject({
+        "talon-tools-chatA_end_turn": true,
+        "talon-tools-chatB_end_turn": false,
+      });
+    });
+
+    it("isolates chat-scoped plugin tools as well as Talon tools", async () => {
+      const state = makeState();
+      state.registeredMcpServers.add("talon-tools-chatA");
+      state.registeredMcpServers.add("talon-plugin-chatA-memory");
+      state.registeredMcpServers.add("talon-plugin-chatB-memory");
+      state.registeredMcpTools.set("talon-plugin-chatA-memory", ["search"]);
+      state.registeredMcpTools.set("talon-plugin-chatB-memory", ["search"]);
+      const { client } = makeMockClient([]);
+
+      const overrides = await buildToolOverrides(
+        client,
+        state,
+        "talon-tools-chatA",
+        ["talon-plugin-chatA-memory"],
+      );
+
+      expect(overrides).toMatchObject({
+        "talon-plugin-chatA-memory_search": true,
+        "talon-plugin-chatB-memory_search": false,
+      });
     });
   });
 

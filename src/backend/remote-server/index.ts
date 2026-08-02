@@ -51,15 +51,25 @@ export {
 
 export {
   TALON_MCP_SERVER_NAME,
+  TALON_PLUGIN_MCP_SERVER_NAME,
   getChatMcpServerName,
+  getPluginMcpServerName,
+  safeMcpNamePart,
   isTalonToolID,
   ensureChatMcpServer,
   ensurePluginMcpServers,
   buildToolOverrides,
   disconnectChatMcpServer,
+  refreshPluginMcpServers,
   getRegisteredMcpServerNames,
 } from "./mcp.js";
 
 export { buildPermissionRuleset, ensureRemoteSession } from "./sessions.js";
 
 export { type ProviderResolverHooks, resolveProviderID } from "./providers.js";
+
+export {
+  RemoteTurnTimeoutError,
+  remoteTurnTimeoutMs,
+  awaitRemoteTurn,
+} from "./turn-timeout.js";

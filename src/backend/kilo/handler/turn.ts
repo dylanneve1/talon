@@ -19,6 +19,7 @@ import {
 import { createStreamState, recordTokens, sleep } from "../../shared/index.js";
 import { processStreamEvent, finalizePartsIntoState } from "../events.js";
 import { subscribeSseStream } from "../../remote-server/sse-stream.js";
+import { awaitRemoteTurn } from "../../remote-server/turn-timeout.js";
 import { findLastAssistantMessage as findLastAssistantMessageShared } from "../../remote-server/messages.js";
 
 export interface RunKiloTurnInputs {
@@ -111,16 +112,21 @@ export async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
     // Fire and forget — promptAsync returns immediately. The await below
     // is on the SSE close event. Per-prompt overrides hide sibling chats'
     // MCP tools while session permissions independently deny execution.
-    await oc.session.promptAsync({
-      sessionID: sessionId,
-      parts: [{ type: "text", text: prompt }],
-      model: { providerID, modelID },
-      system: systemPrompt,
-      ...(toolOverrides ? { tools: toolOverrides } : {}),
-    });
+    await awaitRemoteTurn(
+      (async () => {
+        await oc.session.promptAsync({
+          sessionID: sessionId,
+          parts: [{ type: "text", text: prompt }],
+          model: { providerID, modelID },
+          system: systemPrompt,
+          ...(toolOverrides ? { tools: toolOverrides } : {}),
+        });
 
-    // Await turn completion via SSE.
-    await sseDone;
+        // Await turn completion via SSE.
+        await sseDone;
+      })(),
+      { client: oc, sessionId, chatId, label: "Kilo" },
+    );
 
     // Read authoritative final state from the messages endpoint. The SSE
     // handler already populated state mid-flight; this re-reads to fill
@@ -159,7 +165,10 @@ export async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
     throw err;
   } finally {
     sseAbort.abort();
-    await sseDone.catch(() => {});
+    // A dead SSE socket may ignore the local abort flag until another event
+    // arrives. Bound cleanup so a timed-out turn cannot wedge its caller in
+    // the finally block it was meant to escape.
+    await Promise.race([sseDone.catch(() => {}), sleep(1_000)]);
     await questionWatchdog.catch(() => {});
     try {
       await Promise.all([
@@ -219,7 +228,7 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
   // subscribe-failed warning. Returns `undefined` for both "subscribe
   // rejected" and "no iterable in the response shape".
   const stream = await subscribeSseStream(oc, chatId);
-  if (!stream) return;
+  if (!stream) throw new Error("Kilo SSE connection unavailable");
 
   try {
     for await (const evt of stream) {

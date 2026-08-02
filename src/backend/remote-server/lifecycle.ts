@@ -182,6 +182,8 @@ export function stopRemoteServer<TClient extends RemoteAgentClient>(
   state.clientPromise = null;
   state.modelProviderCache.clear();
   state.registeredMcpServers.clear();
+  state.registeredMcpTools.clear();
+  state.pluginMcpServersByChat.clear();
   try {
     extraCleanup?.();
   } catch (err) {

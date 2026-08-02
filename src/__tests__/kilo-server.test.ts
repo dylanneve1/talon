@@ -15,6 +15,16 @@ vi.mock("../core/plugin/index.js", () => ({
   getPluginMcpServers: getPluginMcpServersMock,
 }));
 
+vi.mock("../core/mcp-hub/index.js", () => ({
+  talonHubUrl: (bridgeUrl: string, frontend: string, chatId: string) =>
+    `${bridgeUrl}/mcp/talon/${encodeURIComponent(frontend)}/${encodeURIComponent(chatId)}`,
+  pluginHubUrl: (bridgeUrl: string, name: string, chatId: string) =>
+    `${bridgeUrl}/mcp/plugin/${encodeURIComponent(name)}/${encodeURIComponent(chatId)}`,
+  hubPluginServerNames: () =>
+    Object.keys(getPluginMcpServersMock("", "hub-enum")),
+  listHubPluginToolNames: async (name: string) => [`${name}_tool`],
+}));
+
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),
   logWarn: vi.fn(),
@@ -31,6 +41,8 @@ const {
   resolveProviderID,
   parseStoredKiloModelSelection,
   stopKiloServer,
+  getConfig,
+  updateSystemPrompt,
 } = await import("../backend/kilo/server.js");
 
 type MockKiloClient = {
@@ -175,7 +187,10 @@ describe("kilo server helpers", () => {
 
     const registered = await ensurePluginMcpServers(oc as never, "chat-1");
 
-    expect(registered).toEqual(["alpha", "beta"]);
+    expect(registered).toEqual([
+      "talon-plugin-chat-1-alpha",
+      "talon-plugin-chat-1-beta",
+    ]);
     expect(oc.mcp.add).toHaveBeenCalledTimes(2);
   });
 
@@ -193,8 +208,16 @@ describe("kilo server helpers", () => {
     // so no new adds. This is the path that recovers the ~12s/turn we
     // were burning before the cache existed.
     const reRegistered = await ensurePluginMcpServers(oc as never, "chat-1");
-    expect(reRegistered).toEqual(["alpha", "beta"]);
+    expect(reRegistered).toEqual([
+      "talon-plugin-chat-1-alpha",
+      "talon-plugin-chat-1-beta",
+    ]);
     expect(oc.mcp.add).toHaveBeenCalledTimes(2);
+  });
+
+  it("updates the live system prompt used after plugin reload", () => {
+    updateSystemPrompt("fresh prompt");
+    expect(getConfig().systemPrompt).toBe("fresh prompt");
   });
 
   it("ensureSession reuses a valid existing session and creates a new one when expired", async () => {
@@ -245,6 +268,12 @@ describe("kilo server helpers", () => {
     expect(args.permission).toEqual([
       { permission: "tool", pattern: "talon-tools-chat_a_*", action: "allow" },
       { permission: "tool", pattern: "talon-tools-*", action: "deny" },
+      {
+        permission: "tool",
+        pattern: "talon-plugin-chat_a-*",
+        action: "allow",
+      },
+      { permission: "tool", pattern: "talon-plugin-*", action: "deny" },
       { permission: "tool", pattern: "*", action: "allow" },
       { permission: "edit", pattern: "*", action: "allow" },
       { permission: "bash", pattern: "*", action: "allow" },
@@ -280,6 +309,31 @@ describe("kilo server helpers", () => {
       "openai",
     );
     expect(oc.provider.list).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolveProviderID prefers the connected provider when model ids collide", async () => {
+    const oc = makeClient();
+    oc.provider.list.mockResolvedValue({
+      data: {
+        all: [
+          {
+            id: "openrouter",
+            models: {
+              "nvidia/nemotron:free": { providerID: "openrouter" },
+            },
+          },
+          {
+            id: "kilo",
+            models: { "nvidia/nemotron:free": { providerID: "kilo" } },
+          },
+        ],
+        connected: ["kilo"],
+      },
+    });
+
+    await expect(
+      resolveProviderID(oc as never, "nvidia/nemotron:free"),
+    ).resolves.toBe("kilo");
   });
 
   it("resolveProviderID falls back to guessed provider when catalog has no model match", async () => {

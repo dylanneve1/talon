@@ -41,7 +41,12 @@ export {
 } from "./sessions.js";
 
 // ── Server / lifecycle ─────────────────────────────────────────────────────
-export { initKiloAgent, stopKiloServer } from "./server.js";
+export {
+  initKiloAgent,
+  stopKiloServer,
+  refreshPluginMcpServers,
+  updateSystemPrompt,
+} from "./server.js";
 
 // ── Handler ────────────────────────────────────────────────────────────────
 export { handleMessage } from "./handler/index.js";

@@ -17,7 +17,12 @@ import {
 import { log, logWarn } from "../../util/log.js";
 import type { RemoteAgentClient, RemotePermissionRule } from "./client.js";
 import type { RemoteServerState } from "./state.js";
-import { TALON_MCP_SERVER_NAME, getChatMcpServerName } from "./mcp.js";
+import {
+  TALON_MCP_SERVER_NAME,
+  TALON_PLUGIN_MCP_SERVER_NAME,
+  getChatMcpServerName,
+  safeMcpNamePart,
+} from "./mcp.js";
 
 /**
  * Build the per-session permission ruleset Talon installs on every fresh
@@ -47,11 +52,18 @@ import { TALON_MCP_SERVER_NAME, getChatMcpServerName } from "./mcp.js";
  */
 export function buildPermissionRuleset(chatId: string): RemotePermissionRule[] {
   const ourServerName = getChatMcpServerName(chatId);
+  const ourPluginPrefix = `${TALON_PLUGIN_MCP_SERVER_NAME}-${safeMcpNamePart(chatId, "chat")}-`;
   return [
     { permission: "tool", pattern: `${ourServerName}_*`, action: "allow" },
     {
       permission: "tool",
       pattern: `${TALON_MCP_SERVER_NAME}-*`,
+      action: "deny",
+    },
+    { permission: "tool", pattern: `${ourPluginPrefix}*`, action: "allow" },
+    {
+      permission: "tool",
+      pattern: `${TALON_PLUGIN_MCP_SERVER_NAME}-*`,
       action: "deny",
     },
     { permission: "tool", pattern: "*", action: "allow" },

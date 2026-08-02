@@ -19,6 +19,8 @@ import {
   type ChatBackend,
   type BackgroundRunner,
   type ModelCatalog,
+  type SystemControl,
+  type ToolRuntime,
   type UsageTelemetry,
 } from "../../core/agent-runtime/capabilities.js";
 
@@ -35,6 +37,8 @@ import {
   getProviderModels as kiloGetProviderModels,
   formatModelError as kiloFormatModelError,
   listModels as kiloListModels,
+  refreshPluginMcpServers as kiloRefreshPluginMcpServers,
+  updateSystemPrompt as kiloUpdateSystemPrompt,
 } from "./index.js";
 
 const kiloFactory: BackendFactory = {
@@ -102,6 +106,14 @@ const kiloFactory: BackendFactory = {
       },
     };
 
+    const tools: ToolRuntime = {
+      refreshTools: (chatId) => kiloRefreshPluginMcpServers(chatId),
+    };
+
+    const control: SystemControl = {
+      updateSystemPrompt: (prompt) => kiloUpdateSystemPrompt(prompt),
+    };
+
     const backend = composeBackend({
       id: "kilo",
       label: "Kilo",
@@ -109,7 +121,9 @@ const kiloFactory: BackendFactory = {
       chat,
       background,
       models,
+      tools,
       usage,
+      control,
     });
 
     return {

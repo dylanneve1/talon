@@ -81,6 +81,20 @@ describe("backend registry parity — all built-in backends present", () => {
     expect(getBackend("codex")?.label).toBe("Codex");
     expect(getBackend("openai-agents")?.label).toBe("OpenAI Agents");
   });
+
+  it("gives OpenCode and Kilo live tool-refresh and prompt-control slots", async () => {
+    for (const id of ["opencode", "kilo"] as const) {
+      const instance = await getBackend(id)!.init({} as never, {
+        getBridgePort: () => 19876,
+        frontendName: "telegram",
+      });
+      expect(instance.backend.tools?.refreshTools).toBeTypeOf("function");
+      expect(instance.backend.control?.updateSystemPrompt).toBeTypeOf(
+        "function",
+      );
+      await instance.cleanup?.();
+    }
+  });
 });
 
 describe("backend registry parity — duplicate registration is rejected", () => {

@@ -89,8 +89,12 @@ export async function handleMessage(
   );
   const sessionId = await ensureSession(oc, chatId);
   const chatMcpServerName = await ensureChatMcpServer(oc, chatId);
-  await ensurePluginMcpServers(oc, chatId);
-  const toolOverrides = await buildToolOverrides(oc, chatMcpServerName);
+  const pluginMcpServerNames = await ensurePluginMcpServers(oc, chatId);
+  const toolOverrides = await buildToolOverrides(
+    oc,
+    chatMcpServerName,
+    pluginMcpServerNames,
+  );
 
   // Build the prompt (time tag + sender + msg_id reference)
   const prompt = formatUserPrompt({

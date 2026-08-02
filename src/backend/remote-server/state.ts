@@ -52,6 +52,10 @@ export interface RemoteServerState<TClient extends RemoteAgentClient> {
    * actual state, so we cache locally instead of trusting the server.
    */
   readonly registeredMcpServers: Set<string>;
+  /** Exact tool names exposed by each registered MCP server. */
+  readonly registeredMcpTools: Map<string, readonly string[]>;
+  /** Plugin-name → registered server-name mapping for each chat context. */
+  readonly pluginMcpServersByChat: Map<string, Map<string, string>>;
 }
 
 /** Inputs for {@link createRemoteServerState}. */
@@ -84,6 +88,8 @@ export function createRemoteServerState<TClient extends RemoteAgentClient>(
     serverHandle: null,
     modelProviderCache: new Map(),
     registeredMcpServers: new Set(),
+    registeredMcpTools: new Map(),
+    pluginMcpServersByChat: new Map(),
   };
 }
 
