@@ -28,6 +28,7 @@ export {
   stopOpenCodeServer,
   refreshPluginMcpServers,
   updateSystemPrompt,
+  warmSession,
 } from "./server.js";
 
 export { handleMessage } from "./handler/index.js";

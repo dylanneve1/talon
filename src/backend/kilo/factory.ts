@@ -19,6 +19,7 @@ import {
   type ChatBackend,
   type BackgroundRunner,
   type ModelCatalog,
+  type SessionBackend,
   type SystemControl,
   type ToolRuntime,
   type UsageTelemetry,
@@ -39,6 +40,7 @@ import {
   listModels as kiloListModels,
   refreshPluginMcpServers as kiloRefreshPluginMcpServers,
   updateSystemPrompt as kiloUpdateSystemPrompt,
+  warmSession as kiloWarmSession,
 } from "./index.js";
 
 const kiloFactory: BackendFactory = {
@@ -110,6 +112,15 @@ const kiloFactory: BackendFactory = {
       refreshTools: (chatId) => kiloRefreshPluginMcpServers(chatId),
     };
 
+    // Session state lives on the Kilo server, and `/reset` already clears
+    // Talon's stored id centrally (storage/sessions.ts), so the next turn
+    // creates a fresh one — no `resetChat` needed. `warmSession` front-loads
+    // that creation plus the plugin-MCP sweep, matching what the Claude
+    // backend does after a reset.
+    const sessions: SessionBackend = {
+      warmSession: (chatId) => kiloWarmSession(chatId),
+    };
+
     const control: SystemControl = {
       updateSystemPrompt: (prompt) => kiloUpdateSystemPrompt(prompt),
     };
@@ -121,6 +132,7 @@ const kiloFactory: BackendFactory = {
       chat,
       background,
       models,
+      sessions,
       tools,
       usage,
       control,

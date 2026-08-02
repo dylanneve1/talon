@@ -64,7 +64,12 @@ export {
   getRegisteredMcpServerNames,
 } from "./mcp.js";
 
-export { buildPermissionRuleset, ensureRemoteSession } from "./sessions.js";
+export {
+  buildPermissionRuleset,
+  ensureRemoteSession,
+  warmRemoteSession,
+  type RemoteWarmDeps,
+} from "./sessions.js";
 
 export { type ProviderResolverHooks, resolveProviderID } from "./providers.js";
 

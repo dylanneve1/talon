@@ -118,3 +118,51 @@ export async function ensureRemoteSession<TClient extends RemoteAgentClient>(
 
   return newId;
 }
+
+/**
+ * The per-turn setup a warm-up front-loads. Both remote-server backends
+ * expose these under identical signatures; the shape lets the helper stay
+ * backend-agnostic without importing either SDK.
+ */
+export interface RemoteWarmDeps<TClient extends RemoteAgentClient> {
+  ensureServer(): Promise<TClient>;
+  ensureSession(client: TClient, chatId: string): Promise<string>;
+  ensureChatMcpServer(client: TClient, chatId: string): Promise<string>;
+  ensurePluginMcpServers(client: TClient, chatId: string): Promise<string[]>;
+}
+
+/**
+ * Pre-pay a chat's cold start: spawn the server if it isn't up, create (or
+ * resume) the session, and register the chat + plugin MCP servers.
+ *
+ * This is the remote-server analogue of the Claude backend's `warmSession`,
+ * and closes the last `sessions` capability gap between the two families.
+ * `performSessionReset` and the native frontend call it right after a reset,
+ * so the first turn on a fresh session doesn't serially pay session creation
+ * plus a full plugin-MCP registration sweep — the dominant cold-start cost
+ * here, since each plugin server is a separate connect.
+ *
+ * Best-effort by contract: `/reset` has already succeeded by the time this
+ * runs, and the same work is idempotent and repeated at the head of every
+ * turn. A failure must degrade to a slow first turn, never surface as a
+ * failed reset — so everything is caught and logged, not rethrown.
+ */
+export async function warmRemoteSession<TClient extends RemoteAgentClient>(
+  state: RemoteServerState<TClient>,
+  chatId: string,
+  deps: RemoteWarmDeps<TClient>,
+): Promise<void> {
+  try {
+    const client = await deps.ensureServer();
+    await deps.ensureSession(client, chatId);
+    await deps.ensureChatMcpServer(client, chatId);
+    await deps.ensurePluginMcpServers(client, chatId);
+    log("agent", `[${chatId}] Warmed ${state.label} session`);
+  } catch (err) {
+    logWarn(
+      "agent",
+      `[${chatId}] ${state.label} warm-up skipped (first turn pays cold start): ` +
+        `${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}

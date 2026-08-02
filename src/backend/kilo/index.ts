@@ -46,6 +46,7 @@ export {
   stopKiloServer,
   refreshPluginMcpServers,
   updateSystemPrompt,
+  warmSession,
 } from "./server.js";
 
 // ── Handler ────────────────────────────────────────────────────────────────

@@ -95,6 +95,41 @@ describe("backend registry parity — all built-in backends present", () => {
       await instance.cleanup?.();
     }
   });
+
+  it("gives OpenCode and Kilo the same session-warm hook as Claude", async () => {
+    // `performSessionReset` calls `backend.sessions.warmSession` right
+    // after a reset. Without the slot the remote-server backends silently
+    // skipped it and the first turn on a fresh session serially paid
+    // session creation plus a full plugin-MCP registration sweep — the
+    // dominant cold-start cost on OpenCode/Kilo.
+    for (const id of ["claude", "opencode", "kilo"] as const) {
+      const instance = await getBackend(id)!.init({} as never, {
+        getBridgePort: () => 19876,
+        frontendName: "telegram",
+      });
+      expect(
+        instance.backend.sessions?.warmSession,
+        `expected ${id} to expose sessions.warmSession`,
+      ).toBeTypeOf("function");
+      await instance.cleanup?.();
+    }
+  });
+
+  it("warms without throwing when the remote server is unreachable", async () => {
+    // Contract: a warm-up is best-effort. `/reset` has already succeeded
+    // by the time it runs, so a server that won't spawn must degrade to a
+    // slow first turn — never reject and surface as a failed reset.
+    for (const id of ["opencode", "kilo"] as const) {
+      const instance = await getBackend(id)!.init({} as never, {
+        getBridgePort: () => 19876,
+        frontendName: "telegram",
+      });
+      await expect(
+        instance.backend.sessions!.warmSession!("-100parity"),
+      ).resolves.toBeUndefined();
+      await instance.cleanup?.();
+    }
+  }, 60_000);
 });
 
 describe("backend registry parity — duplicate registration is rejected", () => {

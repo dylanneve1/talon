@@ -40,6 +40,7 @@ import {
   disconnectChatMcpServer as disconnectChatMcpServerShared,
   refreshPluginMcpServers as refreshPluginMcpServersShared,
   ensureRemoteSession,
+  warmRemoteSession,
   resolveProviderID as resolveProviderIDShared,
   getRegisteredMcpServerNames as getRegisteredMcpServerNamesShared,
   errMsg as sharedErrMsg,
@@ -228,6 +229,20 @@ export function updateSystemPrompt(prompt: string): void {
  */
 export function ensureSession(oc: KiloClient, chatId: string): Promise<string> {
   return ensureRemoteSession(oc, state, chatId);
+}
+
+/**
+ * Front-load a chat's cold start after `/reset`. Mirrors the Claude
+ * backend's `warmSession` so the `sessions` capability slot behaves the
+ * same across backends. Never throws — see `warmRemoteSession`.
+ */
+export function warmSession(chatId: string): Promise<void> {
+  return warmRemoteSession(state, chatId, {
+    ensureServer,
+    ensureSession,
+    ensureChatMcpServer,
+    ensurePluginMcpServers,
+  });
 }
 
 // ── Provider resolution ────────────────────────────────────────────────────
