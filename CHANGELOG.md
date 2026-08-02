@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.16.0](https://github.com/dylanneve1/talon/compare/v3.15.3...v3.16.0) (2026-08-02)
+
+
+### Features
+
+* **status:** show plan rate limits and session cost ([#709](https://github.com/dylanneve1/talon/issues/709)) ([d3e2472](https://github.com/dylanneve1/talon/commit/d3e24729ef25b1d1993b476c001eb197047d06c7))
+
 ## [3.15.3](https://github.com/dylanneve1/talon/compare/v3.15.2...v3.15.3) (2026-08-02)
 
 
