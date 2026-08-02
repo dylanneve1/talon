@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.15.2](https://github.com/dylanneve1/talon/compare/v3.15.1...v3.15.2) (2026-08-02)
+
+
+### Bug Fixes
+
+* **telegram:** escape the remaining backend-supplied HTML sinks ([#707](https://github.com/dylanneve1/talon/issues/707)) ([4ac566f](https://github.com/dylanneve1/talon/commit/4ac566f6d45fb8cdf079a1aba6c6e345d941ae03))
+
 ## [3.15.1](https://github.com/dylanneve1/talon/compare/v3.15.0...v3.15.1) (2026-08-02)
 
 
