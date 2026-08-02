@@ -122,6 +122,14 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
   const forceTimer = setTimeout(() => {
     logError("shutdown", "Timeout exceeded, forcing exit");
+    // Hand off even on the forced path. A restart must survive a
+    // subsystem that won't stop (a wedged FUSE unmount, an MCP server
+    // ignoring SIGTERM, a backend child that never acks): without this
+    // the timeout exits without a successor and `/restart` silently
+    // takes the daemon down for good. The successor may briefly race
+    // the long-poll we failed to release, but grammy retries the 409 —
+    // a few seconds of overlap beats staying down.
+    spawnSuccessor();
     process.exit(1);
   }, SHUTDOWN_TIMEOUT_MS);
   forceTimer.unref();
