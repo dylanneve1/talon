@@ -21,6 +21,7 @@ import { pushMessage } from "../../storage/history.js";
 import { registerChat } from "../../core/background/pulse.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
 import { handleMessage, getSenderName } from "./handlers/index.js";
+import { recordReactionToBot } from "../../core/soul/taps.js";
 
 export function registerMiddleware(client: Client, config: TalonConfig): void {
   client.on("messageCreate", (msg: Message) => {
@@ -84,5 +85,28 @@ export function registerMiddleware(client: Client, config: TalonConfig): void {
     handleMessage(client, msg, config).catch(() => {
       /* logged inside */
     });
+  });
+
+  // ── Reaction tap — feed reactions on Talon's own messages to the soul ────
+  // The gateway records outgoing message ids as `Number(snowflake)`, so the
+  // lookup here must use the same conversion to match. Inert unless the soul
+  // is enabled.
+  client.on("messageReactionAdd", async (reaction, user) => {
+    if (user.id === client.user?.id) return;
+    try {
+      // A partial arrives when the message predates the cache; the chat id
+      // can't be built without the channel/guild it belongs to.
+      if (reaction.partial) await reaction.fetch();
+    } catch {
+      return;
+    }
+    const msg = reaction.message;
+    const emoji = reaction.emoji.name;
+    if (!emoji) return;
+    const chatId =
+      msg.channel.type === ChannelType.DM
+        ? `discord_dm_${msg.author?.id ?? user.id}`
+        : `discord_guild_${msg.guildId}_${msg.channelId}`;
+    recordReactionToBot(chatId, Number(msg.id), [emoji]);
   });
 }

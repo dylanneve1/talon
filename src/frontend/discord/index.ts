@@ -73,8 +73,17 @@ export function createDiscordFrontend(
       GatewayIntentBits.MessageContent,
       GatewayIntentBits.DirectMessages,
       GatewayIntentBits.GuildMessageReactions,
+      GatewayIntentBits.DirectMessageReactions,
     ],
-    partials: [Partials.Channel, Partials.Message, Partials.User],
+    // Partials.Reaction is what makes reactions on messages that predate the
+    // current cache arrive at all — without it the soul's reaction tap only
+    // ever sees freshly-cached messages.
+    partials: [
+      Partials.Channel,
+      Partials.Message,
+      Partials.User,
+      Partials.Reaction,
+    ],
     allowedMentions: { parse: [] }, // never ping anyone unless we explicitly opt in
   });
 
