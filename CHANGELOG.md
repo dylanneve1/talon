@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.16.1](https://github.com/dylanneve1/talon/compare/v3.16.0...v3.16.1) (2026-08-03)
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump docker/login-action from 3 to 4.5.2 ([#700](https://github.com/dylanneve1/talon/issues/700)) ([8d7ea6f](https://github.com/dylanneve1/talon/commit/8d7ea6fc1ebb4da256760af461cf62acf9196245))
+* **deps:** Bump github/codeql-action from 3 to 4.37.3 ([#699](https://github.com/dylanneve1/talon/issues/699)) ([f67902c](https://github.com/dylanneve1/talon/commit/f67902cb8f48c33ccac50070239e297d1abb954c))
+
 ## [3.16.0](https://github.com/dylanneve1/talon/compare/v3.15.3...v3.16.0) (2026-08-02)
 
 
