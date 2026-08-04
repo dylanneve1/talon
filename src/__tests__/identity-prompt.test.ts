@@ -91,6 +91,20 @@ describe("voice lives in one place", () => {
     }
   });
 
+  it("base.md carries mechanics, not a second voice spec", () => {
+    // base.md once opened with a "## Conversation" section that paraphrased
+    // identity.md's Voice and Never sections line for line (answer-first,
+    // depth-follows-question, no process narration, clarifying questions).
+    // Every session paid those tokens twice, and paraphrased copies drift.
+    // base.md keeps the tool-use mechanics; the voice spec lives in
+    // identity.md alone.
+    const base = read("base.md");
+    expect(base).not.toContain("## Conversation");
+    expect(base).not.toMatch(/clarifying question/i);
+    expect(base).not.toMatch(/narrate your process/i);
+    expect(base).toContain("## Tools");
+  });
+
   it("keeps each frontend's platform-specific mechanics", () => {
     // De-duplication must not have taken the capability docs with it.
     expect(read("telegram.md")).toMatch(/limited reaction set/);
