@@ -1,5 +1,29 @@
 # Changelog
 
+## [3.17.0](https://github.com/dylanneve1/talon/compare/v3.16.1...v3.17.0) (2026-08-04)
+
+
+### Features
+
+* add /usage — plan limits across every backend ([#718](https://github.com/dylanneve1/talon/issues/718)) ([f9e0af5](https://github.com/dylanneve1/talon/commit/f9e0af563771894f9df20377f62e0ced7e737aef))
+* **background:** warn the admin chat before plan limits run out ([#710](https://github.com/dylanneve1/talon/issues/710)) ([b53bec9](https://github.com/dylanneve1/talon/commit/b53bec9385a377da0579c8d6e4328531d525d0b9))
+* **doctor:** check every exposed backend, and group the idle ones ([#715](https://github.com/dylanneve1/talon/issues/715)) ([710bbb5](https://github.com/dylanneve1/talon/commit/710bbb5abd2ca1a89af5fa2e6dcbf094f7fbc3a5))
+
+
+### Bug Fixes
+
+* **discord:** feed reactions on the bot's messages to the soul ([#714](https://github.com/dylanneve1/talon/issues/714)) ([c99981b](https://github.com/dylanneve1/talon/commit/c99981be87e5dd085e51a0d8821bc7b030600f96))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump knip in the dev-dependencies group ([#720](https://github.com/dylanneve1/talon/issues/720)) ([0834ebc](https://github.com/dylanneve1/talon/commit/0834ebcdf0dd044ab38682992bc2d4c426104817))
+* **deps:** Bump docker/login-action from 4.5.2 to 4.6.0 ([#721](https://github.com/dylanneve1/talon/issues/721)) ([992e6f9](https://github.com/dylanneve1/talon/commit/992e6f9cdcc850dda5057d91591ed93e60652131))
+* **deps:** Bump fast-uri from 3.1.4 to 3.1.5 ([#726](https://github.com/dylanneve1/talon/issues/726)) ([07d93e4](https://github.com/dylanneve1/talon/commit/07d93e4583999a26356bd353c052217cced31d29))
+* **deps:** Bump github/codeql-action from 4.37.3 to 4.37.4 ([#722](https://github.com/dylanneve1/talon/issues/722)) ([b770a8b](https://github.com/dylanneve1/talon/commit/b770a8b86802e4220bf6f7c5ede0b84a6e68858e))
+* **deps:** Bump ip-address from 10.2.0 to 10.4.0 ([#723](https://github.com/dylanneve1/talon/issues/723)) ([f6fe8af](https://github.com/dylanneve1/talon/commit/f6fe8af052fd3cb1034baa0f86c391480218e711))
+* **deps:** Bump undici ([#724](https://github.com/dylanneve1/talon/issues/724)) ([f34ae0f](https://github.com/dylanneve1/talon/commit/f34ae0f9b3bb7324fd4eb17eaa85a636980fd69d))
+
 ## [3.16.1](https://github.com/dylanneve1/talon/compare/v3.16.0...v3.16.1) (2026-08-03)
 
 
