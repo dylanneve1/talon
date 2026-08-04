@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.18.0](https://github.com/dylanneve1/talon/compare/v3.17.0...v3.18.0) (2026-08-04)
+
+
+### Features
+
+* **discord:** add the four commands only Telegram had ([f1cc0ee](https://github.com/dylanneve1/talon/commit/f1cc0ee9b34bbe1e8a8af9294977d028dbb1a687))
+* **models:** paginate the picker, and let Discord switch backends ([3eab3fc](https://github.com/dylanneve1/talon/commit/3eab3fc80b730fd84662dfdd47ef57c8bdaa3f79))
+
 ## [3.17.0](https://github.com/dylanneve1/talon/compare/v3.16.1...v3.17.0) (2026-08-04)
 
 
