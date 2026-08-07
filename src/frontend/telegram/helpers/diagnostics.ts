@@ -222,6 +222,12 @@ export function renderUsageMessage(entries: BackendUsageEntry[]): string {
     const age = entry.plan.ageLabel ? ` <i>(${entry.plan.ageLabel})</i>` : "";
     const plan = entry.plan.plan ? ` · ${escapeHtml(entry.plan.plan)}` : "";
     lines.push("", `<b>${name}</b>${plan}${age}`);
+    if (entry.plan.resetsAvailable) {
+      const n = entry.plan.resetsAvailable;
+      lines.push(
+        `  • You have <b>${n}</b> usage limit reset${n === 1 ? "" : "s"} available`,
+      );
+    }
     for (const w of entry.plan.windows) {
       const reset = w.resetLabel ? ` reset ${w.resetLabel}` : "";
       lines.push(
