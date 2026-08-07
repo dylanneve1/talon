@@ -245,6 +245,8 @@ export interface PlanUsage {
   /** Subscription tier (`max`, `pro`, …) when known. */
   plan?: string;
   windows: PlanWindow[];
+  /** How many one-shot rate-limit resets are still banked, when the plan has them. */
+  resetsAvailable?: number;
   /** Epoch ms of the read, so renderers can flag figures as aged. */
   fetchedAt: number;
 }

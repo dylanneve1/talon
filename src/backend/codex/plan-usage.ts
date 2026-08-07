@@ -95,6 +95,10 @@ export function parseCodexUsage(body: unknown): PlanUsage | undefined {
       primary_window?: RawWindow | null;
       secondary_window?: RawWindow | null;
     };
+    rate_limit_reset_credits?: {
+      available_count?: number;
+      applicable_available_count?: number;
+    } | null;
   } | null;
   const limit = data?.rate_limit;
   if (!limit) return undefined;
@@ -108,6 +112,10 @@ export function parseCodexUsage(body: unknown): PlanUsage | undefined {
   return {
     ...(data?.plan_type ? { plan: data.plan_type } : {}),
     windows,
+    ...(typeof data?.rate_limit_reset_credits?.available_count === "number" &&
+    data.rate_limit_reset_credits.available_count > 0
+      ? { resetsAvailable: data.rate_limit_reset_credits.available_count }
+      : {}),
     fetchedAt: Date.now(),
   };
 }

@@ -303,7 +303,9 @@ export interface PlanWindowDisplay {
 export interface PlanDisplay {
   plan: string | undefined;
   windows: PlanWindowDisplay[];
-  /** Set only once the figures have aged, e.g. "12m ago". */
+  /** Set only when the account still has one-shot rate-limit resets left. */
+  resetsAvailable: number | undefined;
+  /** Set only when the figures have aged, e.g. "12m ago". */
   ageLabel: string | undefined;
 }
 
@@ -330,6 +332,7 @@ export function buildPlanDisplay(
   const age = Date.now() - usage.fetchedAt;
   return {
     plan: usage.plan,
+    resetsAvailable: usage.resetsAvailable,
     ageLabel:
       age > PLAN_STALE_AFTER_MS
         ? formatRelativeAge(usage.fetchedAt)
