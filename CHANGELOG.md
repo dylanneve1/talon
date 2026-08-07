@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.19.0](https://github.com/dylanneve1/talon/compare/v3.18.0...v3.19.0) (2026-08-07)
+
+
+### Features
+
+* **codex:** show banked usage-limit resets on /usage ([ed5b32b](https://github.com/dylanneve1/talon/commit/ed5b32b80809617c54b27efa0776858209e1f771))
+* **codex:** show banked usage-limit resets on the usage command ([b68af66](https://github.com/dylanneve1/talon/commit/b68af66fb8077430a8f7eba281198499931feb35))
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump the production-dependencies group with 4 updates ([#731](https://github.com/dylanneve1/talon/issues/731)) ([dfc7dff](https://github.com/dylanneve1/talon/commit/dfc7dff48c3f2e08d34f49a414981141a72d949d))
+* **deps:** Bump tsx in the production-dependencies group ([#733](https://github.com/dylanneve1/talon/issues/733)) ([8483ea2](https://github.com/dylanneve1/talon/commit/8483ea2b15d1cb6722df2774ae04762e425a0a03))
+
 ## [3.18.0](https://github.com/dylanneve1/talon/compare/v3.17.0...v3.18.0) (2026-08-04)
 
 
