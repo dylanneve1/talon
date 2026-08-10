@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.19.1](https://github.com/dylanneve1/talon/compare/v3.19.0...v3.19.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **test:** give the chat-retention test room on Windows ([cdb230f](https://github.com/dylanneve1/talon/commit/cdb230f6a4fea0934a93b8b8f981c4c5d8eaa3bc))
+* **test:** give the chat-retention test room on Windows ([f08c9c3](https://github.com/dylanneve1/talon/commit/f08c9c3d34c9d22c506580cfc2f630e848aec904))
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump github/codeql-action from 4.37.4 to 4.37.6 ([#737](https://github.com/dylanneve1/talon/issues/737)) ([55b434b](https://github.com/dylanneve1/talon/commit/55b434b20bf830c3fc739e4cdc616a9625d11aeb))
+* **deps:** Bump the production-dependencies group with 6 updates ([#738](https://github.com/dylanneve1/talon/issues/738)) ([9697d7b](https://github.com/dylanneve1/talon/commit/9697d7bdfb4c6485fe324933d0778d6a679d1032))
+
 ## [3.19.0](https://github.com/dylanneve1/talon/compare/v3.18.0...v3.19.0) (2026-08-07)
 
 
