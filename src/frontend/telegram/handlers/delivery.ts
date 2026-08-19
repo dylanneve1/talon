@@ -11,6 +11,7 @@ import { appendDailyLogResponse } from "../../../storage/daily-log.js";
 import { stripMcpPrefix } from "../../../core/tools/index.js";
 import { logWarn } from "../../../util/log.js";
 import { sendText } from "../actions/shared.js";
+import { ambientThreadId } from "../topics.js";
 import { trackDmUser } from "./access.js";
 
 export async function sendHtml(
@@ -22,6 +23,7 @@ export async function sendHtml(
   const params = {
     parse_mode: "HTML" as const,
     reply_parameters: replyToId ? { message_id: replyToId } : undefined,
+    message_thread_id: ambientThreadId(chatId),
   };
   try {
     const sent = await bot.api.sendMessage(chatId, html, params);
@@ -39,6 +41,7 @@ export async function sendHtml(
     } while (plain !== prev);
     const sent = await bot.api.sendMessage(chatId, plain, {
       reply_parameters: replyToId ? { message_id: replyToId } : undefined,
+      message_thread_id: ambientThreadId(chatId),
     });
     return sent.message_id;
   }
@@ -97,7 +100,9 @@ function createStreamCallbacks(
           ? accumulated.slice(0, 3900) + "…"
           : accumulated;
 
-      await bot.api.sendMessageDraft(chatId, state.draftId, display);
+      await bot.api.sendMessageDraft(chatId, state.draftId, display, {
+        message_thread_id: ambientThreadId(chatId),
+      });
       if (draftsSupported === null) draftsSupported = true;
       state.lastSentLength = accumulated.length;
     } catch {

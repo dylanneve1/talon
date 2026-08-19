@@ -18,9 +18,11 @@ import {
 import {
   noteRichMessageFailure,
   richMessagesAvailable,
+  sendOpts,
   sendText,
   toPositiveId,
 } from "./shared.js";
+import { resolveThreadId } from "../topics.js";
 import { TELEGRAM_MAX_TEXT, type TelegramActionHandlers } from "./types.js";
 
 // ── Inline keyboards ─────────────────────────────────────────────────────────
@@ -201,7 +203,14 @@ export const messagingHandlers: TelegramActionHandlers = {
     const text = String(body.text ?? "");
     const replyTo = toPositiveId(body.reply_to_message_id);
     gateway.incrementMessages(chatId);
-    const msgId = await withRetry(() => sendText(bot, chatId, text, replyTo));
+    const extra = {
+      ...sendOpts(body, chatId),
+      link_preview_options:
+        body.no_link_preview === true ? { is_disabled: true } : undefined,
+    };
+    const msgId = await withRetry(() =>
+      sendText(bot, chatId, text, replyTo, undefined, extra),
+    );
     return { ok: true, message_id: msgId };
   },
 
@@ -249,6 +258,23 @@ export const messagingHandlers: TelegramActionHandlers = {
         ok: false,
         error: `Text too long (max ${TELEGRAM_MAX_TEXT})`,
       };
+    // Media messages have captions, not text — editMessageText on them fails
+    // with "there is no text in the message to edit".
+    if (body.is_caption === true) {
+      await withRetry(async () => {
+        try {
+          await bot.api.editMessageCaption(chatId, Number(body.message_id), {
+            caption: markdownToTelegramHtml(text),
+            parse_mode: "HTML",
+          });
+        } catch {
+          await bot.api.editMessageCaption(chatId, Number(body.message_id), {
+            caption: text,
+          });
+        }
+      });
+      return { ok: true };
+    }
     await withRetry(async () => {
       if (richMessagesAvailable()) {
         try {
@@ -275,6 +301,19 @@ export const messagingHandlers: TelegramActionHandlers = {
   },
 
   delete_message: async (body, chatId, { bot }) => {
+    // Bulk form: deleteMessages takes up to 100 ids per call and skips ids
+    // it can't delete instead of failing the batch.
+    if (Array.isArray(body.message_ids) && body.message_ids.length > 0) {
+      const ids = body.message_ids
+        .map(toPositiveId)
+        .filter((n): n is number => n !== undefined);
+      if (ids.length === 0)
+        return { ok: false, error: "message_ids contains no valid ids" };
+      for (let i = 0; i < ids.length; i += 100) {
+        await bot.api.deleteMessages(chatId, ids.slice(i, i + 100));
+      }
+      return { ok: true, deleted: ids.length };
+    }
     await bot.api.deleteMessage(chatId, Number(body.message_id));
     return { ok: true };
   },
@@ -293,22 +332,42 @@ export const messagingHandlers: TelegramActionHandlers = {
   },
 
   forward_message: async (body, chatId, { bot }) => {
-    if (body.to_chat_id && Number(body.to_chat_id) !== chatId)
-      return { ok: false, error: "Cross-chat forwarding not allowed." };
+    // Cross-chat by explicit override; both ends default to the current
+    // chat. The bot can only ever read from / deliver to chats it is in —
+    // Telegram enforces membership on both ids.
+    const from = Number(body.from_chat_id ?? chatId);
+    const to = Number(body.to_chat_id ?? chatId);
+    const ids = Array.isArray(body.message_ids)
+      ? body.message_ids
+          .map(toPositiveId)
+          .filter((n): n is number => n !== undefined)
+      : [];
+    if (ids.length > 0) {
+      // forwardMessages keeps album grouping and skips unfindable ids.
+      const sent = await bot.api.forwardMessages(to, from, ids);
+      return { ok: true, message_ids: sent.map((m) => m.message_id) };
+    }
     const sent = await bot.api.forwardMessage(
-      chatId,
-      chatId,
+      to,
+      from,
       Number(body.message_id),
     );
     return { ok: true, message_id: sent.message_id };
   },
 
   copy_message: async (body, chatId, { bot }) => {
-    const sent = await bot.api.copyMessage(
-      chatId,
-      chatId,
-      Number(body.message_id),
-    );
+    const from = Number(body.from_chat_id ?? chatId);
+    const to = Number(body.to_chat_id ?? chatId);
+    const ids = Array.isArray(body.message_ids)
+      ? body.message_ids
+          .map(toPositiveId)
+          .filter((n): n is number => n !== undefined)
+      : [];
+    if (ids.length > 0) {
+      const sent = await bot.api.copyMessages(to, from, ids);
+      return { ok: true, message_ids: sent.map((m) => m.message_id) };
+    }
+    const sent = await bot.api.copyMessage(to, from, Number(body.message_id));
     return { ok: true, message_id: sent.message_id };
   },
 
@@ -316,6 +375,7 @@ export const messagingHandlers: TelegramActionHandlers = {
     await bot.api.sendChatAction(
       chatId,
       String(body.chat_action ?? "typing") as "typing",
+      { message_thread_id: resolveThreadId(body, chatId) },
     );
     return { ok: true };
   },
@@ -329,9 +389,14 @@ export const messagingHandlers: TelegramActionHandlers = {
     if ("error" in built) return { ok: false, error: built.error };
     const keyboard = built.keyboard;
     gateway.incrementMessages(chatId);
-    const messageId = await sendText(bot, chatId, text, undefined, {
-      inline_keyboard: keyboard,
-    });
+    const messageId = await sendText(
+      bot,
+      chatId,
+      text,
+      toPositiveId(body.reply_to_message_id),
+      { inline_keyboard: keyboard },
+      sendOpts(body, chatId),
+    );
     return { ok: true, message_id: messageId };
   },
 

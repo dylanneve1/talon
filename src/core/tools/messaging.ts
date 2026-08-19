@@ -135,7 +135,10 @@ Examples:
   Dice: send(type="dice")
   Location: send(type="location", latitude=37.7749, longitude=-122.4194)
   Sticker by feeling: send(type="sticker", emoji="😂") — picks a matching sticker from your saved packs (add set_name to pin one pack)
-  Sticker by id: send(type="sticker", file_id="CAACAgI...")`,
+  Sticker by id: send(type="sticker", file_id="CAACAgI...")
+  Album: send(type="album", media=[{"type":"photo","file_path":"a.jpg"},{"type":"photo","url":"https://…/b.jpg","caption":"the good one"}]) — 2-10 photos/videos as one grouped message
+  Round video: send(type="video_note", file_path="/path/clip.mp4") — circular video bubble (square video, ≤60s)
+  Venue: send(type="venue", latitude=53.34, longitude=-6.26, title="The Long Hall", address="51 South Great George's St")`,
     schema: {
       type: z
         .enum([
@@ -151,6 +154,9 @@ Examples:
           "location",
           "contact",
           "dice",
+          "album",
+          "video_note",
+          "venue",
         ])
         .describe("Content type to send"),
       text: z
@@ -208,7 +214,30 @@ Examples:
       phone_number: z.string().optional().describe("Contact phone"),
       first_name: z.string().optional().describe("Contact first name"),
       last_name: z.string().optional().describe("Contact last name"),
-      title: z.string().optional().describe("Audio title (for type=audio)"),
+      title: z
+        .string()
+        .optional()
+        .describe("Audio title (type=audio) or venue name (type=venue)"),
+      address: z
+        .string()
+        .optional()
+        .describe("Venue street address (for type=venue)"),
+      media: z
+        .array(
+          z.object({
+            type: z
+              .enum(["photo", "video", "document", "audio"])
+              .describe("Kind of this album item"),
+            file_path: z.string().optional(),
+            url: z.string().optional(),
+            file_id: z.string().optional(),
+            caption: z.string().optional(),
+          }),
+        )
+        .optional()
+        .describe(
+          "Album items (for type=album): 2-10 entries, each sourced from file_path, url, or file_id. Photos and videos mix; documents/audio group only with their own kind.",
+        ),
       performer: z
         .string()
         .optional()
@@ -230,9 +259,41 @@ Examples:
         .describe(
           "Target chat ID. Omit to send to the current chat (chat mode). Required from heartbeat mode where there is no ambient chat — use list_chats or known IDs from memory. Telegram supergroup/channel IDs are negative (e.g. -1001426819337); user DMs are positive.",
         ),
+      silent: z
+        .boolean()
+        .optional()
+        .describe("Send without a notification sound (Telegram)"),
+      protect: z
+        .boolean()
+        .optional()
+        .describe("Protect content from forwarding and saving (Telegram)"),
+      spoiler: z
+        .boolean()
+        .optional()
+        .describe(
+          "Blur photo/video/animation behind a spoiler tap-to-reveal (Telegram)",
+        ),
+      no_link_preview: z
+        .boolean()
+        .optional()
+        .describe("Disable the link preview for type=text (Telegram)"),
+      thread_id: z
+        .union([z.number(), z.literal("general")])
+        .optional()
+        .describe(
+          'Forum topic to post into (Telegram supergroups with topics). Defaults to the topic the conversation is happening in; pass "general" to force the General topic.',
+        ),
     },
     execute: async (params, bridge) => {
       const { type } = params;
+      // Delivery modifiers every Telegram send action understands. Harmless
+      // on frontends that don't (handlers read only the fields they know).
+      const mods = {
+        silent: params.silent,
+        protect: params.protect,
+        spoiler: params.spoiler,
+        thread_id: params.thread_id,
+      };
       // Thread chat_id through to every bridge call so heartbeat / dream
       // outbound (no ambient chat) gets routed by the explicit chat_id.
       // `createBridge` at src/core/tools/bridge.ts:29 reads
@@ -253,6 +314,7 @@ Examples:
               delay_seconds: params.delay_seconds,
               rows: params.buttons,
               reply_to_message_id: params.reply_to,
+              ...mods,
               chat_id,
             });
           }
@@ -261,12 +323,15 @@ Examples:
               text: params.text,
               rows: params.buttons,
               reply_to_message_id: params.reply_to,
+              ...mods,
               chat_id,
             });
           }
           return bridge("send_message", {
             text: params.text,
             reply_to_message_id: params.reply_to,
+            no_link_preview: params.no_link_preview,
+            ...mods,
             chat_id,
           });
         }
@@ -277,6 +342,7 @@ Examples:
             file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "file":
@@ -286,6 +352,7 @@ Examples:
             file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "video":
@@ -295,6 +362,7 @@ Examples:
             file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "voice":
@@ -304,6 +372,7 @@ Examples:
             file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "audio":
@@ -315,6 +384,7 @@ Examples:
             title: params.title,
             performer: params.performer,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "animation":
@@ -324,6 +394,7 @@ Examples:
             file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "sticker":
@@ -333,6 +404,7 @@ Examples:
             emoji: params.emoji,
             set_name: params.set_name,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "poll":
@@ -344,6 +416,7 @@ Examples:
             explanation: params.explanation,
             type: params.correct_option_id !== undefined ? "quiz" : "regular",
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "location":
@@ -351,6 +424,7 @@ Examples:
             latitude: params.latitude,
             longitude: params.longitude,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "contact":
@@ -359,12 +433,40 @@ Examples:
             first_name: params.first_name,
             last_name: params.last_name,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "dice":
           return bridge("send_dice", {
             emoji: params.emoji,
             reply_to: params.reply_to,
+            ...mods,
+            chat_id,
+          });
+        case "album":
+          return bridge("send_media_group", {
+            media: params.media,
+            reply_to: params.reply_to,
+            ...mods,
+            chat_id,
+          });
+        case "video_note":
+          return bridge("send_video_note", {
+            file_path: params.file_path,
+            url: params.url,
+            file_id: params.file_id,
+            reply_to: params.reply_to,
+            ...mods,
+            chat_id,
+          });
+        case "venue":
+          return bridge("send_venue", {
+            latitude: params.latitude,
+            longitude: params.longitude,
+            title: params.title,
+            address: params.address,
+            reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         default:
@@ -479,8 +581,16 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
   // ── edit_message ──────────────────────────────────────────────────────
   {
     name: "edit_message",
-    description: "Edit a previously sent message.",
-    schema: { message_id: snowflakeOrIdSchema, text: z.string() },
+    description:
+      "Edit a previously sent message. For a media message (photo/video/file), pass is_caption=true to edit its caption instead of message text.",
+    schema: {
+      message_id: snowflakeOrIdSchema,
+      text: z.string(),
+      is_caption: z
+        .boolean()
+        .optional()
+        .describe("Edit the media caption rather than message text (Telegram)"),
+    },
     execute: (params, bridge) => bridge("edit_message", params),
     frontends: ["telegram", "discord", "native"],
     tag: "messaging",
@@ -489,8 +599,15 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
   // ── delete_message ────────────────────────────────────────────────────
   {
     name: "delete_message",
-    description: "Delete a message.",
-    schema: { message_id: snowflakeOrIdSchema },
+    description:
+      "Delete a message — or several at once via message_ids (Telegram; ids the bot can't delete are skipped).",
+    schema: {
+      message_id: snowflakeOrIdSchema.optional(),
+      message_ids: z
+        .array(snowflakeOrIdSchema)
+        .optional()
+        .describe("Bulk delete these message IDs (Telegram)"),
+    },
     execute: (params, bridge) => bridge("delete_message", params),
     frontends: ["telegram", "discord", "native"],
     tag: "messaging",
@@ -499,10 +616,39 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
   // ── forward_message ───────────────────────────────────────────────────
   {
     name: "forward_message",
-    description: "Forward a message within the chat.",
-    schema: { message_id: snowflakeOrIdSchema },
+    description:
+      "Forward a message. Defaults to within the current chat; from_chat_id / to_chat_id forward across chats the bot is in, and message_ids forwards a batch (albums stay grouped) (Telegram).",
+    schema: {
+      message_id: snowflakeOrIdSchema.optional(),
+      message_ids: z
+        .array(snowflakeOrIdSchema)
+        .optional()
+        .describe("Forward these messages as a batch (Telegram)"),
+      from_chat_id: chatIdSchema
+        .optional()
+        .describe("Source chat (default: current chat)"),
+      to_chat_id: chatIdSchema
+        .optional()
+        .describe("Destination chat (default: current chat)"),
+    },
     execute: (params, bridge) => bridge("forward_message", params),
     frontends: ["telegram", "discord"],
+    tag: "messaging",
+  },
+
+  // ── copy_message ──────────────────────────────────────────────────────
+  {
+    name: "copy_message",
+    description:
+      "Repost a message without the 'forwarded from' header. Same cross-chat and batch semantics as forward_message (Telegram).",
+    schema: {
+      message_id: snowflakeOrIdSchema.optional(),
+      message_ids: z.array(snowflakeOrIdSchema).optional(),
+      from_chat_id: chatIdSchema.optional(),
+      to_chat_id: chatIdSchema.optional(),
+    },
+    execute: (params, bridge) => bridge("copy_message", params),
+    frontends: ["telegram"],
     tag: "messaging",
   },
 

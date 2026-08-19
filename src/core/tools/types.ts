@@ -28,6 +28,7 @@ export type ToolTag =
   | "admin"
   | "models"
   | "mesh"
+  | "moderation"
   | "native";
 
 /** The bridge caller signature — injected into execute(). */

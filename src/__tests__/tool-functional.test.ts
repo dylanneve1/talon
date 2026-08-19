@@ -508,17 +508,14 @@ describe("createTelegramActionHandler", () => {
     expect(result).toEqual({ ok: true, message_id: 999 });
   });
 
-  it("forward_message rejects cross-chat targets", async () => {
+  it("forward_message honours an explicit cross-chat target", async () => {
     const result = await handler(
       { action: "forward_message", message_id: 2081, to_chat_id: 99999 },
       chatId,
     );
 
-    expect(result).toEqual({
-      ok: false,
-      error: "Cross-chat forwarding not allowed.",
-    });
-    expect(api.forwardMessage).not.toHaveBeenCalled();
+    expect(api.forwardMessage).toHaveBeenCalledWith(99999, chatId, 2081);
+    expect(result).toEqual({ ok: true, message_id: 999 });
   });
 
   it("copy_message → bot.api.copyMessage(chatId, chatId, message_id)", async () => {
@@ -563,7 +560,9 @@ describe("createTelegramActionHandler", () => {
       { action: "send_chat_action", chat_action: "typing" },
       chatId,
     );
-    expect(api.sendChatAction).toHaveBeenCalledWith(chatId, "typing");
+    expect(api.sendChatAction).toHaveBeenCalledWith(chatId, "typing", {
+      message_thread_id: undefined,
+    });
   });
 
   it("send_message → bot.api.sendRichMessage with Markdown and reply_to", async () => {

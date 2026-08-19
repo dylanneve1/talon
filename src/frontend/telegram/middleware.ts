@@ -10,6 +10,8 @@ import { allowChat, revokeChat } from "./userbot.js";
 import { registerChat } from "../../core/background/pulse.js";
 import { log } from "../../util/log.js";
 import { getSenderName } from "./handlers/index.js";
+import { noteInboundThread } from "./topics.js";
+import { recordJoinRequest } from "./join-requests.js";
 import { newlyAddedEmojis, recordReactionToBot } from "../../core/soul/taps.js";
 import {
   handleTextMessage,
@@ -28,6 +30,10 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
   bot.on("message", (ctx, next) => {
     const chatId = String(ctx.chat.id);
     const sender = getSenderName(ctx.from);
+    // Keep the ambient forum topic current so outbound sends (which have no
+    // reply anchor — drafts, media, plain sends) land in the topic the
+    // conversation is actually happening in, not General.
+    noteInboundThread(ctx.chat.id, ctx.message);
     // The handle is the only addressable form of a user — persist it with
     // every row so later readers (history views, heartbeat-composed
     // messages) can mention someone instead of guessing.
@@ -186,6 +192,25 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
     if (mr.user?.id === ctx.me.id) return;
     const added = newlyAddedEmojis(mr.old_reaction, mr.new_reaction);
     recordReactionToBot(mr.chat.id, mr.message_id, added);
+  });
+
+  // ── Join requests — cache for moderate(op="list_join_requests") ─────────
+  // Delivered only when subscribed via allowed_updates (see index.ts) and
+  // the bot admins a chat whose invite link requires approval. Stored, not
+  // enqueued: a join request isn't a conversation turn.
+  bot.on("chat_join_request", (ctx) => {
+    const req = ctx.chatJoinRequest;
+    recordJoinRequest(ctx.chat.id, {
+      userId: req.from.id,
+      name: getSenderName(req.from),
+      username: req.from.username,
+      bio: req.bio,
+      at: Date.now(),
+    });
+    log(
+      "bot",
+      `Join request for chat ${ctx.chat.id} from ${req.from.id} (@${req.from.username ?? "?"})`,
+    );
   });
 
   // ── Bot removed from group — revoke userbot access ─────────────────────
