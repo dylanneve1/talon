@@ -31,7 +31,7 @@ export async function handleStart(
       "",
       "Mention me, reply to me, or DM me. Attach files, photos, voice notes — I'll read them.",
       "",
-      "/status  /reset  /help",
+      "/status  /stop  /reset  /help",
     ].join("\n"),
   );
 }
@@ -54,6 +54,7 @@ export async function handleHelp(
       "",
       "**Session**",
       "  /status — session info, usage, and stats",
+      "  /stop — stop the current response",
       "  /metrics — aggregate performance metrics (admin)",
       "  /dream — force memory consolidation now (admin)",
       "  /ping — health check with latency",

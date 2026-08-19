@@ -123,6 +123,24 @@ export class TaskTable {
   }
 
   /**
+   * Request an abort for the turn currently running in one chat. Queued turns
+   * are deliberately ignored: `/stop` means "stop what is happening now",
+   * never "discard my next message".
+   */
+  killRunningTurn(chatId: string): KillOutcome {
+    for (const [id, task] of this.live) {
+      if (
+        task.record.kind === "turn" &&
+        task.record.chatId === chatId &&
+        task.record.state === "running"
+      ) {
+        return this.kill(id);
+      }
+    }
+    return { ok: false, reason: "not-found" };
+  }
+
+  /**
    * Every live task plus the bounded settled history, id-ascending.
    * Snapshots are copies — callers can never mutate table state.
    */

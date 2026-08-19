@@ -211,6 +211,42 @@ describe("task table", () => {
       expect(table.kill(task.id)).toEqual({ ok: false, reason: "finished" });
       expect(table.kill(9999)).toEqual({ ok: false, reason: "not-found" });
     });
+
+    it("kills only the running turn for a chat, leaving queued work alone", () => {
+      const table = new TaskTable();
+      const runningAbort = vi.fn();
+      const running = table.begin({
+        kind: "turn",
+        label: "message",
+        chatId: "chat-a",
+        abort: runningAbort,
+      });
+      const queued = table.enqueue({
+        kind: "turn",
+        label: "message",
+        chatId: "chat-a",
+        abort: vi.fn(),
+      });
+      table.begin({
+        kind: "turn",
+        label: "message",
+        chatId: "chat-b",
+        abort: vi.fn(),
+      });
+
+      expect(table.killRunningTurn("chat-a")).toEqual({ ok: true });
+      expect(runningAbort).toHaveBeenCalledTimes(1);
+      expect(table.list().find((task) => task.id === running.id)!.state).toBe(
+        "running",
+      );
+      expect(table.list().find((task) => task.id === queued.id)!.state).toBe(
+        "queued",
+      );
+      expect(table.killRunningTurn("chat-missing")).toEqual({
+        ok: false,
+        reason: "not-found",
+      });
+    });
   });
 
   it("keeps settled history bounded while live tasks are never evicted", () => {
