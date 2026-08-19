@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.22.0](https://github.com/dylanneve1/talon/compare/v3.21.0...v3.22.0) (2026-08-19)
+
+
+### Features
+
+* **telegram:** albums, round video notes, and venues ([6afb27e](https://github.com/dylanneve1/talon/commit/6afb27e683d96f0bee543ad820a0ed6eabc3cc55))
+* **telegram:** bulk and cross-chat message ops, caption edits ([e61082a](https://github.com/dylanneve1/talon/commit/e61082a91e3c2400040a09e927809473feea8a6d))
+* **telegram:** forum topics, richer sends, bulk ops, and a moderation surface ([6a4f274](https://github.com/dylanneve1/talon/commit/6a4f274eb283adb20bef1e98a5f6d016ba503ba0))
+* **telegram:** moderation tool — members, invites, joins, topics ([14d2e3d](https://github.com/dylanneve1/talon/commit/14d2e3d573760ee7f92aa94f5d513029ba04e600))
+* **telegram:** route output into forum topics, add delivery modifiers ([62a18f7](https://github.com/dylanneve1/talon/commit/62a18f73fc7e1b1e79f0d15efa2f6c50d166571d))
+
+
+### Bug Fixes
+
+* **userbot:** don't let a mid-probe shutdown trigger a reconnect ([d61bcbf](https://github.com/dylanneve1/talon/commit/d61bcbf662d6e32705610ee9f022945d7eb72176))
+
+
+### Miscellaneous Chores
+
+* **deps:** raise grammy floor to ^1.45.1 ([f04816e](https://github.com/dylanneve1/talon/commit/f04816e294ce23cc0eb2945acfed831c363de1b3))
+
 ## [3.21.0](https://github.com/dylanneve1/talon/compare/v3.20.0...v3.21.0) (2026-08-19)
 
 
