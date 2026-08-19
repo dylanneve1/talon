@@ -6,6 +6,7 @@
 import type { Bot } from "grammy";
 import { markdownToTelegramHtml } from "../formatting.js";
 import { logWarn } from "../../../util/log.js";
+import { ambientThreadId, resolveThreadId } from "../topics.js";
 import { TELEGRAM_MAX_TEXT } from "./types.js";
 
 export function replyParams(
@@ -13,6 +14,30 @@ export function replyParams(
 ): { message_id: number } | undefined {
   const replyTo = toPositiveId(body.reply_to ?? body.reply_to_message_id);
   return replyTo !== undefined ? { message_id: replyTo } : undefined;
+}
+
+/** Delivery modifiers shared by every outbound send. */
+export type ExtraSendOpts = {
+  message_thread_id?: number;
+  disable_notification?: boolean;
+  protect_content?: boolean;
+  link_preview_options?: { is_disabled: boolean };
+};
+
+/**
+ * Extract the delivery modifiers from an action body: forum topic (explicit
+ * `thread_id` beats the chat's ambient one), `silent` (no notification sound),
+ * and `protect` (no forwarding/saving). Spread into any Bot API send options.
+ */
+export function sendOpts(
+  body: Record<string, unknown>,
+  chatId: number,
+): ExtraSendOpts {
+  return {
+    message_thread_id: resolveThreadId(body, chatId),
+    disable_notification: body.silent === true || undefined,
+    protect_content: body.protect === true || undefined,
+  };
 }
 
 /**
@@ -79,12 +104,20 @@ export async function sendText(
   replyMarkup?: NonNullable<
     Parameters<Bot["api"]["sendRichMessage"]>[2]
   >["reply_markup"],
+  extra?: ExtraSendOpts,
 ): Promise<number> {
   if (text.length > TELEGRAM_MAX_TEXT) {
     throw new Error(
       `Message too long (${text.length} chars, max ${TELEGRAM_MAX_TEXT}).`,
     );
   }
+
+  // Default to the chat's ambient forum topic so every text path — commands,
+  // menus, scheduled replays — stays in the topic the conversation is in.
+  // An explicit `extra` (from sendOpts) already resolved this.
+  const opts: ExtraSendOpts = extra ?? {
+    message_thread_id: ambientThreadId(chatId),
+  };
 
   if (richMessagesSupported) {
     try {
@@ -94,6 +127,7 @@ export async function sendText(
         {
           reply_parameters: replyTo ? { message_id: replyTo } : undefined,
           reply_markup: replyMarkup,
+          ...opts,
         },
       );
       return sent.message_id;
@@ -108,6 +142,7 @@ export async function sendText(
       parse_mode: "HTML",
       reply_parameters: replyTo ? { message_id: replyTo } : undefined,
       reply_markup: replyMarkup,
+      ...opts,
     });
     return sent.message_id;
   } catch (err) {
@@ -118,6 +153,7 @@ export async function sendText(
     const sent = await bot.api.sendMessage(chatId, text, {
       reply_parameters: replyTo ? { message_id: replyTo } : undefined,
       reply_markup: replyMarkup,
+      ...opts,
     });
     return sent.message_id;
   }

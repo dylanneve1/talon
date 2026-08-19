@@ -14,6 +14,7 @@ import { soulEnabled } from "../../core/soul/settings.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { createTelegramActionHandler, sendText } from "./actions/index.js";
+import { ambientThreadId } from "./topics.js";
 import { initUserClient, disconnectUserClient } from "./userbot.js";
 import {
   registerCommands,
@@ -60,7 +61,11 @@ export function createTelegramFrontend(
     context,
 
     sendTyping: (chatId: number) =>
-      bot.api.sendChatAction(chatId, "typing").then(() => {}),
+      bot.api
+        .sendChatAction(chatId, "typing", {
+          message_thread_id: ambientThreadId(chatId),
+        })
+        .then(() => {}),
 
     sendMessage: async (chatId: number, text: string) => {
       await sendText(bot, chatId, text);

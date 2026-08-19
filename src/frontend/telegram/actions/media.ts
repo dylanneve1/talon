@@ -9,7 +9,7 @@ import { expandFsPath } from "../../../util/fs-path.js";
 import { markdownToTelegramHtml } from "../formatting.js";
 import { withRetry } from "../../../core/engine/gateway.js";
 import { resolveStickerByEmoji } from "../sticker-library.js";
-import { replyParams } from "./shared.js";
+import { replyParams, sendOpts } from "./shared.js";
 import type { TelegramActionHandlers } from "./types.js";
 
 const sendMediaFile: TelegramActionHandlers[string] = async (
@@ -55,6 +55,9 @@ const sendMediaFile: TelegramActionHandlers[string] = async (
     file = new InputFileClass(data, basename(filePath));
   }
   const rp = replyParams(body);
+  const opts = sendOpts(body, chatId);
+  // Spoiler blur only exists for visual media; Telegram rejects it elsewhere.
+  const spoiler = body.spoiler === true || undefined;
   let sent;
   switch (action) {
     case "send_file":
@@ -63,6 +66,7 @@ const sendMediaFile: TelegramActionHandlers[string] = async (
           caption,
           parse_mode: captionParseMode,
           reply_parameters: rp,
+          ...opts,
         }),
       );
       break;
@@ -72,6 +76,8 @@ const sendMediaFile: TelegramActionHandlers[string] = async (
           caption,
           parse_mode: captionParseMode,
           reply_parameters: rp,
+          has_spoiler: spoiler,
+          ...opts,
         }),
       );
       break;
@@ -81,6 +87,8 @@ const sendMediaFile: TelegramActionHandlers[string] = async (
           caption,
           parse_mode: captionParseMode,
           reply_parameters: rp,
+          has_spoiler: spoiler,
+          ...opts,
         }),
       );
       break;
@@ -90,6 +98,8 @@ const sendMediaFile: TelegramActionHandlers[string] = async (
           caption,
           parse_mode: captionParseMode,
           reply_parameters: rp,
+          has_spoiler: spoiler,
+          ...opts,
         }),
       );
       break;
@@ -101,6 +111,7 @@ const sendMediaFile: TelegramActionHandlers[string] = async (
           reply_parameters: rp,
           title: body.title as string | undefined,
           performer: body.performer as string | undefined,
+          ...opts,
         }),
       );
       break;
@@ -110,6 +121,7 @@ const sendMediaFile: TelegramActionHandlers[string] = async (
           caption,
           parse_mode: captionParseMode,
           reply_parameters: rp,
+          ...opts,
         }),
       );
       break;
@@ -155,6 +167,7 @@ export const mediaHandlers: TelegramActionHandlers = {
     gateway.incrementMessages(chatId);
     const sent = await bot.api.sendSticker(chatId, fileId, {
       reply_parameters: replyParams(body),
+      ...sendOpts(body, chatId),
     });
     return { ok: true, message_id: sent.message_id };
   },
@@ -176,6 +189,7 @@ export const mediaHandlers: TelegramActionHandlers = {
             : undefined,
         explanation: body.explanation as string | undefined,
         reply_parameters: replyParams(body),
+        ...sendOpts(body, chatId),
       },
     );
     return { ok: true, message_id: sent.message_id };
@@ -187,7 +201,7 @@ export const mediaHandlers: TelegramActionHandlers = {
       chatId,
       Number(body.latitude),
       Number(body.longitude),
-      { reply_parameters: replyParams(body) },
+      { reply_parameters: replyParams(body), ...sendOpts(body, chatId) },
     );
     return { ok: true, message_id: sent.message_id };
   },
@@ -201,6 +215,7 @@ export const mediaHandlers: TelegramActionHandlers = {
       {
         last_name: body.last_name as string | undefined,
         reply_parameters: replyParams(body),
+        ...sendOpts(body, chatId),
       },
     );
     return { ok: true, message_id: sent.message_id };
@@ -213,6 +228,7 @@ export const mediaHandlers: TelegramActionHandlers = {
       (body.emoji as string) || "🎲",
       {
         reply_parameters: replyParams(body),
+        ...sendOpts(body, chatId),
       },
     );
     return {

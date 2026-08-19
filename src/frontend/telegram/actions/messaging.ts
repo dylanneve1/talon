@@ -18,9 +18,11 @@ import {
 import {
   noteRichMessageFailure,
   richMessagesAvailable,
+  sendOpts,
   sendText,
   toPositiveId,
 } from "./shared.js";
+import { resolveThreadId } from "../topics.js";
 import { TELEGRAM_MAX_TEXT, type TelegramActionHandlers } from "./types.js";
 
 // ── Inline keyboards ─────────────────────────────────────────────────────────
@@ -201,7 +203,14 @@ export const messagingHandlers: TelegramActionHandlers = {
     const text = String(body.text ?? "");
     const replyTo = toPositiveId(body.reply_to_message_id);
     gateway.incrementMessages(chatId);
-    const msgId = await withRetry(() => sendText(bot, chatId, text, replyTo));
+    const extra = {
+      ...sendOpts(body, chatId),
+      link_preview_options:
+        body.no_link_preview === true ? { is_disabled: true } : undefined,
+    };
+    const msgId = await withRetry(() =>
+      sendText(bot, chatId, text, replyTo, undefined, extra),
+    );
     return { ok: true, message_id: msgId };
   },
 
@@ -316,6 +325,7 @@ export const messagingHandlers: TelegramActionHandlers = {
     await bot.api.sendChatAction(
       chatId,
       String(body.chat_action ?? "typing") as "typing",
+      { message_thread_id: resolveThreadId(body, chatId) },
     );
     return { ok: true };
   },
@@ -329,9 +339,14 @@ export const messagingHandlers: TelegramActionHandlers = {
     if ("error" in built) return { ok: false, error: built.error };
     const keyboard = built.keyboard;
     gateway.incrementMessages(chatId);
-    const messageId = await sendText(bot, chatId, text, undefined, {
-      inline_keyboard: keyboard,
-    });
+    const messageId = await sendText(
+      bot,
+      chatId,
+      text,
+      toPositiveId(body.reply_to_message_id),
+      { inline_keyboard: keyboard },
+      sendOpts(body, chatId),
+    );
     return { ok: true, message_id: messageId };
   },
 

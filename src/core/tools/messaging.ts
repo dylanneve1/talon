@@ -230,9 +230,41 @@ Examples:
         .describe(
           "Target chat ID. Omit to send to the current chat (chat mode). Required from heartbeat mode where there is no ambient chat — use list_chats or known IDs from memory. Telegram supergroup/channel IDs are negative (e.g. -1001426819337); user DMs are positive.",
         ),
+      silent: z
+        .boolean()
+        .optional()
+        .describe("Send without a notification sound (Telegram)"),
+      protect: z
+        .boolean()
+        .optional()
+        .describe("Protect content from forwarding and saving (Telegram)"),
+      spoiler: z
+        .boolean()
+        .optional()
+        .describe(
+          "Blur photo/video/animation behind a spoiler tap-to-reveal (Telegram)",
+        ),
+      no_link_preview: z
+        .boolean()
+        .optional()
+        .describe("Disable the link preview for type=text (Telegram)"),
+      thread_id: z
+        .union([z.number(), z.literal("general")])
+        .optional()
+        .describe(
+          'Forum topic to post into (Telegram supergroups with topics). Defaults to the topic the conversation is happening in; pass "general" to force the General topic.',
+        ),
     },
     execute: async (params, bridge) => {
       const { type } = params;
+      // Delivery modifiers every Telegram send action understands. Harmless
+      // on frontends that don't (handlers read only the fields they know).
+      const mods = {
+        silent: params.silent,
+        protect: params.protect,
+        spoiler: params.spoiler,
+        thread_id: params.thread_id,
+      };
       // Thread chat_id through to every bridge call so heartbeat / dream
       // outbound (no ambient chat) gets routed by the explicit chat_id.
       // `createBridge` at src/core/tools/bridge.ts:29 reads
@@ -253,6 +285,7 @@ Examples:
               delay_seconds: params.delay_seconds,
               rows: params.buttons,
               reply_to_message_id: params.reply_to,
+              ...mods,
               chat_id,
             });
           }
@@ -261,12 +294,15 @@ Examples:
               text: params.text,
               rows: params.buttons,
               reply_to_message_id: params.reply_to,
+              ...mods,
               chat_id,
             });
           }
           return bridge("send_message", {
             text: params.text,
             reply_to_message_id: params.reply_to,
+            no_link_preview: params.no_link_preview,
+            ...mods,
             chat_id,
           });
         }
@@ -277,6 +313,7 @@ Examples:
             file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "file":
@@ -286,6 +323,7 @@ Examples:
             file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "video":
@@ -295,6 +333,7 @@ Examples:
             file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "voice":
@@ -304,6 +343,7 @@ Examples:
             file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "audio":
@@ -315,6 +355,7 @@ Examples:
             title: params.title,
             performer: params.performer,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "animation":
@@ -324,6 +365,7 @@ Examples:
             file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "sticker":
@@ -333,6 +375,7 @@ Examples:
             emoji: params.emoji,
             set_name: params.set_name,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "poll":
@@ -344,6 +387,7 @@ Examples:
             explanation: params.explanation,
             type: params.correct_option_id !== undefined ? "quiz" : "regular",
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "location":
@@ -351,6 +395,7 @@ Examples:
             latitude: params.latitude,
             longitude: params.longitude,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "contact":
@@ -359,12 +404,14 @@ Examples:
             first_name: params.first_name,
             last_name: params.last_name,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         case "dice":
           return bridge("send_dice", {
             emoji: params.emoji,
             reply_to: params.reply_to,
+            ...mods,
             chat_id,
           });
         default:
