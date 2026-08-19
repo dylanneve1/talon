@@ -30,7 +30,7 @@ import {
   handleMesh,
   handleUsage,
 } from "./info.js";
-import { handleReset, handleStatus } from "./session.js";
+import { handleReset, handleStatus, handleStop } from "./session.js";
 import {
   handleModel,
   handleEffort,
@@ -143,6 +143,8 @@ async function routeSlashCommand(
       return handlePulse(interaction, chatId);
     case "reset":
       return handleReset(interaction, gateway, chatId);
+    case "stop":
+      return handleStop(interaction, chatId);
     case "restart":
       return handleRestart(interaction);
     case "metrics":

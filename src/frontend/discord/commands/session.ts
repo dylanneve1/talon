@@ -23,6 +23,7 @@ import {
   performSessionReset,
   collectSessionStatus,
 } from "../../shared/session-status.js";
+import { stopCurrentTurn } from "../../../core/engine/dispatcher.js";
 import { reply } from "./shared.js";
 
 export async function handleReset(
@@ -40,6 +41,18 @@ export async function handleReset(
     resolveChatBackend(chatId, gateway?.backend),
   );
   await reply(i, "Session cleared.", true);
+}
+
+export async function handleStop(
+  i: ChatInputCommandInteraction,
+  chatId: string,
+): Promise<void> {
+  const outcome = stopCurrentTurn(chatId);
+  await reply(
+    i,
+    outcome.ok ? "⏹ Stop requested." : "No response is currently running.",
+    true,
+  );
 }
 
 export async function handleStatus(

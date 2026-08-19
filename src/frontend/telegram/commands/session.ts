@@ -20,6 +20,7 @@ import {
   performSessionReset,
   collectSessionStatus,
 } from "../../shared/session-status.js";
+import { stopCurrentTurn } from "../../../core/engine/dispatcher.js";
 import type { RegisterDeps } from "./state.js";
 
 export function registerSessionCommands(
@@ -32,6 +33,13 @@ export function registerSessionCommands(
     // provider when this chat has a backend override pinned.
     await performSessionReset(cid, resolveBackendForChat(cid, gateway));
     await ctx.reply("Session cleared.");
+  });
+
+  bot.command("stop", async (ctx) => {
+    const outcome = stopCurrentTurn(String(ctx.chat.id));
+    await ctx.reply(
+      outcome.ok ? "⏹ Stop requested." : "No response is currently running.",
+    );
   });
 
   bot.command("status", async (ctx) => {

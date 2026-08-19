@@ -83,6 +83,10 @@ export function buildCommandDefinitions(devBuild = false): unknown[] {
       .setDescription("Clear session and start fresh")
       .toJSON(),
     new SlashCommandBuilder()
+      .setName("stop")
+      .setDescription("Stop the current response")
+      .toJSON(),
+    new SlashCommandBuilder()
       .setName("restart")
       .setDescription("Restart the bot (admin only)")
       .toJSON(),
