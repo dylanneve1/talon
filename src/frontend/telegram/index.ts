@@ -123,13 +123,16 @@ export function createTelegramFrontend(
           process.exit(1);
         }
       });
-      // Reactions arrive only if we explicitly request `message_reaction`
-      // (it is absent from grammY's default allowed_updates). Subscribe only
-      // when the soul is enabled, so a soulless deployment keeps the default
-      // update set and behaves byte-identically.
-      const allowedUpdates = soulEnabled(config.soul)
-        ? [...API_CONSTANTS.DEFAULT_UPDATE_TYPES, "message_reaction" as const]
-        : undefined;
+      // Beyond grammY's defaults: `chat_join_request` feeds the moderation
+      // tool's pending-join cache (inert unless the bot admins an
+      // approval-gated chat), and `message_reaction` feeds the soul's
+      // reaction tap — subscribed only when the soul is enabled, so a
+      // soulless deployment's reaction behaviour is unchanged.
+      const allowedUpdates = [
+        ...API_CONSTANTS.DEFAULT_UPDATE_TYPES,
+        "chat_join_request" as const,
+        ...(soulEnabled(config.soul) ? ["message_reaction" as const] : []),
+      ];
       await bot.start({
         allowed_updates: allowedUpdates,
         onStart: (info) => log("bot", `Talon running as @${info.username}`),

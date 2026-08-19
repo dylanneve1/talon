@@ -22,6 +22,7 @@ import type { ActionResult } from "../../../core/types.js";
 import { messagingHandlers, restoreScheduledMessages } from "./messaging.js";
 import { mediaHandlers } from "./media.js";
 import { chatInfoHandlers } from "./chat-info.js";
+import { moderationHandlers } from "./moderation.js";
 import type { TelegramActionContext, TelegramActionHandlers } from "./types.js";
 
 export { sendText } from "./shared.js";
@@ -32,6 +33,7 @@ const handlers: TelegramActionHandlers = Object.assign(Object.create(null), {
   ...messagingHandlers,
   ...mediaHandlers,
   ...chatInfoHandlers,
+  ...moderationHandlers,
 });
 
 /**

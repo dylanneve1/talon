@@ -22,6 +22,7 @@ import { webTools } from "./web.js";
 import { adminTools } from "./admin.js";
 import { modelTools } from "./models.js";
 import { meshTools } from "./mesh.js";
+import { moderationTools } from "./moderation.js";
 import { nativeTools } from "./native.js";
 
 /** All built-in tool definitions. */
@@ -41,6 +42,7 @@ export const ALL_TOOLS: readonly ToolDefinition[] = [
   ...adminTools,
   ...modelTools,
   ...meshTools,
+  ...moderationTools,
 ];
 
 /**

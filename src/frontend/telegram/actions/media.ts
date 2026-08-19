@@ -24,7 +24,7 @@ type MediaSource = {
  * string — Telegram fetches/reuses server-side, no local bytes involved),
  * else a workspace file path uploaded as multipart.
  */
-function resolveMediaInput(
+export function resolveMediaInput(
   src: MediaSource,
   label: string,
   InputFileClass: typeof import("grammy").InputFile,
