@@ -7,6 +7,7 @@ import '../models/bridge_models.dart';
 import '../services/log.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'empty_state.dart';
 import 'glass.dart';
 
 /// Daemon log viewer — a nicely rendered tail of the daemon's log file
@@ -361,11 +362,33 @@ class _LogsScreenState extends State<LogsScreen> {
     }
     final rows = _visible;
     if (rows.isEmpty) {
-      return Center(
-        child: Text(
-          'No matching log lines',
-          style: TextStyle(color: TalonColors.textFaint),
-        ),
+      final filtered = _search.text.trim().isNotEmpty ||
+          _component != null ||
+          _minLevel != null;
+      return TalonEmptyState(
+        icon: filtered
+            ? Icons.filter_alt_off_outlined
+            : Icons.subject_outlined,
+        title: filtered ? 'No matching log lines' : 'No log lines yet',
+        message: filtered
+            ? 'Nothing in the current tail matches this filter.'
+            : 'The daemon has not written anything to this log yet.',
+        action: filtered
+            ? OutlinedButton(
+                onPressed: () {
+                  final serverSide = _component != null || _minLevel != null;
+                  setState(() {
+                    _search.clear();
+                    _component = null;
+                    _minLevel = null;
+                  });
+                  // Component/level are applied by the daemon, so dropping
+                  // them needs a refetch; the text filter is purely local.
+                  if (serverSide) _load();
+                },
+                child: const Text('Clear filters'),
+              )
+            : null,
       );
     }
     return RefreshIndicator(

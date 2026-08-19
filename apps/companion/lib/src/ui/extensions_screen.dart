@@ -5,6 +5,7 @@ import '../services/haptics.dart';
 import '../services/log.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'empty_state.dart';
 import 'glass.dart';
 
 /// Plugins sub-menu: every installed plugin (built-ins, module plugins,
@@ -219,10 +220,11 @@ class _ExtensionListScreenState<T> extends State<_ExtensionListScreen<T>> {
     }
     if (_items.isEmpty) {
       return Glass(
-        padding: const EdgeInsets.all(20),
-        child: Text(
-          widget.emptyText,
-          style: TextStyle(color: TalonColors.textFaint),
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: TalonEmptyState(
+          compact: true,
+          icon: Icons.extension_outlined,
+          title: widget.emptyText,
         ),
       );
     }
