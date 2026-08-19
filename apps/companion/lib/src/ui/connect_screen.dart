@@ -30,6 +30,12 @@ class _ConnectScreenState extends State<ConnectScreen> {
   late final TextEditingController _token;
   bool _tls = false;
 
+  /// Inline validation messages for the remote fields. Set only by [_connect];
+  /// cleared as soon as the offending field is edited, so the error never
+  /// outlives the mistake.
+  String? _hostError;
+  String? _portError;
+
   bool get _isDesktop {
     try {
       return Platform.isWindows || Platform.isMacOS || Platform.isLinux;
@@ -57,7 +63,32 @@ class _ConnectScreenState extends State<ConnectScreen> {
     super.dispose();
   }
 
+  /// Checks the remote fields *before* dialling. Without this the commonest
+  /// first-run mistakes — a blank host, a port outside 1-65535 — surface only
+  /// as an opaque socket error after the connect attempt times out.
+  bool _validate() {
+    String? hostError;
+    String? portError;
+    if (_remote) {
+      if (ConnectionConfig.parseHostInput(_host.text).host.isEmpty) {
+        hostError = 'Enter the host or IP of your Talon bridge.';
+      }
+      final port = int.tryParse(_port.text.trim());
+      if (port == null || port < 1 || port > 65535) {
+        portError = 'Port must be a number between 1 and 65535.';
+      }
+    }
+    if (hostError != _hostError || portError != _portError) {
+      setState(() {
+        _hostError = hostError;
+        _portError = portError;
+      });
+    }
+    return hostError == null && portError == null;
+  }
+
   Future<void> _connect() async {
+    if (!_validate()) return;
     var port = int.tryParse(_port.text.trim()) ?? 19880;
     final token = _token.text.trim();
 
@@ -281,24 +312,41 @@ class _ConnectScreenState extends State<ConnectScreen> {
           'server. Set its host to 0.0.0.0 and a token to allow remote access.',
         ),
         const SizedBox(height: 14),
-        _field(_host, 'Host or IP', hint: '192.168.1.20'),
+        _field(_host, 'Host or IP',
+            hint: '192.168.1.20',
+            errorText: _hostError,
+            onChanged: _hostError == null
+                ? null
+                : (_) => setState(() => _hostError = null)),
         const SizedBox(height: 12),
-        _field(_port, 'Port', hint: '19880', number: true),
+        _field(_port, 'Port',
+            hint: '19880',
+            number: true,
+            errorText: _portError,
+            onChanged: _portError == null
+                ? null
+                : (_) => setState(() => _portError = null)),
         const SizedBox(height: 12),
         _field(_token, 'Token', hint: 'shared secret', obscure: true),
         const SizedBox(height: 6),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          value: _tls,
-          onChanged: (v) => setState(() => _tls = v),
-          thumbColor: WidgetStateProperty.resolveWith((s) =>
-              s.contains(WidgetState.selected) ? TalonColors.accent : null),
-          title: const Text('Use HTTPS / TLS', style: TextStyle(fontSize: 14)),
-          subtitle: Text(
-              'On by default when the daemon binds off-loopback '
-              '(its own certificate, pinned on first connect) — or turn on '
-              'for a TLS reverse proxy. Auto-detected from an https:// host.',
-              style: TextStyle(fontSize: 12, color: TalonColors.textFaint)),
+        // Wrapped in a transparent Material: the nearest ancestor is Glass's
+        // DecoratedBox, which would swallow the tile's ink splash (Flutter
+        // asserts on exactly this).
+        Material(
+          type: MaterialType.transparency,
+          child: SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: _tls,
+            onChanged: (v) => setState(() => _tls = v),
+            thumbColor: WidgetStateProperty.resolveWith((s) =>
+                s.contains(WidgetState.selected) ? TalonColors.accent : null),
+            title: const Text('Use HTTPS / TLS', style: TextStyle(fontSize: 14)),
+            subtitle: Text(
+                'On by default when the daemon binds off-loopback '
+                '(its own certificate, pinned on first connect) — or turn on '
+                'for a TLS reverse proxy. Auto-detected from an https:// host.',
+                style: TextStyle(fontSize: 12, color: TalonColors.textFaint)),
+          ),
         ),
         if (_pinnedFingerprint != null) ...[
           const SizedBox(height: 4),
@@ -329,6 +377,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
     bool number = false,
     bool obscure = false,
     bool mono = false,
+    String? errorText,
+    ValueChanged<String>? onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -341,6 +391,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
         const SizedBox(height: 6),
         TextField(
           controller: c,
+          onChanged: onChanged,
           obscureText: obscure,
           keyboardType: number ? TextInputType.number : null,
           inputFormatters:
@@ -349,6 +400,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
               fontSize: 14, fontFamily: mono ? 'JetBrains Mono' : null),
           decoration: InputDecoration(
             hintText: hint,
+            errorText: errorText,
+            errorStyle: TextStyle(fontSize: 12, color: TalonColors.bad),
             filled: true,
             fillColor: TalonColors.void0.withValues(alpha: 0.5),
             contentPadding:
