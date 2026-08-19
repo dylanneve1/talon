@@ -250,4 +250,127 @@ describe("runJobOneShot", () => {
     });
     expect(cleanup).toHaveBeenCalledOnce();
   });
+
+  it("skips when the target can't host an isolated run and no fallback is given", async () => {
+    registerBackend(
+      backendFactory(
+        "openai-agents",
+        composeBackend({ id: "openai-agents", label: "openai-agents" }),
+      ),
+    );
+    await initBackendPool(
+      { backend: "openai-agents" } as unknown as TalonConfig,
+      STUB_CTX,
+    );
+
+    const result = await runJobOneShot({
+      chatId: "42",
+      backendId: "openai-agents",
+      model: "glm-5.2",
+      payload: "payload",
+      label: "nightly check",
+      kind: "cron",
+    });
+
+    expect(result).toEqual({
+      status: "skipped",
+      reason:
+        'provider "openai-agents" can\'t run isolated jobs (no background capability).',
+    });
+  });
+
+  it("retries on the fallback backend when the chat's ambient one has no background capability", async () => {
+    const run = vi.fn(async (_params: OneShotAgentParams) => {});
+    registerBackend(
+      backendFactory(
+        "openai-agents",
+        composeBackend({ id: "openai-agents", label: "openai-agents" }),
+      ),
+    );
+    registerBackend(
+      backendFactory(
+        "claude",
+        composeBackend({
+          id: "claude",
+          label: "claude",
+          background: fakeBackground(run),
+        }),
+      ),
+    );
+    await initBackendPool(STUB_CONFIG, STUB_CTX);
+
+    const result = await runJobOneShot({
+      chatId: "42",
+      backendId: "openai-agents",
+      model: "glm-5.2",
+      payload: "payload",
+      label: "nightly check",
+      kind: "cron",
+      fallback: { backendId: "claude", model: "sonnet" },
+    });
+
+    expect(result).toEqual({ status: "ran" });
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]?.[0]).toMatchObject({ model: "sonnet" });
+  });
+
+  it("reports both reasons when the fallback is unusable too", async () => {
+    registerBackend(
+      backendFactory(
+        "openai-agents",
+        composeBackend({ id: "openai-agents", label: "openai-agents" }),
+      ),
+    );
+    registerBackend(
+      backendFactory(
+        "claude",
+        composeBackend({ id: "claude", label: "claude" }),
+      ),
+    );
+    await initBackendPool(STUB_CONFIG, STUB_CTX);
+
+    const result = await runJobOneShot({
+      chatId: "42",
+      backendId: "openai-agents",
+      model: "glm-5.2",
+      payload: "payload",
+      label: "nightly check",
+      kind: "cron",
+      fallback: { backendId: "claude", model: "sonnet" },
+    });
+
+    expect(result.status).toBe("skipped");
+    if (result.status !== "skipped") throw new Error("expected a skip");
+    expect(result.reason).toContain('provider "openai-agents" can\'t run');
+    expect(result.reason).toContain("Fallback claude/sonnet also unusable");
+  });
+
+  it("does not retry when the fallback is the same backend and model", async () => {
+    registerBackend(
+      backendFactory(
+        "openai-agents",
+        composeBackend({ id: "openai-agents", label: "openai-agents" }),
+      ),
+    );
+    await initBackendPool(
+      { backend: "openai-agents" } as unknown as TalonConfig,
+      STUB_CTX,
+    );
+
+    const result = await runJobOneShot({
+      chatId: "42",
+      backendId: "openai-agents",
+      model: "glm-5.2",
+      payload: "payload",
+      label: "nightly check",
+      kind: "cron",
+      fallback: { backendId: "openai-agents", model: "glm-5.2" },
+    });
+
+    expect(result).toEqual({
+      status: "skipped",
+      reason:
+        'provider "openai-agents" can\'t run isolated jobs (no background capability).',
+    });
+  });
 });

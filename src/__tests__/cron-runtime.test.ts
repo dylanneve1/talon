@@ -20,6 +20,10 @@ const mocks = vi.hoisted(() => ({
     backendId: "chat-backend",
   })),
   getActiveCount: vi.fn(() => 0),
+  resolveJobFallback: vi.fn(() => ({
+    model: "hb-model",
+    backendId: "hb-backend",
+  })),
   runJobOneShot: vi.fn(async (_params: Record<string, unknown>) => ({
     status: "ran" as const,
   })),
@@ -111,9 +115,14 @@ beforeEach(() => {
     backendId: "chat-backend",
   });
   mocks.runJobOneShot.mockResolvedValue({ status: "ran" });
+  mocks.resolveJobFallback.mockReturnValue({
+    model: "hb-model",
+    backendId: "hb-backend",
+  });
   initCron({
     sendMessage: mocks.sendMessage,
     resolveChatModel: mocks.resolveChatModel,
+    resolveJobFallback: mocks.resolveJobFallback,
   });
 });
 
@@ -139,7 +148,30 @@ describe("executeJob — isolated query runtime", () => {
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("uses stored provider/model/instructions for query overrides", async () => {
+  it("hands the role backend to jobs that inherited the chat's backend", async () => {
+    await executeJob(makeJob({ type: "query", chatId: "42" }));
+
+    expect(mocks.runJobOneShot.mock.calls[0]?.[0]).toMatchObject({
+      backendId: "chat-backend",
+      model: "chat-model",
+      fallback: { backendId: "hb-backend", model: "hb-model" },
+    });
+  });
+
+  it("omits the fallback when the role backend resolves no model", async () => {
+    (mocks.resolveJobFallback as any).mockReturnValueOnce({
+      model: null,
+      backendId: "hb-backend",
+    });
+
+    await executeJob(makeJob({ type: "query", chatId: "42" }));
+
+    expect(mocks.runJobOneShot.mock.calls[0]?.[0]).not.toHaveProperty(
+      "fallback",
+    );
+  });
+
+  it("never reroutes a job that pinned its own provider", async () => {
     await executeJob(
       makeJob({
         type: "query",
@@ -155,6 +187,10 @@ describe("executeJob — isolated query runtime", () => {
       model: "cheap-model",
       instructions: "Be terse.",
     });
+    expect(mocks.resolveJobFallback).not.toHaveBeenCalled();
+    expect(mocks.runJobOneShot.mock.calls[0]?.[0]).not.toHaveProperty(
+      "fallback",
+    );
   });
 
   it("includes interval schedules in the isolated payload description", async () => {
