@@ -415,6 +415,14 @@ export async function initBackendAndDispatcher(
       );
       return { model, backendId: beId };
     },
+    // ...and when that ambient backend turns out to be one that can't host an
+    // isolated run (e.g. the chat was switched to a provider with no background
+    // capability), the job reruns on the heartbeat role backend instead of
+    // being skipped.
+    resolveJobFallback: () => ({
+      backendId: config.heartbeatBackend ?? config.backend,
+      model: config.heartbeatModel ?? config.model ?? null,
+    }),
   });
   initTriggers({ execute: dispatcherExecute });
   resumeTriggersAfterRestart().catch((err) =>

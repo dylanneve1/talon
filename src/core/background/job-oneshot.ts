@@ -51,6 +51,19 @@ export interface JobOneShotParams {
   readonly kind: JobKind;
   /** Optional override of the hard timeout. */
   readonly timeoutMs?: number;
+  /**
+   * Backend to retry on when the primary one can't host an isolated run.
+   *
+   * A cron `query` job with no provider override inherits the chat's *ambient*
+   * backend, which any `/model` switch can change out from under it — including
+   * to a provider with no background capability (or one where the chat's model
+   * isn't selectable). That has nothing to do with the job, so rather than skip
+   * it, fall back to the deployment's background-capable role backend
+   * (heartbeat, else the configured default). Omitted for jobs that pinned
+   * their own provider: an explicit choice is honoured or skipped, never
+   * silently rerouted.
+   */
+  readonly fallback?: { readonly backendId: string; readonly model: string };
 }
 
 export type JobOneShotResult =
@@ -75,7 +88,17 @@ async function openJobLog(
   return appendLog;
 }
 
-function skipJob(params: JobOneShotParams, reason: string): JobOneShotResult {
+// The warning is deferred to runJobOneShot: an attempt that fails here may
+// still succeed on the fallback backend, and a run that ultimately ran must
+// not leave a "skipped" warning in the logs.
+function skipJob(reason: string): JobOneShotResult {
+  return { status: "skipped", reason };
+}
+
+function reportSkip(
+  params: JobOneShotParams,
+  reason: string,
+): JobOneShotResult {
   logWarn(
     params.kind === "cron" ? "cron" : "triggers",
     `isolated job "${params.label}" skipped: ${reason}`,
@@ -84,19 +107,20 @@ function skipJob(params: JobOneShotParams, reason: string): JobOneShotResult {
 }
 
 /**
- * Run a trigger/cron wake-up as an isolated one-shot on a different backend.
- * Acquires the target backend on demand and always releases it afterwards.
+ * One attempt on one backend: acquire it, check it can actually host an
+ * isolated run, execute, and always release it afterwards.
  */
-export async function runJobOneShot(
+async function attemptJobOneShot(
   params: JobOneShotParams,
+  backendId: string,
+  model: string,
 ): Promise<JobOneShotResult> {
   let acquired: Awaited<ReturnType<typeof acquireBackendInstance>>;
   try {
-    acquired = await acquireBackendInstance(params.backendId);
+    acquired = await acquireBackendInstance(backendId);
   } catch (err) {
     return skipJob(
-      params,
-      `provider "${params.backendId}" is unavailable: ${err instanceof Error ? err.message : String(err)}`,
+      `provider "${backendId}" is unavailable: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 
@@ -105,32 +129,29 @@ export async function runJobOneShot(
     const background = backend.background;
     if (!background) {
       return skipJob(
-        params,
-        `provider "${params.backendId}" can't run isolated jobs (no background capability).`,
+        `provider "${backendId}" can't run isolated jobs (no background capability).`,
       );
     }
 
     let modelValid = false;
     try {
-      modelValid = await isModelValidForBackend(backend, params.model);
+      modelValid = await isModelValidForBackend(backend, model);
     } catch (err) {
       return skipJob(
-        params,
-        `could not validate model "${params.model}" on provider "${params.backendId}": ${err instanceof Error ? err.message : String(err)}`,
+        `could not validate model "${model}" on provider "${backendId}": ${err instanceof Error ? err.message : String(err)}`,
       );
     }
     if (!modelValid) {
       return skipJob(
-        params,
-        `model "${params.model}" is not selectable on provider "${params.backendId}".`,
+        `model "${model}" is not selectable on provider "${backendId}".`,
       );
     }
 
     const appendLog = await openJobLog(
       params.kind,
       params.label,
-      params.backendId,
-      params.model,
+      backendId,
+      model,
     );
 
     const abortController = new AbortController();
@@ -140,7 +161,7 @@ export async function runJobOneShot(
       chatId: params.chatId,
       abort: () => abortController.abort(),
     });
-    task.bind({ model: params.model, backendId: params.backendId });
+    task.bind({ model, backendId });
 
     const oneShot: OneShotAgentParams = {
       prompt: params.payload,
@@ -151,7 +172,7 @@ export async function runJobOneShot(
       ),
       contextLabel: JOB_CONTEXT_LABEL,
       workspace: dirs.workspace,
-      model: params.model,
+      model,
       abortController,
       appendLog,
     };
@@ -172,10 +193,49 @@ export async function runJobOneShot(
     }
     log(
       params.kind === "cron" ? "cron" : "triggers",
-      `isolated job "${params.label}" ran on ${params.backendId}/${params.model}`,
+      `isolated job "${params.label}" ran on ${backendId}/${model}`,
     );
     return { status: "ran" };
   } finally {
     await release();
   }
+}
+
+/**
+ * Run a trigger/cron wake-up as an isolated one-shot.
+ *
+ * Tries the requested backend first. When that backend can't host the run at
+ * all — no background capability, unavailable, or the inherited model isn't
+ * selectable on it — and a distinct {@link JobOneShotParams.fallback} was
+ * supplied, the job is retried there instead of being skipped. A job is only
+ * reported as skipped once every candidate has been ruled out.
+ */
+export async function runJobOneShot(
+  params: JobOneShotParams,
+): Promise<JobOneShotResult> {
+  const first = await attemptJobOneShot(params, params.backendId, params.model);
+  if (first.status === "ran") return first;
+
+  const { fallback } = params;
+  if (
+    !fallback ||
+    (fallback.backendId === params.backendId && fallback.model === params.model)
+  ) {
+    return reportSkip(params, first.reason);
+  }
+
+  log(
+    params.kind === "cron" ? "cron" : "triggers",
+    `isolated job "${params.label}": ${params.backendId}/${params.model} can't host it (${first.reason}) — retrying on ${fallback.backendId}/${fallback.model}`,
+  );
+  const second = await attemptJobOneShot(
+    params,
+    fallback.backendId,
+    fallback.model,
+  );
+  if (second.status === "ran") return second;
+  return reportSkip(
+    params,
+    `${first.reason} Fallback ${fallback.backendId}/${fallback.model} also unusable: ${second.reason}`,
+  );
 }

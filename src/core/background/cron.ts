@@ -62,6 +62,13 @@ type CronDeps = {
   resolveChatModel: (
     chatId: string,
   ) => Promise<{ model: string | null; backendId: string }>;
+  /**
+   * Resolve the deployment's background-capable role backend (heartbeat, else
+   * the configured default). Used as a fallback for query jobs that inherited
+   * the chat's ambient backend and found it can't run isolated jobs — a
+   * `/model` switch in the chat shouldn't silently disable the schedule.
+   */
+  resolveJobFallback?: () => { model: string | null; backendId: string };
 };
 
 let deps: CronDeps | null = null;
@@ -473,6 +480,10 @@ export async function executeJob(job: CronJob): Promise<ExecuteJobResult> {
   // chat's backend + active model.
   let backendId: string;
   let model: string | null;
+  // A job that pinned its own provider is honoured as written — no fallback.
+  // One that inherited the chat's ambient backend gets a safety net, because
+  // that backend can change under it at any time (`/model`, a rebind).
+  let fallback: { backendId: string; model: string } | undefined;
   if (job.provider) {
     backendId = job.provider;
     model = job.model ?? null;
@@ -480,6 +491,10 @@ export async function executeJob(job: CronJob): Promise<ExecuteJobResult> {
     const chat = await deps.resolveChatModel(job.chatId);
     backendId = chat.backendId;
     model = job.model ?? chat.model;
+    const candidate = deps.resolveJobFallback?.();
+    if (candidate?.model) {
+      fallback = { backendId: candidate.backendId, model: candidate.model };
+    }
   }
   if (!model) {
     throw new Error(
@@ -502,6 +517,7 @@ export async function executeJob(job: CronJob): Promise<ExecuteJobResult> {
     label: job.name,
     kind: "cron",
     timeoutMs: CRON_JOB_TIMEOUT_MS,
+    ...(fallback ? { fallback } : {}),
   });
   if (result.status === "skipped") {
     await deps.sendMessage(
