@@ -671,6 +671,9 @@ describe("history", () => {
   });
 
   describe("chat retention", () => {
+    // 1001 separate writes, each its own SQLite transaction. On
+    // windows-latest that regularly runs past the global 15s testTimeout
+    // (observed on CI for #736), so give this one case room.
     it("retains every chat past the legacy MAX_CHAT_COUNT eviction threshold", () => {
       // The JSON buffer evicted ~10% of chats past 1000 to bound process
       // memory; SQLite holds nothing in memory, so all chats survive.
@@ -681,7 +684,7 @@ describe("history", () => {
       for (const i of [0, 1, 50, 99]) {
         expect(getRecentHistory(`evict-chat-${i}`)).toHaveLength(1);
       }
-    });
+    }, 60_000);
   });
 });
 

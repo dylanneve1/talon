@@ -134,10 +134,23 @@ function startConnectionMonitor(): void {
   if (reconnectTimer) return;
   reconnectTimer = setInterval(async () => {
     if (!client) return;
-    if (client.connected) return;
     if (reconnecting) return; // prevent overlapping reconnect attempts
-    reconnecting = true;
 
+    // GramJS keeps `client.connected === true` even after the underlying
+    // socket has silently died, so a real round-trip is the only reliable
+    // liveness signal. Without it the userbot can go stale for hours/days
+    // while the monitor believes it is still connected.
+    if (client.connected) {
+      try {
+        // A full API round-trip; throws if the socket is silently dead.
+        await client.getMe();
+        return; // genuinely alive
+      } catch {
+        logWarn("userbot", "Liveness check failed — treating socket as dead.");
+      }
+    }
+
+    reconnecting = true;
     logWarn("userbot", "Connection lost, attempting reconnect...");
     try {
       await client.connect();

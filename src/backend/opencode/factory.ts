@@ -19,6 +19,9 @@ import {
   type ChatBackend,
   type BackgroundRunner,
   type ModelCatalog,
+  type SessionBackend,
+  type SystemControl,
+  type ToolRuntime,
   type UsageTelemetry,
 } from "../../core/agent-runtime/capabilities.js";
 
@@ -35,6 +38,9 @@ import {
   getProviderModels as ocGetProviderModels,
   formatModelError as ocFormatModelError,
   listModels as ocListModels,
+  refreshPluginMcpServers as ocRefreshPluginMcpServers,
+  updateSystemPrompt as ocUpdateSystemPrompt,
+  warmSession as ocWarmSession,
 } from "./index.js";
 
 const opencodeFactory: BackendFactory = {
@@ -60,21 +66,8 @@ const opencodeFactory: BackendFactory = {
       // Catalog-driven backend with no canonical default.
       getDefaultModelId: () => undefined,
       getRawModelInfo: (id) => ocGetModelInfo(id),
-      getSettingsPresentation: async (m, options) => {
-        const inner = await ocGetSettingsPresentation(
-          m,
-          options?.callbackPrefix,
-        );
-        return {
-          ...inner,
-          view: "models" as const,
-          page: 1,
-          totalPages: 1,
-          filter: "all" as const,
-          freeCount: 0,
-          totalCount: inner.modelButtons.length,
-        };
-      },
+      getSettingsPresentation: (m, options) =>
+        ocGetSettingsPresentation(m, options),
       getProviders: () => ocGetProviders(),
       getProviderModels: (p, pg, ps) => ocGetProviderModels(p, pg, ps),
       formatModelError: (q, r) => ocFormatModelError(q, r),
@@ -95,6 +88,23 @@ const opencodeFactory: BackendFactory = {
       },
     };
 
+    const tools: ToolRuntime = {
+      refreshTools: (chatId) => ocRefreshPluginMcpServers(chatId),
+    };
+
+    // Session state lives on the OpenCode server, and `/reset` already
+    // clears Talon's stored id centrally (storage/sessions.ts), so the
+    // next turn creates a fresh one — no `resetChat` needed. `warmSession`
+    // front-loads that creation plus the plugin-MCP sweep, matching what
+    // the Claude backend does after a reset.
+    const sessions: SessionBackend = {
+      warmSession: (chatId) => ocWarmSession(chatId),
+    };
+
+    const control: SystemControl = {
+      updateSystemPrompt: (prompt) => ocUpdateSystemPrompt(prompt),
+    };
+
     const backend = composeBackend({
       id: "opencode",
       label: "OpenCode",
@@ -102,7 +112,10 @@ const opencodeFactory: BackendFactory = {
       chat,
       background,
       models,
+      sessions,
+      tools,
       usage,
+      control,
     });
 
     return {

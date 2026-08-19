@@ -23,7 +23,6 @@ import {
 } from "@opencode-ai/sdk/v2";
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
-import { logWarn } from "../../util/log.js";
 import { buildDeliveryContract } from "../shared/delivery-contract.js";
 import {
   guessProviderID,
@@ -39,7 +38,9 @@ import {
   ensurePluginMcpServers as ensurePluginMcpServersShared,
   buildToolOverrides as buildToolOverridesShared,
   disconnectChatMcpServer as disconnectChatMcpServerShared,
+  refreshPluginMcpServers as refreshPluginMcpServersShared,
   ensureRemoteSession,
+  warmRemoteSession,
   resolveProviderID as resolveProviderIDShared,
   getRegisteredMcpServerNames as getRegisteredMcpServerNamesShared,
   errMsg as sharedErrMsg,
@@ -91,20 +92,6 @@ export function initOpenCodeAgent(
   state.config = cfg;
   if (getGatewayPort) state.gatewayPortFn = getGatewayPort;
   if (frontend) state.frontendName = frontend;
-
-  // Pre-warm plugin MCP servers in the background. Same rationale as
-  // the Kilo backend's init pre-warm.
-  prewarmPluginMcpServers().catch((err) => {
-    logWarn(
-      "agent",
-      `Plugin MCP pre-warm failed (non-fatal): ${sharedErrMsg(err)}`,
-    );
-  });
-}
-
-async function prewarmPluginMcpServers(): Promise<void> {
-  const client = await ensureServer();
-  await ensurePluginMcpServers(client, "prewarm");
 }
 
 /**
@@ -155,8 +142,9 @@ export function ensurePluginMcpServers(
 export function buildToolOverrides(
   oc: OpencodeClient,
   chatServerName: string,
+  pluginServerNames: readonly string[] = [],
 ): Promise<Record<string, boolean> | undefined> {
-  return buildToolOverridesShared(oc, state, chatServerName);
+  return buildToolOverridesShared(oc, state, chatServerName, pluginServerNames);
 }
 
 export function disconnectChatMcpServer(
@@ -166,6 +154,15 @@ export function disconnectChatMcpServer(
   return disconnectChatMcpServerShared(oc, state, serverName);
 }
 
+export async function refreshPluginMcpServers(chatId: string) {
+  const oc = await ensureServer();
+  return refreshPluginMcpServersShared(oc, state, chatId);
+}
+
+export function updateSystemPrompt(prompt: string): void {
+  if (state.config) state.config.systemPrompt = prompt;
+}
+
 // ── Session management ─────────────────────────────────────────────────────
 
 export function ensureSession(
@@ -173,6 +170,20 @@ export function ensureSession(
   chatId: string,
 ): Promise<string> {
   return ensureRemoteSession(oc, state, chatId);
+}
+
+/**
+ * Front-load a chat's cold start after `/reset`. Mirrors the Claude
+ * backend's `warmSession` so the `sessions` capability slot behaves the
+ * same across backends. Never throws — see `warmRemoteSession`.
+ */
+export function warmSession(chatId: string): Promise<void> {
+  return warmRemoteSession(state, chatId, {
+    ensureServer,
+    ensureSession,
+    ensureChatMcpServer,
+    ensurePluginMcpServers,
+  });
 }
 
 // ── Provider resolution ────────────────────────────────────────────────────

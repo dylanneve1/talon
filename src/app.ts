@@ -11,6 +11,7 @@ import { startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
 import { flushDatabase } from "./storage/db.js";
 import { getActiveCount } from "./core/engine/dispatcher.js";
 import { startPulseTimer, stopPulseTimer } from "./core/background/pulse.js";
+import { stopPlanAlerts } from "./core/background/plan-alerts.js";
 import {
   startHeartbeatTimer,
   stopHeartbeatTimer,
@@ -24,6 +25,7 @@ import {
 import { shutdownTriggers } from "./core/background/triggers/index.js";
 import { pruneSettledTriggers } from "./storage/trigger-store.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
+import { spawnSuccessor } from "./util/respawn.js";
 import { log, logError, logWarn } from "./util/log.js";
 import {
   getVfs,
@@ -121,6 +123,14 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
   const forceTimer = setTimeout(() => {
     logError("shutdown", "Timeout exceeded, forcing exit");
+    // Hand off even on the forced path. A restart must survive a
+    // subsystem that won't stop (a wedged FUSE unmount, an MCP server
+    // ignoring SIGTERM, a backend child that never acks): without this
+    // the timeout exits without a successor and `/restart` silently
+    // takes the daemon down for good. The successor may briefly race
+    // the long-poll we failed to release, but grammy retries the 409 —
+    // a few seconds of overlap beats staying down.
+    spawnSuccessor();
     process.exit(1);
   }, SHUTDOWN_TIMEOUT_MS);
   forceTimer.unref();
@@ -148,13 +158,14 @@ async function gracefulShutdown(signal: string): Promise<void> {
   await shutdownStep("frontends", () =>
     Promise.allSettled(frontends.map((frontend) => frontend.stop())),
   );
-  if (config.backend === "opencode") {
-    await shutdownStep("opencode server", async () => {
-      const { stopOpenCodeServer } =
-        await import("./backend/opencode/index.js");
-      stopOpenCodeServer();
-    });
-  }
+  // Tear down every instantiated backend, including per-chat overrides.
+  // Checking only config.backend orphaned an OpenCode child whenever the
+  // process default was Claude but one chat had switched to OpenCode.
+  await shutdownStep("backend pool", async () => {
+    const { cleanupBackendPool } =
+      await import("./core/engine/backend-controller/index.js");
+    await cleanupBackendPool();
+  });
   // Destroy plugins (cleanup resources)
   if (config.plugins.length > 0) {
     await shutdownStep("plugins", async () => {
@@ -169,6 +180,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
     await awaitHeartbeat();
   });
   await shutdownStep("cron timer", stopCronTimer);
+  await shutdownStep("plan alerts", stopPlanAlerts);
   await shutdownStep("trigger prune timer", () => {
     if (triggerPruneTimer) clearInterval(triggerPruneTimer);
     triggerPruneTimer = null;
@@ -181,11 +193,15 @@ async function gracefulShutdown(signal: string): Promise<void> {
     await shutdownHub();
   });
   flushDatabase();
-  // Guarded removal: after a /restart handoff the successor has already
-  // written its own pid here — deleting unconditionally would orphan it
-  // (the bug that made `talon restart` spawn duplicate daemons).
+  // Guarded removal: only clear the record if it still names us. A
+  // successor that raced ahead and wrote its own pid here must not be
+  // orphaned (the bug that made `talon restart` spawn duplicate daemons).
   removePidRecordIfOwnedBy(process.pid);
   log("shutdown", "State saved");
+  // Hand off last: the frontends are stopped, so the successor binds
+  // Telegram's long-poll only after we have released it. No-op unless
+  // /restart or /update armed a respawn.
+  spawnSuccessor();
   process.exit(0);
 }
 

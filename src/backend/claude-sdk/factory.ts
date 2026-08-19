@@ -22,7 +22,9 @@ import {
   type SessionBackend,
   type SystemControl,
   type ToolRuntime,
+  type UsageTelemetry,
 } from "../../core/agent-runtime/capabilities.js";
+import { getPlanUsage } from "./plan-usage.js";
 
 import {
   initAgent as initClaudeAgent,
@@ -117,6 +119,12 @@ const claudeSdkFactory: BackendFactory = {
       updateSystemPrompt: (prompt) => claudeUpdateSystemPrompt(prompt),
     };
 
+    // No per-session snapshot to offer (each turn is a fresh subprocess),
+    // but the subscription's rate-limit windows are readable.
+    const usage: UsageTelemetry = {
+      getPlanUsage: () => getPlanUsage(),
+    };
+
     const backend = composeBackend({
       id: "claude",
       label: "Anthropic",
@@ -126,6 +134,7 @@ const claudeSdkFactory: BackendFactory = {
       models,
       sessions,
       tools,
+      usage,
       control,
     });
 

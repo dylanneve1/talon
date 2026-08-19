@@ -44,6 +44,47 @@ import {
   editOrIgnoreSame,
   type CallbackDeps,
 } from "./shared.js";
+import { logWarn } from "../../../util/log.js";
+
+/**
+ * Run the backend-side half of a chat's session handoff.
+ *
+ * A backend switch already clears Talon's own stores (session row,
+ * history, pulse checkpoint), but those are only half the state.
+ * `performSessionReset` also drives the backend capability slots, and
+ * the switch path skipped them entirely:
+ *
+ *   - the OUTGOING backend keeps in-process per-chat state that no
+ *     amount of clearing Talon's stores touches. openai-agents holds a
+ *     `MemorySession` map keyed by chat id, so switching away and back
+ *     resurrected the old conversation the operator meant to drop.
+ *   - the INCOMING backend was never warmed, so the first turn after a
+ *     switch paid the full cold start — on OpenCode/Kilo that is session
+ *     creation plus a per-plugin MCP registration sweep.
+ *
+ * The warm is deliberately fire-and-forget: it can take seconds, and the
+ * callback still has a toast to answer and a menu to redraw. Telegram
+ * expires an unanswered callback query, so blocking here would trade a
+ * cold first turn for a visibly stuck button.
+ */
+function handOffBackendSession(
+  chatId: string,
+  previousBackend: ReturnType<typeof resolveBackendForChat>,
+  gateway: CallbackDeps["gateway"],
+): void {
+  previousBackend?.sessions?.resetChat?.(chatId);
+  const nextBackend = resolveBackendForChat(chatId, gateway);
+  // Same instance on a no-op switch — warming it again is harmless
+  // (every step is idempotent) but pointless, so skip it.
+  if (!nextBackend || nextBackend === previousBackend) return;
+  void Promise.resolve(nextBackend.sessions?.warmSession?.(chatId)).catch(
+    (err) =>
+      logWarn(
+        "bot",
+        `[${chatId}] warm after backend switch failed: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+  );
+}
 
 export async function handleModelCallback(
   ctx: Context,
@@ -171,6 +212,10 @@ export async function handleModelCallback(
       });
       return;
     }
+    // Resolve the outgoing backend BEFORE rebinding — afterwards this
+    // chat already points at the new one and the old in-process state
+    // would be unreachable.
+    const previousBackend = resolveBackendForChat(cid, gateway);
     const result = await rebindChat(cid, action.backendId, config);
     if (!result.ok) {
       await answerCallbackQuerySafe(ctx, {
@@ -188,6 +233,7 @@ export async function handleModelCallback(
     resetSession(cid);
     clearHistory(cid);
     resetPulseCheckpoint(cid);
+    handOffBackendSession(cid, previousBackend, gateway);
     const label =
       available.find((b) => b.id === action.backendId)?.label ??
       action.backendId;
@@ -210,11 +256,13 @@ export async function handleModelCallback(
     // global chat-role backend. Per-backend model picks are
     // preserved (modelByBackend stays intact) so reverting and
     // switching back later still restores prior choices.
+    const previousBackend = resolveBackendForChat(cid, gateway);
     await releaseChat(cid);
     setChatBackend(cid, undefined);
     resetSession(cid);
     clearHistory(cid);
     resetPulseCheckpoint(cid);
+    handOffBackendSession(cid, previousBackend, gateway);
     // Resolve the now-default backend's model for the toast.
     const defaultBackend = resolveBackendForChat(cid, gateway);
     const defaultBackendId = getBackendIdForChat(cid);

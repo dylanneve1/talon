@@ -25,9 +25,19 @@ export async function runDoctor(): Promise<void> {
     config: hasConfigFile ? loadConfig() : undefined,
     hasConfigFile,
   });
-  for (const check of report.checks) {
+  const print = (check: (typeof report.checks)[number]): void => {
     const detail = check.detail ? ` ${pc.dim(`(${check.detail})`)}` : "";
     console.log(`  ${DOCTOR_ICONS[check.status]} ${check.label}${detail}`);
+  };
+  for (const check of report.checks.filter((c) => !c.inactive)) print(check);
+
+  // Configured-but-idle backends describe what a switch would run into,
+  // not the state of the running deployment.
+  const idle = report.checks.filter((c) => c.inactive);
+  if (idle.length > 0) {
+    console.log(`\n  ${pc.bold("Other backends")}\n`);
+    for (const check of idle) print(check);
+    console.log();
   }
   // Native plane, one line per embedded module with provenance.
   for (const mod of report.native) {

@@ -112,10 +112,16 @@ export function registerSettingsCommands(
     if (be?.models?.resolveModelInfo) {
       const resolution = await be.models?.resolveModelInfo(arg);
       if (resolution.kind !== "exact") {
+        // Every backend's formatModelError returns plain text and
+        // interpolates the raw query, so escape at this boundary — the
+        // same fix as the model menu's status lines. `/model <name>`
+        // (which the OpenCode/Kilo hint literally tells you to type)
+        // otherwise reaches Telegram as an unsupported `<name>` tag and
+        // the whole reply 400s, leaving the command looking dead.
         const msg =
           be.models?.formatModelError?.(arg, resolution) ??
-          `No model matched "${escapeHtml(arg)}".`;
-        await ctx.reply(msg, { parse_mode: "HTML" });
+          `No model matched "${arg}".`;
+        await ctx.reply(escapeHtml(msg), { parse_mode: "HTML" });
         return;
       }
       if (!resolution.model.selectable) {

@@ -1,5 +1,136 @@
 # Changelog
 
+## [3.20.0](https://github.com/dylanneve1/talon/compare/v3.19.1...v3.20.0) (2026-08-19)
+
+
+### Features
+
+* **chat:** add /stop for running turns ([5fad21d](https://github.com/dylanneve1/talon/commit/5fad21d7550ccd707144f4478d1a4ff1fa8c517a))
+* **chat:** add /stop for running turns ([e05c776](https://github.com/dylanneve1/talon/commit/e05c7767047ecd101c3d327fc54494fba6cea9f3))
+* **companion:** validate the connect form before dialling ([aca0cd1](https://github.com/dylanneve1/talon/commit/aca0cd1b10ba2014c146425e035c4d4d7f9b840e))
+
+
+### Bug Fixes
+
+* **userbot:** use a real round-trip as the connection liveness probe ([8c617ff](https://github.com/dylanneve1/talon/commit/8c617ff87db20d71d230abc5b3f8fd3d2b305eea))
+* **userbot:** use a real round-trip as the connection liveness probe ([ce794b0](https://github.com/dylanneve1/talon/commit/ce794b02dd84311a15ad6d65b6148483a4b98b26))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump knip in the dev-dependencies group ([#749](https://github.com/dylanneve1/talon/issues/749)) ([7600f5a](https://github.com/dylanneve1/talon/commit/7600f5aae2e27c75cc6527ffaf9d63787bd98b60))
+* **deps-dev:** Bump the dev-dependencies group with 2 updates ([#736](https://github.com/dylanneve1/talon/issues/736)) ([c2f0c15](https://github.com/dylanneve1/talon/commit/c2f0c15ee52f57644b07eeb99f8fb2d6f9dc1a38))
+* **deps-dev:** Bump the dev-dependencies group with 2 updates ([#741](https://github.com/dylanneve1/talon/issues/741)) ([0aa0a57](https://github.com/dylanneve1/talon/commit/0aa0a57bd509b121136a8345d6ce862a9febda36))
+* **deps-dev:** Bump the dev-dependencies group with 3 updates ([#744](https://github.com/dylanneve1/talon/issues/744)) ([104ef8d](https://github.com/dylanneve1/talon/commit/104ef8d4c6412b0a17df868b0e824600cb839b40))
+* **deps:** Bump @anthropic-ai/claude-agent-sdk ([#743](https://github.com/dylanneve1/talon/issues/743)) ([8d01076](https://github.com/dylanneve1/talon/commit/8d010762c1fd32a622fcec2a8f0db9f1681edbd3))
+* **deps:** Bump github/codeql-action from 4.37.6 to 4.37.7 ([#750](https://github.com/dylanneve1/talon/issues/750)) ([9d3c9d6](https://github.com/dylanneve1/talon/commit/9d3c9d6b90dae419d73331c2f8f63f5907555536))
+* **deps:** Bump the production-dependencies group with 2 updates ([#745](https://github.com/dylanneve1/talon/issues/745)) ([77005a9](https://github.com/dylanneve1/talon/commit/77005a9b40a83aebbe79f01858301efd3e46255a))
+* **deps:** Bump the production-dependencies group with 7 updates ([#742](https://github.com/dylanneve1/talon/issues/742)) ([5086099](https://github.com/dylanneve1/talon/commit/5086099534d13b0344eb5338e0ceec3d40352b94))
+
+## [3.19.1](https://github.com/dylanneve1/talon/compare/v3.19.0...v3.19.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **test:** give the chat-retention test room on Windows ([cdb230f](https://github.com/dylanneve1/talon/commit/cdb230f6a4fea0934a93b8b8f981c4c5d8eaa3bc))
+* **test:** give the chat-retention test room on Windows ([f08c9c3](https://github.com/dylanneve1/talon/commit/f08c9c3d34c9d22c506580cfc2f630e848aec904))
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump github/codeql-action from 4.37.4 to 4.37.6 ([#737](https://github.com/dylanneve1/talon/issues/737)) ([55b434b](https://github.com/dylanneve1/talon/commit/55b434b20bf830c3fc739e4cdc616a9625d11aeb))
+* **deps:** Bump the production-dependencies group with 6 updates ([#738](https://github.com/dylanneve1/talon/issues/738)) ([9697d7b](https://github.com/dylanneve1/talon/commit/9697d7bdfb4c6485fe324933d0778d6a679d1032))
+
+## [3.19.0](https://github.com/dylanneve1/talon/compare/v3.18.0...v3.19.0) (2026-08-07)
+
+
+### Features
+
+* **codex:** show banked usage-limit resets on /usage ([ed5b32b](https://github.com/dylanneve1/talon/commit/ed5b32b80809617c54b27efa0776858209e1f771))
+* **codex:** show banked usage-limit resets on the usage command ([b68af66](https://github.com/dylanneve1/talon/commit/b68af66fb8077430a8f7eba281198499931feb35))
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump the production-dependencies group with 4 updates ([#731](https://github.com/dylanneve1/talon/issues/731)) ([dfc7dff](https://github.com/dylanneve1/talon/commit/dfc7dff48c3f2e08d34f49a414981141a72d949d))
+* **deps:** Bump tsx in the production-dependencies group ([#733](https://github.com/dylanneve1/talon/issues/733)) ([8483ea2](https://github.com/dylanneve1/talon/commit/8483ea2b15d1cb6722df2774ae04762e425a0a03))
+
+## [3.18.0](https://github.com/dylanneve1/talon/compare/v3.17.0...v3.18.0) (2026-08-04)
+
+
+### Features
+
+* **discord:** add the four commands only Telegram had ([f1cc0ee](https://github.com/dylanneve1/talon/commit/f1cc0ee9b34bbe1e8a8af9294977d028dbb1a687))
+* **models:** paginate the picker, and let Discord switch backends ([3eab3fc](https://github.com/dylanneve1/talon/commit/3eab3fc80b730fd84662dfdd47ef57c8bdaa3f79))
+
+## [3.17.0](https://github.com/dylanneve1/talon/compare/v3.16.1...v3.17.0) (2026-08-04)
+
+
+### Features
+
+* add /usage — plan limits across every backend ([#718](https://github.com/dylanneve1/talon/issues/718)) ([f9e0af5](https://github.com/dylanneve1/talon/commit/f9e0af563771894f9df20377f62e0ced7e737aef))
+* **background:** warn the admin chat before plan limits run out ([#710](https://github.com/dylanneve1/talon/issues/710)) ([b53bec9](https://github.com/dylanneve1/talon/commit/b53bec9385a377da0579c8d6e4328531d525d0b9))
+* **doctor:** check every exposed backend, and group the idle ones ([#715](https://github.com/dylanneve1/talon/issues/715)) ([710bbb5](https://github.com/dylanneve1/talon/commit/710bbb5abd2ca1a89af5fa2e6dcbf094f7fbc3a5))
+
+
+### Bug Fixes
+
+* **discord:** feed reactions on the bot's messages to the soul ([#714](https://github.com/dylanneve1/talon/issues/714)) ([c99981b](https://github.com/dylanneve1/talon/commit/c99981be87e5dd085e51a0d8821bc7b030600f96))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump knip in the dev-dependencies group ([#720](https://github.com/dylanneve1/talon/issues/720)) ([0834ebc](https://github.com/dylanneve1/talon/commit/0834ebcdf0dd044ab38682992bc2d4c426104817))
+* **deps:** Bump docker/login-action from 4.5.2 to 4.6.0 ([#721](https://github.com/dylanneve1/talon/issues/721)) ([992e6f9](https://github.com/dylanneve1/talon/commit/992e6f9cdcc850dda5057d91591ed93e60652131))
+* **deps:** Bump fast-uri from 3.1.4 to 3.1.5 ([#726](https://github.com/dylanneve1/talon/issues/726)) ([07d93e4](https://github.com/dylanneve1/talon/commit/07d93e4583999a26356bd353c052217cced31d29))
+* **deps:** Bump github/codeql-action from 4.37.3 to 4.37.4 ([#722](https://github.com/dylanneve1/talon/issues/722)) ([b770a8b](https://github.com/dylanneve1/talon/commit/b770a8b86802e4220bf6f7c5ede0b84a6e68858e))
+* **deps:** Bump ip-address from 10.2.0 to 10.4.0 ([#723](https://github.com/dylanneve1/talon/issues/723)) ([f6fe8af](https://github.com/dylanneve1/talon/commit/f6fe8af052fd3cb1034baa0f86c391480218e711))
+* **deps:** Bump undici ([#724](https://github.com/dylanneve1/talon/issues/724)) ([f34ae0f](https://github.com/dylanneve1/talon/commit/f34ae0f9b3bb7324fd4eb17eaa85a636980fd69d))
+
+## [3.16.1](https://github.com/dylanneve1/talon/compare/v3.16.0...v3.16.1) (2026-08-03)
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump docker/login-action from 3 to 4.5.2 ([#700](https://github.com/dylanneve1/talon/issues/700)) ([8d7ea6f](https://github.com/dylanneve1/talon/commit/8d7ea6fc1ebb4da256760af461cf62acf9196245))
+* **deps:** Bump github/codeql-action from 3 to 4.37.3 ([#699](https://github.com/dylanneve1/talon/issues/699)) ([f67902c](https://github.com/dylanneve1/talon/commit/f67902cb8f48c33ccac50070239e297d1abb954c))
+
+## [3.16.0](https://github.com/dylanneve1/talon/compare/v3.15.3...v3.16.0) (2026-08-02)
+
+
+### Features
+
+* **status:** show plan rate limits and session cost ([#709](https://github.com/dylanneve1/talon/issues/709)) ([d3e2472](https://github.com/dylanneve1/talon/commit/d3e24729ef25b1d1993b476c001eb197047d06c7))
+
+## [3.15.3](https://github.com/dylanneve1/talon/compare/v3.15.2...v3.15.3) (2026-08-02)
+
+
+### Bug Fixes
+
+* **remote:** stop OpenCode and Kilo re-sending progress text at end of turn ([#711](https://github.com/dylanneve1/talon/issues/711)) ([d3be553](https://github.com/dylanneve1/talon/commit/d3be5531f87c2fe730c8838701819050c9851303))
+
+## [3.15.2](https://github.com/dylanneve1/talon/compare/v3.15.1...v3.15.2) (2026-08-02)
+
+
+### Bug Fixes
+
+* **telegram:** escape the remaining backend-supplied HTML sinks ([#707](https://github.com/dylanneve1/talon/issues/707)) ([4ac566f](https://github.com/dylanneve1/talon/commit/4ac566f6d45fb8cdf079a1aba6c6e345d941ae03))
+
+## [3.15.1](https://github.com/dylanneve1/talon/compare/v3.15.0...v3.15.1) (2026-08-02)
+
+
+### Bug Fixes
+
+* **remote:** harden OpenCode and Kilo runtime parity ([#705](https://github.com/dylanneve1/talon/issues/705)) ([5a67c0d](https://github.com/dylanneve1/talon/commit/5a67c0d21771fa31f49b1b4fffb76336ca2b3400))
+* **runtime:** harden model menu and restart handoff ([#704](https://github.com/dylanneve1/talon/issues/704)) ([87554b4](https://github.com/dylanneve1/talon/commit/87554b4b5c9dd0cfc9192b7d72eb73ee6112ec63))
+
+## [3.15.0](https://github.com/dylanneve1/talon/compare/v3.14.0...v3.15.0) (2026-07-31)
+
+
+### Features
+
+* **terminal:** /context command — context window usage, broken down ([#701](https://github.com/dylanneve1/talon/issues/701)) ([8a2cf77](https://github.com/dylanneve1/talon/commit/8a2cf77226fdbf23960161ac585eb5dc89a0b4d0))
+
 ## [3.14.0](https://github.com/dylanneve1/talon/compare/v3.13.0...v3.14.0) (2026-07-30)
 
 

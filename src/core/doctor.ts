@@ -29,6 +29,12 @@ export interface DoctorCheck {
    * starts but a backend won't work.
    */
   issue?: boolean;
+  /**
+   * A backend that is configured but not serving chats. Renderers group
+   * these away from the environment so a handful of idle providers can't
+   * bury the checks that describe the running deployment.
+   */
+  inactive?: boolean;
 }
 
 /** One embedded native module: provenance plus a live self-test result. */
@@ -59,6 +65,8 @@ export interface DoctorReport {
 export interface DoctorConfigSlice {
   frontend: string | string[];
   backend?: string;
+  /** Backends config exposes. Empty / absent means every registered one. */
+  enabledBackends?: string[];
   model?: string;
   heartbeatModel?: string;
   heartbeatBackend?: string;
@@ -284,12 +292,55 @@ async function checkClaudeConfiguredModels(
   return checks;
 }
 
-/** Binary / auth checks for the active backend only. */
+/** Every backend id doctor knows how to inspect. */
+const KNOWN_BACKENDS = [
+  "claude",
+  "codex",
+  "kilo",
+  "opencode",
+  "openai-agents",
+] as const;
+
+/**
+ * Binary / auth checks across every backend the config exposes.
+ *
+ * Only the active one counts toward the issue total; the rest are reported
+ * so a switch doesn't have to be the thing that discovers a backend can't
+ * run. That distinction matters now that a chat can be rebound at runtime —
+ * a report of all-green while two backends are one click from failing is
+ * worse than no report.
+ */
 async function checkBackend(
   config: DoctorConfigSlice | undefined,
 ): Promise<DoctorCheck[]> {
+  const active = config?.backend ?? "claude";
+  const exposed = config?.enabledBackends?.length
+    ? config.enabledBackends
+    : [...KNOWN_BACKENDS];
+
+  const checks = await checkOneBackend(active, config, true);
+  for (const id of exposed) {
+    if (id === active || !KNOWN_BACKENDS.includes(id as never)) continue;
+    // An idle backend's missing binary is a heads-up, not a fault of this
+    // deployment: downgrade it and keep it out of the issue count.
+    for (const check of await checkOneBackend(id, config, false)) {
+      checks.push({
+        ...check,
+        status: check.status === "fail" ? "warn" : check.status,
+        issue: false,
+        inactive: true,
+      });
+    }
+  }
+  return checks;
+}
+
+async function checkOneBackend(
+  backend: string,
+  config: DoctorConfigSlice | undefined,
+  isActive: boolean,
+): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
-  const backend = config?.backend ?? "claude";
 
   if (backend === "claude") {
     if (config?.claudeBinary) {
@@ -313,7 +364,9 @@ async function checkBackend(
           : { label: "Claude Code not found", status: "fail" },
       );
     }
-    checks.push(...(await checkClaudeConfiguredModels(config)));
+    // Model resolution spawns a probe — worth it for the backend actually
+    // serving chats, wasteful for one nobody is using.
+    if (isActive) checks.push(...(await checkClaudeConfiguredModels(config)));
   } else if (backend === "codex") {
     if (!binaryOnPath("codex")) {
       checks.push({
@@ -349,11 +402,21 @@ async function checkBackend(
       });
     }
   } else if (backend === "kilo" || backend === "opencode") {
-    // Bundled as npm deps — no external binary to check.
-    checks.push({
-      label: `${backend === "kilo" ? "Kilo" : "OpenCode"} SDK bundled`,
-      status: "ok",
-    });
+    // The SDK ships as an npm dep but only talks to a server it spawns from
+    // the CLI of the same name (`cross-spawn` → PATH lookup). A present
+    // package with an absent binary fails at the first turn with a bare
+    // ENOENT, so check what actually gets executed.
+    const label = backend === "kilo" ? "Kilo" : "OpenCode";
+    checks.push(
+      binaryOnPath(backend)
+        ? { label: `${label} CLI installed`, status: "ok" }
+        : {
+            label: `${label} CLI not found`,
+            status: "fail",
+            detail: `the ${label} SDK spawns \`${backend}\` — install it or this backend cannot start`,
+            issue: true,
+          },
+    );
   } else if (backend === "openai-agents") {
     checks.push({ label: "OpenAI Agents SDK bundled", status: "ok" });
     const hasEnvKey = Boolean(process.env.OPENAI_API_KEY);

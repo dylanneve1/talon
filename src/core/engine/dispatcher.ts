@@ -10,6 +10,7 @@
 
 import type { ExecuteParams, ExecuteResult } from "../types.js";
 import { log } from "../../util/log.js";
+import { taskTable, type KillOutcome } from "../tasks/index.js";
 import {
   initWeaver,
   type Weaver,
@@ -55,6 +56,14 @@ export function getActiveCount(): number {
  */
 export function snapshot(): ThreadSnapshot[] {
   return weaver?.snapshot() ?? [];
+}
+
+/**
+ * Stop only this chat's active turn. A later message already waiting in the
+ * per-chat FIFO is intentionally left alone and runs after the stop settles.
+ */
+export function stopCurrentTurn(chatId: string): KillOutcome {
+  return taskTable.killRunningTurn(chatId);
 }
 
 /**

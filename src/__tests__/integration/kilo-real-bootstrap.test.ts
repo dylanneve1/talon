@@ -296,9 +296,9 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
     //    Same shape as TelegramFrontend / DiscordFrontend / TeamsFrontend —
     //    just wired to in-memory hooks instead of an external chat platform.
     const ctx: ContextManager = {
-      acquire: () => {},
-      release: () => {},
-      getMessageCount: () => 0,
+      acquire: (chatId, stringId) => gateway!.setContext(chatId, stringId),
+      release: (chatId) => gateway!.clearContext(chatId),
+      getMessageCount: (chatId) => gateway!.getMessageCount(chatId),
     };
     const frontend: Frontend = {
       name: "telegram",
@@ -423,20 +423,16 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
 
   // ── Test 2: cross-chat MCP isolation ─────────────────────────────────────
   //
-  // Per-session permission rules block tool *execution* but not *visibility*
-  // — Kilo exposes every registered MCP server's tools to every session.
-  // The fix (`ensureChatMcpServer` in server.ts) holds at most one chat
-  // `talon-tools-<chatId>` registered at a time, disconnecting any other
-  // when a new chat starts.
+  // Kilo exposes every registered MCP server globally, so Talon keeps
+  // chat-namespaced registrations alive for concurrency and isolates their
+  // visibility with per-prompt tool overrides.
   //
-  // This test exercises the disconnect path against a real `kilo serve`:
-  // run a turn for chat A, then a turn for chat B, then assert that only
-  // chat B's MCP server remains registered (chat A's was disconnected
-  // before chat B's was added). Talon's local `registeredMcpServers` Set
+  // This test runs chat A then chat B against a real server and asserts both
+  // remain registered. Talon's local `registeredMcpServers` Set
   // is the source of truth — Kilo's `GET /mcp` returns `{}` regardless of
   // state, so we read the cache directly via `getRegisteredMcpServerNames`.
 
-  it("chat-switch disconnects the previous chat's MCP server", async () => {
+  it("retains both chat MCP servers across chat switches", async () => {
     recording.reset();
     const { execute } = await import("../../core/engine/dispatcher.js");
     const { getRegisteredMcpServerNames } =
@@ -461,9 +457,7 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
       `expected chat A's MCP to be registered after turn 1; got [${afterA.join(", ")}]`,
     ).toContain("talon-tools-isolation-chat-a");
 
-    // Turn 2 — chat B. Chat A's MCP must be disconnected before chat B's
-    // is added; production logs `Disconnected talon-tools-... (chat switch)`
-    // when this fires.
+    // Turn 2 — chat B must not disrupt chat A's registration.
     await execute({
       chatId: "isolation-chat-b",
       numericChatId: 991_011,
@@ -479,16 +473,8 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
     expect(chatServers).toContain("talon-tools-isolation-chat-b");
     expect(
       chatServers,
-      `chat A's MCP must be disconnected after switch; cache=[${chatServers.join(", ")}]`,
-    ).not.toContain("talon-tools-isolation-chat-a");
-
-    // Heartbeat sentinel (if present) is exempt from the chat-switch
-    // disconnect, but should be the ONLY non-chat talon-tools-* in the
-    // cache. Anything else means a stale chat MCP wasn't disconnected.
-    const nonHeartbeat = chatServers.filter(
-      (n) => n !== "talon-tools-heartbeat",
-    );
-    expect(nonHeartbeat).toEqual(["talon-tools-isolation-chat-b"]);
+      `chat A's MCP must remain available for concurrent turns; cache=[${chatServers.join(", ")}]`,
+    ).toContain("talon-tools-isolation-chat-a");
   }, 240_000);
 
   // Synthetic output-cap path coverage lives at the unit level:

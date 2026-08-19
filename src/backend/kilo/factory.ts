@@ -19,6 +19,9 @@ import {
   type ChatBackend,
   type BackgroundRunner,
   type ModelCatalog,
+  type SessionBackend,
+  type SystemControl,
+  type ToolRuntime,
   type UsageTelemetry,
 } from "../../core/agent-runtime/capabilities.js";
 
@@ -35,6 +38,9 @@ import {
   getProviderModels as kiloGetProviderModels,
   formatModelError as kiloFormatModelError,
   listModels as kiloListModels,
+  refreshPluginMcpServers as kiloRefreshPluginMcpServers,
+  updateSystemPrompt as kiloUpdateSystemPrompt,
+  warmSession as kiloWarmSession,
 } from "./index.js";
 
 const kiloFactory: BackendFactory = {
@@ -63,25 +69,8 @@ const kiloFactory: BackendFactory = {
       // through to `config.backendDefaults.kilo`.
       getDefaultModelId: () => undefined,
       getRawModelInfo: (id) => kiloGetModelInfo(id),
-      getSettingsPresentation: async (m, options) => {
-        // Kilo's internal helper returns the bare picker shape;
-        // wrap into the canonical `ModelPickerResult`. Kilo doesn't
-        // expose pagination or a free-tier filter so the result is
-        // always page 1 of 1 with filter "all".
-        const inner = await kiloGetSettingsPresentation(
-          m,
-          options?.callbackPrefix,
-        );
-        return {
-          ...inner,
-          view: "models" as const,
-          page: 1,
-          totalPages: 1,
-          filter: "all" as const,
-          freeCount: 0,
-          totalCount: inner.modelButtons.length,
-        };
-      },
+      getSettingsPresentation: (m, options) =>
+        kiloGetSettingsPresentation(m, options),
       getProviders: () => kiloGetProviders(),
       getProviderModels: (p, pg, ps) => kiloGetProviderModels(p, pg, ps),
       formatModelError: (q, r) => kiloFormatModelError(q, r),
@@ -102,6 +91,23 @@ const kiloFactory: BackendFactory = {
       },
     };
 
+    const tools: ToolRuntime = {
+      refreshTools: (chatId) => kiloRefreshPluginMcpServers(chatId),
+    };
+
+    // Session state lives on the Kilo server, and `/reset` already clears
+    // Talon's stored id centrally (storage/sessions.ts), so the next turn
+    // creates a fresh one — no `resetChat` needed. `warmSession` front-loads
+    // that creation plus the plugin-MCP sweep, matching what the Claude
+    // backend does after a reset.
+    const sessions: SessionBackend = {
+      warmSession: (chatId) => kiloWarmSession(chatId),
+    };
+
+    const control: SystemControl = {
+      updateSystemPrompt: (prompt) => kiloUpdateSystemPrompt(prompt),
+    };
+
     const backend = composeBackend({
       id: "kilo",
       label: "Kilo",
@@ -109,7 +115,10 @@ const kiloFactory: BackendFactory = {
       chat,
       background,
       models,
+      sessions,
+      tools,
       usage,
+      control,
     });
 
     return {

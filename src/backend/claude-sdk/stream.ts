@@ -39,6 +39,8 @@ export type StreamState = {
   sdkOutputTokens: number;
   sdkCacheRead: number;
   sdkCacheWrite: number;
+  /** Cost of this turn in USD, as reported by the result message. */
+  costUsd: number;
   /**
    * Per-turn cache behaviour derived from the result message's per-request
    * `usage.iterations`. Undefined when the provider reported none — the
@@ -113,6 +115,7 @@ export function createStreamState(): StreamState {
     sdkOutputTokens: 0,
     sdkCacheRead: 0,
     sdkCacheWrite: 0,
+    costUsd: 0,
     cacheStats: undefined,
     lastStreamUpdate: 0,
     lastTrailingText: "",
@@ -146,6 +149,11 @@ export function isUserMessage(msg: SDKMessage): msg is SDKUserMessage {
 
 export function isResult(msg: SDKMessage): msg is SDKResultMessage {
   return msg.type === "result";
+}
+
+/** Emitted when the subscription's rate-limit state changes mid-turn. */
+export function isRateLimitEvent(msg: SDKMessage): boolean {
+  return msg.type === "rate_limit_event";
 }
 
 // ── Message processors ──────────────────────────────────────────────────────
@@ -336,6 +344,11 @@ export function processResultMessage(
   sdkModel: string,
 ): void {
   state.numApiCalls = msg.num_turns ?? 0;
+
+  // Per-turn, not cumulative across a resumed session — safe to add up.
+  if (typeof msg.total_cost_usd === "number" && msg.total_cost_usd > 0) {
+    state.costUsd = msg.total_cost_usd;
+  }
 
   // Context fill from last API iteration
   const usage = msg.usage;

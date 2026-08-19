@@ -44,6 +44,21 @@ export interface StreamState {
   allResponseText: string;
   /** Text *after* the last tool call (or the entire response if no tools). */
   lastTrailingText: string;
+  /**
+   * How much of `allResponseText` has already reached the user as a
+   * mid-turn progress message.
+   *
+   * The remote-server backends flush the pending segment through
+   * `onTextBlock` at each tool boundary, but `closeCurrentSegment` also
+   * folds that segment into `allResponseText` — so the end-of-turn
+   * delivery would ship every narration line a second time, concatenated.
+   * Delivery ships only `allResponseText.slice(progressDeliveredLen)`.
+   *
+   * Advanced only after a progress send actually succeeds, so a flush that
+   * throws (e.g. Telegram's 4096-char limit) leaves its text pending and
+   * the end-of-turn delivery still carries it.
+   */
+  progressDeliveredLen: number;
 
   // ── Session ───────────────────────────────────────────────────────────────
   /** Provider-assigned session id, if one was announced during the stream. */
@@ -133,6 +148,7 @@ export function createStreamState(chatId?: string): StreamState {
     currentBlockText: "",
     allResponseText: "",
     lastTrailingText: "",
+    progressDeliveredLen: 0,
     newSessionId: undefined,
     toolCalls: 0,
     turnTerminated: false,
@@ -278,4 +294,24 @@ export function finalizeResponseText(state: StreamState): string {
     state.currentBlockText = "";
   }
   return state.allResponseText.trim();
+}
+
+/**
+ * Record that everything accumulated so far has been shipped to the user
+ * as a progress message. Call only after the send succeeds.
+ */
+export function markProgressDelivered(state: StreamState): void {
+  state.progressDeliveredLen = state.allResponseText.length;
+}
+
+/**
+ * The portion of the turn's text that has NOT already been shipped as a
+ * mid-turn progress message — i.e. what end-of-turn delivery still owes
+ * the user.
+ *
+ * Backends that never flush progress leave `progressDeliveredLen` at 0,
+ * so this is the whole response and their behaviour is unchanged.
+ */
+export function undeliveredResponseText(state: StreamState): string {
+  return state.allResponseText.slice(state.progressDeliveredLen).trim();
 }

@@ -383,10 +383,9 @@ describe("kilo/model-provider — formatModelError", () => {
 
 describe("kilo/model-provider — getSettingsPresentation", () => {
   it("delegates to getOpenCodeSettingsPresentation and passes the callback prefix", async () => {
-    const presentation = await getSettingsPresentation(
-      "big-pickle",
-      "settings:model:",
-    );
+    const presentation = await getSettingsPresentation("big-pickle", {
+      callbackPrefix: "settings:model:",
+    });
     expect(presentation.modelButtons).toEqual([
       { text: "big-pickle", callback_data: "settings:model:big-pickle" },
     ]);

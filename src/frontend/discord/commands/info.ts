@@ -7,8 +7,16 @@ import {
   type Client,
   MessageFlags,
 } from "discord.js";
-import { formatDuration } from "../helpers.js";
+import {
+  formatDuration,
+  renderMeshReport,
+  renderUsageMessage,
+} from "../helpers.js";
+import type { TalonConfig } from "../../../util/config.js";
+import { collectPlanUsage } from "../../shared/plan-usage-report.js";
 import { getLoadedPlugins } from "../../../core/plugin/index.js";
+import { getMeshService } from "../../../core/mesh/index.js";
+import type { MeshPingResult } from "../../../core/mesh/service.js";
 import { reply } from "./shared.js";
 
 export async function handleStart(
@@ -23,7 +31,7 @@ export async function handleStart(
       "",
       "Mention me, reply to me, or DM me. Attach files, photos, voice notes — I'll read them.",
       "",
-      "/status  /reset  /help",
+      "/status  /stop  /reset  /help",
     ].join("\n"),
   );
 }
@@ -46,6 +54,7 @@ export async function handleHelp(
       "",
       "**Session**",
       "  /status — session info, usage, and stats",
+      "  /stop — stop the current response",
       "  /metrics — aggregate performance metrics (admin)",
       "  /dream — force memory consolidation now (admin)",
       "  /ping — health check with latency",
@@ -65,6 +74,35 @@ export async function handleHelp(
     ].join("\n"),
     true,
   );
+}
+
+/**
+ * /usage — plan limits across every exposed backend, not just this chat's.
+ * Not admin-gated: it says how close the shared account is to a wall, which
+ * is exactly what a user hitting one needs to know.
+ */
+export async function handleUsage(
+  i: ChatInputCommandInteraction,
+  config: TalonConfig,
+): Promise<void> {
+  await i.deferReply({ flags: MessageFlags.Ephemeral });
+  const entries = await collectPlanUsage(config);
+  await i.editReply(renderUsageMessage(entries));
+}
+
+export async function handleMesh(
+  i: ChatInputCommandInteraction,
+): Promise<void> {
+  await i.deferReply({ flags: MessageFlags.Ephemeral });
+  await i.editReply("Pinging mesh devices…");
+  let results: MeshPingResult[];
+  try {
+    results = await getMeshService().pingAll();
+  } catch {
+    await i.editReply("Could not reach the mesh service.");
+    return;
+  }
+  await i.editReply(renderMeshReport(results));
 }
 
 export async function handlePing(

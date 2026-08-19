@@ -15,6 +15,16 @@ vi.mock("../core/plugin/index.js", () => ({
   getPluginMcpServers: getPluginMcpServersMock,
 }));
 
+vi.mock("../core/mcp-hub/index.js", () => ({
+  talonHubUrl: (bridgeUrl: string, frontend: string, chatId: string) =>
+    `${bridgeUrl}/mcp/talon/${encodeURIComponent(frontend)}/${encodeURIComponent(chatId)}`,
+  pluginHubUrl: (bridgeUrl: string, name: string, chatId: string) =>
+    `${bridgeUrl}/mcp/plugin/${encodeURIComponent(name)}/${encodeURIComponent(chatId)}`,
+  hubPluginServerNames: () =>
+    Object.keys(getPluginMcpServersMock("", "hub-enum")),
+  listHubPluginToolNames: async (name: string) => [`${name}_tool`],
+}));
+
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),
   logWarn: vi.fn(),
@@ -31,6 +41,8 @@ const {
   resolveProviderID,
   parseStoredKiloModelSelection,
   stopKiloServer,
+  getConfig,
+  updateSystemPrompt,
 } = await import("../backend/kilo/server.js");
 
 type MockKiloClient = {
@@ -86,12 +98,12 @@ describe("kilo server helpers", () => {
     });
   });
 
-  it("buildToolOverrides returns undefined when no matching chat tools are present", async () => {
+  it("buildToolOverrides disables a rival while current tools are loading", async () => {
     const oc = makeClient();
     oc.tool.ids.mockResolvedValue({ data: ["talon-tools-other_send_message"] });
     await expect(
       buildToolOverrides(oc as never, "talon-tools-chat_1"),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ "talon-tools-other_send_message": false });
   });
 
   it("ensureChatMcpServer registers the chat server with the hub URL", async () => {
@@ -135,46 +147,35 @@ describe("kilo server helpers", () => {
     expect(oc.mcp.disconnect).toHaveBeenCalledTimes(1);
   });
 
-  it("ensureChatMcpServer disconnects OTHER chat MCP servers when switching chats", async () => {
-    // Per-session permission rules block tool *execution* but not
-    // *visibility* — Kilo still lists every connected MCP server's
-    // tools in the model's catalog. So `talon-tools-chat_a` AND
-    // `talon-tools-chat_b` connected at once means a model in chat A
-    // can see and call `talon-tools-chat_b_send`. Holding only one
-    // chat-namespaced server connected at a time is the only way to
-    // hide cross-chat tools. The heartbeat sentinel server is exempt
-    // (always allowed to coexist).
+  it("ensureChatMcpServer retains other chat MCP servers for concurrent turns", async () => {
     const oc = makeClient();
 
     await ensureChatMcpServer(oc as never, "chat-a");
     await ensureChatMcpServer(oc as never, "heartbeat");
     expect(oc.mcp.add).toHaveBeenCalledTimes(2);
 
-    // Switching to chat-b should disconnect chat-a but leave heartbeat
-    // (heartbeat is the sentinel for background agent outbound calls).
+    // Registering chat-b must not disrupt chat-a if its turn is still live.
     await ensureChatMcpServer(oc as never, "chat-b");
 
-    expect(oc.mcp.disconnect).toHaveBeenCalledTimes(1);
-    expect(oc.mcp.disconnect.mock.calls[0][0]).toEqual({
-      name: "talon-tools-chat-a",
-    });
+    expect(oc.mcp.disconnect).not.toHaveBeenCalled();
     // chat-b registered now.
     expect(oc.mcp.add).toHaveBeenCalledTimes(3);
   });
 
-  it("ensureChatMcpServer leaves heartbeat MCP server connected across chat switches", async () => {
+  it("ensureChatMcpServer leaves heartbeat MCP server connected", async () => {
     const oc = makeClient();
 
     await ensureChatMcpServer(oc as never, "heartbeat");
     await ensureChatMcpServer(oc as never, "chat-a");
     await ensureChatMcpServer(oc as never, "chat-b");
 
-    // heartbeat MUST never get disconnected — it's the sentinel for
-    // outbound tool calls from background agents (heartbeat / dream).
+    // No chat registration disconnects any sibling. Per-prompt tool
+    // overrides provide visibility isolation instead.
     const disconnectNames = (
       oc.mcp.disconnect.mock.calls as Array<[{ name: string }]>
     ).map((c) => c[0].name);
     expect(disconnectNames).not.toContain("talon-tools-heartbeat");
+    expect(disconnectNames).not.toContain("talon-tools-chat-a");
   });
 
   it("ensurePluginMcpServers registers all named servers on first call", async () => {
@@ -186,7 +187,10 @@ describe("kilo server helpers", () => {
 
     const registered = await ensurePluginMcpServers(oc as never, "chat-1");
 
-    expect(registered).toEqual(["alpha", "beta"]);
+    expect(registered).toEqual([
+      "talon-plugin-chat-1-alpha",
+      "talon-plugin-chat-1-beta",
+    ]);
     expect(oc.mcp.add).toHaveBeenCalledTimes(2);
   });
 
@@ -204,8 +208,16 @@ describe("kilo server helpers", () => {
     // so no new adds. This is the path that recovers the ~12s/turn we
     // were burning before the cache existed.
     const reRegistered = await ensurePluginMcpServers(oc as never, "chat-1");
-    expect(reRegistered).toEqual(["alpha", "beta"]);
+    expect(reRegistered).toEqual([
+      "talon-plugin-chat-1-alpha",
+      "talon-plugin-chat-1-beta",
+    ]);
     expect(oc.mcp.add).toHaveBeenCalledTimes(2);
+  });
+
+  it("updates the live system prompt used after plugin reload", () => {
+    updateSystemPrompt("fresh prompt");
+    expect(getConfig().systemPrompt).toBe("fresh prompt");
   });
 
   it("ensureSession reuses a valid existing session and creates a new one when expired", async () => {
@@ -256,9 +268,16 @@ describe("kilo server helpers", () => {
     expect(args.permission).toEqual([
       { permission: "tool", pattern: "talon-tools-chat_a_*", action: "allow" },
       { permission: "tool", pattern: "talon-tools-*", action: "deny" },
+      {
+        permission: "tool",
+        pattern: "talon-plugin-chat_a-*",
+        action: "allow",
+      },
+      { permission: "tool", pattern: "talon-plugin-*", action: "deny" },
       { permission: "tool", pattern: "*", action: "allow" },
       { permission: "edit", pattern: "*", action: "allow" },
       { permission: "bash", pattern: "*", action: "allow" },
+      { permission: "external_directory", pattern: "*", action: "allow" },
     ]);
   });
 
@@ -290,6 +309,31 @@ describe("kilo server helpers", () => {
       "openai",
     );
     expect(oc.provider.list).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolveProviderID prefers the connected provider when model ids collide", async () => {
+    const oc = makeClient();
+    oc.provider.list.mockResolvedValue({
+      data: {
+        all: [
+          {
+            id: "openrouter",
+            models: {
+              "nvidia/nemotron:free": { providerID: "openrouter" },
+            },
+          },
+          {
+            id: "kilo",
+            models: { "nvidia/nemotron:free": { providerID: "kilo" } },
+          },
+        ],
+        connected: ["kilo"],
+      },
+    });
+
+    await expect(
+      resolveProviderID(oc as never, "nvidia/nemotron:free"),
+    ).resolves.toBe("kilo");
   });
 
   it("resolveProviderID falls back to guessed provider when catalog has no model match", async () => {

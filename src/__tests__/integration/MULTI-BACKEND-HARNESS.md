@@ -89,9 +89,8 @@ turn.completed` JSONL, exits 0. Reconstructs the MCP server map from the
 - **opencode/kilo**: promptAsync posts to `/session/{id}/prompt_async` (not
   `/message`); `mcp.add` sends `config.command` as a full `[exe, ...args]`
   **array** + `config.environment` (not `env`); disconnect is
-  `POST /mcp/{name}/disconnect`; after a chat switch the current chat's MCP
-  server is the **most-recent** registration (the prior one's gateway context is
-  cleared → "No active chat context" if you pick the stale one); the SSE
+  `POST /mcp/{name}/disconnect`; chat MCP servers remain registered concurrently
+  and production scopes their visibility with prompt `tools` overrides; the SSE
   subscribe is fired-but-not-awaited just before promptAsync (the fake waits on
   the actual connect, event-driven, before emitting).
 - **openai-agents** is tool-preferred (delivers via `end_turn`, not text — plain

@@ -20,6 +20,7 @@ import {
   getTurnSummary,
   getSessionSnapshot,
   rejectPendingQuestions as rejectPendingQuestionsShared,
+  approvePendingPermissions as approvePendingPermissionsShared,
   type RemoteAssistantInfo,
   type RemoteSessionSnapshot,
   type RemoteSessionClient,
@@ -96,6 +97,22 @@ export function rejectPendingQuestions(
     sessionId,
     chatId,
     seenQuestionIds,
+    "Kilo",
+  );
+}
+
+/** Auto-approve pending Kilo permissions for this headless session. */
+export function approvePendingPermissions(
+  oc: KiloClient,
+  sessionId: string,
+  chatId: string,
+  seenPermissionIds: Set<string>,
+): Promise<void> {
+  return approvePendingPermissionsShared(
+    oc as unknown as RemoteSessionClient,
+    sessionId,
+    chatId,
+    seenPermissionIds,
     "Kilo",
   );
 }

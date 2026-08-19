@@ -48,4 +48,8 @@ describe("telegramCommandMenu", () => {
     expect(TELEGRAM_COMMANDS.length).toBe(before);
     expect(TELEGRAM_COMMANDS.map((c) => c.command)).not.toContain("update");
   });
+
+  it("includes /stop in the command menu", () => {
+    expect(TELEGRAM_COMMANDS.map((c) => c.command)).toContain("stop");
+  });
 });

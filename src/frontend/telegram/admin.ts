@@ -70,7 +70,9 @@ export async function handleAdminCommand(
         const model = formatModelLabel(
           getChatSettings(s.chatId).model ?? config.model,
         );
-        return `<b>${escapeHtml(title)}</b> <code>${s.chatId}</code>\n  ${s.info.turns} turns | ${age} | ${model}`;
+        // `model` is a catalog id (OpenRouter/Kilo ids are free-form), so
+        // it gets the same escaping the title already had.
+        return `<b>${escapeHtml(title)}</b> <code>${s.chatId}</code>\n  ${s.info.turns} turns | ${age} | ${escapeHtml(model)}`;
       });
       await ctx.reply(
         `<b>Active chats (${sessions.length})</b>\n\n` + lines.join("\n\n"),

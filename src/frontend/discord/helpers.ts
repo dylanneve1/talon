@@ -8,10 +8,18 @@
  */
 
 import { REASONING_LEVEL_DESCRIPTIONS } from "../../core/models/reasoning-levels.js";
-import { DISCORD_MAX_TEXT, DISCORD_SAFE_RESERVE } from "./formatting.js";
+import {
+  DISCORD_MAX_TEXT,
+  DISCORD_SAFE_RESERVE,
+  splitMessage,
+} from "./formatting.js";
+import type { DoctorReport } from "../../core/doctor.js";
+import type { MeshPingResult } from "../../core/mesh/service.js";
+import type { BackendUsageEntry } from "../shared/plan-usage-report.js";
 import {
   DEFAULT_PULSE_INTERVAL_MS,
   formatDuration,
+  formatBytes,
   formatModelLabel,
 } from "../shared/format.js";
 
@@ -20,6 +28,7 @@ export {
   formatDuration,
   formatTokenCount,
   formatBytes,
+  formatUsd,
   formatModelLabel,
 } from "../shared/format.js";
 
@@ -154,6 +163,151 @@ export function renderMetricsMessages(
   }
   if (current !== header || chunks.length === 0) chunks.push(current);
   return chunks;
+}
+
+const DOCTOR_ICONS: Record<string, string> = {
+  ok: "✅",
+  warn: "⚠️",
+  fail: "❌",
+  info: "▫️",
+};
+
+/**
+ * Render a DoctorReport as Discord markdown, split to fit the message cap.
+ * Same data as `talon doctor` and Telegram's /doctor.
+ */
+export function renderDoctorMessages(
+  report: DoctorReport,
+  maxLen = DEFAULT_METRICS_MESSAGE_MAX,
+): string[] {
+  const lines = ["**🩺 Talon Doctor**", "", "**Environment**"];
+
+  const render = (check: DoctorReport["checks"][number]): string =>
+    `${DOCTOR_ICONS[check.status]} ${check.label}${check.detail ? ` (${check.detail})` : ""}`;
+
+  for (const check of report.checks.filter((c) => !c.inactive)) {
+    lines.push(render(check));
+  }
+
+  // Configured-but-idle backends get their own block: they describe what a
+  // switch would run into, not the state of the running deployment.
+  const idle = report.checks.filter((c) => c.inactive);
+  if (idle.length > 0) {
+    lines.push("", "**Other backends**", ...idle.map(render));
+  }
+
+  lines.push("", "**Native modules**");
+  for (const mod of report.native) {
+    const size =
+      mod.sizeBytes !== undefined ? ` · ${formatBytes(mod.sizeBytes)}` : "";
+    const note = mod.note ? ` (${mod.note})` : "";
+    lines.push(
+      `${mod.ok ? DOCTOR_ICONS.ok : DOCTOR_ICONS.fail} \`${mod.name}\` — ${mod.language} → ${mod.target}${size}${note}`,
+    );
+  }
+
+  lines.push(
+    "",
+    "**Process**",
+    `Uptime ${formatDuration(process.uptime() * 1000)} · PID ${process.pid} · Node ${process.versions.node}`,
+    "",
+    report.issues === 0
+      ? `${DOCTOR_ICONS.ok} All checks passed.`
+      : `${DOCTOR_ICONS.warn} ${report.issues} issue(s) found.`,
+  );
+
+  return splitMessage(lines.join("\n"), maxLen);
+}
+
+function meshDeviceLine(r: MeshPingResult, now: number): string {
+  const d = r.device;
+  const bits: string[] = [d.platform];
+  if (r.reachable && typeof r.latencyMs === "number") {
+    bits.push(`${r.latencyMs} ms`);
+  } else if (d.online && r.error) {
+    bits.push(r.error);
+  } else if (!d.online) {
+    bits.push(`last seen ${formatDuration(now - d.lastSeen)} ago`);
+  }
+  if (typeof d.battery === "number") {
+    bits.push(`${d.battery}%${d.charging ? " charging" : ""}`);
+  }
+  return `  **${d.name}** — ${bits.join(" · ")}`;
+}
+
+/**
+ * Render the /mesh fleet report as Discord markdown. Devices group under a
+ * state heading; empty groups are omitted.
+ */
+export function renderMeshReport(
+  results: MeshPingResult[],
+  now = Date.now(),
+): string {
+  if (results.length === 0) {
+    return "**Mesh**\n\n_No devices have registered yet._";
+  }
+
+  const responding = results
+    .filter((r) => r.reachable)
+    .sort((a, b) => (a.latencyMs ?? Infinity) - (b.latencyMs ?? Infinity));
+  const unreachable = results
+    .filter((r) => !r.reachable && r.device.online)
+    .sort((a, b) => a.device.name.localeCompare(b.device.name));
+  const offline = results
+    .filter((r) => !r.reachable && !r.device.online)
+    .sort((a, b) => b.device.lastSeen - a.device.lastSeen);
+
+  const summary = [
+    `${results.length} device${results.length === 1 ? "" : "s"}`,
+    `${responding.length} responding`,
+    ...(unreachable.length > 0 ? [`${unreachable.length} unreachable`] : []),
+    ...(offline.length > 0 ? [`${offline.length} offline`] : []),
+  ].join(" · ");
+
+  const lines = ["**Mesh**", summary];
+  const section = (title: string, entries: MeshPingResult[]): void => {
+    if (entries.length === 0) return;
+    lines.push(
+      "",
+      `**${title}**`,
+      ...entries.map((r) => meshDeviceLine(r, now)),
+    );
+  };
+  section("Responding", responding);
+  section("Unreachable", unreachable);
+  section("Offline", offline);
+
+  return lines.join("\n");
+}
+
+/** Render the `/usage` report — one block per exposed backend. */
+export function renderUsageMessage(entries: BackendUsageEntry[]): string {
+  const lines = ["**📊 Plan usage**"];
+
+  for (const entry of entries) {
+    const name = entry.label || entry.id;
+    if (!entry.plan) {
+      lines.push("", `**${name}** — _${entry.note ?? ""}_`);
+      continue;
+    }
+    const age = entry.plan.ageLabel ? ` *(${entry.plan.ageLabel})*` : "";
+    const plan = entry.plan.plan ? ` · ${entry.plan.plan}` : "";
+    lines.push("", `**${name}**${plan}${age}`);
+    if (entry.plan.resetsAvailable) {
+      const n = entry.plan.resetsAvailable;
+      lines.push(
+        `  • You have **${n}** usage limit reset${n === 1 ? "" : "s"} available`,
+      );
+    }
+    for (const w of entry.plan.windows) {
+      const reset = w.resetLabel ? ` reset ${w.resetLabel}` : "";
+      lines.push(
+        `  \`${w.label.padEnd(6)}${w.bar} ${String(w.percent).padStart(3)}%\`${reset}`,
+      );
+    }
+  }
+
+  return lines.join("\n");
 }
 
 /** Settings panel: build the markdown body. */

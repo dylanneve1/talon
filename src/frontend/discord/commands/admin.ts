@@ -3,16 +3,37 @@
  * All gate on `isAdmin`.
  */
 
-import { type ChatInputCommandInteraction, MessageFlags } from "discord.js";
+import {
+  type ChatInputCommandInteraction,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  MessageFlags,
+} from "discord.js";
 import type { TalonConfig } from "../../../util/config.js";
 import type { Gateway } from "../../../core/engine/gateway.js";
 import { respawnSelf } from "../../../util/respawn.js";
 import { forceDream } from "../../../core/background/dream.js";
-import { formatDuration, renderMetricsMessages } from "../helpers.js";
+import {
+  formatDuration,
+  renderMetricsMessages,
+  renderDoctorMessages,
+} from "../helpers.js";
+import { collectDoctorReport } from "../../../core/doctor.js";
+import { getSoul } from "../../../core/soul/service.js";
 import { getMetrics, getTodayMetrics } from "../../../storage/metrics.js";
 import { handleAdminSubcommand } from "../admin.js";
 import { isAdmin } from "../handlers/index.js";
-import { suppressMentions, DISCORD_MAX_TEXT } from "../formatting.js";
+import {
+  suppressMentions,
+  DISCORD_MAX_TEXT,
+  safeSlice,
+  escapeForCodeBlock,
+} from "../formatting.js";
+import {
+  getRepoRoot,
+  runSelfUpdate,
+} from "../../../core/update/self-update.js";
 import { reply } from "./shared.js";
 
 export async function handleRestart(
@@ -34,18 +55,112 @@ export async function handleMetrics(
     return;
   }
   // Ephemeral — admin counters (token usage, latencies, errors) shouldn't leak
-  // into a public channel where non-admins can read them.
-  const messages = [
-    ...renderMetricsMessages(getMetrics()),
-    ...renderMetricsMessages(
-      getTodayMetrics(),
-      undefined,
-      "📊 Metrics — today (UTC)",
-    ),
-  ];
-  for (const m of messages) {
-    await reply(i, m, true);
+  // into a public channel where non-admins can read them. Both views are one
+  // button apart rather than two bursts of messages.
+  await i.deferReply({ flags: MessageFlags.Ephemeral });
+  const messages = renderMetricsMessages(
+    getTodayMetrics(),
+    undefined,
+    "📊 Metrics — today (UTC)",
+  );
+  await i.editReply({
+    content: messages[0]!,
+    components: [metricsViewRow("today").toJSON()],
+  });
+  for (const extra of messages.slice(1)) {
+    await i.followUp({ content: extra, flags: MessageFlags.Ephemeral });
   }
+}
+
+/** Today / all-time toggle under the metrics panel. */
+export function metricsViewRow(
+  view: MetricsView,
+): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId("metrics:today")
+      .setLabel("Today")
+      .setStyle(view === "today" ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setDisabled(view === "today"),
+    new ButtonBuilder()
+      .setCustomId("metrics:all")
+      .setLabel("All time")
+      .setStyle(view === "all" ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setDisabled(view === "all"),
+  );
+}
+
+export type MetricsView = "today" | "all";
+
+/** Panel body for one view — shared by the command and the toggle. */
+export function renderMetricsView(view: MetricsView): string[] {
+  return view === "today"
+    ? renderMetricsMessages(
+        getTodayMetrics(),
+        undefined,
+        "📊 Metrics — today (UTC)",
+      )
+    : renderMetricsMessages(getMetrics(), undefined, "📊 Metrics — all time");
+}
+
+export async function handleDoctor(
+  i: ChatInputCommandInteraction,
+  config: TalonConfig,
+): Promise<void> {
+  if (!isAdmin(i.user.id)) {
+    await reply(i, "Not authorized.", true);
+    return;
+  }
+  await i.deferReply({ flags: MessageFlags.Ephemeral });
+  await i.editReply("🩺 Running checks...");
+  try {
+    // Same checks as `talon doctor` — config exists by definition when the
+    // bot is processing this command.
+    const report = await collectDoctorReport({ config, hasConfigFile: true });
+    const messages = renderDoctorMessages(report);
+    await i.editReply(messages[0]!);
+    for (const extra of messages.slice(1))
+      await i.followUp({
+        content: extra,
+        flags: MessageFlags.Ephemeral,
+      });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await i.editReply(`🩺 Doctor failed: ${msg}`);
+  }
+}
+
+/**
+ * /soul — read-only introspection of the compiled identity. `action:dream`
+ * runs the organic maintenance pass and is admin-only. Inert while the soul
+ * is disabled, so it is safe to ship dormant.
+ */
+export async function handleSoul(
+  i: ChatInputCommandInteraction,
+): Promise<void> {
+  const soul = getSoul();
+  if (!soul.enabled) {
+    await reply(
+      i,
+      "Soul is disabled (set TALON_SOUL_ENABLED to enable).",
+      true,
+    );
+    return;
+  }
+  if (i.options.getString("action") === "dream") {
+    if (!isAdmin(i.user.id)) {
+      await reply(i, "Not authorized.", true);
+      return;
+    }
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    await i.editReply("🧠 Soul dreaming...");
+    soul
+      .dream()
+      .then(() => i.editReply("🧠 Soul dream complete."))
+      .catch(() => undefined);
+    return;
+  }
+  await reply(i, suppressMentions(soul.introspect()), true);
 }
 
 export async function handleDream(
@@ -68,6 +183,65 @@ export async function handleDream(
     .catch(async (err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       await i.editReply(`🌙 Dream failed: ${msg}`);
+    });
+}
+
+/**
+ * /update — pull, reinstall, run setup, restart. Only reachable on developer
+ * builds running from a git checkout; the command is not registered at all
+ * otherwise (see buildCommandDefinitions).
+ */
+export async function handleUpdate(
+  i: ChatInputCommandInteraction,
+  config: TalonConfig,
+): Promise<void> {
+  if (!isAdmin(i.user.id)) {
+    await reply(i, "Not authorized.", true);
+    return;
+  }
+  const repoRoot = config.devBuild ? getRepoRoot() : null;
+  if (!repoRoot) {
+    await reply(i, "Update is only available on developer builds.", true);
+    return;
+  }
+  const remote = config.update?.remote ?? "origin";
+  const branch = config.update?.branch ?? "main";
+  await i.deferReply({ flags: MessageFlags.Ephemeral });
+  await i.editReply(`⏳ Updating from \`${remote}/${branch}\`…`);
+  const edit = (text: string) => i.editReply(safeSlice(text, DISCORD_MAX_TEXT));
+
+  // Fire-and-forget so the gateway keeps processing other interactions.
+  runSelfUpdate({
+    remote,
+    branch,
+    setup: config.update?.setup,
+    repoRoot,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const tail = res.steps[res.steps.length - 1]?.output ?? "";
+        await edit(
+          `⚠️ Update failed: ${res.error ?? "unknown error"}` +
+            (tail
+              ? `\n\`\`\`\n${escapeForCodeBlock(tail.slice(-1200))}\n\`\`\``
+              : ""),
+        );
+        return;
+      }
+      if (!res.changed) {
+        await edit(
+          `✅ Already up to date at \`${res.before ?? "?"}\` — no restart needed.`,
+        );
+        return;
+      }
+      await edit(
+        `✅ Updated \`${res.before ?? "?"}\` → \`${res.after ?? "?"}\`. ♻️ Restarting…`,
+      );
+      respawnSelf("discord /update");
+    })
+    .catch(async (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      await edit(`⚠️ Update crashed: ${msg}`);
     });
 }
 

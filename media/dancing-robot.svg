@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
+  <defs>
+    <!-- Background -->
+    <radialGradient id="bgGrad" cx="50%" cy="42%" r="75%">
+      <stop offset="0%" stop-color="#2e3350"/>
+      <stop offset="55%" stop-color="#1c2034"/>
+      <stop offset="100%" stop-color="#12141f"/>
+    </radialGradient>
+
+    <!-- Spotlight glow behind robot -->
+    <radialGradient id="spotGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffd166" stop-opacity="0.28"/>
+      <stop offset="55%" stop-color="#ffd166" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#ffd166" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Floor -->
+    <linearGradient id="floorGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#272b40"/>
+      <stop offset="100%" stop-color="#14151f"/>
+    </linearGradient>
+
+    <!-- Metal gradients (userSpaceOnUse = consistent sheen) -->
+    <linearGradient id="headGrad" gradientUnits="userSpaceOnUse" x1="0" y1="330" x2="0" y2="470">
+      <stop offset="0%" stop-color="#a9c8f2"/>
+      <stop offset="42%" stop-color="#6f9ad4"/>
+      <stop offset="100%" stop-color="#4872ab"/>
+    </linearGradient>
+
+    <linearGradient id="bodyGrad" gradientUnits="userSpaceOnUse" x1="0" y1="494" x2="0" y2="709">
+      <stop offset="0%" stop-color="#9cc0ee"/>
+      <stop offset="40%" stop-color="#5b83ba"/>
+      <stop offset="100%" stop-color="#3a5a92"/>
+    </linearGradient>
+
+    <linearGradient id="darkGrad" gradientUnits="userSpaceOnUse" x1="0" y1="460" x2="0" y2="740">
+      <stop offset="0%" stop-color="#4a6287"/>
+      <stop offset="100%" stop-color="#2b4064"/>
+    </linearGradient>
+
+    <linearGradient id="armGrad" gradientUnits="userSpaceOnUse" x1="0" y1="340" x2="0" y2="620">
+      <stop offset="0%" stop-color="#9cc0ee"/>
+      <stop offset="100%" stop-color="#4f79b2"/>
+    </linearGradient>
+
+    <linearGradient id="legGrad" gradientUnits="userSpaceOnUse" x1="0" y1="735" x2="0" y2="880">
+      <stop offset="0%" stop-color="#6f9ad4"/>
+      <stop offset="100%" stop-color="#41689f"/>
+    </linearGradient>
+
+    <linearGradient id="panelGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#333f5e"/>
+      <stop offset="100%" stop-color="#20283d"/>
+    </linearGradient>
+
+    <!-- Neon glow -->
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="14" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Clip the disco-ball facet grid to the sphere -->
+    <clipPath id="ballClip">
+      <circle cx="620" cy="140" r="70"/>
+    </clipPath>
+
+    <!-- 4-point sparkle -->
+    <g id="sparkle">
+      <path d="M 0 -9 Q 0 0 9 0 Q 0 0 0 9 Q 0 0 -9 0 Q 0 0 0 -9 Z" fill="#ffffff"/>
+    </g>
+
+    <g id="note">
+      <ellipse cx="0" cy="0" rx="11" ry="8" transform="rotate(-20)"/>
+      <rect x="8" y="-42" width="3.5" height="42"/>
+      <path d="M 11.5 -42 C 24 -38 26 -26 24 -18 C 23 -28 18 -33 11.5 -34 Z"/>
+    </g>
+  </defs>
+
+  <!-- ===== Background ===== -->
+  <rect width="800" height="1000" fill="url(#bgGrad)"/>
+  <circle cx="400" cy="480" r="420" fill="url(#spotGrad)"/>
+
+  <!-- ===== Disco ball ===== -->
+  <line x1="620" y1="-4" x2="620" y2="72" stroke="#8fa0d8" stroke-width="3"/>
+  <g filter="url(#softGlow)">
+    <circle cx="620" cy="140" r="70" fill="#dfe7ff" stroke="#8fa0d8" stroke-width="3"/>
+  </g>
+  <g clip-path="url(#ballClip)" opacity="0.55">
+    <g stroke="#8fa0d8" stroke-width="1.6">
+      <line x1="550" y1="140" x2="690" y2="140"/>
+      <line x1="570" y1="140" x2="570" y2="210"/>
+      <line x1="620" y1="70" x2="620" y2="210"/>
+      <line x1="670" y1="70" x2="670" y2="210"/>
+      <line x1="720" y1="140" x2="520" y2="140"/>
+      <line x1="690" y1="140" x2="550" y2="140"/>
+      <line x1="600" y1="85" x2="600" y2="195"/>
+      <line x1="640" y1="85" x2="640" y2="195"/>
+      <line x1="570" y1="175" x2="670" y2="105"/>
+      <line x1="570" y1="105" x2="670" y2="175"/>
+    </g>
+    <g fill="#ffffff">
+      <circle cx="585" cy="115" r="3.4"/>
+      <circle cx="640" cy="130" r="2.6"/>
+      <circle cx="600" cy="168" r="2.8"/>
+      <circle cx="660" cy="165" r="2.2"/>
+      <circle cx="628" cy="85" r="2.4"/>
+    </g>
+  </g>
+  <ellipse cx="597" cy="116" rx="24" ry="16" fill="#ffffff" opacity="0.4" transform="rotate(-24 597 116)"/>
+
+  <!-- ===== Music notes ===== -->
+  <use href="#note" x="0" y="0" fill="#ffe9a8" opacity="0.92" transform="translate(158,318) rotate(-14)"/>
+  <use href="#note" x="0" y="0" fill="#ffe9a8" opacity="0.75" transform="translate(248,196) rotate(12) scale(0.72)"/>
+
+  <!-- ===== Sparkles ===== -->
+  <use href="#sparkle" transform="translate(95,150) scale(1.0)" opacity="0.9"/>
+  <use href="#sparkle" transform="translate(700,360) scale(0.8)" opacity="0.7"/>
+  <use href="#sparkle" transform="translate(180,520) scale(0.55)" opacity="0.55"/>
+  <use href="#sparkle" transform="translate(640,700) scale(0.7)" opacity="0.6"/>
+  <use href="#sparkle" transform="translate(340,80) scale(0.5)" opacity="0.5"/>
+
+  <!-- ===== Floor ===== -->
+  <rect x="0" y="880" width="800" height="120" fill="url(#floorGrad)"/>
+  <line x1="0" y1="880" x2="800" y2="880" stroke="#3d4569" stroke-width="3"/>
+  <line x1="0" y1="900" x2="800" y2="900" stroke="#232741" stroke-width="2" opacity="0.7"/>
+
+  <!-- ground shadow -->
+  <ellipse cx="400" cy="884" rx="175" ry="16" fill="#000000" opacity="0.4"/>
+
+  <!-- ===== Robot ===== -->
+  <!-- antenna -->
+  <line x1="400" y1="332" x2="400" y2="226" stroke="#2b4064" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="400" cy="218" r="13" fill="#ff5d5d"/>
+  <circle cx="400" cy="218" r="13" fill="none" stroke="#ff5d5d" stroke-width="2" opacity="0.5" filter="url(#glow)"/>
+  <circle cx="396" cy="214" r="4" fill="#ffffff" opacity="0.85"/>
+
+  <!-- head -->
+  <rect x="300" y="330" width="200" height="140" rx="28" fill="url(#headGrad)" stroke="#2c4064" stroke-width="3"/>
+  <ellipse cx="352" cy="360" rx="34" ry="16" fill="#ffffff" opacity="0.16" transform="rotate(-18 352 360)"/>
+  <!-- head bolts -->
+  <circle cx="318" cy="348" r="4" fill="#2b4064"/>
+  <circle cx="482" cy="348" r="4" fill="#2b4064"/>
+  <circle cx="318" cy="452" r="4" fill="#2b4064"/>
+  <circle cx="482" cy="452" r="4" fill="#2b4064"/>
+
+  <!-- eyes -->
+  <circle cx="360" cy="396" r="19" fill="#7ef0ff" filter="url(#glow)"/>
+  <circle cx="440" cy="396" r="19" fill="#7ef0ff" filter="url(#glow)"/>
+  <circle cx="354" cy="389" r="6" fill="#ffffff" opacity="0.9"/>
+  <circle cx="434" cy="389" r="6" fill="#ffffff" opacity="0.9"/>
+  <circle cx="366" cy="403" r="3" fill="#ffffff" opacity="0.6"/>
+  <circle cx="446" cy="403" r="3" fill="#ffffff" opacity="0.6"/>
+
+  <!-- smile -->
+  <path d="M 370 442 Q 400 462 430 442" fill="none" stroke="#2b4064" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- neck -->
+  <rect x="375" y="470" width="50" height="26" rx="9" fill="url(#darkGrad)" stroke="#2c4064" stroke-width="2.5"/>
+
+  <!-- torso -->
+  <rect x="305" y="494" width="190" height="215" rx="30" fill="url(#bodyGrad)" stroke="#2c4064" stroke-width="3"/>
+  <ellipse cx="352" cy="540" rx="42" ry="18" fill="#ffffff" opacity="0.12" transform="rotate(-16 352 540)"/>
+  <!-- side seams -->
+  <line x1="318" y1="520" x2="318" y2="686" stroke="#2c4064" stroke-width="2" opacity="0.45"/>
+  <line x1="482" y1="520" x2="482" y2="686" stroke="#2c4064" stroke-width="2" opacity="0.45"/>
+  <!-- torso bolts -->
+  <circle cx="322" cy="512" r="5" fill="#24344f" stroke="#ffd166" stroke-width="1.6"/>
+  <circle cx="478" cy="512" r="5" fill="#24344f" stroke="#ffd166" stroke-width="1.6"/>
+  <circle cx="322" cy="690" r="5" fill="#24344f" stroke="#ffd166" stroke-width="1.6"/>
+  <circle cx="478" cy="690" r="5" fill="#24344f" stroke="#ffd166" stroke-width="1.6"/>
+
+  <!-- chest panel -->
+  <rect x="336" y="524" width="128" height="84" rx="14" fill="url(#panelGrad)" stroke="#161d2e" stroke-width="2.5"/>
+  <!-- dial -->
+  <circle cx="366" cy="560" r="22" fill="#1c2333" stroke="#ffd166" stroke-width="2.5"/>
+  <g stroke="#ffd166" stroke-width="2" opacity="0.5">
+    <line x1="350" y1="560" x2="382" y2="560"/>
+    <line x1="366" y1="544" x2="366" y2="576"/>
+  </g>
+  <line x1="366" y1="560" x2="379" y2="549" stroke="#ffd166" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="366" cy="560" r="2.6" fill="#ffd166"/>
+  <!-- status lights -->
+  <circle cx="436" cy="545" r="6.5" fill="#ff6b6b" filter="url(#glow)"/>
+  <circle cx="436" cy="566" r="6.5" fill="#ffd166" filter="url(#glow)"/>
+  <circle cx="436" cy="587" r="6.5" fill="#7ef0ff" filter="url(#glow)"/>
+  <!-- label -->
+  <rect x="352" y="596" width="96" height="8" rx="4" fill="#161d2e" opacity="0.55"/>
+
+  <!-- belly vents -->
+  <g stroke="#2c4064" stroke-width="3" stroke-linecap="round" opacity="0.55">
+    <line x1="348" y1="654" x2="452" y2="654"/>
+    <line x1="348" y1="664" x2="452" y2="664"/>
+    <line x1="348" y1="674" x2="452" y2="674"/>
+  </g>
+
+  <!-- hips -->
+  <rect x="345" y="709" width="110" height="30" rx="13" fill="url(#darkGrad)" stroke="#2c4064" stroke-width="2.5"/>
+
+  <!-- ===== Arms (dancing pose) ===== -->
+  <!-- left arm: raised -->
+  <line x1="312" y1="522" x2="256" y2="468" stroke="url(#armGrad)" stroke-width="26" stroke-linecap="round"/>
+  <line x1="256" y1="468" x2="246" y2="382" stroke="url(#armGrad)" stroke-width="24" stroke-linecap="round"/>
+  <circle cx="246" cy="374" r="16" fill="#ffd166" stroke="#2c4064" stroke-width="2.5"/>
+  <circle cx="242" cy="369" r="4" fill="#ffffff" opacity="0.8"/>
+  <!-- gold wrist band -->
+  <line x1="256" y1="460" x2="246" y2="380" stroke="#ffd166" stroke-width="4" opacity="0.85"/>
+  <!-- joints -->
+  <circle cx="312" cy="522" r="15" fill="#2b4064" stroke="#9cc0ee" stroke-width="3"/>
+  <circle cx="256" cy="468" r="12" fill="#2b4064" stroke="#9cc0ee" stroke-width="2.5"/>
+
+  <!-- right arm: out to the side -->
+  <line x1="488" y1="522" x2="558" y2="548" stroke="url(#armGrad)" stroke-width="26" stroke-linecap="round"/>
+  <line x1="558" y1="548" x2="600" y2="612" stroke="url(#armGrad)" stroke-width="24" stroke-linecap="round"/>
+  <circle cx="606" cy="620" r="16" fill="#ffd166" stroke="#2c4064" stroke-width="2.5"/>
+  <circle cx="602" cy="615" r="4" fill="#ffffff" opacity="0.8"/>
+  <line x1="562" y1="560" x2="600" y2="606" stroke="#ffd166" stroke-width="4" opacity="0.85"/>
+  <circle cx="488" cy="522" r="15" fill="#2b4064" stroke="#9cc0ee" stroke-width="3"/>
+  <circle cx="558" cy="548" r="12" fill="#2b4064" stroke="#9cc0ee" stroke-width="2.5"/>
+
+  <!-- ===== Legs ===== -->
+  <!-- left leg -->
+  <line x1="370" y1="732" x2="350" y2="802" stroke="url(#legGrad)" stroke-width="26" stroke-linecap="round"/>
+  <line x1="350" y1="802" x2="338" y2="862" stroke="url(#legGrad)" stroke-width="24" stroke-linecap="round"/>
+  <circle cx="350" cy="802" r="13" fill="#2b4064" stroke="#9cc0ee" stroke-width="2.5"/>
+  <rect x="305" y="854" width="62" height="24" rx="11" fill="url(#legGrad)" stroke="#2c4064" stroke-width="2.5"/>
+  <line x1="318" y1="862" x2="318" y2="872" stroke="#2c4064" stroke-width="2" opacity="0.5"/>
+
+  <!-- right leg -->
+  <line x1="430" y1="732" x2="450" y2="802" stroke="url(#legGrad)" stroke-width="26" stroke-linecap="round"/>
+  <line x1="450" y1="802" x2="462" y2="862" stroke="url(#legGrad)" stroke-width="24" stroke-linecap="round"/>
+  <circle cx="450" cy="802" r="13" fill="#2b4064" stroke="#9cc0ee" stroke-width="2.5"/>
+  <rect x="433" y="854" width="62" height="24" rx="11" fill="url(#legGrad)" stroke="#2c4064" stroke-width="2.5"/>
+  <line x1="482" y1="862" x2="482" y2="872" stroke="#2c4064" stroke-width="2" opacity="0.5"/>
+</svg>

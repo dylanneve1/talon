@@ -12,6 +12,7 @@ import {
   formatDuration,
   formatTokenCount,
   formatBytes,
+  formatUsd,
 } from "../helpers/index.js";
 import { resolveBackendForChat } from "../model-menu.js";
 import { getBackendIdForChat } from "../../../core/engine/backend-controller/index.js";
@@ -19,6 +20,7 @@ import {
   performSessionReset,
   collectSessionStatus,
 } from "../../shared/session-status.js";
+import { stopCurrentTurn } from "../../../core/engine/dispatcher.js";
 import type { RegisterDeps } from "./state.js";
 
 export function registerSessionCommands(
@@ -31,6 +33,13 @@ export function registerSessionCommands(
     // provider when this chat has a backend override pinned.
     await performSessionReset(cid, resolveBackendForChat(cid, gateway));
     await ctx.reply("Session cleared.");
+  });
+
+  bot.command("stop", async (ctx) => {
+    const outcome = stopCurrentTurn(String(ctx.chat.id));
+    await ctx.reply(
+      outcome.ok ? "⏹ Stop requested." : "No response is currently running.",
+    );
   });
 
   bot.command("status", async (ctx) => {
@@ -65,8 +74,18 @@ export function registerSessionCommands(
             `  Read ${formatTokenCount(s.cache.read)}${s.cache.showsWrite ? `  Write ${formatTokenCount(s.cache.write)}` : ""}`,
           ]
         : []),
-      `  Input ${formatTokenCount(s.inputTokens)}  Output ${formatTokenCount(s.outputTokens)}`,
+      `  Input ${formatTokenCount(s.inputTokens)}  Output ${formatTokenCount(s.outputTokens)}${s.costUsd > 0 ? `  Cost ${formatUsd(s.costUsd)}` : ""}`,
       "",
+      ...(s.plan
+        ? [
+            `<b>Plan</b>${s.plan.plan ? `  ${escapeHtml(s.plan.plan)}` : ""}${s.plan.ageLabel ? ` <i>(${s.plan.ageLabel})</i>` : ""}`,
+            ...s.plan.windows.map(
+              (w) =>
+                `  <code>${escapeHtml(w.label.padEnd(6))}${w.bar} ${String(w.percent).padStart(3)}%</code>${w.resetLabel ? ` reset ${w.resetLabel}` : ""}`,
+            ),
+            "",
+          ]
+        : []),
       `<b>Pulse</b>  ${s.pulseOn ? "on" : "off"}`,
       `<b>Workspace</b>  ${formatBytes(s.diskBytes)}`,
       `<b>Session</b>   ${s.sessionName ? `"${escapeHtml(s.sessionName)}" ` : ""}${s.sessionId ? "<code>" + escapeHtml(s.sessionId.slice(0, 8)) + "...</code>" : "<i>(new)</i>"} · ${s.sessionAge} old`,

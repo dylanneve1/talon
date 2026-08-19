@@ -23,7 +23,13 @@ export {
   getOpenCodeSessionSnapshot,
 } from "./sessions.js";
 
-export { initOpenCodeAgent, stopOpenCodeServer } from "./server.js";
+export {
+  initOpenCodeAgent,
+  stopOpenCodeServer,
+  refreshPluginMcpServers,
+  updateSystemPrompt,
+  warmSession,
+} from "./server.js";
 
 export { handleMessage } from "./handler/index.js";
 

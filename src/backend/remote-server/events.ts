@@ -28,6 +28,7 @@
 import {
   appendText,
   closeCurrentSegment,
+  markProgressDelivered,
   recordTokens,
   recordToolUse,
   recordToolCall,
@@ -108,9 +109,21 @@ export async function processStreamEvent(
 ): Promise<ProcessEventOutcome> {
   if (!event || typeof event !== "object") return { kind: "continue" };
   const props = event.properties ?? {};
-  // Scope to our session only
+  // Scope to our session only. OpenCode/Kilo use three wire shapes:
+  // session events put sessionID on properties, part events put it inside
+  // properties.part, and message events put it inside properties.info.
+  // Missing the nested part shape lets a concurrent heartbeat/dream tool
+  // event terminate the active chat turn.
+  const part = props.part as Record<string, unknown> | undefined;
+  const info = props.info as Record<string, unknown> | undefined;
   const evtSessionID =
-    typeof props.sessionID === "string" ? props.sessionID : undefined;
+    typeof props.sessionID === "string"
+      ? props.sessionID
+      : typeof part?.sessionID === "string"
+        ? part.sessionID
+        : typeof info?.sessionID === "string"
+          ? info.sessionID
+          : undefined;
   if (evtSessionID && evtSessionID !== ctx.sessionId) {
     return { kind: "stop", reason: "out_of_scope" };
   }
@@ -246,11 +259,12 @@ async function processPartUpdate(
   const stateObj = part.state as
     { status?: string; input?: Record<string, unknown> } | undefined;
 
-  // Fire onToolUse ONCE when the tool transitions to running or completed
-  // with input available. Subsequent state changes don't re-fire.
+  // Record a tool only after the upstream reports successful completion.
+  // Treating `running` as delivery made failed MCP calls flip end_turn and
+  // suppress fallback text even though nothing reached the user.
   if (
     !stateObj ||
-    (stateObj.status !== "running" && stateObj.status !== "completed") ||
+    stateObj.status !== "completed" ||
     !callID ||
     ctx.seenToolCallIds.has(callID)
   ) {
@@ -266,6 +280,10 @@ async function processPartUpdate(
   if (progress && ctx.onTextBlock) {
     try {
       await ctx.onTextBlock(progress);
+      // Only now is this text actually with the user. `closeCurrentSegment`
+      // folded it into `allResponseText`, so without this the end-of-turn
+      // delivery would ship it a second time inside the full transcript.
+      markProgressDelivered(ctx.state);
     } catch (err) {
       // Non-fatal — never break the stream loop on a UI callback. Logged
       // at debug level so a repeatedly-failing frontend is visible to
@@ -436,7 +454,7 @@ export function finalizePartsIntoState(inputs: FinalizePartsInputs): {
     const callID = typeof part.callID === "string" ? part.callID : "";
     const toolName = typeof part.tool === "string" ? part.tool : "tool";
     if (callID && seenToolCallIds.has(callID)) continue;
-    if (stateObj?.input) {
+    if (stateObj?.status === "completed" && stateObj.input) {
       if (callID) seenToolCallIds.add(callID);
       recordToolUse(state, toolName, stateObj.input);
       toolsProcessed++;

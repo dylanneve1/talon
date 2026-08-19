@@ -5,6 +5,7 @@
 import { escapeHtml } from "../formatting.js";
 import type { DoctorReport } from "../../../core/doctor.js";
 import type { MeshPingResult } from "../../../core/mesh/service.js";
+import type { BackendUsageEntry } from "../../shared/plan-usage-report.js";
 import type { SettingsButton } from "./menu.js";
 import { formatDuration, formatBytes } from "./format.js";
 
@@ -208,14 +209,53 @@ const DOCTOR_ICONS: Record<string, string> = {
  * when this renders, the bot is by definition running, so the CLI's
  * "is the bot up" probe becomes an uptime line instead.
  */
+/** Render the `/usage` report — one block per exposed backend. */
+export function renderUsageMessage(entries: BackendUsageEntry[]): string {
+  const lines = ["<b>📊 Plan usage</b>"];
+
+  for (const entry of entries) {
+    const name = escapeHtml(entry.label || entry.id);
+    if (!entry.plan) {
+      lines.push("", `<b>${name}</b> — <i>${escapeHtml(entry.note ?? "")}</i>`);
+      continue;
+    }
+    const age = entry.plan.ageLabel ? ` <i>(${entry.plan.ageLabel})</i>` : "";
+    const plan = entry.plan.plan ? ` · ${escapeHtml(entry.plan.plan)}` : "";
+    lines.push("", `<b>${name}</b>${plan}${age}`);
+    if (entry.plan.resetsAvailable) {
+      const n = entry.plan.resetsAvailable;
+      lines.push(
+        `  • You have <b>${n}</b> usage limit reset${n === 1 ? "" : "s"} available`,
+      );
+    }
+    for (const w of entry.plan.windows) {
+      const reset = w.resetLabel ? ` reset ${w.resetLabel}` : "";
+      lines.push(
+        `  <code>${escapeHtml(w.label.padEnd(6))}${w.bar} ${String(w.percent).padStart(3)}%</code>${reset}`,
+      );
+    }
+  }
+
+  return lines.join("\n");
+}
+
 export function renderDoctorMessage(report: DoctorReport): string {
   const lines = ["<b>🩺 Talon Doctor</b>", "", "<b>Environment</b>"];
 
-  for (const check of report.checks) {
+  const render = (check: DoctorReport["checks"][number]): string => {
     const detail = check.detail ? ` (${escapeHtml(check.detail)})` : "";
-    lines.push(
-      `${DOCTOR_ICONS[check.status]} ${escapeHtml(check.label)}${detail}`,
-    );
+    return `${DOCTOR_ICONS[check.status]} ${escapeHtml(check.label)}${detail}`;
+  };
+
+  for (const check of report.checks.filter((c) => !c.inactive)) {
+    lines.push(render(check));
+  }
+
+  // Configured-but-idle backends get their own block: they describe what a
+  // switch would run into, not the state of the running deployment.
+  const idle = report.checks.filter((c) => c.inactive);
+  if (idle.length > 0) {
+    lines.push("", "<b>Other backends</b>", ...idle.map(render));
   }
 
   lines.push("", "<b>Native modules</b>");

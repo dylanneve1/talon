@@ -26,6 +26,7 @@ import { bus } from "./core/bus/index.js";
 import { appendToJournal } from "./storage/journal.js";
 import { initPulse, resetPulseTimer } from "./core/background/pulse.js";
 import { initCron } from "./core/background/cron.js";
+import { initPlanAlerts } from "./core/background/plan-alerts.js";
 import {
   initTriggers,
   resumeAfterRestart as resumeTriggersAfterRestart,
@@ -419,6 +420,19 @@ export async function initBackendAndDispatcher(
   resumeTriggersAfterRestart().catch((err) =>
     log("triggers", `resumeAfterRestart failed: ${err}`),
   );
+
+  initPlanAlerts({
+    sendMessage: async (chatId: number, text: string, stringId?: string) =>
+      resolveFrontendByNumericId(chatId, stringId, frontends).sendMessage(
+        chatId,
+        text,
+      ),
+    enabled: config.planAlerts,
+    threshold: config.planAlertThreshold,
+    chatId:
+      config.planAlertChatId ??
+      (config.adminUserId ? String(config.adminUserId) : undefined),
+  });
 
   // Soul — initialize the identity kernel singleton from config so the prompt
   // injection / dream hooks see the right enabled state. Off by default; a

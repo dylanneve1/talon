@@ -45,6 +45,8 @@ describe("plugin system", () => {
       concurrency: 1,
       pulse: true,
       pulseIntervalMs: 300000,
+      planAlerts: false,
+      planAlertThreshold: 80,
       dream: true,
       heartbeat: false,
       heartbeatIntervalMinutes: 60,

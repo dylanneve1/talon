@@ -46,24 +46,63 @@ describe("collectDoctorReport", () => {
     expect(report.issues).toBeGreaterThanOrEqual(1);
   });
 
-  it("reports a configured bundled backend with zero backend issues", async () => {
+  it("reports a configured bundled backend without raising unrelated issues", async () => {
     const report = await collectDoctorReport({
       hasConfigFile: true,
       config: { frontend: "terminal", backend: "kilo" },
     });
     const labels = report.checks.map((c) => c.label);
     expect(labels).toContain("Frontend: terminal");
-    expect(labels).toContain("Kilo SDK bundled");
+    // The SDK is only a client for a CLI of the same name, so the check
+    // reports on that binary — which is present or not per machine.
+    expect(
+      labels.some(
+        (l) => l === "Kilo CLI installed" || l === "Kilo CLI not found",
+      ),
+    ).toBe(true);
     expect(report.native).toHaveLength(6);
-    // Node version and workspace presence vary by machine — assert
-    // that nothing *else* (frontend, backend, native) raises an issue.
+    // Node version, workspace presence, and the backend CLI vary by
+    // machine — assert that nothing *else* raises an issue.
     const envCheck = (label: string) =>
-      label.startsWith("Node.js ") || label.startsWith("Workspace");
+      label.startsWith("Node.js ") ||
+      label.startsWith("Workspace") ||
+      label.startsWith("Kilo CLI");
     const nonEnvIssues = report.checks.filter(
       (c) => (c.status === "fail" || c.issue) && !envCheck(c.label),
     );
     expect(nonEnvIssues).toEqual([]);
     expect(report.native.every((m) => m.ok)).toBe(true);
+  });
+
+  it("reports the idle backends too, without counting them as issues", async () => {
+    const report = await collectDoctorReport({
+      hasConfigFile: true,
+      config: { frontend: "terminal", backend: "claude" },
+    });
+    const labels = report.checks.map((c) => c.label);
+    // A backend nobody is using is one click away from being used, so it
+    // gets a line — but a missing CLI there is a heads-up, not a fault.
+    const idle = report.checks.filter((c) => c.inactive);
+    expect(idle.length).toBeGreaterThan(0);
+    expect(idle.every((c) => c.status !== "fail")).toBe(true);
+    expect(idle.every((c) => !c.issue)).toBe(true);
+    expect(
+      labels.some(
+        (l) => l.startsWith("OpenCode CLI") || l.startsWith("Kilo CLI"),
+      ),
+    ).toBe(true);
+  });
+
+  it("only audits configured models for the active backend", async () => {
+    const report = await collectDoctorReport({
+      hasConfigFile: true,
+      config: { frontend: "terminal", backend: "kilo", model: "some-model" },
+    });
+    // The Claude model audit spawns a probe; it must not run for a backend
+    // that is merely listed.
+    expect(report.checks.some((c) => c.label.startsWith("Model ("))).toBe(
+      false,
+    );
   });
 
   it("flags an unconfigured telegram frontend by name", async () => {

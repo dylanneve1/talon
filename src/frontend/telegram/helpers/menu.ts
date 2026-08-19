@@ -370,9 +370,12 @@ export function renderModelMenuText(state: ModelMenuState): string {
       `<i>Use the picker below to choose one — sending a message before picking will be refused.</i>`,
     );
   } else {
-    lines.push(`<b>Model:</b> <code>${state.activeDisplay}</code>`);
+    lines.push(`<b>Model:</b> <code>${escapeHtml(state.activeDisplay)}</code>`);
   }
-  for (const l of state.statusLines) lines.push(l);
+  // Display names and status lines are plain text from backend catalogs —
+  // a literal `<name>` in a hint (or a `<` in a model id) is otherwise
+  // parsed as an HTML tag and Telegram rejects the whole send with 400.
+  for (const l of state.statusLines) lines.push(escapeHtml(l));
   if (state.freeOnly && state.showFreeToggle) {
     lines.push("<i>Filtering to free-tier models when browsing.</i>");
   }

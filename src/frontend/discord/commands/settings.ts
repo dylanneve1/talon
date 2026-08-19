@@ -46,6 +46,11 @@ import {
 import { resolveActiveModelForChat } from "../../../core/models/active-model.js";
 import { safeSlice } from "../formatting.js";
 import { reply } from "./shared.js";
+import {
+  buildModelPickerView,
+  MODEL_NAV_PREFIX,
+  MODEL_PAGE_SIZE,
+} from "../model-picker.js";
 
 export async function handleModel(
   i: ChatInputCommandInteraction,
@@ -94,6 +99,8 @@ export async function handleModel(
     if (be?.models?.getSettingsPresentation) {
       const pres = await be.models?.getSettingsPresentation(activeModel, {
         callbackPrefix: "model:",
+        navCallbackPrefix: MODEL_NAV_PREFIX,
+        pageSize: MODEL_PAGE_SIZE,
       });
       const modelInfo = activeModel
         ? await be.models?.getRawModelInfo?.(activeModel)
@@ -102,25 +109,10 @@ export async function handleModel(
         modelInfo?.displayName ??
         (activeModel ? formatModelLabel(activeModel) : "_No model selected_");
 
-      // Build select menu from the top 25 models. Discord caps select-menu
-      // options at 25; if the backend exposes more, use `/model name:<value>`
-      // (autocomplete-backed) to pick anything outside this list.
-      const options = pres.modelButtons.slice(0, 25).map((b) => ({
-        label: safeSlice(b.text.replace(/^✓ /, ""), 100),
-        value: safeSlice(b.callback_data.replace(/^model:/, ""), 100),
-        default: b.text.startsWith("✓"),
-      }));
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId("model:select")
-        .setPlaceholder("Pick a model")
-        .addOptions(options);
-      const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-        menu,
-      );
-      const lines = [`**Model:** \`${displayName}\``, ...pres.modelDetails];
+      const view = buildModelPickerView(pres, displayName, beId);
       await i.editReply({
-        content: lines.join("\n"),
-        components: [row],
+        content: view.content,
+        components: view.components,
         allowedMentions: { parse: [] },
       });
     } else {

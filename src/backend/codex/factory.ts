@@ -16,7 +16,9 @@ import {
   type ChatBackend,
   type BackgroundRunner,
   type ModelCatalog,
+  type UsageTelemetry,
 } from "../../core/agent-runtime/capabilities.js";
+import { getPlanUsage as getCodexPlanUsage } from "./plan-usage.js";
 
 import { initCodexAgent, getCodexAuthInfo } from "./init.js";
 import { handleMessage as codexHandleMessage } from "./handler/index.js";
@@ -77,6 +79,12 @@ const codexFactory: BackendFactory = {
     // the per-chat thread lifecycle directly via `setSessionId` on
     // `storage/sessions.ts`. No `sessions` slot needed; `/reset`
     // clears the stored thread id through the storage path.
+    // No per-session snapshot to offer, but a ChatGPT-plan install can
+    // report its rate-limit windows.
+    const usage: UsageTelemetry = {
+      getPlanUsage: () => getCodexPlanUsage(),
+    };
+
     const backend = composeBackend({
       id: "codex",
       label: "Codex",
@@ -84,6 +92,7 @@ const codexFactory: BackendFactory = {
       chat,
       background,
       models,
+      usage,
     });
 
     return {

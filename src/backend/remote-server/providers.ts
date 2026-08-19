@@ -72,6 +72,17 @@ export async function resolveProviderID<TClient extends RemoteAgentClient>(
   const providerResp = await client.provider.list();
   const providerBuckets =
     (providerResp.data as Record<string, unknown> | undefined) ?? {};
+  // Current OpenCode/Kilo shape: `all` contains the provider objects while
+  // `connected` is an array of provider ids. Older releases exposed provider
+  // objects in named buckets such as `connected` / `configured`. Support both
+  // shapes, but always prefer a provider the server says is authenticated.
+  const connectedProviderIDs = new Set(
+    Array.isArray(providerBuckets.connected)
+      ? providerBuckets.connected.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : [],
+  );
   const guessedProviderID = hooks.guessProviderID(modelID);
   const matches: Array<{ providerID: string; bucketName: string }> = [];
 
@@ -98,6 +109,7 @@ export async function resolveProviderID<TClient extends RemoteAgentClient>(
 
   if (matches.length > 0) {
     const score = (m: (typeof matches)[0]): number =>
+      (connectedProviderIDs.has(m.providerID) ? 0 : 100) +
       (m.providerID === guessedProviderID ? 0 : 2) +
       (m.providerID === "opencode" ? 0 : 1) +
       hooks.getBucketPriority(m.bucketName) * 0.1;

@@ -23,6 +23,7 @@ import {
   ensureSession,
   ensureChatMcpServer,
   ensurePluginMcpServers,
+  buildToolOverrides,
   resolveProviderID,
   parseStoredKiloModelSelection,
   getConfig,
@@ -86,12 +87,13 @@ export async function handleMessage(
       (selectedProviderID ? "" : " (provider via catalog lookup)"),
   );
   const sessionId = await ensureSession(oc, chatId);
-  await ensureChatMcpServer(oc, chatId);
-  await ensurePluginMcpServers(oc, chatId);
-  // Note: we deliberately don't pass `tools` to promptAsync. The session
-  // was created with a `permission` ruleset (ensureSession in server.ts)
-  // that allow-lists this chat's MCP tools and auto-allows built-in
-  // read/bash/edit. The deprecated `tools` map is subsumed by that.
+  const chatMcpServerName = await ensureChatMcpServer(oc, chatId);
+  const pluginMcpServerNames = await ensurePluginMcpServers(oc, chatId);
+  const toolOverrides = await buildToolOverrides(
+    oc,
+    chatMcpServerName,
+    pluginMcpServerNames,
+  );
 
   // Build the prompt (time tag + sender + msg_id reference)
   const prompt = formatUserPrompt({
@@ -132,6 +134,7 @@ export async function handleMessage(
   });
   const promptStartedAt = Date.now();
   const seenQuestionIds = new Set<string>();
+  const seenPermissionIds = new Set<string>();
   const seenToolCallIds = new Set<string>();
 
   const setupMs = Date.now() - t0;
@@ -155,7 +158,9 @@ export async function handleMessage(
       state,
       chatId,
       seenQuestionIds,
+      seenPermissionIds,
       seenToolCallIds,
+      toolOverrides,
       onStreamDelta: undefined,
       onTextBlock,
       onToolUse,
@@ -203,6 +208,7 @@ export async function handleMessage(
     // Note: we deliberately do NOT disconnect the chat MCP server here.
     // The server is named per-chat so it's safe to keep across turns;
     // re-spawning the subprocess each turn cost ~800ms per message.
+    // Per-prompt overrides isolate visibility across concurrent chats.
   }
 
   // ── Post-loop accounting ──────────────────────────────────────────────────

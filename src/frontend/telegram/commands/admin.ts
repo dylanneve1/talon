@@ -21,7 +21,9 @@ import {
   renderDoctorMessage,
   renderMetricsKeyboard,
   renderMetricsPanel,
+  renderUsageMessage,
 } from "../helpers/index.js";
+import { collectPlanUsage } from "../../shared/plan-usage-report.js";
 import { collectDoctorReport } from "../../../core/doctor.js";
 import { handleAdminCommand } from "../admin.js";
 import { getTodayMetrics } from "../../../storage/metrics.js";
@@ -51,6 +53,14 @@ export function registerAdminCommands(
       parse_mode: "HTML",
       reply_markup: { inline_keyboard: renderMetricsKeyboard("today") },
     });
+  });
+
+  // /usage — plan limits across every exposed backend, not just this
+  // chat's. Not admin-gated: it says how close the shared account is to a
+  // wall, which is exactly what a user hitting one needs to know.
+  bot.command("usage", async (ctx) => {
+    const entries = await collectPlanUsage(config);
+    await ctx.reply(renderUsageMessage(entries), { parse_mode: "HTML" });
   });
 
   bot.command("doctor", async (ctx) => {

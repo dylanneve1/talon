@@ -19,6 +19,10 @@ import type {
   RemoteModelCatalogEntry,
   RemoteModelResolution,
 } from "./types.js";
+import type {
+  RemotePickerOptions,
+  RemotePickerResult,
+} from "./presentation.js";
 
 export interface RemoteModelProviderDeps {
   /** Human label — "OpenCode" / "Kilo" — used in error strings. */
@@ -36,8 +40,8 @@ export interface RemoteModelProviderDeps {
   formatUnavailableModel(model: RemoteModelCatalogEntry): string;
   getSettingsPresentation(
     activeModel: string,
-    callbackPrefix?: string,
-  ): Promise<{ modelButtons: ModelButton[]; modelDetails: string[] }>;
+    options?: RemotePickerOptions,
+  ): Promise<RemotePickerResult>;
 }
 
 export interface RemoteModelProvider {
@@ -45,8 +49,8 @@ export interface RemoteModelProvider {
   getModelInfo(id: string): Promise<UnifiedModelInfo | undefined>;
   getSettingsPresentation(
     activeModel: string,
-    callbackPrefix?: string,
-  ): Promise<{ modelButtons: ModelButton[]; modelDetails: string[] }>;
+    options?: RemotePickerOptions,
+  ): Promise<RemotePickerResult>;
   getProviders(): Promise<UnifiedProviderInfo[]>;
   getProviderModels(
     providerId: string,
@@ -118,8 +122,8 @@ export function createRemoteModelProvider(
       return entry ? toUnifiedModelInfo(entry) : undefined;
     },
 
-    getSettingsPresentation(activeModel, callbackPrefix = "settings:model:") {
-      return deps.getSettingsPresentation(activeModel, callbackPrefix);
+    getSettingsPresentation(activeModel, options) {
+      return deps.getSettingsPresentation(activeModel, options);
     },
 
     async getProviders() {

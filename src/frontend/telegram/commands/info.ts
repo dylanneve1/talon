@@ -21,7 +21,7 @@ export function registerInfoCommands(bot: Bot): void {
         "Send a message, photo, doc, or voice note.",
         "In groups, @mention or reply to activate.",
         "",
-        "/status  /reset  /help",
+        "/status  /stop  /reset  /help",
       ].join("\n"),
       { parse_mode: "HTML" },
     ),
@@ -40,6 +40,7 @@ export function registerInfoCommands(bot: Bot): void {
         "",
         "<b>Session</b>",
         "  /status -- session info, usage, and stats",
+        "  /stop -- stop the current response",
         "  /metrics -- aggregate performance metrics (admin)",
         "  /doctor -- environment and native-module health (admin)",
         "  /dream -- force memory consolidation now",
@@ -132,11 +133,17 @@ export function registerInfoCommands(bot: Bot): void {
       return;
     }
     const lines = plugins.map((p) => {
-      const ver = p.plugin.version ? ` v${p.plugin.version}` : "";
-      const desc = p.plugin.description ? ` — ${p.plugin.description}` : "";
+      // Every field here is author-supplied manifest text, not just the
+      // name. A description like "R&D tools" or "<beta>" would otherwise
+      // reach Telegram as markup and 400 the whole listing, so `/plugins`
+      // would look dead rather than show one odd line.
+      const ver = p.plugin.version ? ` v${escapeHtml(p.plugin.version)}` : "";
+      const desc = p.plugin.description
+        ? ` — ${escapeHtml(p.plugin.description)}`
+        : "";
       const mcp = p.plugin.mcpServerPath ? " [MCP]" : "";
       const fe = p.plugin.frontends?.length
-        ? ` (${p.plugin.frontends.join(", ")})`
+        ? ` (${escapeHtml(p.plugin.frontends.join(", "))})`
         : "";
       return `• <b>${escapeHtml(p.plugin.name)}</b>${ver}${mcp}${fe}${desc}`;
     });

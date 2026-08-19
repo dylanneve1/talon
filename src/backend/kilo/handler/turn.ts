@@ -4,13 +4,14 @@
  * `runKiloTurn` subscribes to SSE before issuing the prompt (so no early
  * events are lost), fires `promptAsync`, awaits the SSE close, then reads the
  * authoritative parts list. `subscribeToTurnEvents` translates relevant SSE
- * events into shared stream-state mutations and fires the terminator abort.
+ * events into shared stream-state mutations and observes natural turn idle.
  */
 
 import type { KiloClient } from "@kilocode/sdk/v2";
 import { logWarn } from "../../../util/log.js";
 import { errMsg } from "../server.js";
 import {
+  approvePendingPermissions,
   extractAssistantUsage,
   rejectPendingQuestions,
   type KiloAssistantInfo,
@@ -18,6 +19,7 @@ import {
 import { createStreamState, recordTokens, sleep } from "../../shared/index.js";
 import { processStreamEvent, finalizePartsIntoState } from "../events.js";
 import { subscribeSseStream } from "../../remote-server/sse-stream.js";
+import { awaitRemoteTurn } from "../../remote-server/turn-timeout.js";
 import { findLastAssistantMessage as findLastAssistantMessageShared } from "../../remote-server/messages.js";
 
 export interface RunKiloTurnInputs {
@@ -30,7 +32,9 @@ export interface RunKiloTurnInputs {
   state: ReturnType<typeof createStreamState>;
   chatId: string;
   seenQuestionIds: Set<string>;
+  seenPermissionIds: Set<string>;
   seenToolCallIds: Set<string>;
+  toolOverrides?: Record<string, boolean>;
   onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
   onTextBlock?: (text: string) => Promise<void>;
   onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
@@ -61,7 +65,9 @@ export async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
     state,
     chatId,
     seenQuestionIds,
+    seenPermissionIds,
     seenToolCallIds,
+    toolOverrides,
     onStreamDelta,
     onTextBlock,
     onToolUse,
@@ -80,27 +86,18 @@ export async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
     onStreamDelta,
     onTextBlock,
     onToolUse,
-    onTerminator: async () => {
-      // End_turn fired — abort the in-flight session so Kilo doesn't
-      // burn another round-trip "wrapping up" after the model declared
-      // done. session.idle then fires for our session and the SSE
-      // iterator exits cleanly.
-      try {
-        await oc.session.abort({ sessionID: sessionId });
-      } catch (err) {
-        logWarn("agent", `[${chatId}] session.abort failed: ${errMsg(err)}`);
-      }
-    },
     abortSignal: sseAbort.signal,
   });
 
-  // Question watchdog: Talon manages its own tool permissions, so any
-  // Kilo-side question (tool approval, clarification) is rejected
-  // automatically.
+  // Headless-interaction watchdog: resolve upstream questions and any
+  // permission requests that escaped the session ruleset.
   const questionWatchdog = (async () => {
     while (!sseAbort.signal.aborted) {
       try {
-        await rejectPendingQuestions(oc, sessionId, chatId, seenQuestionIds);
+        await Promise.all([
+          rejectPendingQuestions(oc, sessionId, chatId, seenQuestionIds),
+          approvePendingPermissions(oc, sessionId, chatId, seenPermissionIds),
+        ]);
       } catch (err) {
         logWarn(
           "agent",
@@ -113,18 +110,23 @@ export async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
 
   try {
     // Fire and forget — promptAsync returns immediately. The await below
-    // is on the SSE close event. No `tools` field: the deprecated
-    // per-prompt tool override map is merged into session-level
-    // `permission` rules set in ensureSession.
-    await oc.session.promptAsync({
-      sessionID: sessionId,
-      parts: [{ type: "text", text: prompt }],
-      model: { providerID, modelID },
-      system: systemPrompt,
-    });
+    // is on the SSE close event. Per-prompt overrides hide sibling chats'
+    // MCP tools while session permissions independently deny execution.
+    await awaitRemoteTurn(
+      (async () => {
+        await oc.session.promptAsync({
+          sessionID: sessionId,
+          parts: [{ type: "text", text: prompt }],
+          model: { providerID, modelID },
+          system: systemPrompt,
+          ...(toolOverrides ? { tools: toolOverrides } : {}),
+        });
 
-    // Await turn completion via SSE.
-    await sseDone;
+        // Await turn completion via SSE.
+        await sseDone;
+      })(),
+      { client: oc, sessionId, chatId, label: "Kilo" },
+    );
 
     // Read authoritative final state from the messages endpoint. The SSE
     // handler already populated state mid-flight; this re-reads to fill
@@ -156,17 +158,23 @@ export async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
       }
     }
   } catch (err) {
-    // If the model called end_turn we aborted intentionally — swallow.
+    // Explicit user interrupts abort intentionally — swallow that close path.
     if (state.turnTerminated && /abort/i.test(errMsg(err))) {
       return;
     }
     throw err;
   } finally {
     sseAbort.abort();
-    await sseDone.catch(() => {});
+    // A dead SSE socket may ignore the local abort flag until another event
+    // arrives. Bound cleanup so a timed-out turn cannot wedge its caller in
+    // the finally block it was meant to escape.
+    await Promise.race([sseDone.catch(() => {}), sleep(1_000)]);
     await questionWatchdog.catch(() => {});
     try {
-      await rejectPendingQuestions(oc, sessionId, chatId, seenQuestionIds);
+      await Promise.all([
+        rejectPendingQuestions(oc, sessionId, chatId, seenQuestionIds),
+        approvePendingPermissions(oc, sessionId, chatId, seenPermissionIds),
+      ]);
     } catch {
       /* noop */
     }
@@ -194,7 +202,6 @@ interface SubscribeInputs {
   onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
   onTextBlock?: (text: string) => Promise<void>;
   onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
-  onTerminator: () => Promise<void>;
   abortSignal: AbortSignal;
 }
 
@@ -214,7 +221,6 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
     onStreamDelta,
     onTextBlock,
     onToolUse,
-    onTerminator,
     abortSignal,
   } = inputs;
 
@@ -222,7 +228,7 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
   // subscribe-failed warning. Returns `undefined` for both "subscribe
   // rejected" and "no iterable in the response shape".
   const stream = await subscribeSseStream(oc, chatId);
-  if (!stream) return;
+  if (!stream) throw new Error("Kilo SSE connection unavailable");
 
   try {
     for await (const evt of stream) {
@@ -260,10 +266,7 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
               data?: Record<string, unknown>;
             }
           | undefined;
-        // MessageAbortedError is OUR own abort signal — fired when a
-        // terminator tool led us to call `oc.session.abort` to
-        // short-circuit the model's wrap-up. It's the EXPECTED close
-        // path, not an upstream failure.
+        // MessageAbortedError is expected for an explicit user interrupt.
         const isOurAbort =
           state.turnTerminated &&
           (errProp?.name === "MessageAbortedError" ||
@@ -301,9 +304,9 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
       if (outcome.kind === "terminator_fired") {
         // tool_calls counter increment happens per-tool inside
         // events.ts processPartUpdate. Don't double-count here.
-        // Fire-and-forget — abort the session so the model's post-end_turn
-        // wrap-up doesn't burn another API call.
-        onTerminator().catch(() => {});
+        // Aborting here can race with a prompt accepted immediately after
+        // this turn settles and cancel that next turn on the reused session.
+        // Delivery is already complete, so wait for natural idle instead.
         continue;
       }
 

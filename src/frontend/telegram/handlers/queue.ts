@@ -122,10 +122,16 @@ async function flushQueue(chatId: string): Promise<void> {
   // Clear hourglass reactions on queued messages now that we're processing
   for (const msgId of queuedReactionMsgIds) {
     bot.api.setMessageReaction(numericChatId, msgId, []).catch((err) => {
-      logWarn(
-        "bot",
-        `Failed to clear reaction on msg ${msgId}: ${err instanceof Error ? err.message : err}`,
-      );
+      const detail = err instanceof Error ? err.message : String(err);
+      // The id is recorded optimistically — the hourglass `setMessageReaction`
+      // above is fire-and-forget, so we queue the clear before knowing the set
+      // landed. When it didn't, clearing a reaction that was never there comes
+      // back as REACTION_EMPTY. The end state we wanted (no reaction) already
+      // holds, so that is a no-op, not a failure. Keeping the optimistic push
+      // matters: gating it on the set resolving would race the flush and strand
+      // a ⏳ on the message. Anything else is still worth surfacing.
+      if (detail.includes("REACTION_EMPTY")) return;
+      logWarn("bot", `Failed to clear reaction on msg ${msgId}: ${detail}`);
     });
   }
 

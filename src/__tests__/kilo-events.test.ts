@@ -129,7 +129,7 @@ describe("processStreamEvent — message.part.delta", () => {
 });
 
 describe("processStreamEvent — message.part.updated (tool)", () => {
-  it("fires onToolUse + recordToolUse for a running tool", async () => {
+  it("fires onToolUse + recordToolUse for a completed tool", async () => {
     const onToolUse = vi.fn();
     const ctx = baseContext({ onToolUse });
     await processStreamEvent(
@@ -141,7 +141,7 @@ describe("processStreamEvent — message.part.updated (tool)", () => {
             type: "tool",
             callID: "call_1",
             tool: "get_weather",
-            state: { status: "running", input: { city: "Dublin" } },
+            state: { status: "completed", input: { city: "Dublin" } },
           },
         },
       },
@@ -163,7 +163,7 @@ describe("processStreamEvent — message.part.updated (tool)", () => {
           type: "tool",
           callID: "call_1",
           tool: "x",
-          state: { status: "running", input: {} },
+          state: { status: "completed", input: {} },
         },
       },
     };
@@ -205,7 +205,7 @@ describe("processStreamEvent — message.part.updated (tool)", () => {
             type: "tool",
             callID: "c1",
             tool: "search",
-            state: { status: "running", input: { q: "x" } },
+            state: { status: "completed", input: { q: "x" } },
           },
         },
       },
@@ -227,7 +227,7 @@ describe("processStreamEvent — message.part.updated (tool)", () => {
             type: "tool",
             callID: "c1",
             tool: "end_turn",
-            state: { status: "running", input: { text: "bye" } },
+            state: { status: "completed", input: { text: "bye" } },
           },
         },
       },
@@ -238,6 +238,29 @@ describe("processStreamEvent — message.part.updated (tool)", () => {
       expect(outcome.toolName).toBe("end_turn");
     }
     expect(ctx.state.turnTerminated).toBe(true);
+  });
+
+  it("rejects a nested part event from a concurrent session", async () => {
+    const ctx = baseContext();
+    const outcome = await processStreamEvent(
+      {
+        type: "message.part.updated",
+        properties: {
+          part: {
+            sessionID: "other-session",
+            type: "tool",
+            callID: "foreign-call",
+            tool: "end_turn",
+            state: { status: "completed", input: { text: "wrong chat" } },
+          },
+        },
+      },
+      ctx,
+    );
+
+    expect(outcome).toEqual({ kind: "stop", reason: "out_of_scope" });
+    expect(ctx.state.turnTerminated).toBe(false);
+    expect(ctx.state.toolCalls).toBe(0);
   });
 
   it("does NOT return terminator_fired for react with end_turn:false", async () => {
@@ -264,7 +287,7 @@ describe("processStreamEvent — message.part.updated (tool)", () => {
     expect(ctx.state.turnTerminated).toBe(false);
   });
 
-  it("skips tools that aren't running or completed (pending only)", async () => {
+  it("skips tools that have not completed", async () => {
     const onToolUse = vi.fn();
     const ctx = baseContext({ onToolUse });
     await processStreamEvent(
@@ -518,6 +541,37 @@ describe("finalizePartsIntoState — SSE captured tools to skip", () => {
     expect(seen.has("c2")).toBe(true);
   });
 
+  it("does not backfill failed or still-running tools as delivered", () => {
+    const state = createStreamState();
+    const onToolUse = vi.fn();
+    const seen = new Set<string>();
+    const { toolsProcessed } = finalizePartsIntoState({
+      parts: [
+        {
+          type: "tool",
+          callID: "running",
+          tool: "end_turn",
+          state: { status: "running", input: { text: "not sent" } },
+        },
+        {
+          type: "tool",
+          callID: "failed",
+          tool: "send",
+          state: { status: "error", input: { text: "also not sent" } },
+        },
+      ],
+      state,
+      seenToolCallIds: seen,
+      onToolUse,
+    });
+
+    expect(toolsProcessed).toBe(0);
+    expect(state.toolCalls).toBe(0);
+    expect(state.turnTerminated).toBe(false);
+    expect(onToolUse).not.toHaveBeenCalled();
+    expect(seen).toEqual(new Set());
+  });
+
   it("never throws when onToolUse throws", () => {
     const state = createStreamState();
     const onToolUse = vi.fn(() => {
@@ -647,7 +701,7 @@ describe("processStreamEvent — message.updated info-level scoping", () => {
       },
       ctx as never,
     );
-    expect(outcome).toEqual({ kind: "continue" });
+    expect(outcome).toEqual({ kind: "stop", reason: "out_of_scope" });
     expect(ctx.state.sdkInputTokens).toBe(0);
   });
 

@@ -98,6 +98,39 @@ export const modelHandlers: SharedActionHandlers = {
     }
   },
 
+  // Account-level, so it falls back to the pooled Claude backend when
+  // another provider is serving this chat.
+  plan_usage: async (_body, chatId) => {
+    const current = getPooledBackend(getBackendIdForChat(String(chatId)));
+    const source = current?.usage?.getPlanUsage
+      ? current
+      : getPooledBackend("claude");
+    if (!source?.usage?.getPlanUsage)
+      return {
+        ok: false,
+        error: "No configured backend reports subscription rate limits.",
+      };
+
+    const usage = await source.usage.getPlanUsage();
+    if (!usage)
+      return {
+        ok: false,
+        error:
+          "Plan usage is unavailable — no subscription credentials, or this session authenticates with an API key.",
+      };
+
+    const lines = usage.windows.map(
+      (w) =>
+        `- ${w.label}: ${w.percent}% used${w.resetsAt ? `, resets ${w.resetsAt}` : ""}`,
+    );
+    return {
+      ok: true,
+      plan: usage.plan ?? null,
+      windows: usage.windows,
+      text: `Plan usage${usage.plan ? ` (${usage.plan})` : ""}:\n${lines.join("\n")}`,
+    };
+  },
+
   list_backends: (body, chatId) => {
     const currentId = getBackendIdForChat(String(chatId));
     const backends = getAvailableBackends().map((b) => ({

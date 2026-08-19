@@ -104,6 +104,28 @@ export function hubPluginServerNames(only?: string[]): string[] {
   return Object.keys(getPluginMcpServers("", "hub-enum", only));
 }
 
+/**
+ * Enumerate one plugin server's tools through the same hub-managed child that
+ * serves MCP requests. Remote agent servers do not include dynamically-added
+ * MCP tools in their `/experimental/tool/ids` response, so OpenCode/Kilo need
+ * this authoritative list to build per-chat visibility overrides.
+ */
+export async function listHubPluginToolNames(
+  serverName: string,
+  chatId: string,
+  bridgeUrl: string,
+): Promise<string[]> {
+  const key =
+    serverName === "brave-search"
+      ? "brave-search"
+      : `${serverName}\u0000${chatId}`;
+  const child = await acquireChild(key, () =>
+    pluginSpec(serverName, chatId, bridgeUrl),
+  );
+  child.touch();
+  return (await child.listTools()).map((tool) => tool.name);
+}
+
 // ── Server construction per session ─────────────────────────────────────────
 
 type HubTarget =

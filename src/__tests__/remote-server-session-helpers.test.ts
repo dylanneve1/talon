@@ -10,6 +10,7 @@
  *   - `listSessionMessages` — dedup + limit semantics.
  *   - `getTurnSummary` / `getSessionSnapshot` — high-level wrappers.
  *   - `rejectPendingQuestions` — auto-respond loop with backend label.
+ *   - `approvePendingPermissions` — headless permission fail-safe.
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -23,6 +24,7 @@ import {
   getTurnSummary,
   getSessionSnapshot,
   rejectPendingQuestions,
+  approvePendingPermissions,
   type RemoteSessionClient,
 } from "../backend/remote-server/session-helpers.js";
 
@@ -31,14 +33,17 @@ function makeMockClient(
     messages?: Array<unknown>;
     sessionGetTime?: { created?: number; updated?: number };
     questions?: Array<unknown>;
+    permissions?: Array<unknown>;
   } = {},
 ): {
   client: RemoteSessionClient;
   questionReplyCalls: Array<{ requestID: string; answers: unknown }>;
   questionRejectCalls: Array<{ requestID: string }>;
+  permissionReplyCalls: Array<{ requestID: string; reply: string }>;
 } {
   const questionReplyCalls: Array<{ requestID: string; answers: unknown }> = [];
   const questionRejectCalls: Array<{ requestID: string }> = [];
+  const permissionReplyCalls: Array<{ requestID: string; reply: string }> = [];
   const client: RemoteSessionClient = {
     mcp: { add: vi.fn(), disconnect: vi.fn() },
     session: {
@@ -63,8 +68,20 @@ function makeMockClient(
         return { ok: true };
       }),
     },
+    permission: {
+      list: vi.fn(async () => ({ data: overrides.permissions ?? [] })),
+      reply: vi.fn(async (args) => {
+        permissionReplyCalls.push(args);
+        return { ok: true };
+      }),
+    },
   };
-  return { client, questionReplyCalls, questionRejectCalls };
+  return {
+    client,
+    questionReplyCalls,
+    questionRejectCalls,
+    permissionReplyCalls,
+  };
 }
 
 // ── extractPartsSummary ────────────────────────────────────────────────────
@@ -487,5 +504,42 @@ describe("session-helpers / rejectPendingQuestions", () => {
     await expect(
       rejectPendingQuestions(client, "sess", "chat-1", new Set(), "Kilo"),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("session-helpers / approvePendingPermissions", () => {
+  it("approves a pending permission once for the current session", async () => {
+    const seen = new Set<string>();
+    const { client, permissionReplyCalls } = makeMockClient({
+      permissions: [
+        {
+          id: "p1",
+          sessionID: "sess",
+          permission: "external_directory",
+          patterns: ["/workspace/media/*"],
+        },
+      ],
+    });
+
+    await approvePendingPermissions(client, "sess", "chat-1", seen, "OpenCode");
+    await approvePendingPermissions(client, "sess", "chat-1", seen, "OpenCode");
+
+    expect(permissionReplyCalls).toEqual([{ requestID: "p1", reply: "once" }]);
+  });
+
+  it("ignores permissions belonging to another session", async () => {
+    const { client, permissionReplyCalls } = makeMockClient({
+      permissions: [{ id: "p2", sessionID: "other", permission: "bash" }],
+    });
+
+    await approvePendingPermissions(
+      client,
+      "sess",
+      "chat-1",
+      new Set(),
+      "OpenCode",
+    );
+
+    expect(permissionReplyCalls).toHaveLength(0);
   });
 });

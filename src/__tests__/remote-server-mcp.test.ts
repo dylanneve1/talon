@@ -11,11 +11,8 @@
  *
  * Key invariants asserted:
  *
- *   1. Connecting `talon-tools-chatA` after `talon-tools-chatB` is
- *      already registered DISCONNECTS chatB first. (Visibility scoping —
- *      see `mcp.ts` for the rationale.)
- *   2. The `talon-tools-heartbeat` sentinel is exempt from rotation.
- *   3. Plugin MCP servers stay connected across chat switches.
+ *   1. Multiple chat MCP servers stay registered concurrently.
+ *   2. Plugin MCP servers stay connected across chat registrations.
  *   4. Local registration cache short-circuits redundant `mcp.add` calls.
  *   5. `buildToolOverrides` produces the correct enable/disable map for
  *      a multi-chat tool catalog.
@@ -33,6 +30,7 @@ import {
   isTalonToolID,
   getRegisteredMcpServerNames,
   TALON_MCP_SERVER_NAME,
+  stopRemoteServer,
   type RemoteAgentClient,
   type RemoteServerState,
 } from "../backend/remote-server/index.js";
@@ -112,6 +110,17 @@ function makeState(): RemoteServerState<RemoteAgentClient> {
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe("remote-server / mcp helpers", () => {
+  it("drops a reused-server client without closing the external server", () => {
+    const state = makeState();
+    const { client } = makeMockClient();
+    state.client = client;
+    state.serverHandle = null;
+
+    stopRemoteServer(state);
+
+    expect(state.client).toBeNull();
+  });
+
   describe("getChatMcpServerName", () => {
     it("derives a stable name from a numeric Telegram chatId", () => {
       expect(getChatMcpServerName("352042062")).toBe("talon-tools-352042062");
@@ -148,7 +157,7 @@ describe("remote-server / mcp helpers", () => {
     });
   });
 
-  describe("ensureChatMcpServer — visibility rotation", () => {
+  describe("ensureChatMcpServer — concurrent registrations", () => {
     let state: RemoteServerState<RemoteAgentClient>;
 
     beforeEach(() => {
@@ -169,27 +178,25 @@ describe("remote-server / mcp helpers", () => {
       expect(getRegisteredMcpServerNames(state)).toContain("talon-tools-chatA");
     });
 
-    it("DISCONNECTS rival chat server before registering current one", async () => {
+    it("retains rival chat servers while registering the current one", async () => {
       const { client, mcpDisconnectCalls, mcpAddCalls } = makeMockClient();
 
       await ensureChatMcpServer(client, state, "chatA");
       expect(getRegisteredMcpServerNames(state)).toContain("talon-tools-chatA");
 
-      // Switch to chatB — chatA must be disconnected first
+      // Register chatB while chatA may still have a turn in flight.
       mcpAddCalls.length = 0;
       mcpDisconnectCalls.length = 0;
       await ensureChatMcpServer(client, state, "chatB");
 
-      expect(mcpDisconnectCalls).toEqual(["talon-tools-chatA"]);
+      expect(mcpDisconnectCalls).toEqual([]);
       expect(mcpAddCalls).toHaveLength(1);
       expect(mcpAddCalls[0].name).toBe("talon-tools-chatB");
-      expect(getRegisteredMcpServerNames(state)).not.toContain(
-        "talon-tools-chatA",
-      );
+      expect(getRegisteredMcpServerNames(state)).toContain("talon-tools-chatA");
       expect(getRegisteredMcpServerNames(state)).toContain("talon-tools-chatB");
     });
 
-    it("never disconnects the heartbeat sentinel server", async () => {
+    it("keeps heartbeat and sibling chat servers connected", async () => {
       const { client, mcpDisconnectCalls } = makeMockClient();
       // Seed the heartbeat sentinel + a rival chat
       state.registeredMcpServers.add("talon-tools-heartbeat");
@@ -197,15 +204,15 @@ describe("remote-server / mcp helpers", () => {
 
       await ensureChatMcpServer(client, state, "chatB");
 
-      // Only chatA gets the boot — heartbeat stays connected
-      expect(mcpDisconnectCalls).toEqual(["talon-tools-chatA"]);
+      expect(mcpDisconnectCalls).toEqual([]);
       expect(getRegisteredMcpServerNames(state)).toContain(
         "talon-tools-heartbeat",
       );
       expect(getRegisteredMcpServerNames(state)).toContain("talon-tools-chatB");
+      expect(getRegisteredMcpServerNames(state)).toContain("talon-tools-chatA");
     });
 
-    it("does not rotate plugin servers across chat switches", async () => {
+    it("does not disturb plugin servers across chat registrations", async () => {
       const { client, mcpDisconnectCalls } = makeMockClient();
       // Seed a plugin server (different prefix, e.g. mempalace, brave-search)
       state.registeredMcpServers.add("mempalace");
@@ -214,8 +221,7 @@ describe("remote-server / mcp helpers", () => {
 
       await ensureChatMcpServer(client, state, "chatB");
 
-      // Only the rival chat server gets disconnected
-      expect(mcpDisconnectCalls).toEqual(["talon-tools-chatA"]);
+      expect(mcpDisconnectCalls).toEqual([]);
       expect(getRegisteredMcpServerNames(state)).toContain("mempalace");
       expect(getRegisteredMcpServerNames(state)).toContain("brave-search");
     });
@@ -305,6 +311,26 @@ describe("remote-server / mcp helpers", () => {
       expect(overrides).not.toHaveProperty("read");
     });
 
+    it("synthesizes MCP tool ids omitted by the upstream ids endpoint", async () => {
+      const state = makeState();
+      state.registeredMcpServers.add("talon-tools-chatA");
+      state.registeredMcpServers.add("talon-tools-chatB");
+      const { client } = makeMockClient(["read", "bash"]);
+
+      const overrides = await buildToolOverrides(
+        client,
+        state,
+        "talon-tools-chatA",
+      );
+
+      expect(overrides).toMatchObject({
+        "talon-tools-chatA_end_turn": true,
+        "talon-tools-chatA_send_message": true,
+        "talon-tools-chatB_end_turn": false,
+        "talon-tools-chatB_send_message": false,
+      });
+    });
+
     it("returns undefined when no chat tools matched", async () => {
       const state = makeState();
       const { client } = makeMockClient(["read", "bash", "brave-search_query"]);
@@ -318,7 +344,7 @@ describe("remote-server / mcp helpers", () => {
       expect(overrides).toBeUndefined();
     });
 
-    it("returns undefined when no chat tool of OURS matched (only rivals exist)", async () => {
+    it("disables rivals while our newly registered tools are still loading", async () => {
       const state = makeState();
       const { client } = makeMockClient([
         "talon-tools-chatB_send",
@@ -331,12 +357,16 @@ describe("remote-server / mcp helpers", () => {
         "talon-tools-chatA",
       );
 
-      // Only OTHER chats' tools are in the catalog — no point overriding
-      expect(overrides).toBeUndefined();
+      expect(overrides).toEqual({
+        "talon-tools-chatB_send": false,
+        "talon-tools-chatB_react": false,
+      });
     });
 
-    it("returns undefined and logs a warning when tool.ids throws", async () => {
+    it("keeps synthesized isolation overrides when tool.ids throws", async () => {
       const state = makeState();
+      state.registeredMcpServers.add("talon-tools-chatA");
+      state.registeredMcpServers.add("talon-tools-chatB");
       const { client } = makeMockClient();
       client.tool.ids = vi.fn(async () => {
         throw new Error("upstream timeout");
@@ -347,7 +377,32 @@ describe("remote-server / mcp helpers", () => {
         state,
         "talon-tools-chatA",
       );
-      expect(overrides).toBeUndefined();
+      expect(overrides).toMatchObject({
+        "talon-tools-chatA_end_turn": true,
+        "talon-tools-chatB_end_turn": false,
+      });
+    });
+
+    it("isolates chat-scoped plugin tools as well as Talon tools", async () => {
+      const state = makeState();
+      state.registeredMcpServers.add("talon-tools-chatA");
+      state.registeredMcpServers.add("talon-plugin-chatA-memory");
+      state.registeredMcpServers.add("talon-plugin-chatB-memory");
+      state.registeredMcpTools.set("talon-plugin-chatA-memory", ["search"]);
+      state.registeredMcpTools.set("talon-plugin-chatB-memory", ["search"]);
+      const { client } = makeMockClient([]);
+
+      const overrides = await buildToolOverrides(
+        client,
+        state,
+        "talon-tools-chatA",
+        ["talon-plugin-chatA-memory"],
+      );
+
+      expect(overrides).toMatchObject({
+        "talon-plugin-chatA-memory_search": true,
+        "talon-plugin-chatB-memory_search": false,
+      });
     });
   });
 

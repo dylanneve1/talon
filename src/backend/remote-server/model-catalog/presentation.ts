@@ -35,8 +35,40 @@ export interface RemotePresentationOptions {
    * true where the transport accepts arbitrary characters (Discord).
    */
   allowCallbackSeparators: boolean;
-  /** How many quick-pick buttons to offer (Telegram 4, Discord 24). */
+  /**
+   * Default page size when the frontend doesn't ask for one — also the
+   * legacy quick-pick count (Telegram 4, Discord 24).
+   */
   quickPickLimit: number;
+  /**
+   * Flat model lists longer than this collapse into provider chips, so a
+   * catalog of several hundred models opens as a handful of providers
+   * rather than dozens of indistinguishable pages. Defaults to 60.
+   */
+  groupThreshold?: number;
+}
+
+/** Paging / filtering knobs, mirroring `ModelPickerOptions`. */
+export interface RemotePickerOptions {
+  callbackPrefix?: string;
+  navCallbackPrefix?: string;
+  page?: number;
+  pageSize?: number;
+  filter?: "all" | "free";
+  provider?: string;
+}
+
+/** What the frontend needs to render one page of the picker. */
+export interface RemotePickerResult {
+  modelButtons: Array<ModelButton>;
+  modelDetails: Array<string>;
+  view: "groups" | "models";
+  page: number;
+  totalPages: number;
+  filter: "all" | "free";
+  freeCount: number;
+  totalCount: number;
+  provider?: string;
 }
 
 function getAvailabilityLabel(model: RemoteModelCatalogEntry) {
@@ -69,8 +101,8 @@ export interface RemoteModelPresentation {
   ): Array<RemoteModelCatalogEntry>;
   getSettingsPresentation(
     activeModel: string,
-    callbackPrefix?: string,
-  ): Promise<{ modelButtons: Array<ModelButton>; modelDetails: Array<string> }>;
+    options?: RemotePickerOptions,
+  ): Promise<RemotePickerResult>;
   renderModelSummary(
     activeModel: string,
     defaultModel: string,
@@ -92,6 +124,7 @@ export function createRemoteModelPresentation(
     maxCallbackIdLength,
     allowCallbackSeparators,
     quickPickLimit,
+    groupThreshold = 60,
   } = options;
 
   function isCallbackSafeModelID(modelID: string): boolean {
@@ -140,30 +173,64 @@ export function createRemoteModelPresentation(
 
   async function getSettingsPresentation(
     activeModel: string,
-    callbackPrefix = "settings:model:",
-  ): Promise<{
-    modelButtons: Array<ModelButton>;
-    modelDetails: Array<string>;
-  }> {
+    options: RemotePickerOptions = {},
+  ): Promise<RemotePickerResult> {
+    const callbackPrefix = options.callbackPrefix ?? "settings:model:";
+    const navPrefix = options.navCallbackPrefix ?? "settings:models";
     const catalog = await getCatalog();
     const current = getRemoteModelInfo(catalog, activeModel);
-    const picks = getQuickPickModels(catalog, activeModel);
 
-    const modelButtons: Array<ModelButton> = picks.map((m) => {
-      const btnLabel =
-        m.id.length <= 20 ? m.id : m.name.length <= 20 ? m.name : m.id;
-      const txt = m.free ? `${btnLabel} ★` : btnLabel;
-      const sel =
-        current && m.id === current.id && m.providerID === current.providerID;
-      return {
-        text: sel ? `✓ ${txt}` : txt,
-        callback_data: `${callbackPrefix}${m.id}`,
-      };
-    });
-    modelButtons.push({
-      text: "Reset",
-      callback_data: `${callbackPrefix}reset`,
-    });
+    const filter = options.filter === "free" ? "free" : "all";
+    const selectable = catalog.connectedModels.filter((m) =>
+      isCallbackSafeModelID(m.id),
+    );
+    const freeCount = selectable.filter((m) => m.free).length;
+    const scoped = selectable.filter(
+      (m) =>
+        (filter === "all" || m.free) &&
+        (!options.provider || m.providerID === options.provider),
+    );
+
+    // A remote catalog can run to hundreds of models, and only the first
+    // page's worth ever fit on screen — so offer the provider list as the
+    // way in when nothing narrower was asked for and the flat list would be
+    // unreadable anyway.
+    const providers = catalog.connectedProviders;
+    const asGroups =
+      !options.provider &&
+      providers.length > 1 &&
+      scoped.length > groupThreshold;
+
+    const pageSize = Math.max(1, options.pageSize ?? quickPickLimit);
+    const source = asGroups ? providers : scoped;
+    const totalPages = Math.max(1, Math.ceil(source.length / pageSize));
+    const page = Math.min(Math.max(1, options.page ?? 1), totalPages);
+    const slice = source.slice((page - 1) * pageSize, page * pageSize);
+
+    const modelButtons: Array<ModelButton> = asGroups
+      ? (slice as typeof providers).map((p) => ({
+          text: `${p.name} (${p.modelCount})`,
+          callback_data: `${navPrefix}:provider:${p.id}`,
+        }))
+      : (slice as typeof scoped).map((m) => {
+          const btnLabel =
+            m.id.length <= 20 ? m.id : m.name.length <= 20 ? m.name : m.id;
+          const txt = m.free ? `${btnLabel} ★` : btnLabel;
+          const sel =
+            current &&
+            m.id === current.id &&
+            m.providerID === current.providerID;
+          return {
+            text: sel ? `✓ ${txt}` : txt,
+            callback_data: `${callbackPrefix}${m.id}`,
+          };
+        });
+    if (!asGroups) {
+      modelButtons.push({
+        text: "Reset",
+        callback_data: `${callbackPrefix}reset`,
+      });
+    }
 
     const details: Array<string> = [];
     if (current) {
@@ -189,7 +256,17 @@ export function createRemoteModelPresentation(
       );
     }
     details.push("Hint: use /model <name> to switch.");
-    return { modelButtons, modelDetails: details };
+    return {
+      modelButtons,
+      modelDetails: details,
+      view: asGroups ? "groups" : "models",
+      page,
+      totalPages,
+      filter,
+      freeCount,
+      totalCount: selectable.length,
+      ...(options.provider ? { provider: options.provider } : {}),
+    };
   }
 
   async function renderModelSummary(

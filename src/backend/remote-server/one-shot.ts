@@ -35,10 +35,14 @@
 import type { OneShotAgentParams, OneShotUsage } from "../../core/types.js";
 import { logWarn } from "../../util/log.js";
 import {
+  approvePendingPermissions,
   extractAssistantUsage,
+  rejectPendingQuestions,
+  type RemoteSessionClient,
   type RemoteAssistantInfo,
 } from "./session-helpers.js";
-import { appendBackendSuffix } from "../shared/index.js";
+import { appendBackendSuffix, sleep } from "../shared/index.js";
+import { buildPermissionRuleset } from "./sessions.js";
 
 // ── Client surface ──────────────────────────────────────────────────────────
 
@@ -49,9 +53,8 @@ import { appendBackendSuffix } from "../shared/index.js";
  * parameter checking bivariant so both concrete SDK clients satisfy
  * it structurally.
  */
-export interface RemoteOneShotClient {
-  session: {
-    create(args: { title: string }): Promise<{ data?: unknown }>;
+export interface RemoteOneShotClient extends RemoteSessionClient {
+  session: RemoteSessionClient["session"] & {
     prompt(args: {
       sessionID: string;
       parts: Array<{ type: "text"; text: string }>;
@@ -84,6 +87,7 @@ export type RemoteOneShotBindings<TClient extends RemoteOneShotClient> = {
   buildToolOverrides(
     client: TClient,
     chatServerName: string,
+    pluginServerNames?: readonly string[],
   ): Promise<Record<string, boolean> | undefined>;
   disconnectChatMcpServer(client: TClient, serverName: string): Promise<void>;
   errMsg(e: unknown): string;
@@ -117,14 +121,19 @@ export async function runRemoteOneShotAgent<
     oc,
     contextLabel,
   );
-  await bindings.ensurePluginMcpServers(oc, contextLabel);
+  const pluginMcpServerNames = await bindings.ensurePluginMcpServers(
+    oc,
+    contextLabel,
+  );
   const toolOverrides = await bindings.buildToolOverrides(
     oc,
     chatMcpServerName,
+    pluginMcpServerNames,
   );
 
   const sessionResp = await oc.session.create({
     title: `One-shot ${contextLabel} ${new Date().toISOString()}`,
+    permission: buildPermissionRuleset(contextLabel),
   });
   const sessionData = sessionResp.data as Record<string, unknown> | undefined;
   const sessionID =
@@ -145,6 +154,37 @@ export async function runRemoteOneShotAgent<
       );
   };
   abortController.signal.addEventListener("abort", onAbort, { once: true });
+  const watchdogAbort = new AbortController();
+  const seenQuestionIds = new Set<string>();
+  const seenPermissionIds = new Set<string>();
+  const interactionWatchdog = (async () => {
+    while (!watchdogAbort.signal.aborted) {
+      try {
+        await Promise.all([
+          rejectPendingQuestions(
+            oc,
+            sessionID,
+            contextLabel,
+            seenQuestionIds,
+            label,
+          ),
+          approvePendingPermissions(
+            oc,
+            sessionID,
+            contextLabel,
+            seenPermissionIds,
+            label,
+          ),
+        ]);
+      } catch (err) {
+        logWarn(
+          "agent",
+          `${label} one-shot interaction watchdog failed: ${errMsg(err)}`,
+        );
+      }
+      await sleep(350, watchdogAbort.signal);
+    }
+  })();
 
   try {
     if (abortController.signal.aborted) {
@@ -189,7 +229,14 @@ export async function runRemoteOneShotAgent<
     }
   } finally {
     abortController.signal.removeEventListener("abort", onAbort);
-    await bindings.disconnectChatMcpServer(oc, chatMcpServerName);
+    watchdogAbort.abort();
+    await interactionWatchdog.catch(() => {});
+    await Promise.all([
+      bindings.disconnectChatMcpServer(oc, chatMcpServerName),
+      ...pluginMcpServerNames.map((name) =>
+        bindings.disconnectChatMcpServer(oc, name),
+      ),
+    ]);
     try {
       await oc.session.delete({ sessionID });
     } catch (err) {

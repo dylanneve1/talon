@@ -22,8 +22,15 @@ import {
   handleModalSubmit,
 } from "../callbacks/index.js";
 import { chatIdFromInteraction, reply, client } from "./shared.js";
-import { handleStart, handleHelp, handlePing, handlePlugins } from "./info.js";
-import { handleReset, handleStatus } from "./session.js";
+import {
+  handleStart,
+  handleHelp,
+  handlePing,
+  handlePlugins,
+  handleMesh,
+  handleUsage,
+} from "./info.js";
+import { handleReset, handleStatus, handleStop } from "./session.js";
 import {
   handleModel,
   handleEffort,
@@ -35,6 +42,9 @@ import {
   handleMetrics,
   handleDream,
   handleAdmin,
+  handleDoctor,
+  handleSoul,
+  handleUpdate,
 } from "./admin.js";
 
 export function registerInteractionRouter(
@@ -133,6 +143,8 @@ async function routeSlashCommand(
       return handlePulse(interaction, chatId);
     case "reset":
       return handleReset(interaction, gateway, chatId);
+    case "stop":
+      return handleStop(interaction, chatId);
     case "restart":
       return handleRestart(interaction);
     case "metrics":
@@ -141,6 +153,16 @@ async function routeSlashCommand(
       return handleDream(interaction);
     case "plugins":
       return handlePlugins(interaction);
+    case "usage":
+      return handleUsage(interaction, config);
+    case "doctor":
+      return handleDoctor(interaction, config);
+    case "mesh":
+      return handleMesh(interaction);
+    case "soul":
+      return handleSoul(interaction);
+    case "update":
+      return handleUpdate(interaction, config);
     case "admin":
       return handleAdmin(interaction, config, gateway);
     default:
