@@ -135,7 +135,10 @@ Examples:
   Dice: send(type="dice")
   Location: send(type="location", latitude=37.7749, longitude=-122.4194)
   Sticker by feeling: send(type="sticker", emoji="😂") — picks a matching sticker from your saved packs (add set_name to pin one pack)
-  Sticker by id: send(type="sticker", file_id="CAACAgI...")`,
+  Sticker by id: send(type="sticker", file_id="CAACAgI...")
+  Album: send(type="album", media=[{"type":"photo","file_path":"a.jpg"},{"type":"photo","url":"https://…/b.jpg","caption":"the good one"}]) — 2-10 photos/videos as one grouped message
+  Round video: send(type="video_note", file_path="/path/clip.mp4") — circular video bubble (square video, ≤60s)
+  Venue: send(type="venue", latitude=53.34, longitude=-6.26, title="The Long Hall", address="51 South Great George's St")`,
     schema: {
       type: z
         .enum([
@@ -151,6 +154,9 @@ Examples:
           "location",
           "contact",
           "dice",
+          "album",
+          "video_note",
+          "venue",
         ])
         .describe("Content type to send"),
       text: z
@@ -208,7 +214,30 @@ Examples:
       phone_number: z.string().optional().describe("Contact phone"),
       first_name: z.string().optional().describe("Contact first name"),
       last_name: z.string().optional().describe("Contact last name"),
-      title: z.string().optional().describe("Audio title (for type=audio)"),
+      title: z
+        .string()
+        .optional()
+        .describe("Audio title (type=audio) or venue name (type=venue)"),
+      address: z
+        .string()
+        .optional()
+        .describe("Venue street address (for type=venue)"),
+      media: z
+        .array(
+          z.object({
+            type: z
+              .enum(["photo", "video", "document", "audio"])
+              .describe("Kind of this album item"),
+            file_path: z.string().optional(),
+            url: z.string().optional(),
+            file_id: z.string().optional(),
+            caption: z.string().optional(),
+          }),
+        )
+        .optional()
+        .describe(
+          "Album items (for type=album): 2-10 entries, each sourced from file_path, url, or file_id. Photos and videos mix; documents/audio group only with their own kind.",
+        ),
       performer: z
         .string()
         .optional()
@@ -410,6 +439,32 @@ Examples:
         case "dice":
           return bridge("send_dice", {
             emoji: params.emoji,
+            reply_to: params.reply_to,
+            ...mods,
+            chat_id,
+          });
+        case "album":
+          return bridge("send_media_group", {
+            media: params.media,
+            reply_to: params.reply_to,
+            ...mods,
+            chat_id,
+          });
+        case "video_note":
+          return bridge("send_video_note", {
+            file_path: params.file_path,
+            url: params.url,
+            file_id: params.file_id,
+            reply_to: params.reply_to,
+            ...mods,
+            chat_id,
+          });
+        case "venue":
+          return bridge("send_venue", {
+            latitude: params.latitude,
+            longitude: params.longitude,
+            title: params.title,
+            address: params.address,
             reply_to: params.reply_to,
             ...mods,
             chat_id,
