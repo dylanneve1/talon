@@ -1,5 +1,32 @@
 # Changelog
 
+## [3.20.0](https://github.com/dylanneve1/talon/compare/v3.19.1...v3.20.0) (2026-08-19)
+
+
+### Features
+
+* **chat:** add /stop for running turns ([5fad21d](https://github.com/dylanneve1/talon/commit/5fad21d7550ccd707144f4478d1a4ff1fa8c517a))
+* **chat:** add /stop for running turns ([e05c776](https://github.com/dylanneve1/talon/commit/e05c7767047ecd101c3d327fc54494fba6cea9f3))
+* **companion:** validate the connect form before dialling ([aca0cd1](https://github.com/dylanneve1/talon/commit/aca0cd1b10ba2014c146425e035c4d4d7f9b840e))
+
+
+### Bug Fixes
+
+* **userbot:** use a real round-trip as the connection liveness probe ([8c617ff](https://github.com/dylanneve1/talon/commit/8c617ff87db20d71d230abc5b3f8fd3d2b305eea))
+* **userbot:** use a real round-trip as the connection liveness probe ([ce794b0](https://github.com/dylanneve1/talon/commit/ce794b02dd84311a15ad6d65b6148483a4b98b26))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump knip in the dev-dependencies group ([#749](https://github.com/dylanneve1/talon/issues/749)) ([7600f5a](https://github.com/dylanneve1/talon/commit/7600f5aae2e27c75cc6527ffaf9d63787bd98b60))
+* **deps-dev:** Bump the dev-dependencies group with 2 updates ([#736](https://github.com/dylanneve1/talon/issues/736)) ([c2f0c15](https://github.com/dylanneve1/talon/commit/c2f0c15ee52f57644b07eeb99f8fb2d6f9dc1a38))
+* **deps-dev:** Bump the dev-dependencies group with 2 updates ([#741](https://github.com/dylanneve1/talon/issues/741)) ([0aa0a57](https://github.com/dylanneve1/talon/commit/0aa0a57bd509b121136a8345d6ce862a9febda36))
+* **deps-dev:** Bump the dev-dependencies group with 3 updates ([#744](https://github.com/dylanneve1/talon/issues/744)) ([104ef8d](https://github.com/dylanneve1/talon/commit/104ef8d4c6412b0a17df868b0e824600cb839b40))
+* **deps:** Bump @anthropic-ai/claude-agent-sdk ([#743](https://github.com/dylanneve1/talon/issues/743)) ([8d01076](https://github.com/dylanneve1/talon/commit/8d010762c1fd32a622fcec2a8f0db9f1681edbd3))
+* **deps:** Bump github/codeql-action from 4.37.6 to 4.37.7 ([#750](https://github.com/dylanneve1/talon/issues/750)) ([9d3c9d6](https://github.com/dylanneve1/talon/commit/9d3c9d6b90dae419d73331c2f8f63f5907555536))
+* **deps:** Bump the production-dependencies group with 2 updates ([#745](https://github.com/dylanneve1/talon/issues/745)) ([77005a9](https://github.com/dylanneve1/talon/commit/77005a9b40a83aebbe79f01858301efd3e46255a))
+* **deps:** Bump the production-dependencies group with 7 updates ([#742](https://github.com/dylanneve1/talon/issues/742)) ([5086099](https://github.com/dylanneve1/talon/commit/5086099534d13b0344eb5338e0ceec3d40352b94))
+
 ## [3.19.1](https://github.com/dylanneve1/talon/compare/v3.19.0...v3.19.1) (2026-08-10)
 
 
