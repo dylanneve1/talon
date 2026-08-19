@@ -581,8 +581,16 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
   // ── edit_message ──────────────────────────────────────────────────────
   {
     name: "edit_message",
-    description: "Edit a previously sent message.",
-    schema: { message_id: snowflakeOrIdSchema, text: z.string() },
+    description:
+      "Edit a previously sent message. For a media message (photo/video/file), pass is_caption=true to edit its caption instead of message text.",
+    schema: {
+      message_id: snowflakeOrIdSchema,
+      text: z.string(),
+      is_caption: z
+        .boolean()
+        .optional()
+        .describe("Edit the media caption rather than message text (Telegram)"),
+    },
     execute: (params, bridge) => bridge("edit_message", params),
     frontends: ["telegram", "discord", "native"],
     tag: "messaging",
@@ -591,8 +599,15 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
   // ── delete_message ────────────────────────────────────────────────────
   {
     name: "delete_message",
-    description: "Delete a message.",
-    schema: { message_id: snowflakeOrIdSchema },
+    description:
+      "Delete a message — or several at once via message_ids (Telegram; ids the bot can't delete are skipped).",
+    schema: {
+      message_id: snowflakeOrIdSchema.optional(),
+      message_ids: z
+        .array(snowflakeOrIdSchema)
+        .optional()
+        .describe("Bulk delete these message IDs (Telegram)"),
+    },
     execute: (params, bridge) => bridge("delete_message", params),
     frontends: ["telegram", "discord", "native"],
     tag: "messaging",
@@ -601,10 +616,39 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
   // ── forward_message ───────────────────────────────────────────────────
   {
     name: "forward_message",
-    description: "Forward a message within the chat.",
-    schema: { message_id: snowflakeOrIdSchema },
+    description:
+      "Forward a message. Defaults to within the current chat; from_chat_id / to_chat_id forward across chats the bot is in, and message_ids forwards a batch (albums stay grouped) (Telegram).",
+    schema: {
+      message_id: snowflakeOrIdSchema.optional(),
+      message_ids: z
+        .array(snowflakeOrIdSchema)
+        .optional()
+        .describe("Forward these messages as a batch (Telegram)"),
+      from_chat_id: chatIdSchema
+        .optional()
+        .describe("Source chat (default: current chat)"),
+      to_chat_id: chatIdSchema
+        .optional()
+        .describe("Destination chat (default: current chat)"),
+    },
     execute: (params, bridge) => bridge("forward_message", params),
     frontends: ["telegram", "discord"],
+    tag: "messaging",
+  },
+
+  // ── copy_message ──────────────────────────────────────────────────────
+  {
+    name: "copy_message",
+    description:
+      "Repost a message without the 'forwarded from' header. Same cross-chat and batch semantics as forward_message (Telegram).",
+    schema: {
+      message_id: snowflakeOrIdSchema.optional(),
+      message_ids: z.array(snowflakeOrIdSchema).optional(),
+      from_chat_id: chatIdSchema.optional(),
+      to_chat_id: chatIdSchema.optional(),
+    },
+    execute: (params, bridge) => bridge("copy_message", params),
+    frontends: ["telegram"],
     tag: "messaging",
   },
 
