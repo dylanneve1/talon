@@ -129,10 +129,17 @@ export async function disconnectUserClient(): Promise<void> {
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 let reconnecting = false;
+// Bumped by stopConnectionMonitor so a tick whose awaits straddle a shutdown
+// can tell that its own client was torn down under it — the liveness probe
+// rejecting because *we* disconnected must not trigger a reconnect, or
+// shutdown resurrects the client it just closed.
+let monitorGeneration = 0;
 
 function startConnectionMonitor(): void {
   if (reconnectTimer) return;
+  const gen = monitorGeneration;
   reconnectTimer = setInterval(async () => {
+    if (gen !== monitorGeneration) return;
     if (!client) return;
     if (reconnecting) return; // prevent overlapping reconnect attempts
 
@@ -146,10 +153,12 @@ function startConnectionMonitor(): void {
         await client.getMe();
         return; // genuinely alive
       } catch {
+        if (gen !== monitorGeneration) return; // monitor stopped mid-probe
         logWarn("userbot", "Liveness check failed — treating socket as dead.");
       }
     }
 
+    if (!client) return; // torn down while the probe was in flight
     reconnecting = true;
     logWarn("userbot", "Connection lost, attempting reconnect...");
     try {
@@ -160,6 +169,7 @@ function startConnectionMonitor(): void {
         logWarn("userbot", "Reconnected but not authorized.");
       }
     } catch (err) {
+      if (gen !== monitorGeneration) return; // stopped while reconnecting
       logError("userbot", "Reconnect failed", err);
       // Try a full re-init on next check
       if (storedApiId && storedApiHash) {
@@ -189,6 +199,7 @@ function startConnectionMonitor(): void {
 }
 
 function stopConnectionMonitor(): void {
+  monitorGeneration++;
   if (reconnectTimer) {
     clearInterval(reconnectTimer);
     reconnectTimer = null;
