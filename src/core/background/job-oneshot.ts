@@ -88,7 +88,17 @@ async function openJobLog(
   return appendLog;
 }
 
-function skipJob(params: JobOneShotParams, reason: string): JobOneShotResult {
+// The warning is deferred to runJobOneShot: an attempt that fails here may
+// still succeed on the fallback backend, and a run that ultimately ran must
+// not leave a "skipped" warning in the logs.
+function skipJob(reason: string): JobOneShotResult {
+  return { status: "skipped", reason };
+}
+
+function reportSkip(
+  params: JobOneShotParams,
+  reason: string,
+): JobOneShotResult {
   logWarn(
     params.kind === "cron" ? "cron" : "triggers",
     `isolated job "${params.label}" skipped: ${reason}`,
@@ -110,7 +120,6 @@ async function attemptJobOneShot(
     acquired = await acquireBackendInstance(backendId);
   } catch (err) {
     return skipJob(
-      params,
       `provider "${backendId}" is unavailable: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
@@ -120,7 +129,6 @@ async function attemptJobOneShot(
     const background = backend.background;
     if (!background) {
       return skipJob(
-        params,
         `provider "${backendId}" can't run isolated jobs (no background capability).`,
       );
     }
@@ -130,13 +138,11 @@ async function attemptJobOneShot(
       modelValid = await isModelValidForBackend(backend, model);
     } catch (err) {
       return skipJob(
-        params,
         `could not validate model "${model}" on provider "${backendId}": ${err instanceof Error ? err.message : String(err)}`,
       );
     }
     if (!modelValid) {
       return skipJob(
-        params,
         `model "${model}" is not selectable on provider "${backendId}".`,
       );
     }
@@ -215,7 +221,7 @@ export async function runJobOneShot(
     !fallback ||
     (fallback.backendId === params.backendId && fallback.model === params.model)
   ) {
-    return first;
+    return reportSkip(params, first.reason);
   }
 
   log(
@@ -228,8 +234,8 @@ export async function runJobOneShot(
     fallback.model,
   );
   if (second.status === "ran") return second;
-  return {
-    status: "skipped",
-    reason: `${first.reason} Fallback ${fallback.backendId}/${fallback.model} also unusable: ${second.reason}`,
-  };
+  return reportSkip(
+    params,
+    `${first.reason} Fallback ${fallback.backendId}/${fallback.model} also unusable: ${second.reason}`,
+  );
 }
