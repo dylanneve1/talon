@@ -25,6 +25,19 @@ class StatusPill extends StatelessWidget {
       ConnState.idle => (TalonColors.textFaint, 'Idle'),
     };
 
+    // "Online" on its own is ambiguous read aloud — it could be the device,
+    // the network, a contact. Name what is online, and mark it a live region
+    // so a state change is announced rather than only recoloured.
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: 'Talon connection: $label',
+      excludeSemantics: true,
+      child: _pill(color, label),
+    );
+  }
+
+  Widget _pill(Color color, String label) {
     return Container(
       padding: EdgeInsets.symmetric(
           horizontal: compact ? 9 : 11, vertical: compact ? 5 : 7),
