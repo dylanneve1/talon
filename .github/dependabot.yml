@@ -12,12 +12,11 @@ updates:
       - dependency-name: "@anthropic-ai/claude-agent-sdk"
         versions: ["0.3.198 - 0.3.200"]
       # `openai` must stay on the major that @openai/agents-openai depends on
-      # (^6.46.0 as of agents 0.14.0). A 7.x bump here does not upgrade the
-      # agents SDK — it installs a *second* nested openai@6 under
-      # @openai/agents-openai, and the two `OpenAI` classes are structurally
-      # incompatible (private-field brand), so setDefaultOpenAIClient() fails
-      # `tsc --noEmit` with TS2345. Drop this once the agents SDK widens its
-      # range to openai ^7.
+      # (^7.2.0 as of agents 0.16.0) — a solo major bump here installs a
+      # *second* nested openai under it, and the two `OpenAI` classes are
+      # structurally incompatible (private-field brand), so
+      # setDefaultOpenAIClient() fails `tsc --noEmit` with TS2345. Bump the
+      # major by hand together with the agents SDK.
       - dependency-name: "openai"
         update-types: ["version-update:semver-major"]
     reviewers:
