@@ -1,5 +1,28 @@
 # Changelog
 
+## [3.21.0](https://github.com/dylanneve1/talon/compare/v3.20.0...v3.21.0) (2026-08-19)
+
+
+### Features
+
+* **companion:** one shared empty state across logs, plugins and the chat list ([678575b](https://github.com/dylanneve1/talon/commit/678575b6916e94f06435c00d0a06f8e32b0a43c8))
+
+
+### Bug Fixes
+
+* **cron:** fall back to the role backend when the chat's can't run isolated jobs ([3cc5bde](https://github.com/dylanneve1/talon/commit/3cc5bdedf33772207111750def2604a6c71d1758))
+* **cron:** only warn 'skipped' once a job is out of candidates ([69fcafb](https://github.com/dylanneve1/talon/commit/69fcafba7983325012f4d32cda6aace71075b049))
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump the production-dependencies group across 1 directory with 7 updates ([#752](https://github.com/dylanneve1/talon/issues/752)) ([935b8e7](https://github.com/dylanneve1/talon/commit/935b8e7356e1ce79d502fc973f2c48a2ff13c4cc))
+
+
+### Code Refactoring
+
+* **prompts:** one voice spec — dedupe base.md, warm up identity.md ([1560c54](https://github.com/dylanneve1/talon/commit/1560c54f6a324f0dad6d1b6c30ca983fa24e87e9))
+
 ## [3.20.0](https://github.com/dylanneve1/talon/compare/v3.19.1...v3.20.0) (2026-08-19)
 
 
