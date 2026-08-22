@@ -10,6 +10,7 @@ import { allowChat, revokeChat } from "./userbot.js";
 import { registerChat } from "../../core/background/pulse.js";
 import { log } from "../../util/log.js";
 import { getSenderName } from "./handlers/index.js";
+import { noteUpdateId } from "./update-offset.js";
 import { noteInboundThread } from "./topics.js";
 import { recordJoinRequest } from "./join-requests.js";
 import { newlyAddedEmojis, recordReactionToBot } from "../../core/soul/taps.js";
@@ -26,6 +27,15 @@ import {
 } from "./handlers/index.js";
 
 export function registerMiddleware(bot: Bot, config: TalonConfig): void {
+  // ── Update-offset tracking (every update, before anything else) ──────────
+  // Telegram redelivers any update whose id was never confirmed; the
+  // shutdown path confirms this one so a process-ending command can't be
+  // served twice. See update-offset.ts.
+  bot.use((ctx, next) => {
+    noteUpdateId(ctx.update.update_id);
+    return next();
+  });
+
   // ── History capture (runs for ALL messages, before handlers) ─────────────
   bot.on("message", (ctx, next) => {
     const chatId = String(ctx.chat.id);
