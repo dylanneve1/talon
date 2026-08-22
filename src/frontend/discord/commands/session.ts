@@ -108,6 +108,7 @@ export async function handleStatus(
     `**Workspace**  ${formatBytes(s.diskBytes)}`,
     `**Session**   ${s.sessionName ? `"${s.sessionName}" ` : ""}${s.sessionId ? "`" + s.sessionId.slice(0, 8) + "...`" : "_(new)_"} · ${s.sessionAge} old`,
     `**Uptime**    ${s.uptime} · ${s.activeSessionCount} active session${s.activeSessionCount === 1 ? "" : "s"}`,
+    `**Runtime**   ${s.runtime} · ${formatBytes(s.rssBytes)} RSS`,
   ];
   await i.editReply(lines.join("\n"));
 }
