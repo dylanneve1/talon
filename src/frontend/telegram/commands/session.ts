@@ -90,6 +90,7 @@ export function registerSessionCommands(
       `<b>Workspace</b>  ${formatBytes(s.diskBytes)}`,
       `<b>Session</b>   ${s.sessionName ? `"${escapeHtml(s.sessionName)}" ` : ""}${s.sessionId ? "<code>" + escapeHtml(s.sessionId.slice(0, 8)) + "...</code>" : "<i>(new)</i>"} · ${s.sessionAge} old`,
       `<b>Uptime</b>    ${s.uptime} · ${s.activeSessionCount} active session${s.activeSessionCount === 1 ? "" : "s"}`,
+      `<b>Runtime</b>   ${escapeHtml(s.runtime)} · ${formatBytes(s.rssBytes)} RSS`,
     ];
     await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
   });

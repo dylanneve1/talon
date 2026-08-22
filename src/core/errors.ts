@@ -18,6 +18,10 @@ type ErrorReason =
   | "bad_request"
   | "forbidden"
   | "telegram_api"
+  // The user stopped the turn (/stop, talon kill). Not a fault: the
+  // frontends deliver nothing for it — the stop acknowledgement already
+  // told the user what happened.
+  | "stopped"
   | "unknown";
 
 /**
@@ -342,6 +346,7 @@ const FRIENDLY_MESSAGES: Record<ErrorReason, string> = {
   bad_request: "Something went wrong. Try /reset if this keeps happening.",
   forbidden: "Permission denied for this action.",
   telegram_api: "Telegram API error. Try again.",
+  stopped: "⏹ Stopped.",
   unknown: "Something went wrong. Try again or /reset.",
 };
 

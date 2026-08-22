@@ -88,6 +88,10 @@ export interface SessionStatusData {
   sessionId: string | undefined;
   uptime: string;
   activeSessionCount: number;
+  /** Runtime name + version, e.g. "Bun 1.3.9" or "Node 24.4.0". */
+  runtime: string;
+  /** Daemon resident set size, in bytes. */
+  rssBytes: number;
 }
 
 /**
@@ -202,5 +206,9 @@ export async function collectSessionStatus(
     sessionId: info.sessionId,
     uptime: formatDuration(process.uptime() * 1000),
     activeSessionCount: getActiveSessionCount(),
+    runtime: process.versions.bun
+      ? `Bun ${process.versions.bun}`
+      : `Node ${process.versions.node}`,
+    rssBytes: process.memoryUsage().rss,
   };
 }

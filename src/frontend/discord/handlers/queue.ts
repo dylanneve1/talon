@@ -93,6 +93,13 @@ async function flushQueue(chatId: string): Promise<void> {
     recordMessageProcessed();
   } catch (err) {
     const classified = classify(err);
+    // A user-initiated /stop is an outcome, not a fault — the stop command
+    // already acknowledged it; don't re-report it as an error.
+    if (classified.reason === "stopped") {
+      log("bot", `[${chatId}] turn stopped by user`);
+      recordMessageSettled();
+      return;
+    }
     const promptPreview = combinedPrompt.slice(0, 100).replace(/\n/g, " ");
     logError(
       "bot",
