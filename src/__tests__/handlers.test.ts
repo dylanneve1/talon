@@ -12,6 +12,7 @@ vi.mock("../storage/daily-log.js", () => ({
 vi.mock("../util/watchdog.js", () => ({
   recordMessageProcessed: vi.fn(),
   recordMessageReceived: vi.fn(),
+  recordMessageSettled: vi.fn(),
   recordError: vi.fn(),
 }));
 vi.mock("../util/log.js", () => ({
@@ -27,6 +28,7 @@ vi.mock("../core/errors.js", () => ({
     retryable: false,
   })),
   friendlyMessage: vi.fn(() => "An error occurred"),
+  RETRY_ELAPSED_CAP_MS: 120_000,
 }));
 
 vi.mock("../storage/history.js", () => ({

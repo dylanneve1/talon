@@ -27,6 +27,7 @@ vi.mock("../core/errors.js", () => ({
   })),
   friendlyMessage: vi.fn(() => "Something went wrong"),
   TalonError: class TalonError extends Error {},
+  RETRY_ELAPSED_CAP_MS: 120_000,
 }));
 
 vi.mock("../storage/daily-log.js", () => ({
@@ -71,6 +72,7 @@ vi.mock("../storage/sessions.js", () => ({
 vi.mock("../util/watchdog.js", () => ({
   recordMessageProcessed: vi.fn(),
   recordMessageReceived: vi.fn(),
+  recordMessageSettled: vi.fn(),
   recordError: vi.fn(),
   getHealthStatus: vi.fn(() => ({
     healthy: true,
