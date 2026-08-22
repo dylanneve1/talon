@@ -1,6 +1,12 @@
 import type { TalonConfig } from "../util/config.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// This suite asserts the Node/tsx spawn recipes; pin the runtime
+// predicate so the assertions hold when the suite itself runs under bun.
+vi.mock("../util/runtime.js", () => ({
+  isBunRuntime: () => false,
+}));
+
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),
   logError: vi.fn(),

@@ -48,6 +48,10 @@ function childEnv(home: string): NodeJS.ProcessEnv {
     ...process.env,
     HOME: home,
     USERPROFILE: home,
+    // Bun's os.homedir() ignores $HOME, so pin the Talon root explicitly
+    // — otherwise a bun child finds the developer's REAL ~/.talon pidfile
+    // and reports their running daemon as the test's own.
+    TALON_HOME: join(home, ".talon"),
     TALON_QUIET: "1",
     NO_COLOR: "1",
     // Pin daemon discovery to a port nothing's listening on so a
@@ -146,7 +150,13 @@ function packInto(dir: string): string {
 }
 
 describe("package functional smoke tests", () => {
-  it(
+  // Node-only: this validates the published npm tarball under the runtime
+  // npm installs ship with. Under `bun --bun vitest` the case dies inside
+  // vitest's own error reporting (parseErrorStacktrace JSON error) with
+  // the real failure masked — while the identical pack→install→run flow
+  // succeeds in a standalone bun script. Skip rather than chase the
+  // vitest/bun interplay; CI runs this suite under node regardless.
+  it.skipIf(typeof process.versions.bun === "string")(
     "published tarball includes runtime assets and exposes a working CLI",
     () => {
       const packDir = makeWorkDir("pack");

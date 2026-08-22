@@ -74,6 +74,7 @@ let tmpHome: string | null = null;
 interface OriginalHomeEnv {
   HOME: string | undefined;
   USERPROFILE: string | undefined;
+  CODEX_HOME: string | undefined;
 }
 
 function withTempHome(): OriginalHomeEnv {
@@ -81,9 +82,13 @@ function withTempHome(): OriginalHomeEnv {
   const orig: OriginalHomeEnv = {
     HOME: process.env.HOME,
     USERPROFILE: process.env.USERPROFILE,
+    CODEX_HOME: process.env.CODEX_HOME,
   };
   process.env.HOME = tmpHome;
   process.env.USERPROFILE = tmpHome;
+  // Bun's os.homedir() ignores both env vars, so the cache path is
+  // pinned explicitly — the override discovery.ts honors first.
+  process.env.CODEX_HOME = path.join(tmpHome, ".codex");
   return orig;
 }
 
@@ -93,6 +98,8 @@ function restoreHome(orig: OriginalHomeEnv): void {
   if (orig.USERPROFILE !== undefined)
     process.env.USERPROFILE = orig.USERPROFILE;
   else delete process.env.USERPROFILE;
+  if (orig.CODEX_HOME !== undefined) process.env.CODEX_HOME = orig.CODEX_HOME;
+  else delete process.env.CODEX_HOME;
   if (tmpHome) {
     try {
       fs.rmSync(tmpHome, { recursive: true, force: true });
@@ -304,6 +311,7 @@ describe("codex / startDiscovery on chatgpt OAuth — cache-file path", () => {
   let originalHome: OriginalHomeEnv = {
     HOME: undefined,
     USERPROFILE: undefined,
+    CODEX_HOME: undefined,
   };
 
   beforeEach(() => {

@@ -90,7 +90,14 @@ interface CodexCacheFile {
 
 /** Where the Codex CLI writes its model cache. Exported for tests. */
 export function getCodexCachePath(): string {
-  return join(homedir(), ".codex", "models_cache.json");
+  // Honor CODEX_HOME like token-usage.ts and plan-usage.ts do — the CLI
+  // itself relocates with it, so a pinned deployment would otherwise
+  // read a cache the CLI never writes. (Also what lets tests fake the
+  // path under bun, whose os.homedir() ignores $HOME.)
+  const home = process.env.CODEX_HOME?.trim();
+  return home && home.length > 0
+    ? join(home, "models_cache.json")
+    : join(homedir(), ".codex", "models_cache.json");
 }
 
 /** Default soft timeout when callers await an in-flight discovery. */
