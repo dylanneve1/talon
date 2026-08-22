@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.24.0](https://github.com/dylanneve1/talon/compare/v3.23.1...v3.24.0) (2026-08-22)
+
+
+### Features
+
+* **status:** runtime info in /status, and a clean /stop ([#771](https://github.com/dylanneve1/talon/issues/771)) ([cb65d95](https://github.com/dylanneve1/talon/commit/cb65d95e6a21db5f112b0cbeaff5b5c3a0cf6c2a))
+
 ## [3.23.1](https://github.com/dylanneve1/talon/compare/v3.23.0...v3.23.1) (2026-08-22)
 
 
