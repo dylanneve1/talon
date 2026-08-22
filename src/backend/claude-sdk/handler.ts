@@ -600,7 +600,10 @@ export async function* runChatTurn(
   // cost a prefix re-write, then record this turn's overflow for the next.
   if (state.cacheStats) {
     const overflow = priorLookbackOverflow(chatId);
-    if (overflow !== undefined && crossTurnVerdict(state.cacheStats) === "miss") {
+    if (
+      overflow !== undefined &&
+      crossTurnVerdict(state.cacheStats) === "miss"
+    ) {
       logWarn(
         "agent",
         `[${chatId}] previous turn emitted ~${overflow} content blocks ` +

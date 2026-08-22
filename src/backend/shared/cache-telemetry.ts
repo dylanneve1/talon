@@ -172,7 +172,10 @@ export function noteLookbackRisk(chatId: string, toolCalls: number): void {
     lookbackOverflows.delete(chatId);
     return;
   }
-  if (lookbackOverflows.size >= MAX_TRACKED_CHATS && !lookbackOverflows.has(chatId)) {
+  if (
+    lookbackOverflows.size >= MAX_TRACKED_CHATS &&
+    !lookbackOverflows.has(chatId)
+  ) {
     const oldest = lookbackOverflows.keys().next().value;
     if (oldest !== undefined) lookbackOverflows.delete(oldest);
   }

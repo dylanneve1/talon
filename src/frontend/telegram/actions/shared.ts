@@ -12,7 +12,9 @@ import { TELEGRAM_MAX_TEXT } from "./types.js";
 export function replyParams(
   body: Record<string, unknown>,
 ): ReplyParams | undefined {
-  return replyParamsFor(toPositiveId(body.reply_to ?? body.reply_to_message_id));
+  return replyParamsFor(
+    toPositiveId(body.reply_to ?? body.reply_to_message_id),
+  );
 }
 
 export type ReplyParams = {
