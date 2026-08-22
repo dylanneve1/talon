@@ -86,6 +86,38 @@ void main() {
     });
   });
 
+  group('default ports', () {
+    test('https implies 443, http implies 80', () {
+      expect(ConnectionConfig.defaultPortFor(true), 443);
+      expect(ConnectionConfig.defaultPortFor(false), 80);
+    });
+
+    test('baseUrl omits the port when it is the scheme default', () {
+      const tls = ConnectionConfig(host: 'mesh.example.org', port: 443, tls: true);
+      expect(tls.baseUrl, 'https://mesh.example.org');
+      expect(tls.usesDefaultPort, isTrue);
+
+      const plain = ConnectionConfig(host: 'mesh.example.org', port: 80);
+      expect(plain.baseUrl, 'http://mesh.example.org');
+    });
+
+    test('baseUrl keeps a non-default port', () {
+      const c = ConnectionConfig(host: 'gw.ts.net', port: 19880, tls: true);
+      expect(c.baseUrl, 'https://gw.ts.net:19880');
+      expect(c.usesDefaultPort, isFalse);
+    });
+
+    test('event and media URLs follow the same shape', () {
+      const c = ConnectionConfig(
+        host: 'mesh.example.org',
+        port: 443,
+        tls: true,
+      );
+      expect(c.mediaUrl('/media?id=1'), startsWith('https://mesh.example.org/media'));
+      expect(c.eventsUrl(), startsWith('https://mesh.example.org/events'));
+    });
+  });
+
   group('ConnectionConfig.parseHostInput', () {
     test('bare host is untouched', () {
       final r = ConnectionConfig.parseHostInput('192.168.1.20');

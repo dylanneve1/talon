@@ -69,7 +69,19 @@ class ConnectionConfig {
 
   String get scheme => tls ? 'https' : 'http';
 
-  String get baseUrl => '$scheme://$host:$port';
+  /// The port a URL of this scheme implies when none is written down: 443 for
+  /// https, 80 for http. A bridge behind a reverse proxy lives on one of these,
+  /// so "no port" has to mean the scheme default rather than the daemon's own
+  /// 19880 — otherwise pasting `https://mesh.example.org` silently dials the
+  /// wrong port and connects only while the direct port is still open.
+  static int defaultPortFor(bool tls) => tls ? 443 : 80;
+
+  /// True when [port] is the one [scheme] already implies, so it can be left
+  /// out of a URL.
+  bool get usesDefaultPort => port == defaultPortFor(tls);
+
+  String get baseUrl =>
+      usesDefaultPort ? '$scheme://$host' : '$scheme://$host:$port';
 
   /// Resolve a relative bridge media path (e.g. `/media?id=…`) to a full URL,
   /// appending the auth token as a query param (Image.network can't set an

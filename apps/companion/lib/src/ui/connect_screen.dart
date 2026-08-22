@@ -73,9 +73,14 @@ class _ConnectScreenState extends State<ConnectScreen> {
       if (ConnectionConfig.parseHostInput(_host.text).host.isEmpty) {
         hostError = 'Enter the host or IP of your Talon bridge.';
       }
-      final port = int.tryParse(_port.text.trim());
-      if (port == null || port < 1 || port > 65535) {
-        portError = 'Port must be a number between 1 and 65535.';
+      // Blank is legal: it means "whatever the scheme implies" (443/80), which
+      // is what a proxied bridge wants. Only a *typed* value has to be sane.
+      final raw = _port.text.trim();
+      if (raw.isNotEmpty) {
+        final port = int.tryParse(raw);
+        if (port == null || port < 1 || port > 65535) {
+          portError = 'Port must be a number between 1 and 65535.';
+        }
       }
     }
     if (hostError != _hostError || portError != _portError) {
@@ -90,6 +95,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
   Future<void> _connect() async {
     if (!_validate()) return;
     var port = int.tryParse(_port.text.trim()) ?? 19880;
+    final portWasTyped = _port.text.trim().isNotEmpty;
     final token = _token.text.trim();
 
     // Normalize whatever the user typed into the host box: strip a scheme,
@@ -108,6 +114,15 @@ class _ConnectScreenState extends State<ConnectScreen> {
       if (parsed.tls != null) {
         tls = parsed.tls!;
         if (_tls != tls) setState(() => _tls = tls);
+      }
+      // A scheme with no port written after it means the scheme's own port —
+      // that is what `https://mesh.example.org` says on every other client.
+      // Honouring a stale 19880 left in the box here is how a proxied bridge
+      // ends up dialled on the daemon port and dies the moment that port is
+      // closed. A blank box falls back the same way.
+      if (parsed.port == null && (parsed.tls != null || !portWasTyped)) {
+        port = ConnectionConfig.defaultPortFor(tls);
+        _port.text = port.toString();
       }
       if (host != _host.text.trim()) _host.text = host;
     } else {
@@ -319,8 +334,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
                 ? null
                 : (_) => setState(() => _hostError = null)),
         const SizedBox(height: 12),
-        _field(_port, 'Port',
-            hint: '19880',
+        _field(_port, 'Port (optional)',
+            hint: 'blank = 443 for https, 80 for http',
             number: true,
             errorText: _portError,
             onChanged: _portError == null

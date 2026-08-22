@@ -82,6 +82,57 @@ void main() {
     expect(state.applied, isEmpty);
   });
 
+  testWidgets('a pasted https URL with no port dials 443, not the stale box', (
+    tester,
+  ) async {
+    final state = await pumpConnect(tester);
+
+    final fields = find.byType(TextField);
+    // The port box still holds the daemon default from a previous setup —
+    // exactly the state a user is in when moving a bridge behind a proxy.
+    await tester.enterText(fields.at(1), '19880');
+    await tester.enterText(fields.first, 'https://mesh.example.org');
+    await tester.pump();
+
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+
+    expect(state.applied, hasLength(1));
+    expect(state.applied.single.host, 'mesh.example.org');
+    expect(state.applied.single.port, 443);
+    expect(state.applied.single.tls, isTrue);
+    expect(state.applied.single.baseUrl, 'https://mesh.example.org');
+  });
+
+  testWidgets('a blank port falls back to the scheme default', (tester) async {
+    final state = await pumpConnect(tester);
+
+    final fields = find.byType(TextField);
+    await tester.enterText(fields.at(1), '');
+    await tester.enterText(fields.first, 'http://mesh.example.org');
+    await tester.pump();
+
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+
+    expect(state.applied.single.port, 80);
+    expect(state.applied.single.tls, isFalse);
+  });
+
+  testWidgets('an explicit port in the URL still wins', (tester) async {
+    final state = await pumpConnect(tester);
+
+    final fields = find.byType(TextField);
+    await tester.enterText(fields.first, 'https://gw.ts.net:19880');
+    await tester.pump();
+
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+
+    expect(state.applied.single.port, 19880);
+    expect(state.applied.single.baseUrl, 'https://gw.ts.net:19880');
+  });
+
   testWidgets('valid remote details dial through', (tester) async {
     final state = await pumpConnect(tester);
 
