@@ -34,7 +34,9 @@ const byString = new Map<string, WhatsAppChatInfo>();
  * between phone-number and LID addressing mid-thread.
  */
 export function chatIdForJid(jid: string, canonical?: string): string {
-  const bare = canonical ?? bareId(jidNormalizedUser(jid));
+  // `||`, not `??`: an empty canonical id must fall back to the JID
+  // rather than produce the id every DM would share.
+  const bare = canonical || bareId(jidNormalizedUser(jid)) || "unknown";
   return isJidGroup(jid) ? `wa_group_${bare}` : `wa_dm_${bare}`;
 }
 

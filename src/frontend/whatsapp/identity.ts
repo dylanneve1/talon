@@ -30,15 +30,28 @@ export type Identity = {
   ids: string[];
 };
 
-/** Bare identity of a JID or phone string: strips server, device, and "+". */
-export function bareId(jidOrNumber: string): string {
-  return jidOrNumber.split("@")[0].split(":")[0].replace(/^\+/, "");
+/**
+ * Bare identity of a JID or phone string: strips server, device, and
+ * "+". Returns undefined for anything that leaves no digits — WhatsApp
+ * hands out empty `participant` fields on DMs, and an empty id that
+ * flows onward silently collapses every conversation into one.
+ */
+export function bareId(jidOrNumber: string | null | undefined): string {
+  return jidOrNumber?.split("@")[0].split(":")[0].replace(/^\+/, "") ?? "";
+}
+
+/** Bare id, or undefined when there is nothing usable to key on. */
+function usableId(jidOrNumber: string | null | undefined): string | undefined {
+  const bare = bareId(jidOrNumber).trim();
+  return bare.length > 0 ? bare : undefined;
 }
 
 /** LID ↔ PN is stable for the life of an account; cache both directions. */
 const cache = new Map<string, Identity>();
 
 function remember(identity: Identity): Identity {
+  // Nothing to key on means nothing worth caching — the next message
+  // gets a fresh attempt at resolving this person.
   for (const id of identity.ids) cache.set(id, identity);
   return identity;
 }
@@ -70,8 +83,8 @@ export async function resolveIdentity(
   jid: string,
   altJid?: string | null,
 ): Promise<Identity> {
-  const bare = bareId(jid);
-  const cached = cache.get(bare);
+  const bare = usableId(jid);
+  const cached = bare ? cache.get(bare) : undefined;
   if (cached) return cached;
 
   const isLid = Boolean(isLidUser(jid));
@@ -79,7 +92,7 @@ export async function resolveIdentity(
     ? { lid: bare, ids: [] }
     : { phone: bare, ids: [] };
 
-  const altBare = altJid ? bareId(altJid) : undefined;
+  const altBare = usableId(altJid);
   if (altBare) {
     if (isLid) identity.phone = altBare;
     else identity.lid = altBare;
@@ -90,9 +103,10 @@ export async function resolveIdentity(
         const counterpart = isLid
           ? await store.getPNForLID(jidNormalizedUser(jid))
           : await store.getLIDForPN(jidNormalizedUser(jid));
-        if (counterpart) {
-          if (isLid) identity.phone = bareId(counterpart);
-          else identity.lid = bareId(counterpart);
+        const counterpartId = usableId(counterpart);
+        if (counterpartId) {
+          if (isLid) identity.phone = counterpartId;
+          else identity.lid = counterpartId;
         }
       } catch {
         // A miss is normal before the mapping is learned — match on the
@@ -124,8 +138,10 @@ export function identityAllowed(
  * known, else the LID. Chat ids are built from this so a conversation
  * keeps one identity even as WhatsApp switches addressing form.
  */
-export function canonicalId(identity: Identity): string {
-  return identity.phone ?? identity.lid ?? "unknown";
+export function canonicalId(identity: Identity): string | undefined {
+  // Deliberately not `??`: an empty string is "no id", not a value, and
+  // letting one through builds a chat id every DM would share.
+  return identity.phone || identity.lid || undefined;
 }
 
 /** Test seam: forget every resolved identity. */

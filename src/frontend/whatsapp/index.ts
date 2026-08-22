@@ -227,7 +227,7 @@ export function createWhatsAppFrontend(
     // The sender may be addressed by phone number or by LID depending on
     // their privacy settings; resolve both before matching an allowlist
     // that is written in phone numbers.
-    const senderJid = msg.key.participant ?? jid;
+    const senderJid = msg.key.participant || jid;
     const identity = await resolveIdentity(
       sock,
       senderJid,
@@ -280,7 +280,7 @@ export function createWhatsAppFrontend(
     const replyTo = replyToWaId ? lookupByWaId(replyToWaId) : undefined;
     pushMessage(chat.chatId, {
       msgId,
-      senderId: Number(BigInt(canonicalId(identity) || "0") % 2147483647n),
+      senderId: Number(BigInt(canonicalId(identity) ?? "0") % 2147483647n),
       senderName,
       senderHandle: canonicalId(identity),
       text,
@@ -324,7 +324,7 @@ export function createWhatsAppFrontend(
     );
     appendDailyLog(senderName, preview, {
       chatTitle: chat.title,
-      username: canonicalId(identity),
+      username: canonicalId(identity) ?? bareId(jid),
     });
 
     // The model addresses messages by numeric id (react/reply/edit), so the

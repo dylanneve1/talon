@@ -335,4 +335,22 @@ describe("WhatsApp identity (LID ↔ phone number)", () => {
     expect(identity.ids).toEqual(["180753715482747"]);
     expect(canonicalId(identity)).toBe("180753715482747");
   });
+
+  it("treats an empty id as absent rather than a value", async () => {
+    // WhatsApp hands out empty `participant` fields on DMs. An empty id
+    // that flows onward builds "wa_dm_" — one chat id every DM shares,
+    // which is how two people's conversations end up in one session.
+    const identity = await resolveIdentity(null, "");
+    expect(identity.ids).toEqual([]);
+    expect(canonicalId(identity)).toBeUndefined();
+    expect(
+      chatIdForJid("353834733284@s.whatsapp.net", canonicalId(identity)),
+    ).toBe("wa_dm_353834733284");
+  });
+
+  it("keeps distinct DMs in distinct chats", () => {
+    expect(chatIdForJid("353834733284@s.whatsapp.net")).not.toBe(
+      chatIdForJid("353871234567@s.whatsapp.net"),
+    );
+  });
 });
