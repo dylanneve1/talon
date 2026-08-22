@@ -32,6 +32,12 @@ import {
   resolveKey,
 } from "../frontend/whatsapp/message-store.js";
 import { createWhatsAppActionHandler } from "../frontend/whatsapp/actions/index.js";
+import {
+  canonicalId,
+  identityAllowed,
+  resetIdentityCache,
+  resolveIdentity,
+} from "../frontend/whatsapp/identity.js";
 import { isWhatsAppChatId } from "../util/chat-id.js";
 
 describe("WhatsApp formatting", () => {
@@ -270,5 +276,63 @@ describe("WhatsApp action adapter", () => {
     expect(result?.ok).toBe(true);
     // WhatsApp has no ban list; the adapter says so rather than pretending.
     expect(String(result?.text)).toMatch(/no ban list/i);
+  });
+});
+
+describe("WhatsApp identity (LID ↔ phone number)", () => {
+  beforeEach(() => resetIdentityCache());
+
+  it("pairs a LID with the phone number from the message key", async () => {
+    const identity = await resolveIdentity(
+      null,
+      "180753715482747@lid",
+      "353834733284@s.whatsapp.net",
+    );
+    expect(identity.lid).toBe("180753715482747");
+    expect(identity.phone).toBe("353834733284");
+    expect(identity.ids).toEqual(["353834733284", "180753715482747"]);
+  });
+
+  it("falls back to the signal store when the key carries no counterpart", async () => {
+    const sock = {
+      signalRepository: {
+        lidMapping: {
+          getPNForLID: async () => "353834733284@s.whatsapp.net",
+          getLIDForPN: async () => null,
+        },
+      },
+    } as never;
+    const identity = await resolveIdentity(sock, "180753715482747@lid");
+    expect(identity.phone).toBe("353834733284");
+  });
+
+  it("matches a phone-number allowlist against a LID-addressed sender", async () => {
+    // The bug this fixes: the first real message to the live account
+    // arrived as a LID and was ignored as "unlisted".
+    const identity = await resolveIdentity(
+      null,
+      "180753715482747@lid",
+      "353834733284@s.whatsapp.net",
+    );
+    expect(identityAllowed(identity, new Set(["353834733284"]))).toBe(true);
+    expect(identityAllowed(identity, new Set(["999999999999"]))).toBe(false);
+  });
+
+  it("keeps one chat id whichever form addresses the conversation", async () => {
+    const viaLid = await resolveIdentity(
+      null,
+      "180753715482747@lid",
+      "353834733284@s.whatsapp.net",
+    );
+    expect(canonicalId(viaLid)).toBe("353834733284");
+    expect(chatIdForJid("180753715482747@lid", canonicalId(viaLid))).toBe(
+      "wa_dm_353834733284",
+    );
+  });
+
+  it("degrades to the form it has when no mapping is available", async () => {
+    const identity = await resolveIdentity(null, "180753715482747@lid");
+    expect(identity.ids).toEqual(["180753715482747"]);
+    expect(canonicalId(identity)).toBe("180753715482747");
   });
 });

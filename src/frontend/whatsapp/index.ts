@@ -41,6 +41,12 @@ import {
   recordMessageSettled,
 } from "../../util/watchdog.js";
 import { createWhatsAppActionHandler } from "./actions/index.js";
+import {
+  bareId,
+  canonicalId,
+  identityAllowed,
+  resolveIdentity,
+} from "./identity.js";
 import { sendText } from "./actions/shared.js";
 import { saveInboundMedia } from "./media-store.js";
 import { lookupByWaId, rememberMessage } from "./message-store.js";
@@ -82,11 +88,6 @@ const RECONNECT_MAX_MS = 60_000;
  * every inbound message; memberships change on the order of days.
  */
 const GROUP_POLICY_CACHE_MS = 10 * 60_000;
-
-/** Bare identity of a JID or phone string: "353851722396". */
-function bareId(jidOrNumber: string): string {
-  return jidOrNumber.split("@")[0].split(":")[0].replace(/^\+/, "");
-}
 
 /** Plain text of an inbound message, across the wrappers WhatsApp uses. */
 function extractText(msg: WAMessage): string {
@@ -150,8 +151,8 @@ export function createWhatsAppFrontend(
   let sock: WASocket | null = null;
   let stopping = false;
   let reconnectDelay = RECONNECT_BASE_MS;
-  /** Our own account id (bare), once connected — for mention detection. */
-  let selfId: string | null = null;
+  /** Our own ids (phone and LID), once connected — for mention detection. */
+  let selfIds: string[] = [];
 
   const context: ContextManager = {
     acquire: (chatId: number, stringId?: string) =>
@@ -189,7 +190,13 @@ export function createWhatsAppFrontend(
     let allowed = false;
     try {
       const meta = await sock!.groupMetadata(jid);
-      allowed = meta.participants.some((p) => allowedDms.has(bareId(p.id)));
+      // A participant is listed by whichever form the group uses, so
+      // check every id WhatsApp gives us for them.
+      allowed = meta.participants.some((p) =>
+        [p.id, p.lid, p.phoneNumber]
+          .filter((id): id is string => Boolean(id))
+          .some((id) => allowedDms.has(bareId(id))),
+      );
     } catch (err) {
       // A metadata failure must not silently open the group up.
       logWarn(
@@ -203,11 +210,11 @@ export function createWhatsAppFrontend(
 
   /** Is this group message addressed to us — @mentioned or quoting us? */
   function isAddressedToSelf(msg: WAMessage): boolean {
-    if (!selfId) return false;
+    if (selfIds.length === 0) return false;
     const ctx = msg.message?.extendedTextMessage?.contextInfo;
-    if ((ctx?.mentionedJid ?? []).some((j) => bareId(j) === selfId))
-      return true;
-    return Boolean(ctx?.participant && bareId(ctx.participant) === selfId);
+    const isSelf = (j: string): boolean => selfIds.includes(bareId(j));
+    if ((ctx?.mentionedJid ?? []).some(isSelf)) return true;
+    return Boolean(ctx?.participant && isSelf(ctx.participant));
   }
 
   async function handleInbound(msg: WAMessage): Promise<void> {
@@ -217,19 +224,37 @@ export function createWhatsAppFrontend(
     if (!jid || jid === "status@broadcast" || msg.key.fromMe) return;
 
     const isGroup = Boolean(isJidGroup(jid));
+    // The sender may be addressed by phone number or by LID depending on
+    // their privacy settings; resolve both before matching an allowlist
+    // that is written in phone numbers.
+    const senderJid = msg.key.participant ?? jid;
+    const identity = await resolveIdentity(
+      sock,
+      senderJid,
+      msg.key.participantAlt ?? msg.key.remoteJidAlt,
+    );
+
     // ── Access gates: the allowlists are the entire permission model ──
     if (isGroup) {
       if (!(await isGroupAllowed(jid))) return;
       if (settings.respondMode === "mention" && !isAddressedToSelf(msg)) return;
-    } else if (!allowedDms.has(bareId(jid))) {
-      log("whatsapp", `Ignoring DM from unlisted ${bareId(jid)}`);
+    } else if (!identityAllowed(identity, allowedDms)) {
+      log(
+        "whatsapp",
+        `Ignoring DM from unlisted ${identity.ids.join("/") || bareId(jid)}`,
+      );
       return;
     }
 
     const text = extractText(msg).trim();
-    const chat = registerWhatsAppChat(jid);
-    const senderName =
-      msg.pushName || bareId(msg.key.participant ?? jid) || "user";
+    // Group chats key on the group JID; DMs key on the person, so the
+    // thread survives WhatsApp switching addressing form.
+    const chat = registerWhatsAppChat(
+      jid,
+      undefined,
+      isGroup ? undefined : canonicalId(identity),
+    );
+    const senderName = msg.pushName || canonicalId(identity) || "user";
     const msgId = rememberMessage({
       key: msg.key,
       chatId: chat.chatId,
@@ -255,11 +280,9 @@ export function createWhatsAppFrontend(
     const replyTo = replyToWaId ? lookupByWaId(replyToWaId) : undefined;
     pushMessage(chat.chatId, {
       msgId,
-      senderId: Number(
-        BigInt(bareId(msg.key.participant ?? jid) || "0") % 2147483647n,
-      ),
+      senderId: Number(BigInt(canonicalId(identity) || "0") % 2147483647n),
       senderName,
-      senderHandle: bareId(msg.key.participant ?? jid),
+      senderHandle: canonicalId(identity),
       text,
       timestamp: Date.now(),
       ...(replyTo ? { replyToMsgId: replyTo.msgId } : {}),
@@ -301,7 +324,7 @@ export function createWhatsAppFrontend(
     );
     appendDailyLog(senderName, preview, {
       chatTitle: chat.title,
-      username: bareId(msg.key.participant ?? jid),
+      username: canonicalId(identity),
     });
 
     // The model addresses messages by numeric id (react/reply/edit), so the
@@ -420,11 +443,14 @@ export function createWhatsAppFrontend(
         }
 
         if (connection === "open") {
-          selfId = socket.user?.id ? bareId(socket.user.id) : null;
+          // Both forms: a group can @-mention us by either.
+          selfIds = [socket.user?.id, socket.user?.lid]
+            .filter((id): id is string => Boolean(id))
+            .map(bareId);
           reconnectDelay = RECONNECT_BASE_MS;
           log(
             "whatsapp",
-            `Connected as ${socket.user?.name ?? "?"} (${selfId ?? "?"})`,
+            `Connected as ${socket.user?.name ?? "?"} (${selfIds.join("/") || "?"})`,
           );
         }
 

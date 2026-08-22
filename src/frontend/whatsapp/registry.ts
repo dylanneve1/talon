@@ -10,6 +10,7 @@
 
 import { isJidGroup, jidNormalizedUser } from "baileys";
 import { deriveNumericChatId } from "../../util/chat-id.js";
+import { bareId } from "./identity.js";
 
 export type WhatsAppChatInfo = {
   /** Talon chat id: wa_dm_<number> or wa_group_<id>. */
@@ -25,28 +26,43 @@ export type WhatsAppChatInfo = {
 const byNumeric = new Map<number, WhatsAppChatInfo>();
 const byString = new Map<string, WhatsAppChatInfo>();
 
-/** Talon chat id for a WhatsApp JID. */
-export function chatIdForJid(jid: string): string {
-  const normalized = jidNormalizedUser(jid);
-  const bare = normalized.split("@")[0];
+/**
+ * Talon chat id for a WhatsApp JID.
+ *
+ * `canonical` is the identity's preferred id (phone number when known),
+ * so a DM keeps ONE chat id even when WhatsApp switches the conversation
+ * between phone-number and LID addressing mid-thread.
+ */
+export function chatIdForJid(jid: string, canonical?: string): string {
+  const bare = canonical ?? bareId(jidNormalizedUser(jid));
   return isJidGroup(jid) ? `wa_group_${bare}` : `wa_dm_${bare}`;
 }
 
-/** Record (or refresh) a chat's identity, returning its info. */
+/**
+ * Record (or refresh) a chat's identity, returning its info.
+ *
+ * The send target (`jid`) is always the address the message arrived on —
+ * that is what WhatsApp routes — while the chat id comes from the stable
+ * canonical identity. A chat already known under one addressing form has
+ * its send target refreshed rather than being duplicated.
+ */
 export function registerWhatsAppChat(
   jid: string,
   title?: string,
+  canonical?: string,
 ): WhatsAppChatInfo {
-  const chatId = chatIdForJid(jid);
+  const chatId = chatIdForJid(jid, canonical);
+  const sendJid = isJidGroup(jid) ? jid : jidNormalizedUser(jid);
   const existing = byString.get(chatId);
   if (existing) {
     if (title) existing.title = title;
+    existing.jid = sendJid;
     return existing;
   }
   const info: WhatsAppChatInfo = {
     chatId,
     numericChatId: deriveNumericChatId(chatId),
-    jid: isJidGroup(jid) ? jid : jidNormalizedUser(jid),
+    jid: sendJid,
     isGroup: Boolean(isJidGroup(jid)),
     ...(title ? { title } : {}),
   };
