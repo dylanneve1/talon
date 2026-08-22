@@ -11,9 +11,29 @@ import { TELEGRAM_MAX_TEXT } from "./types.js";
 
 export function replyParams(
   body: Record<string, unknown>,
-): { message_id: number } | undefined {
-  const replyTo = toPositiveId(body.reply_to ?? body.reply_to_message_id);
-  return replyTo !== undefined ? { message_id: replyTo } : undefined;
+): ReplyParams | undefined {
+  return replyParamsFor(toPositiveId(body.reply_to ?? body.reply_to_message_id));
+}
+
+export type ReplyParams = {
+  message_id: number;
+  allow_sending_without_reply: true;
+};
+
+/**
+ * Build `reply_parameters` for an outbound send. Always allows sending
+ * without the reply: the target message may have been deleted by the time
+ * we send (fast-moving groups, cleanup bots), and without this flag
+ * Telegram 400s the whole send — every formatting-level fallback then
+ * fails identically and the message is lost. A send that arrives
+ * un-linked beats one that never arrives.
+ */
+export function replyParamsFor(
+  replyTo: number | undefined,
+): ReplyParams | undefined {
+  return replyTo !== undefined && replyTo > 0
+    ? { message_id: replyTo, allow_sending_without_reply: true }
+    : undefined;
 }
 
 /** Delivery modifiers shared by every outbound send. */
@@ -125,7 +145,7 @@ export async function sendText(
         chatId,
         { markdown: text },
         {
-          reply_parameters: replyTo ? { message_id: replyTo } : undefined,
+          reply_parameters: replyParamsFor(replyTo),
           reply_markup: replyMarkup,
           ...opts,
         },
@@ -140,7 +160,7 @@ export async function sendText(
   try {
     const sent = await bot.api.sendMessage(chatId, html, {
       parse_mode: "HTML",
-      reply_parameters: replyTo ? { message_id: replyTo } : undefined,
+      reply_parameters: replyParamsFor(replyTo),
       reply_markup: replyMarkup,
       ...opts,
     });
@@ -151,7 +171,7 @@ export async function sendText(
       `Legacy HTML send failed; retrying as plain text (chat=${chatId}): ${err instanceof Error ? err.message : err}`,
     );
     const sent = await bot.api.sendMessage(chatId, text, {
-      reply_parameters: replyTo ? { message_id: replyTo } : undefined,
+      reply_parameters: replyParamsFor(replyTo),
       reply_markup: replyMarkup,
       ...opts,
     });
