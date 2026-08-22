@@ -45,6 +45,11 @@ export function isTeamsChatId(chatId: string): boolean {
   return chatId.startsWith("teams_chat_");
 }
 
+/** Check if a chat ID belongs to a WhatsApp session. */
+export function isWhatsAppChatId(chatId: string): boolean {
+  return chatId.startsWith("wa_");
+}
+
 /** Check if a chat ID belongs to a Discord session. */
 export function isDiscordChatId(chatId: string): boolean {
   return chatId.startsWith("discord_");

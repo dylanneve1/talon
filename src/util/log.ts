@@ -52,6 +52,7 @@ export type LogComponent =
   | "plugin"
   | "teams"
   | "discord"
+  | "whatsapp"
   | "native"
   | "mesh"
   | "config"

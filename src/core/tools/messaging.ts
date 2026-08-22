@@ -110,7 +110,7 @@ Notes:
       // src/backend/claude-sdk/options.ts:turnTerminatorHook.
       return throwIfFailed(result, "end_turn");
     },
-    frontends: ["telegram", "teams", "discord", "native"],
+    frontends: ["telegram", "teams", "discord", "native", "whatsapp"],
     tag: "messaging",
     endsTurn: true,
     delivery: true,
@@ -473,7 +473,7 @@ Examples:
           return { ok: false, error: `Unknown type: ${type}` };
       }
     },
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "whatsapp"],
     tag: "messaging",
     delivery: true,
   },
@@ -490,7 +490,7 @@ Examples:
       text: z.string().describe("Message text. Supports Markdown."),
     },
     execute: (params, bridge) => bridge("send_message", params),
-    frontends: ["teams", "native"],
+    frontends: ["teams", "native", "whatsapp"],
     tag: "messaging",
     delivery: true,
   },
@@ -515,7 +515,7 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
         .describe("Button rows"),
     },
     execute: (params, bridge) => bridge("send_message_with_buttons", params),
-    frontends: ["teams", "native"],
+    frontends: ["teams", "native", "whatsapp"],
     tag: "messaging",
     delivery: true,
   },
@@ -572,7 +572,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
       const result = await bridge("react", rest);
       return throwIfFailed(result, "react");
     },
-    frontends: ["telegram", "discord", "native"],
+    frontends: ["telegram", "discord", "native", "whatsapp"],
     tag: "messaging",
     endsTurn: true,
     delivery: true,
@@ -592,7 +592,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
         .describe("Edit the media caption rather than message text (Telegram)"),
     },
     execute: (params, bridge) => bridge("edit_message", params),
-    frontends: ["telegram", "discord", "native"],
+    frontends: ["telegram", "discord", "native", "whatsapp"],
     tag: "messaging",
   },
 
@@ -609,7 +609,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
         .describe("Bulk delete these message IDs (Telegram)"),
     },
     execute: (params, bridge) => bridge("delete_message", params),
-    frontends: ["telegram", "discord", "native"],
+    frontends: ["telegram", "discord", "native", "whatsapp"],
     tag: "messaging",
   },
 
@@ -632,7 +632,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
         .describe("Destination chat (default: current chat)"),
     },
     execute: (params, bridge) => bridge("forward_message", params),
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "whatsapp"],
     tag: "messaging",
   },
 
@@ -648,7 +648,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
       to_chat_id: chatIdSchema.optional(),
     },
     execute: (params, bridge) => bridge("copy_message", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "whatsapp"],
     tag: "messaging",
   },
 
@@ -658,7 +658,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
     description: "Pin a message.",
     schema: { message_id: snowflakeOrIdSchema },
     execute: (params, bridge) => bridge("pin_message", params),
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "whatsapp"],
     tag: "messaging",
   },
 
@@ -668,7 +668,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
     description: "Unpin a message.",
     schema: { message_id: snowflakeOrIdSchema.optional() },
     execute: (params, bridge) => bridge("unpin_message", params),
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "whatsapp"],
     tag: "messaging",
   },
 
@@ -681,6 +681,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
       message_id: idSchema.describe("Message ID of the poll to stop"),
     },
     execute: (params, bridge) => bridge("stop_poll", params),
+    // No WhatsApp equivalent: its polls run until the message is deleted.
     frontends: ["telegram"],
     tag: "messaging",
   },

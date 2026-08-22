@@ -13,15 +13,15 @@ registry (`core/agent-runtime/backend-registry.ts`) — adding a backend is
 one `factory.ts`, no bootstrap churn.
 
 Frontends had the interface (the `Frontend` type, formerly in
-`bootstrap.ts`) but not the registry. Frontend *identity* was smeared
+`bootstrap.ts`) but not the registry. Frontend _identity_ was smeared
 across four hand-maintained copies of the same if/else chain:
 
-| Concern | Lived in |
-| --- | --- |
-| Creation switch | `app.ts` (`switch (name)` over dynamic imports) |
-| Dispatch routing (chat id → live frontend) | `bootstrap.ts` `resolveFrontendName` |
-| Gateway action routing | `core/engine/gateway.ts` `resolveOwnedFrontendName` |
-| MCP tool scoping | `backend/shared/frontends.ts` `frontendForChatId` + literal `"terminal"` filters |
+| Concern                                    | Lived in                                                                         |
+| ------------------------------------------ | -------------------------------------------------------------------------------- |
+| Creation switch                            | `app.ts` (`switch (name)` over dynamic imports)                                  |
+| Dispatch routing (chat id → live frontend) | `bootstrap.ts` `resolveFrontendName`                                             |
+| Gateway action routing                     | `core/engine/gateway.ts` `resolveOwnedFrontendName`                              |
+| MCP tool scoping                           | `backend/shared/frontends.ts` `frontendForChatId` + literal `"terminal"` filters |
 
 Adding a frontend meant touching all four, and they could silently drift.
 
@@ -103,7 +103,25 @@ terminal claims the legacy chat id `"1"` ahead of telegram (10).
    label, chat-id matcher — add the predicate to `util/chat-id.ts`).
 3. Drop a `factory.ts` beside the implementation and list it in
    `src/frontend/factories.ts`.
-4. Add the id to the config `frontendEnum` in `util/config.ts`.
+4. Add the id to the config `frontendEnum` in `util/config.ts`, plus a
+   config block and its credential check in `validateConfig`.
+5. Expose the tools it implements: add the id to `ToolFrontend`
+   (`core/tools/types.ts`), to `VALID_TOOL_FRONTENDS`
+   (`core/mcp-hub/talon-server.ts`), to `FRONTEND_TOOLS`
+   (`backend/shared/delivery-contract.ts`), and to the `frontends: [...]`
+   array of every tool in `core/tools/` it can serve. A tool listed for a
+   frontend whose action handler doesn't implement it is a tool the model
+   will call and get "unknown action" from — gate deliberately.
+6. Teach `unconfiguredFrontends` in `core/doctor.ts` what "configured"
+   means for it; the check is fail-closed, so an unknown id reports as
+   broken.
+7. Add `prompts/<id>.md` (platform affordances and formatting rules) and
+   run `npm run build:prompts`.
+8. Add a `LogComponent` entry in `util/log.ts` for its log lines.
+
+Steps 1-4 are all the _registry_ needs; 5-8 are what makes the frontend
+actually usable. `src/__tests__/frontend-registry.test.ts` pins the
+built-in list, so it fails until the new id is added there too.
 
 No changes to `app.ts`, `bootstrap.ts`, the gateway, or backend scoping.
 

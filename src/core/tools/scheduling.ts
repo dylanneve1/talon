@@ -11,7 +11,7 @@ export const schedulingTools: ToolDefinition[] = [
     description: "Cancel a scheduled message.",
     schema: { schedule_id: z.string() },
     execute: (params, bridge) => bridge("cancel_scheduled", params),
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "whatsapp"],
     tag: "scheduling",
   },
 
@@ -21,7 +21,7 @@ export const schedulingTools: ToolDefinition[] = [
       "List pending scheduled messages in this chat (id, seconds until send, text). Scheduled messages persist across restarts.",
     schema: {},
     execute: (_params, bridge) => bridge("list_scheduled", {}),
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "whatsapp"],
     tag: "scheduling",
   },
 

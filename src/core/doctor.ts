@@ -73,6 +73,7 @@ export interface DoctorConfigSlice {
   botToken?: string;
   teamsWebhookUrl?: string;
   discord?: { botToken?: string };
+  whatsapp?: object;
   claudeBinary?: string;
   codexApiKey?: string;
   openaiApiKey?: string;
@@ -128,6 +129,10 @@ function unconfiguredFrontends(config: DoctorConfigSlice): string[] {
     if (fe === "telegram") return !config.botToken;
     if (fe === "teams") return !config.teamsWebhookUrl;
     if (fe === "discord") return !config.discord?.botToken;
+    // WhatsApp needs no stored credential — pairing is interactive (QR /
+    // pairing code at first start) — but the config block must exist so
+    // the JID allowlists were consciously set.
+    if (fe === "whatsapp") return !config.whatsapp;
     return fe !== "terminal" && fe !== "native";
   });
 }

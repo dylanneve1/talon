@@ -273,6 +273,7 @@ describe("end_turn tool definition", () => {
       "teams",
       "discord",
       "native",
+      "whatsapp",
     ]);
   });
 
