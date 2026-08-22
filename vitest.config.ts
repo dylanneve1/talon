@@ -17,6 +17,17 @@ export default defineConfig({
     // fsync. Bumped to 15s to absorb the disk-IO variance without
     // changing the per-test logic.
     testTimeout: 15_000,
+    // Under `bun --bun vitest`, vitest's externalized-dep loader hits a
+    // CJS/ESM interop gap in bun's node compat and `import { z } from
+    // "zod"` evaluates to undefined, failing every schema-touching
+    // suite. Inlining zod routes it through vite's own transform, which
+    // both runtimes resolve identically. No effect on node runs beyond
+    // a one-time transform cost.
+    server: {
+      deps: {
+        inline: ["zod"],
+      },
+    },
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "json-summary", "html", "lcov"],
