@@ -18,6 +18,7 @@
 
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { isBunRuntime } from "../../util/runtime.js";
 
 // ── Env-var names (shared constants, not stringly-typed call sites) ────────
 
@@ -76,6 +77,11 @@ export function buildTalonMcpEnv(
  */
 export function talonMcpServerCommand(): string[] {
   const here = dirname(fileURLToPath(import.meta.url));
+  // Bun executes the TS entry natively — no loader, and use the running
+  // bun binary itself so the child matches the daemon's runtime.
+  if (isBunRuntime()) {
+    return [process.execPath, resolve(here, "mcp-server.ts")];
+  }
   const tsxImport = pathToFileURL(
     resolve(here, "../../../node_modules/tsx/dist/esm/index.mjs"),
   ).href;

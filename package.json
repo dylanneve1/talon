@@ -55,10 +55,13 @@
     "tsconfig.json"
   ],
   "scripts": {
-    "start": "tsx src/index.ts",
-    "cli": "tsx src/cli.ts",
-    "setup": "tsx src/cli.ts setup",
-    "dev": "tsx --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "start:node": "tsx src/index.ts",
+    "cli": "bun src/cli.ts",
+    "cli:node": "tsx src/cli.ts",
+    "setup": "bun src/cli.ts setup",
+    "dev": "bun --watch src/index.ts",
+    "dev:node": "tsx --watch src/index.ts",
     "test": "vitest run",
     "test:ci": "vitest run --reporter=verbose --reporter=json --outputFile=test-results.json",
     "test:functional": "vitest run --reporter=verbose --reporter=json --outputFile=functional-results.json src/__tests__/package.functional.test.ts src/__tests__/tool-functional.test.ts src/__tests__/mcp-launcher.test.ts src/__tests__/mcp-launcher-functional.test.ts src/__tests__/integration/sdk-stub.test.ts src/__tests__/integration/talon-functional.test.ts",

@@ -16,6 +16,7 @@
  */
 
 import type { TalonConfig } from "../../util/config.js";
+import { isBunRuntime } from "../../util/runtime.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -983,11 +984,13 @@ export function createNativeFrontend(
     const cmd = process.execPath;
     const args = isBunBinary
       ? ["restart"]
-      : [
-          resolve(PKG_ROOT, "node_modules", "tsx", "dist", "cli.mjs"),
-          resolve(PKG_ROOT, "src", "cli.ts"),
-          "restart",
-        ];
+      : isBunRuntime()
+        ? [resolve(PKG_ROOT, "src", "cli.ts"), "restart"]
+        : [
+            resolve(PKG_ROOT, "node_modules", "tsx", "dist", "cli.mjs"),
+            resolve(PKG_ROOT, "src", "cli.ts"),
+            "restart",
+          ];
     const cwd = isBunBinary ? dirname(process.execPath) : PKG_ROOT;
     const child = spawn(cmd, args, {
       cwd,
