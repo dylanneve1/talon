@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.24.1](https://github.com/dylanneve1/talon/compare/v3.24.0...v3.24.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* **telegram:** stop a redelivered /restart from looping the daemon ([#774](https://github.com/dylanneve1/talon/issues/774)) ([cf715f0](https://github.com/dylanneve1/talon/commit/cf715f0bd17004b817d1ae44ba03a88b850399a3))
+
 ## [3.24.0](https://github.com/dylanneve1/talon/compare/v3.23.1...v3.24.0) (2026-08-22)
 
 
