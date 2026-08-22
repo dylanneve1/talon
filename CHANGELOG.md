@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.23.1](https://github.com/dylanneve1/talon/compare/v3.23.0...v3.23.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* **runtime:** make the test suite and runtime seams bun-clean ([#769](https://github.com/dylanneve1/talon/issues/769)) ([7fd2236](https://github.com/dylanneve1/talon/commit/7fd2236a01a5a1d276942f98227c88af03397181))
+
 ## [3.23.0](https://github.com/dylanneve1/talon/compare/v3.22.1...v3.23.0) (2026-08-22)
 
 
