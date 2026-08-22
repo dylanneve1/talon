@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.25.0](https://github.com/dylanneve1/talon/compare/v3.24.1...v3.25.0) (2026-08-22)
+
+
+### Features
+
+* **whatsapp:** WhatsApp frontend via Baileys multi-device ([#773](https://github.com/dylanneve1/talon/issues/773)) ([a663223](https://github.com/dylanneve1/talon/commit/a6632231a9c5506999d2d21c93b88613089fa675))
+
 ## [3.24.1](https://github.com/dylanneve1/talon/compare/v3.24.0...v3.24.1) (2026-08-22)
 
 
