@@ -10,7 +10,7 @@ import { toolInputToRecord } from "../../../core/agent-runtime/events.js";
 import { appendDailyLogResponse } from "../../../storage/daily-log.js";
 import { stripMcpPrefix } from "../../../core/tools/index.js";
 import { logWarn } from "../../../util/log.js";
-import { sendText } from "../actions/shared.js";
+import { replyParamsFor, sendText } from "../actions/shared.js";
 import { ambientThreadId } from "../topics.js";
 import { trackDmUser } from "./access.js";
 
@@ -22,7 +22,7 @@ export async function sendHtml(
 ): Promise<number> {
   const params = {
     parse_mode: "HTML" as const,
-    reply_parameters: replyToId ? { message_id: replyToId } : undefined,
+    reply_parameters: replyParamsFor(replyToId),
     message_thread_id: ambientThreadId(chatId),
   };
   try {
@@ -40,7 +40,7 @@ export async function sendHtml(
       plain = plain.replace(/<[^>]*>/g, "");
     } while (plain !== prev);
     const sent = await bot.api.sendMessage(chatId, plain, {
-      reply_parameters: replyToId ? { message_id: replyToId } : undefined,
+      reply_parameters: replyParamsFor(replyToId),
       message_thread_id: ambientThreadId(chatId),
     });
     return sent.message_id;

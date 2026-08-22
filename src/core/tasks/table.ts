@@ -123,6 +123,20 @@ export class TaskTable {
   }
 
   /**
+   * Request an abort of every running turn, regardless of chat — the
+   * shutdown drain's lever. Returns the number of kill requests issued.
+   */
+  killAllRunningTurns(): number {
+    let killed = 0;
+    for (const [id, task] of this.live) {
+      if (task.record.kind === "turn" && task.record.state === "running") {
+        if (this.kill(id).ok) killed++;
+      }
+    }
+    return killed;
+  }
+
+  /**
    * Request an abort for the turn currently running in one chat. Queued turns
    * are deliberately ignored: `/stop` means "stop what is happening now",
    * never "discard my next message".

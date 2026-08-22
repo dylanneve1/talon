@@ -29,7 +29,7 @@
  * registrations run concurrently through the hub; later turns skip them.
  */
 
-import { log, logWarn } from "../../util/log.js";
+import { log, logDebug, logWarn } from "../../util/log.js";
 import {
   talonHubUrl,
   pluginHubUrl,
@@ -61,6 +61,9 @@ export const TALON_PLUGIN_MCP_SERVER_NAME = "talon-plugin";
  * <500ms; the outliers are the ones worth investigating.
  */
 const SLOW_MCP_REGISTRATION_MS = 1000;
+
+/** Servers whose registration failure was already warned about (see below). */
+const warnedMcpRegistrationFailures = new Set<string>();
 
 /**
  * OpenCode's `/experimental/tool/ids` endpoint omits dynamically registered
@@ -253,6 +256,7 @@ export async function ensurePluginMcpServers<TClient extends RemoteAgentClient>(
         state.registeredMcpServers.add(serverName);
         state.registeredMcpTools.set(serverName, toolNames);
         byPlugin.set(name, serverName);
+        warnedMcpRegistrationFailures.delete(serverName);
         const ms = Date.now() - startedAt;
         log(
           "agent",
@@ -261,7 +265,16 @@ export async function ensurePluginMcpServers<TClient extends RemoteAgentClient>(
         );
         return serverName;
       } catch (err) {
-        logWarn(
+        // Warn once per server, then debug: registration re-runs at the
+        // head of every turn, so a dead backing service (an offline
+        // browser endpoint, say) would otherwise emit one warning per
+        // turn for the whole outage. Success clears the latch so the
+        // next outage warns again.
+        const level = warnedMcpRegistrationFailures.has(serverName)
+          ? logDebug
+          : logWarn;
+        warnedMcpRegistrationFailures.add(serverName);
+        level(
           "agent",
           `Plugin MCP registration failed for ${serverName}: ${errMsg(err)}`,
         );

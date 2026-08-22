@@ -154,6 +154,48 @@ export function exceedsLookbackWindow(toolCalls: number): boolean {
   return estimateTurnBlocks(toolCalls) > CACHE_LOOKBACK_BLOCKS;
 }
 
+/**
+ * Per-chat estimated block count of the last turn that overflowed the
+ * lookback window. Overflow is only a *prediction* of a cache miss — the
+ * proof is the NEXT turn's cross-turn verdict, so the overflow is recorded
+ * here and the warning waits for that verdict instead of firing on every
+ * tool-heavy turn. Bounded like `lastToolSets` below.
+ */
+const lookbackOverflows = new Map<string, number>();
+
+/**
+ * Record whether this turn plausibly overflowed the lookback window, so the
+ * next turn can attribute a cross-turn miss to it.
+ */
+export function noteLookbackRisk(chatId: string, toolCalls: number): void {
+  if (!exceedsLookbackWindow(toolCalls)) {
+    lookbackOverflows.delete(chatId);
+    return;
+  }
+  if (
+    lookbackOverflows.size >= MAX_TRACKED_CHATS &&
+    !lookbackOverflows.has(chatId)
+  ) {
+    const oldest = lookbackOverflows.keys().next().value;
+    if (oldest !== undefined) lookbackOverflows.delete(oldest);
+  }
+  lookbackOverflows.set(chatId, estimateTurnBlocks(toolCalls));
+}
+
+/**
+ * Estimated block count of the chat's previous turn IF it overflowed the
+ * lookback window, else undefined. Read this before `noteLookbackRisk`
+ * records the current turn.
+ */
+export function priorLookbackOverflow(chatId: string): number | undefined {
+  return lookbackOverflows.get(chatId);
+}
+
+/** Drop all recorded overflows (tests / explicit reset). */
+export function resetLookbackRisk(): void {
+  lookbackOverflows.clear();
+}
+
 // ── Cacheable minimum ──────────────────────────────────────────────────────
 
 /**

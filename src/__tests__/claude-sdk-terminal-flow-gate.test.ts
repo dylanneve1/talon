@@ -152,6 +152,10 @@ vi.mock("../backend/shared/index.js", () => ({
   recordTurnMetrics: vi.fn(),
   recordFailedTurnAccounting: vi.fn(),
   recordFlowViolation: vi.fn(),
+  crossTurnVerdict: () => "none",
+  priorLookbackOverflow: () => undefined,
+  noteLookbackRisk: vi.fn(),
+  CACHE_LOOKBACK_BLOCKS: 20,
   applyRetryDecision: async ({ err }: { err: unknown }) => ({
     retry: undefined,
     classified: err instanceof Error ? err : new Error(String(err)),

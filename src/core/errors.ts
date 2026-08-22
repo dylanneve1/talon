@@ -33,6 +33,17 @@ type ErrorReason =
 const USAGE_LIMIT_RE =
   /you['’]ve hit your .{0,40}limit|you['’]re out of extra usage|claude ai usage limit reached|usage limit reached/i;
 
+/**
+ * Ceiling on how long a failed attempt may have run and still earn the
+ * frontend queues' blind retry. `retryable` means "a short pause may clear
+ * it", which holds for a 429 or a dropped socket but not for an attempt
+ * that already burned minutes before failing (e.g. the 600s remote turn
+ * deadline — its rejection is `name: "TimeoutError"`, classified as
+ * transient network). Turns serialize per chat, so retrying such an
+ * attempt doubles the stall for every message queued behind it.
+ */
+export const RETRY_ELAPSED_CAP_MS = 120_000;
+
 // ── TalonError class ────────────────────────────────────────────────────────
 
 export class TalonError extends Error {
