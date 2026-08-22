@@ -73,8 +73,9 @@ export {
 // barrel discipline the prompt/ barrel was just trimmed to.
 export {
   formatTurnCache,
-  estimateTurnBlocks,
-  exceedsLookbackWindow,
+  crossTurnVerdict,
+  priorLookbackOverflow,
+  noteLookbackRisk,
   CACHE_LOOKBACK_BLOCKS,
 } from "./cache-telemetry.js";
 

@@ -18,7 +18,10 @@ import {
   estimateTurnBlocks,
   exceedsLookbackWindow,
   formatTurnCache,
+  noteLookbackRisk,
   noteToolFingerprint,
+  priorLookbackOverflow,
+  resetLookbackRisk,
   resetToolFingerprints,
   toolFingerprint,
   turnCacheStats,
@@ -110,6 +113,29 @@ describe("lookback window", () => {
 
   it("treats a negative tool count as zero", () => {
     expect(estimateTurnBlocks(-5)).toBe(1);
+  });
+});
+
+describe("lookback risk tracking", () => {
+  beforeEach(() => {
+    resetLookbackRisk();
+  });
+
+  it("records an overflowing turn for the next turn to read", () => {
+    noteLookbackRisk("chat1", 15);
+    expect(priorLookbackOverflow("chat1")).toBe(estimateTurnBlocks(15));
+    expect(priorLookbackOverflow("chat2")).toBeUndefined();
+  });
+
+  it("clears the record when a later turn stays inside the window", () => {
+    noteLookbackRisk("chat1", 15);
+    noteLookbackRisk("chat1", 2);
+    expect(priorLookbackOverflow("chat1")).toBeUndefined();
+  });
+
+  it("does not record turns inside the window", () => {
+    noteLookbackRisk("chat1", 9); // 19 blocks
+    expect(priorLookbackOverflow("chat1")).toBeUndefined();
   });
 });
 
