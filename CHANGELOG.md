@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.22.1](https://github.com/dylanneve1/talon/compare/v3.22.0...v3.22.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* **companion:** treat a missing port as the scheme default, not 19880 ([768c9ea](https://github.com/dylanneve1/talon/commit/768c9ea07209b17008cf0393ae409ee7c3709d5b))
+* **companion:** treat a missing port as the scheme default, not 19880 ([4886e5c](https://github.com/dylanneve1/talon/commit/4886e5cdc48ab0af1ff77445cd1f1813b4d4deda))
+* harden runtime paths flagged by an all-time log audit ([#764](https://github.com/dylanneve1/talon/issues/764)) ([f1d8370](https://github.com/dylanneve1/talon/commit/f1d837009b5462d9f44f35b19c677cbab69819bf))
+
+
+### Documentation
+
+* long-term plan for migrating off TypeScript ([#765](https://github.com/dylanneve1/talon/issues/765)) ([8f1860c](https://github.com/dylanneve1/talon/commit/8f1860cd6508a802f60433e2aa79b0407f92897e))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump the dev-dependencies group with 3 updates ([#762](https://github.com/dylanneve1/talon/issues/762)) ([36a7ae2](https://github.com/dylanneve1/talon/commit/36a7ae2b3f22041115a294abd29c709d812b1f1d))
+* **deps:** Bump the production-dependencies group with 2 updates ([#761](https://github.com/dylanneve1/talon/issues/761)) ([377dc15](https://github.com/dylanneve1/talon/commit/377dc15abb390634d5ef23e99c3685968c39739a))
+* **deps:** Bump the production-dependencies group with 2 updates ([#763](https://github.com/dylanneve1/talon/issues/763)) ([2489ac9](https://github.com/dylanneve1/talon/commit/2489ac96b7d2a9f035e4b14d4565b57f0ec50ed4))
+
 ## [3.22.0](https://github.com/dylanneve1/talon/compare/v3.21.0...v3.22.0) (2026-08-19)
 
 
