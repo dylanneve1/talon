@@ -67,6 +67,16 @@ export function stopCurrentTurn(chatId: string): KillOutcome {
 }
 
 /**
+ * Request an abort of every chat's running turn. The shutdown drain calls
+ * this before polling `getActiveCount` — a turn can legitimately run for
+ * minutes, so a drain that only waits can never succeed against one.
+ * Returns the number of kill requests issued.
+ */
+export function stopAllTurns(): number {
+  return taskTable.killAllRunningTurns();
+}
+
+/**
  * Execute an AI query with full lifecycle management.
  * Same-chat queries are serialized (FIFO) to avoid session conflicts.
  * Different-chat queries run in true parallel.

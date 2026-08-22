@@ -9,7 +9,7 @@
 import { getFrontends } from "./util/config.js";
 import { startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
 import { flushDatabase } from "./storage/db.js";
-import { getActiveCount } from "./core/engine/dispatcher.js";
+import { getActiveCount, stopAllTurns } from "./core/engine/dispatcher.js";
 import { startPulseTimer, stopPulseTimer } from "./core/background/pulse.js";
 import { stopPlanAlerts } from "./core/background/plan-alerts.js";
 import {
@@ -121,6 +121,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   shuttingDown = true;
   log("shutdown", `${signal} received, shutting down gracefully...`);
 
+  const deadlineAt = Date.now() + SHUTDOWN_TIMEOUT_MS;
   const forceTimer = setTimeout(() => {
     logError("shutdown", "Timeout exceeded, forcing exit");
     // Hand off even on the forced path. A restart must survive a
@@ -135,12 +136,17 @@ async function gracefulShutdown(signal: string): Promise<void> {
   }, SHUTDOWN_TIMEOUT_MS);
   forceTimer.unref();
 
-  // Drain in-flight queries: poll instead of a fixed sleep, so an idle
-  // daemon exits immediately and a busy one gets the full budget.
+  // Drain in-flight queries. A turn can legitimately run for minutes, so a
+  // drain that only waits can never succeed against one — ask every running
+  // turn to abort first, then poll for the aborts to settle so backends can
+  // flush partial state before the process exits.
   if (getActiveCount() > 0) {
+    const aborted = stopAllTurns();
     log(
       "shutdown",
-      `Waiting for ${getActiveCount()} in-flight queries to drain...`,
+      `Waiting for ${getActiveCount()} in-flight queries to drain` +
+        (aborted > 0 ? ` (abort requested for ${aborted})` : "") +
+        `...`,
     );
     const deadline = Date.now() + DRAIN_TIMEOUT_MS;
     while (getActiveCount() > 0 && Date.now() < deadline) {
@@ -177,7 +183,11 @@ async function gracefulShutdown(signal: string): Promise<void> {
   await shutdownStep("pulse timer", stopPulseTimer);
   await shutdownStep("heartbeat", async () => {
     stopHeartbeatTimer();
-    await awaitHeartbeat();
+    // Cap the wait by what's left of the force-timer budget (minus margin
+    // for the steps below). The default 10s wait plus a full 5s drain used
+    // to consume the entire 15s budget, so a slow heartbeat tripped the
+    // forced exit even though teardown was proceeding normally.
+    await awaitHeartbeat(Math.max(0, deadlineAt - Date.now() - 3_000));
   });
   await shutdownStep("cron timer", stopCronTimer);
   await shutdownStep("plan alerts", stopPlanAlerts);
