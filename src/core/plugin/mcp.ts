@@ -6,6 +6,7 @@
 
 import { resolve } from "node:path";
 import { wrapMcpServer } from "../../util/mcp-launcher.js";
+import { isBunRuntime } from "../../util/runtime.js";
 import { registry, reloadState } from "./registry.js";
 import type { McpServerConfig } from "./types.js";
 
@@ -60,11 +61,16 @@ export function getPluginMcpServers(
         env: baseEnv,
       });
     } else if (plugin.mcpServerPath) {
-      // Existing Node/tsx pattern
+      // TS server entry: bun runs it directly; node needs the tsx loader.
       servers[`${plugin.name}-tools`] = wrapMcpServer({
-        command: process.platform === "win32" ? "npx" : "node",
-        args:
-          process.platform === "win32"
+        command: isBunRuntime()
+          ? process.execPath
+          : process.platform === "win32"
+            ? "npx"
+            : "node",
+        args: isBunRuntime()
+          ? [plugin.mcpServerPath]
+          : process.platform === "win32"
             ? ["tsx", plugin.mcpServerPath]
             : ["--import", tsxPath, plugin.mcpServerPath],
         env: baseEnv,

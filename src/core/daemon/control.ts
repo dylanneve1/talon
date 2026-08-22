@@ -14,6 +14,7 @@
 
 import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
+import { isBunRuntime } from "../../util/runtime.js";
 import {
   readPidRecord,
   writePidRecord,
@@ -93,13 +94,18 @@ export async function startDaemon(opts: {
   // Compiled binaries: re-invoke `process.execPath` with no extra args.
   // The binary's own entrypoint (src/index.ts, embedded) handles the
   // server startup the same way a tsx run would.
+  //
+  // Bun source runs need no loader at all — bun executes the TS entry
+  // directly, so a bun-launched CLI spawns a bun daemon.
   const spawnCmd = process.execPath;
   const spawnArgs = isBunBinary
     ? []
-    : [
-        resolve(opts.pkgRoot, "node_modules", "tsx", "dist", "cli.mjs"),
-        resolve(opts.pkgRoot, "src", "index.ts"),
-      ];
+    : isBunRuntime()
+      ? [resolve(opts.pkgRoot, "src", "index.ts")]
+      : [
+          resolve(opts.pkgRoot, "node_modules", "tsx", "dist", "cli.mjs"),
+          resolve(opts.pkgRoot, "src", "index.ts"),
+        ];
   const spawnCwd = isBunBinary ? dirname(process.execPath) : opts.pkgRoot;
 
   let child;
