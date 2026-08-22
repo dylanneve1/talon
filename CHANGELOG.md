@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.23.0](https://github.com/dylanneve1/talon/compare/v3.22.1...v3.23.0) (2026-08-22)
+
+
+### Features
+
+* **runtime:** run source installs under Bun ([#767](https://github.com/dylanneve1/talon/issues/767)) ([4a81e34](https://github.com/dylanneve1/talon/commit/4a81e34f09690d4cdc28152e3f0d7382ed711d73))
+
 ## [3.22.1](https://github.com/dylanneve1/talon/compare/v3.22.0...v3.22.1) (2026-08-22)
 
 
