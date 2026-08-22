@@ -1492,6 +1492,34 @@ describe("flushQueue — retryable error path", () => {
   }, 3000);
 });
 
+describe("flushQueue — user-stopped turn", () => {
+  it("stays silent when the turn unwound because of /stop", async () => {
+    const { classify } = await import("../core/errors.js");
+
+    executeMock.mockRejectedValueOnce(new Error("Turn stopped by user"));
+    (classify as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      reason: "stopped",
+      message: "Turn stopped by user",
+      retryable: false,
+    });
+
+    const chatId = 95003;
+    const ctx = {
+      chat: { id: chatId, type: "private" },
+      message: { text: "stop me", message_id: 902, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 92, first_name: "Nadia" },
+    } as any;
+
+    const sendMsgCalls = mockBot.api.sendMessage.mock.calls.length;
+    await handleTextMessage(ctx, mockBot, mockConfig);
+    await new Promise((r) => setTimeout(r, 700));
+
+    // No retry, no error message — the /stop ack already covered it.
+    expect(mockBot.api.sendMessage.mock.calls.length).toBe(sendMsgCalls);
+  }, 3000);
+});
+
 describe("flushQueue — retryable error, successful retry (line 403 return)", () => {
   it("returns after successful retry without sending error message", async () => {
     const { classify } = await import("../core/errors.js");

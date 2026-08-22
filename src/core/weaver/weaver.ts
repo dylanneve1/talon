@@ -24,6 +24,7 @@ import type { ContextManager, ExecuteParams, ExecuteResult } from "../types.js";
 import { bus } from "../bus/index.js";
 import { taskTable, type TaskHandle } from "../tasks/index.js";
 import { log, logDebug, logWarn } from "../../util/log.js";
+import { TalonError } from "../errors.js";
 import { Loom } from "./loom.js";
 import { carryTurnEvents } from "./shuttle.js";
 import type { Thread, ThreadSnapshot } from "./thread.js";
@@ -141,6 +142,16 @@ export class Weaver {
       return result;
     } catch (err) {
       task.fail(err);
+      if (lifecycle.killed) {
+        // The backend didn't manage a clean interrupt-completion (some
+        // SDK versions surface an interrupted turn as an error result).
+        // The user asked for this outcome — don't let it unwind as a
+        // fault the frontend then reports to the chat.
+        throw new TalonError("Turn stopped by user", {
+          reason: "stopped",
+          cause: err,
+        });
+      }
       throw err;
     } finally {
       this.activeCount--;

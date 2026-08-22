@@ -188,6 +188,15 @@ async function flushQueue(chatId: string): Promise<void> {
     recordMessageProcessed();
   } catch (err) {
     const classified = classify(err);
+    // A user-initiated /stop is an outcome, not a fault: the stop command
+    // already acknowledged it, so delivering the unwound turn's error here
+    // would just contradict that with noise.
+    if (classified.reason === "stopped") {
+      log("bot", `[${chatId}] turn stopped by user`);
+      lastHandledMessageIdByChat.set(chatId, last.messageId);
+      recordMessageSettled();
+      return;
+    }
     const chatType = last.isGroup ? "group" : "DM";
     const promptPreview = promptWithContext.slice(0, 100).replace(/\n/g, " ");
     logError(
