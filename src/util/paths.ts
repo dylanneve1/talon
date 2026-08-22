@@ -56,6 +56,8 @@ export const dirs = {
   uploads: resolve(TALON_ROOT, "workspace", "uploads"),
   /** Daily logs: ~/.talon/workspace/logs/ */
   logs: resolve(TALON_ROOT, "workspace", "logs"),
+  /** Baileys multi-file auth state: ~/.talon/whatsapp-auth/ */
+  whatsappAuth: resolve(TALON_ROOT, "whatsapp-auth"),
   /** Memory: ~/.talon/workspace/memory/ */
   memory: resolve(TALON_ROOT, "workspace", "memory"),
   /** Daily memory notes: ~/.talon/workspace/memory/daily/ */

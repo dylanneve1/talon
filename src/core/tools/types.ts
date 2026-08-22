@@ -9,7 +9,7 @@ import type { ZodRawShape } from "zod";
 
 /** Which frontends a tool is available on.  "all" = every frontend. */
 export type ToolFrontend =
-  "telegram" | "teams" | "terminal" | "discord" | "native" | "all";
+  "telegram" | "teams" | "terminal" | "discord" | "native" | "whatsapp" | "all";
 
 /** Domain tags for runtime filtering and grouping. */
 export type ToolTag =

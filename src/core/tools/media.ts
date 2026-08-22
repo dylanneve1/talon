@@ -17,7 +17,7 @@ export const mediaTools: ToolDefinition[] = [
         .describe("Number of entries (default 10, max 20)"),
     },
     execute: (params, bridge) => bridge("list_media", { limit: params.limit }),
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "whatsapp"],
     tag: "media",
   },
 ];

@@ -67,6 +67,7 @@ const FRONTEND_TOOLS: Record<string, DeliveryToolNames> = {
   discord: { endTurn: "end_turn", send: "send", react: "react" },
   teams: { endTurn: "end_turn", send: "send_message" },
   native: { endTurn: "end_turn", send: "send_message", react: "react" },
+  whatsapp: { endTurn: "end_turn", send: "send_message" },
 };
 
 const DEFAULT_TOOLS: DeliveryToolNames = {

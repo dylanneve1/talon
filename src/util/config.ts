@@ -142,6 +142,7 @@ const frontendEnum = z.enum([
   "teams",
   "discord",
   "native",
+  "whatsapp",
 ]);
 
 /**
@@ -223,6 +224,41 @@ const discordConfigSchema = z
     presence: z.string().optional(),
     /** Enable global slash command + DM command registration. */
     enableDmCommands: z.boolean().default(true),
+  })
+  .strict();
+
+const whatsappConfigSchema = z
+  .object({
+    /**
+     * JIDs or bare phone numbers (digits only, country code included)
+     * allowed to DM the bot. Empty array disables DM access.
+     */
+    allowedJids: z.array(z.string()).default([]),
+    /** Group JIDs (…@g.us) the bot may always respond in. */
+    allowedGroups: z.array(z.string()).default([]),
+    /**
+     * Which groups the bot serves beyond `allowedGroups`:
+     *   - "listed"            only the groups named above (default)
+     *   - "with-allowed-user" any group containing someone from
+     *                         `allowedJids` — "the groups I'm in"
+     *   - "all"               every group the account belongs to
+     */
+    groupPolicy: z
+      .enum(["listed", "with-allowed-user", "all"])
+      .default("listed"),
+    /**
+     * In groups, when does the bot reply?
+     *   - "mention"  reply only when @mentioned or quoted (default)
+     *   - "all"      reply to every message in allowedGroups
+     */
+    respondMode: z.enum(["mention", "all"]).default("mention"),
+    /**
+     * Pair by phone-number code instead of QR: the account's number in
+     * E.164 digits without the plus (e.g. "353871234567"). Omit for QR.
+     */
+    pairingNumber: z.string().optional(),
+    /** Mark handled inbound messages as read (blue ticks). */
+    sendReadReceipts: z.boolean().default(true),
   })
   .strict();
 
@@ -502,6 +538,7 @@ const configSchema = z.object({
 
   // Discord — discord.js v14-based frontend
   discord: discordConfigSchema.optional(),
+  whatsapp: whatsappConfigSchema.optional(),
 
   // Native — local bridge for the Electron companion app (apps/desktop)
   native: nativeConfigSchema.optional(),
@@ -707,6 +744,12 @@ export function loadConfig(): TalonConfig {
     if (fe === "teams" && !parsed.teamsWebhookUrl) {
       throw new Error(
         `Teams frontend requires "teamsWebhookUrl" in ${CONFIG_FILE}. Run "talon setup" to configure.`,
+      );
+    }
+    if (fe === "whatsapp" && !parsed.whatsapp) {
+      throw new Error(
+        `WhatsApp frontend requires a "whatsapp" config block in ${CONFIG_FILE} ` +
+          `(set allowedJids / allowedGroups; pairing happens interactively on first start).`,
       );
     }
   }

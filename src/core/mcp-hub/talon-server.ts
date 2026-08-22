@@ -25,6 +25,7 @@ export const VALID_TOOL_FRONTENDS: ReadonlySet<string> = new Set([
   "terminal",
   "discord",
   "native",
+  "whatsapp",
 ]);
 
 export type TalonServerOptions = {

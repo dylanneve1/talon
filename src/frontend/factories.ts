@@ -12,4 +12,5 @@ import "./telegram/factory.js";
 import "./discord/factory.js";
 import "./teams/factory.js";
 import "./native/factory.js";
+import "./whatsapp/factory.js";
 import "./terminal/factory.js";
