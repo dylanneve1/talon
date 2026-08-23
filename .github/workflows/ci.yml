@@ -883,7 +883,6 @@ jobs:
   # other test jobs run `npm ci` in the source tree where node_modules
   # state could mask issues — this job copies ONLY package.json +
   # package-lock.json to a fresh tmpdir and runs `npm ci` there.
-  # Same logic as Talon's local `tools/verify-lockfile.sh`.
   lockfile:
     name: Lockfile Portability
     runs-on: ubuntu-latest
@@ -896,6 +895,28 @@ jobs:
           node-version: 24
           # Note: NO cache — fresh tmpdir means no cached node_modules
           # state can paper over portability bugs.
+
+      - name: Upgrade to latest npm
+        # The lockfile's canonical form is whatever the newest npm writes.
+        # Older npms prune transitive deps of platform-gated optional
+        # packages when they rewrite the lock (PR #786: a lock written by
+        # npm 11.6 dropped @emnapi/runtime, needed by @img/sharp-wasm32,
+        # and every `npm ci` job failed with a message that named neither
+        # the cause nor the fix). Check with the npm developers are
+        # expected to run, not whatever setup-node happened to bundle.
+        run: |
+          npm install -g npm@latest
+          echo "node $(node --version) / npm $(npm --version)"
+
+      - name: Verify package-lock.json is in sync with package.json
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          if ! git diff --exit-code --stat -- package-lock.json; then
+            echo "::error file=package-lock.json::package-lock.json is not what the latest npm resolves from package.json — it was likely (re)written by an outdated npm, which silently prunes platform-optional transitive deps and breaks 'npm ci' for every other job. Fix: npm install -g npm@latest && npm install --package-lock-only, then commit the result."
+            exit 1
+          fi
+          echo "::notice::package-lock.json is canonical under npm $(npm --version)"
 
       - name: Verify package-lock.json portability
         run: |

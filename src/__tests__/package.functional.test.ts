@@ -125,10 +125,13 @@ function packInto(dir: string): string {
   });
   expectOk(result);
 
-  const entries = JSON.parse(result.stdout) as Array<{
-    filename: string;
-    files: Array<{ path: string }>;
-  }>;
+  type PackReport = { filename: string; files: Array<{ path: string }> };
+  // npm ≤11 emits an array of pack reports; npm 12 keys them by package
+  // name — accept both so the test survives the runner's npm moving.
+  const parsed = JSON.parse(result.stdout) as unknown;
+  const entries = Array.isArray(parsed)
+    ? (parsed as PackReport[])
+    : Object.values(parsed as Record<string, PackReport>);
   const pack = entries[0];
   expect(pack).toBeDefined();
 
@@ -207,10 +210,28 @@ describe("package functional smoke tests", () => {
         "bin",
         "talon.js",
       );
-      const help = run(process.execPath, [cli, "--help"], {
+      let help = run(process.execPath, [cli, "--help"], {
         cwd: installDir,
         env: childEnv(homeDir),
       });
+      // Silent-skip escape hatch: platform binaries (esbuild's
+      // @esbuild/<platform>, sharp's @img/*) are optionalDependencies, and
+      // npm skips an optional dep whose fetch fails WITHOUT failing the
+      // install — the breakage only surfaces when the CLI can't load the
+      // binary (run 32660171091: darwin-arm64 install exited 0, then the
+      // CLI died with "@esbuild/darwin-arm64 could not be found"). Retry
+      // the install once with --prefer-online and rerun the CLI.
+      if (help.code !== 0 && /could not be found/i.test(help.stderr)) {
+        install = runNpm(installArgs("--prefer-online"), {
+          cwd: installDir,
+          timeoutMs: FUNCTIONAL_TIMEOUT_MS,
+        });
+        expectExitOk(install);
+        help = run(process.execPath, [cli, "--help"], {
+          cwd: installDir,
+          env: childEnv(homeDir),
+        });
+      }
 
       expectOk(help);
       expect(help.stdout).toContain("Usage: talon [command]");
