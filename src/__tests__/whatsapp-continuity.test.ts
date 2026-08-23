@@ -32,7 +32,11 @@ import {
   sendContent,
   setWhatsAppBotName,
 } from "../frontend/whatsapp/actions/shared.js";
-import { runTurnWithRecovery } from "../frontend/whatsapp/turn-recovery.js";
+import {
+  runTurnWithRecovery,
+  shouldReplyToCatchUp,
+  CATCH_UP_REPLY_WINDOW_MS,
+} from "../frontend/whatsapp/turn-recovery.js";
 import { historyHandlers } from "../core/engine/gateway-actions/history.js";
 import {
   pushMessage,
@@ -308,5 +312,34 @@ describe("turn recovery — errors reach the chat", () => {
       wait: noWait,
     });
     expect(sent).toHaveLength(0);
+  });
+});
+
+describe("catch-up (offline-queued) reply policy", () => {
+  it("replies to a message queued during a short restart", () => {
+    const now = Date.parse("2026-08-23T12:00:00Z");
+    const fiveMinAgo = now - 5 * 60_000;
+    expect(shouldReplyToCatchUp(fiveMinAgo, now)).toBe(true);
+  });
+
+  it("records but does not reply past the window", () => {
+    const now = Date.parse("2026-08-23T12:00:00Z");
+    const hourAgo = now - 60 * 60_000;
+    expect(shouldReplyToCatchUp(hourAgo, now)).toBe(false);
+  });
+
+  it("is inclusive at the boundary", () => {
+    const now = Date.parse("2026-08-23T12:00:00Z");
+    expect(shouldReplyToCatchUp(now - CATCH_UP_REPLY_WINDOW_MS, now)).toBe(
+      true,
+    );
+    expect(shouldReplyToCatchUp(now - CATCH_UP_REPLY_WINDOW_MS - 1, now)).toBe(
+      false,
+    );
+  });
+
+  it("treats a missing timestamp as fresh — better one odd reply than a dropped question", () => {
+    expect(shouldReplyToCatchUp(0)).toBe(true);
+    expect(shouldReplyToCatchUp(Number.NaN)).toBe(true);
   });
 });

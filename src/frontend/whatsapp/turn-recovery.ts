@@ -89,3 +89,25 @@ export async function runTurnWithRecovery(
     await deps.sendErrorText(friendlyMessage(classified));
   }
 }
+
+/**
+ * How fresh a catch-up (offline-queued) message must be to still get a
+ * reply turn. Messages older than this are recorded in history — the next
+ * live turn sees them — but not answered: replying to a whole night's
+ * backlog hours later reads worse than picking up naturally.
+ */
+export const CATCH_UP_REPLY_WINDOW_MS = 15 * 60_000;
+
+/**
+ * Whether a message delivered as catch-up (Baileys `append`) should get a
+ * reply turn. `platformTsMs` is the message's own timestamp in ms; a
+ * missing/zero timestamp counts as fresh — better one odd reply than a
+ * silently dropped question.
+ */
+export function shouldReplyToCatchUp(
+  platformTsMs: number,
+  now: number = Date.now(),
+): boolean {
+  if (!Number.isFinite(platformTsMs) || platformTsMs <= 0) return true;
+  return now - platformTsMs <= CATCH_UP_REPLY_WINDOW_MS;
+}
