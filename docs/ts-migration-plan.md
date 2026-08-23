@@ -99,17 +99,31 @@ pattern. Revisit with Phase 0 data in hand.
 Bun 1.3.9 already runs the CLI cleanly and CI has a bun-compile sanity
 job. Adoption checklist:
 
-- [ ] Full vitest suite green under Bun
-- [ ] `node:sqlite` behavior verified under Bun (storage tests on a real db)
-- [ ] napi (blake3-napi) + FUSE natives load, or wasm fallbacks engage
-- [ ] pino file transport + pretty stream behave
+- [x] Full vitest suite green under Bun (#769 — 4513 pass / 29 skip)
+- [x] `node:sqlite` behavior verified under Bun (storage tests on a real db)
+- [x] napi (blake3-napi) + FUSE natives load, or wasm fallbacks engage —
+      `bin/talon-fusefs.node` mounts `~/.talon/ns` under bun; blake3 media
+      dedup runs on the napi addon
+- [x] pino file transport + pretty stream behave
 - [ ] grammY long-poll + GramJS soak (24h shadow instance) — no fd/RSS creep
-- [ ] `_mcp-launch` supervisor re-exec works under `process.execPath` = bun
-- [ ] Update packaging (nfpm, Docker) to ship bun; keep `npm run start:node`
-      as a fallback entrypoint for one release cycle
+- [x] `_mcp-launch` supervisor re-exec works under `process.execPath` = bun —
+      live daemon supervises python, node, and bun MCP children
+- [ ] Update packaging (nfpm, Docker) to ship bun. nfpm already ships the
+      `bun build --compile` binary with no Node dependency; the Dockerfile is
+      still `node:24-slim` + tsx. Keep `npm run start:node` as a fallback
+      entrypoint for one release cycle.
 
 **Exit:** daemon runs on Bun in production for 2 weeks with boot/RSS
 deltas recorded here. This phase alone may deliver most of the felt win.
+
+**Soak log**
+
+| Elapsed | RSS    | heapUsed | fds | errors | Notes                                    |
+| ------- | ------ | -------- | --- | ------ | ---------------------------------------- |
+| 19.9h   | 148 MB | 108 MB   | 157 | 0      | telegram + whatsapp + native, 34 hub sessions, 105 sessions |
+
+One sample is not a trend — the soak box stays open until there are
+readings far enough apart to tell warm-up from creep.
 
 ### Phase 2 — Harden the seams (still 100% JS)
 

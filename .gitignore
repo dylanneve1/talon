@@ -6,6 +6,15 @@ workspace/
 .env
 coverage/
 .stryker-tmp/
+
+# Python bytecode + tool caches. The only Python in the tree is a couple
+# of companion image/entitlement helpers; their build products are never
+# artifacts of record. A stray scripts/__pycache__/*.pyc rode in on an
+# unrelated PR once, so this is a guard rather than housekeeping.
+__pycache__/
+*.pyc
+.ruff_cache/
+
 # Compiled binaries
 talon-bin
 talon-bun

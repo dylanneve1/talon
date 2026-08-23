@@ -37,7 +37,7 @@ capabilities.ts   Frontend (runtime contract: init/start/stop, context,
 registry.ts       id → FrontendDescriptor map + chat-id resolution.
                   Self-contained: create functions are stored opaquely
                   so routing-only consumers never import engine types.
-builtins.ts       The five built-in descriptors (identity only — no
+builtins.ts       The six built-in descriptors (identity only — no
                   frontend implementation is imported from core).
 create.ts         The typed create seam: attachFrontendCreate,
                   registerFrontend (plugin path), createFrontendById.
