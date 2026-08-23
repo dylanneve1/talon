@@ -253,8 +253,9 @@ const whatsappConfigSchema = z
      */
     respondMode: z.enum(["mention", "all"]).default("mention"),
     /**
-     * Pair by phone-number code instead of QR: the account's number in
-     * E.164 digits without the plus (e.g. "353871234567"). Omit for QR.
+     * The account's own number in E.164 digits without the plus (e.g.
+     * "353871234567"). When set, on-demand pairing (/whatsapp pair)
+     * offers a phone-number code alongside the QR.
      */
     pairingNumber: z.string().optional(),
     /** Mark handled inbound messages as read (blue ticks). */

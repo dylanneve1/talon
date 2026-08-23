@@ -4,7 +4,7 @@
  * Prints the QR in this terminal; exits 0 once the session is open
  * and creds are flushed.
  */
-import { rmSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
@@ -16,7 +16,7 @@ const AUTH_DIR = `${process.env.HOME}/.talon/whatsapp-auth`;
 // Fresh start: any half-paired keypair from the loop would 401 instantly.
 rmSync(AUTH_DIR, { recursive: true, force: true });
 
-const logger = pino({ level: "silent" });
+const logger = pino({ level: "debug" }, pino.destination("/tmp/claude-1000/wa-pair-debug.log"));
 
 async function connect(): Promise<void> {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
@@ -32,9 +32,12 @@ async function connect(): Promise<void> {
       if (qr) {
         console.log("\n=== Scan with the BOT phone: WhatsApp -> Linked devices -> Link a device ===\n");
         qrcode.generate(qr, { small: true });
+        // Raw payload for the web renderer (artifact page).
+        writeFileSync("/tmp/claude-1000/wa-qr-current.txt", qr);
       }
       if (connection === "open") {
         console.log(`\nPAIRED as ${sock.user?.id ?? "?"} (${sock.user?.name ?? "no name"})`);
+        writeFileSync("/tmp/claude-1000/wa-qr-current.txt", "PAIRED");
         // Give the key-store writes a moment to land, then close cleanly.
         setTimeout(() => {
           try { sock.end(undefined); } catch { /* closed */ }

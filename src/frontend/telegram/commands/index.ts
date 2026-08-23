@@ -22,6 +22,7 @@ import { registerInfoCommands } from "./info.js";
 import { registerSessionCommands } from "./session.js";
 import { registerSettingsCommands } from "./settings.js";
 import { registerAdminCommands } from "./admin.js";
+import { registerWhatsAppPairingCommand } from "./whatsapp-pairing.js";
 
 export { TELEGRAM_COMMANDS, telegramCommandMenu } from "./definitions.js";
 export { setAdminUserId } from "./state.js";
@@ -36,4 +37,5 @@ export function registerCommands(
   registerSessionCommands(bot, deps);
   registerSettingsCommands(bot, deps);
   registerAdminCommands(bot, deps);
+  registerWhatsAppPairingCommand(bot);
 }

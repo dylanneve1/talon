@@ -15,6 +15,8 @@
  */
 
 import { rmSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { resolve as resolvePath } from "node:path";
 import makeWASocket, {
   isJidGroup,
   type WAMessage,
@@ -51,14 +53,13 @@ import {
   seedMessageStore,
 } from "./message-store.js";
 import { runTurnWithRecovery, shouldReplyToCatchUp } from "./turn-recovery.js";
-import {
-  classifyClose,
-  nextPairingDelayMs,
-  REPLACED_BACKOFF_MS,
-  shouldNotifyPairingCode,
-} from "./pairing.js";
+import { classifyClose, REPLACED_BACKOFF_MS } from "./pairing.js";
+import { isManualPairingActive, onPairingComplete } from "./pairing-lock.js";
 import { flushAuthWrites, useAtomicAuthState } from "./auth-state.js";
+import { makeWaLogger } from "./wa-logger.js";
 import { notifyAdmin } from "../../core/notify.js";
+import { registerPairingProvider } from "../../core/pairing-broker.js";
+import { beginPairingAttempt } from "./pairing-service.js";
 import {
   lookupWhatsAppChat,
   registerWhatsAppChat,
@@ -113,32 +114,6 @@ function extractText(msg: WAMessage): string {
   );
 }
 
-/**
- * Baileys logs through its own pino instance, far too chatty for a daemon
- * that already has structured logging. Bridge warn+ into Talon's log and
- * drop the rest. The shape is pino's minimal logger contract.
- */
-function makeWaLogger(): never {
-  const fmt = (args: unknown[]): string =>
-    args
-      .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
-      .join(" ")
-      .slice(0, 300);
-  const shim = {
-    level: "warn",
-    child: () => shim,
-    trace: () => {},
-    debug: () => {},
-    info: () => {},
-    warn: (...args: unknown[]) => logWarn("whatsapp", `baileys: ${fmt(args)}`),
-    error: (...args: unknown[]) =>
-      logError("whatsapp", `baileys: ${fmt(args)}`),
-    fatal: (...args: unknown[]) =>
-      logError("whatsapp", `baileys: ${fmt(args)}`),
-  };
-  return shim as never;
-}
-
 // ── Frontend factory ─────────────────────────────────────────────────────────
 
 export function createWhatsAppFrontend(
@@ -160,11 +135,8 @@ export function createWhatsAppFrontend(
   let sock: WASocket | null = null;
   let stopping = false;
   let reconnectDelay = RECONNECT_BASE_MS;
-  /** Consecutive failed pairing cycles since the last successful open. */
-  let failedPairingCycles = 0;
-  /** Codes issued this outage — throttles the admin notifications. */
-  let pairingCodesIssued = 0;
-  let lastPairingNotifyAt: number | undefined;
+  /** One "not linked" admin note per outage, not one per QR window. */
+  let unpairedNotified = false;
   /** Our own ids (phone and LID), once connected — for mention detection. */
   let selfIds: string[] = [];
 
@@ -436,7 +408,9 @@ export function createWhatsAppFrontend(
   }
 
   /** One socket lifetime. Resolves with what the caller should do next. */
-  async function connectOnce(): Promise<"reconnect" | "logged-out" | "stop"> {
+  async function connectOnce(): Promise<
+    "reconnect" | "logged-out" | "unpaired" | "stop"
+  > {
     // Atomic replacement for Baileys' useMultiFileAuthState — same disk
     // format, torn-write-proof (see auth-state.ts for why that matters).
     const { state, saveCreds } = await useAtomicAuthState(dirs.whatsappAuth);
@@ -481,54 +455,28 @@ export function createWhatsAppFrontend(
       }
     });
 
-    let pairingRequested = false;
     return new Promise((resolve) => {
       socket.ev.on("connection.update", (update) => {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr && !state.creds.registered) {
-          if (settings.pairingNumber && !pairingRequested) {
-            pairingRequested = true;
-            socket
-              .requestPairingCode(bareId(settings.pairingNumber))
-              .then((code) => {
-                log(
-                  "whatsapp",
-                  `Pairing code: ${code} — enter it on ${settings.pairingNumber} ` +
-                    `via WhatsApp → Linked devices → Link with phone number`,
-                );
-                // The daemon log is where pairing codes go to die — the
-                // human who has to type this is on another frontend.
-                pairingCodesIssued++;
-                if (
-                  shouldNotifyPairingCode(
-                    pairingCodesIssued,
-                    lastPairingNotifyAt,
-                  )
-                ) {
-                  lastPairingNotifyAt = Date.now();
-                  void notifyAdmin(
-                    `📱 WhatsApp needs re-pairing.\n` +
-                      `Code: ${code}\n` +
-                      `On the phone with ${settings.pairingNumber}: WhatsApp → ` +
-                      `Linked devices → Link with phone number.\n` +
-                      `Valid for a few minutes; if it expires, the next code ` +
-                      `arrives automatically.`,
-                  );
-                }
-              })
-              .catch((err) =>
-                logError(
-                  "whatsapp",
-                  `Pairing code request failed: ${err instanceof Error ? err.message : err}`,
-                ),
-              );
-          } else if (!settings.pairingNumber) {
-            log(
-              "whatsapp",
-              "Scan with WhatsApp → Linked devices → Link a device:",
+          // The frontend NEVER requests pairing codes on its own — that
+          // loop once burned ~30 codes in 80 minutes and rate-limited
+          // the account. Pairing is on demand via /whatsapp pair
+          // (core/pairing-broker.ts). The terminal QR stays for
+          // foreground first-run setups without a Telegram admin.
+          log(
+            "whatsapp",
+            "Not linked — pair on demand with /whatsapp pair (Telegram), " +
+              "or scan below: WhatsApp → Linked devices → Link a device",
+          );
+          qrcode.generate(qr, { small: true });
+          if (!unpairedNotified) {
+            unpairedNotified = true;
+            void notifyAdmin(
+              "📱 WhatsApp is not linked. Send /whatsapp pair when you're " +
+                "ready and I'll reply with a QR to scan.",
             );
-            qrcode.generate(qr, { small: true });
           }
         }
 
@@ -538,12 +486,10 @@ export function createWhatsAppFrontend(
             .filter((id): id is string => Boolean(id))
             .map(bareId);
           reconnectDelay = RECONNECT_BASE_MS;
-          if (pairingCodesIssued > 0) {
-            void notifyAdmin("✅ WhatsApp re-linked and connected.");
+          if (unpairedNotified) {
+            void notifyAdmin("✅ WhatsApp linked and connected.");
           }
-          failedPairingCycles = 0;
-          pairingCodesIssued = 0;
-          lastPairingNotifyAt = undefined;
+          unpairedNotified = false;
           log(
             "whatsapp",
             `Connected as ${socket.user?.name ?? "?"} (${selfIds.join("/") || "?"})`,
@@ -581,6 +527,11 @@ export function createWhatsAppFrontend(
             case "logged-out":
               return resolve("logged-out");
             default:
+              // A socket that died without ever registering is a pairing
+              // window that expired — reconnecting would just open QR
+              // session after QR session against WhatsApp's servers.
+              // Park instead; /whatsapp pair opens the next one.
+              if (!state.creds.registered) return resolve("unpaired");
               log(
                 "whatsapp",
                 `Connection closed (code ${code ?? "?"}) — reconnecting`,
@@ -590,6 +541,40 @@ export function createWhatsAppFrontend(
         }
       });
     });
+  }
+
+  /**
+   * Wait until a manual pairing completes (event from pairing-lock) or
+   * registered creds appear on disk, polling slowly. Resolves promptly
+   * when the frontend is stopping.
+   */
+  async function parkUntilPaired(): Promise<void> {
+    while (!stopping) {
+      if (!isManualPairingActive()) {
+        try {
+          const raw = await readFile(
+            resolvePath(dirs.whatsappAuth, "creds.json"),
+            "utf-8",
+          );
+          if ((JSON.parse(raw) as { registered?: boolean }).registered) return;
+        } catch {
+          /* no creds yet — stay parked */
+        }
+      }
+      const paired = await new Promise<boolean>((r) => {
+        const off = onPairingComplete(() => {
+          clearTimeout(timer);
+          off();
+          r(true);
+        });
+        const timer = setTimeout(() => {
+          off();
+          r(false);
+        }, 30_000);
+        timer.unref?.();
+      });
+      if (paired) return;
+    }
   }
 
   return {
@@ -620,6 +605,13 @@ export function createWhatsAppFrontend(
 
     async init() {
       setWhatsAppBotName(config.botDisplayName);
+      // On-demand pairing, driven from another frontend's admin command
+      // (/whatsapp pair on Telegram) through the core broker.
+      registerPairingProvider({
+        label: "WhatsApp",
+        isLinked: () => Boolean(sock?.user),
+        begin: () => beginPairingAttempt(settings.pairingNumber),
+      });
       // The in-memory message-id counter restarts at its base every boot,
       // but history persists — seed it past what the table already holds
       // so post-restart messages don't re-issue ids INSERT OR IGNORE then
@@ -636,7 +628,13 @@ export function createWhatsAppFrontend(
     async start() {
       log("whatsapp", "WhatsApp frontend starting (Baileys multi-device)");
       while (!stopping) {
-        let outcome: "reconnect" | "logged-out" | "stop";
+        // A manual pairing attempt owns the auth dir: two sockets on one
+        // keypair corrupt it and burn rate-limited pairing attempts.
+        if (isManualPairingActive()) {
+          await new Promise((r) => setTimeout(r, 5_000));
+          continue;
+        }
+        let outcome: "reconnect" | "logged-out" | "unpaired" | "stop";
         try {
           outcome = await connectOnce();
         } catch (err) {
@@ -650,33 +648,29 @@ export function createWhatsAppFrontend(
         if (outcome === "stop" || stopping) break;
         if (outcome === "logged-out") {
           // These credentials are dead — WhatsApp unlinked the device.
-          // Wipe them so the next attempt pairs fresh instead of looping
-          // on a session that can never authenticate.
+          // Wipe them and PARK. Re-pairing needs a human holding the
+          // phone, so it happens strictly on demand (Telegram's
+          // `/whatsapp pair`) — every automatic retry policy tried here,
+          // including a 30-minute backoff ladder, still burned codes
+          // against WhatsApp's rate limit until scans failed with
+          // "couldn't connect device" for everyone.
           logWarn(
             "whatsapp",
-            "Logged out by WhatsApp — clearing auth state, re-pairing",
+            "Logged out by WhatsApp — parked until /whatsapp pair re-links",
           );
-          if (failedPairingCycles === 0 && pairingCodesIssued === 0) {
-            void notifyAdmin(
-              "⚠️ WhatsApp unlinked this device (logged out). " +
-                "Re-pairing — a pairing code follows.",
-            );
-          }
+          void notifyAdmin(
+            "⚠️ WhatsApp unlinked this device. When you're ready to " +
+              "re-link, send /whatsapp pair and scan the QR I reply with. " +
+              "Nothing is retried until then.",
+          );
           rmSync(dirs.whatsappAuth, { recursive: true, force: true });
-          // Pairing needs a HUMAN to type a code, so this is not a
-          // network-blip backoff: retry quickly once, then space cycles
-          // out (5→10→20→30-min cap). The old immediate loop burned a
-          // fresh code every ~2½ minutes forever — each invalidating the
-          // last, at exactly the cadence WhatsApp rate-limits.
-          failedPairingCycles++;
-          const pairingDelay = nextPairingDelayMs(failedPairingCycles - 1);
-          if (pairingDelay > 0) {
-            log(
-              "whatsapp",
-              `Next pairing attempt in ${Math.round(pairingDelay / 60_000)}m`,
-            );
-            await new Promise((r) => setTimeout(r, pairingDelay));
-          }
+          await parkUntilPaired();
+          reconnectDelay = RECONNECT_BASE_MS;
+          continue;
+        }
+        if (outcome === "unpaired") {
+          log("whatsapp", "Not paired — parked until /whatsapp pair links");
+          await parkUntilPaired();
           reconnectDelay = RECONNECT_BASE_MS;
           continue;
         }
@@ -688,6 +682,7 @@ export function createWhatsAppFrontend(
 
     async stop() {
       stopping = true;
+      registerPairingProvider(null);
       try {
         sock?.end(undefined);
       } catch {

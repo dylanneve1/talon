@@ -29,6 +29,7 @@ export const TELEGRAM_COMMANDS: ReadonlyArray<{
   { command: "stop", description: "Stop the current response" },
   { command: "reset", description: "Clear session and start fresh" },
   { command: "restart", description: "Restart the bot (admin)" },
+  { command: "whatsapp", description: "WhatsApp link status / pair (admin)" },
   { command: "usage", description: "Plan limits across every backend" },
   { command: "metrics", description: "Aggregate performance metrics" },
   {
