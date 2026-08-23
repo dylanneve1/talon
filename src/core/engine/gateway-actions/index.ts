@@ -32,7 +32,10 @@ import { scriptHandlers } from "./scripts.js";
 import { skillHandlers } from "./skills.js";
 import { pluginHandlers } from "./plugins.js";
 import { modelHandlers } from "./models.js";
-import { meshHandlers, chatFreeActions as meshChatFreeActions } from "./mesh.js";
+import {
+  meshHandlers,
+  chatFreeActions as meshChatFreeActions,
+} from "./mesh.js";
 import { crossSendHandlers, crossSendChatFreeActions } from "./cross-send.js";
 import { nativeHandlers } from "./native.js";
 
