@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.25.2](https://github.com/dylanneve1/talon/compare/v3.25.1...v3.25.2) (2026-08-23)
+
+
+### Bug Fixes
+
+* **cli:** stop `talon setup` destroying config it never prompts for ([#779](https://github.com/dylanneve1/talon/issues/779)) ([7f396aa](https://github.com/dylanneve1/talon/commit/7f396aad629193048185e67528f0f15903c07dbe))
+
 ## [3.25.1](https://github.com/dylanneve1/talon/compare/v3.25.0...v3.25.1) (2026-08-23)
 
 
