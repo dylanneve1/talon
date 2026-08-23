@@ -39,6 +39,7 @@ export async function notifyAdmin(text: string): Promise<boolean> {
   }
   try {
     await deliver(text);
+    log("notify", `Admin notified: ${text.slice(0, 80).replace(/\n/g, " ")}`);
     return true;
   } catch (err) {
     log(
