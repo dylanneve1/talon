@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.27.0](https://github.com/dylanneve1/talon/compare/v3.26.0...v3.27.0) (2026-08-23)
+
+
+### Features
+
+* **whatsapp:** pair on demand from Telegram — /whatsapp sends the QR and code ([#786](https://github.com/dylanneve1/talon/issues/786)) ([618ded2](https://github.com/dylanneve1/talon/commit/618ded26faa6219d99bcb3c8d4c62def612a44ad))
+
 ## [3.26.0](https://github.com/dylanneve1/talon/compare/v3.25.3...v3.26.0) (2026-08-23)
 
 
