@@ -27,6 +27,7 @@ import { appendToJournal } from "./storage/journal.js";
 import { initPulse, resetPulseTimer } from "./core/background/pulse.js";
 import { initCron } from "./core/background/cron.js";
 import { initPlanAlerts } from "./core/background/plan-alerts.js";
+import { setAdminNotifier } from "./core/notify.js";
 import {
   initTriggers,
   resumeAfterRestart as resumeTriggersAfterRestart,
@@ -441,6 +442,22 @@ export async function initBackendAndDispatcher(
       config.planAlertChatId ??
       (config.adminUserId ? String(config.adminUserId) : undefined),
   });
+
+  // Admin notification seam (core/notify.ts) — how a subsystem reaches
+  // the operator when its own channel is the thing that is broken (the
+  // first consumer is WhatsApp pairing: codes must travel over a LIVE
+  // frontend, not the dead one's log). Same delivery route as the plan
+  // alerts above.
+  if (config.adminUserId) {
+    const adminChatId = config.adminUserId;
+    setAdminNotifier(async (text: string) =>
+      resolveFrontendByNumericId(
+        adminChatId,
+        String(adminChatId),
+        frontends,
+      ).sendMessage(adminChatId, text),
+    );
+  }
 
   // Soul — initialize the identity kernel singleton from config so the prompt
   // injection / dream hooks see the right enabled state. Off by default; a
