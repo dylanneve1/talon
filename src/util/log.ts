@@ -28,6 +28,7 @@ export type LogComponent =
   | "journal"
   | "kv"
   | "media"
+  | "notify"
   | "agent"
   | "pulse"
   | "userbot"

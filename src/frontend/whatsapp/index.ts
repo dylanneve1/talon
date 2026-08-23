@@ -53,6 +53,8 @@ import {
   seedMessageStore,
 } from "./message-store.js";
 import { runTurnWithRecovery, shouldReplyToCatchUp } from "./turn-recovery.js";
+import { nextPairingDelayMs, shouldNotifyPairingCode } from "./pairing.js";
+import { notifyAdmin } from "../../core/notify.js";
 import {
   lookupWhatsAppChat,
   registerWhatsAppChat,
@@ -154,6 +156,11 @@ export function createWhatsAppFrontend(
   let sock: WASocket | null = null;
   let stopping = false;
   let reconnectDelay = RECONNECT_BASE_MS;
+  /** Consecutive failed pairing cycles since the last successful open. */
+  let failedPairingCycles = 0;
+  /** Codes issued this outage — throttles the admin notifications. */
+  let pairingCodesIssued = 0;
+  let lastPairingNotifyAt: number | undefined;
   /** Our own ids (phone and LID), once connected — for mention detection. */
   let selfIds: string[] = [];
 
@@ -433,6 +440,11 @@ export function createWhatsAppFrontend(
       markOnlineOnConnect: false,
       // The account is a bot: announcing "online" would suppress the
       // phone's own notifications for the human who owns the number.
+      //
+      // 120s per QR/pairing ref — the default (60s + 20s refreshes) gave
+      // a ~2½-minute socket lifetime in pairing mode, shorter than it
+      // takes a human to pick up their phone and type the code.
+      qrTimeout: 120_000,
     });
     sock = socket;
     socket.ev.on("creds.update", saveCreds);
@@ -468,13 +480,32 @@ export function createWhatsAppFrontend(
             pairingRequested = true;
             socket
               .requestPairingCode(bareId(settings.pairingNumber))
-              .then((code) =>
+              .then((code) => {
                 log(
                   "whatsapp",
                   `Pairing code: ${code} — enter it on ${settings.pairingNumber} ` +
                     `via WhatsApp → Linked devices → Link with phone number`,
-                ),
-              )
+                );
+                // The daemon log is where pairing codes go to die — the
+                // human who has to type this is on another frontend.
+                pairingCodesIssued++;
+                if (
+                  shouldNotifyPairingCode(
+                    pairingCodesIssued,
+                    lastPairingNotifyAt,
+                  )
+                ) {
+                  lastPairingNotifyAt = Date.now();
+                  void notifyAdmin(
+                    `📱 WhatsApp needs re-pairing.\n` +
+                      `Code: ${code}\n` +
+                      `On the phone with ${settings.pairingNumber}: WhatsApp → ` +
+                      `Linked devices → Link with phone number.\n` +
+                      `Valid for a few minutes; if it expires, the next code ` +
+                      `arrives automatically.`,
+                  );
+                }
+              })
               .catch((err) =>
                 logError(
                   "whatsapp",
@@ -496,6 +527,12 @@ export function createWhatsAppFrontend(
             .filter((id): id is string => Boolean(id))
             .map(bareId);
           reconnectDelay = RECONNECT_BASE_MS;
+          if (pairingCodesIssued > 0) {
+            void notifyAdmin("✅ WhatsApp re-linked and connected.");
+          }
+          failedPairingCycles = 0;
+          pairingCodesIssued = 0;
+          lastPairingNotifyAt = undefined;
           log(
             "whatsapp",
             `Connected as ${socket.user?.name ?? "?"} (${selfIds.join("/") || "?"})`,
@@ -583,8 +620,29 @@ export function createWhatsAppFrontend(
             "whatsapp",
             "Logged out by WhatsApp — clearing auth state, re-pairing",
           );
+          if (failedPairingCycles === 0 && pairingCodesIssued === 0) {
+            void notifyAdmin(
+              "⚠️ WhatsApp unlinked this device (logged out). " +
+                "Re-pairing — a pairing code follows.",
+            );
+          }
           rmSync(dirs.whatsappAuth, { recursive: true, force: true });
+          // Pairing needs a HUMAN to type a code, so this is not a
+          // network-blip backoff: retry quickly once, then space cycles
+          // out (5→10→20→30-min cap). The old immediate loop burned a
+          // fresh code every ~2½ minutes forever — each invalidating the
+          // last, at exactly the cadence WhatsApp rate-limits.
+          failedPairingCycles++;
+          const pairingDelay = nextPairingDelayMs(failedPairingCycles - 1);
+          if (pairingDelay > 0) {
+            log(
+              "whatsapp",
+              `Next pairing attempt in ${Math.round(pairingDelay / 60_000)}m`,
+            );
+            await new Promise((r) => setTimeout(r, pairingDelay));
+          }
           reconnectDelay = RECONNECT_BASE_MS;
+          continue;
         }
         await new Promise((r) => setTimeout(r, reconnectDelay));
         reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
