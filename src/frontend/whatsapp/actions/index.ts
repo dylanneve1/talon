@@ -19,7 +19,11 @@
 import type { WASocket } from "baileys";
 import type { Gateway } from "../../../core/engine/gateway.js";
 import type { ActionResult } from "../../../core/types.js";
-import { lookupWhatsAppChat } from "../registry.js";
+import {
+  lookupWhatsAppChat,
+  resolveWhatsAppTarget,
+  type WhatsAppChatInfo,
+} from "../registry.js";
 import { chatInfoHandlers } from "./chat-info.js";
 import { mediaHandlers } from "./media.js";
 import { messagingHandlers } from "./messaging.js";
@@ -57,7 +61,26 @@ export function createWhatsAppActionHandler(
       return { ok: false, error: "WhatsApp socket is not connected" };
     }
 
-    const chat = lookupWhatsAppChat(chatId) ?? null;
+    // An explicit cross-send target (send_via) names the destination
+    // itself — phone number, wa_* id, or JID — and may be a chat this
+    // process has never seen; resolveWhatsAppTarget registers it so the
+    // usual numeric-id routing works from then on. Without a target,
+    // the gateway's numeric chatId (an active chat) is the destination.
+    let chat: WhatsAppChatInfo | null;
+    if (body.target !== undefined) {
+      chat = resolveWhatsAppTarget(body.target) ?? null;
+      if (!chat) {
+        return {
+          ok: false,
+          error:
+            `Unresolvable WhatsApp target "${String(body.target)}" — use a ` +
+            `phone number with country code, a wa_dm_/wa_group_ id, or a ` +
+            `known chat id.`,
+        };
+      }
+    } else {
+      chat = lookupWhatsAppChat(chatId) ?? null;
+    }
     if (!chat && !CHATLESS_ACTIONS.has(action)) {
       return {
         ok: false,
