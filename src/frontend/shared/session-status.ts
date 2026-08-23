@@ -44,6 +44,7 @@ import { formatDuration } from "./format.js";
 export async function performSessionReset(
   chatId: string,
   backend: Backend | null | undefined,
+  opts: { keepHistory?: boolean } = {},
 ): Promise<void> {
   const info = getSessionInfo(chatId);
   if (info.turns > 0) {
@@ -59,7 +60,12 @@ export async function performSessionReset(
     );
   }
   resetSession(chatId);
-  clearHistory(chatId);
+  // Frontends whose platform keeps the real chat record (Telegram,
+  // Discord) clear the local mirror too — the platform still has
+  // everything. WhatsApp passes keepHistory: the local store is the ONLY
+  // record there, and wiping it on /reset would destroy exactly what the
+  // continuity tools (read/search_chat_history) exist to recover.
+  if (!opts.keepHistory) clearHistory(chatId);
   resetPulseCheckpoint(chatId);
   backend?.sessions?.resetChat?.(chatId);
   await backend?.sessions?.warmSession?.(chatId);

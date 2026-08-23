@@ -5,6 +5,8 @@
 
 import {
   getRecentFormatted,
+  getFormattedBefore,
+  getFormattedBeforeTime,
   searchHistory,
   getMessagesByUser,
   getKnownUsers,
@@ -15,7 +17,23 @@ import type { SharedActionHandlers } from "./types.js";
 export const historyHandlers: SharedActionHandlers = {
   read_history: (body, chatId) => {
     const limit = Math.min(100, Number(body.limit ?? 30));
-    return { ok: true, text: getRecentFormatted(String(chatId), limit) };
+    const cid = String(chatId);
+    // The tool schema advertises `offset_id` and `before` for paging back;
+    // this fallback used to ignore both and hand back the same newest
+    // window no matter what the model asked, so "go further back" was a
+    // silent no-op on frontends without a platform history API (WhatsApp,
+    // native).
+    const offsetId = Number(body.offset_id);
+    if (Number.isFinite(offsetId) && offsetId > 0) {
+      return { ok: true, text: getFormattedBefore(cid, offsetId, limit) };
+    }
+    if (body.before !== undefined) {
+      const ts = Date.parse(String(body.before));
+      if (Number.isFinite(ts)) {
+        return { ok: true, text: getFormattedBeforeTime(cid, ts, limit) };
+      }
+    }
+    return { ok: true, text: getRecentFormatted(cid, limit) };
   },
 
   search_history: (body, chatId) => {

@@ -33,12 +33,10 @@ import { toolInputToRecord } from "../../core/agent-runtime/events.js";
 import { resolveChatBackend } from "../../core/engine/backend-controller/index.js";
 import { performSessionReset } from "../shared/session-status.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
-import { pushMessage } from "../../storage/history.js";
+import { pushMessage, maxMsgIdForChatPrefix } from "../../storage/history.js";
 import {
-  recordError,
   recordMessageProcessed,
   recordMessageReceived,
-  recordMessageSettled,
 } from "../../util/watchdog.js";
 import { createWhatsAppActionHandler } from "./actions/index.js";
 import {
@@ -47,9 +45,14 @@ import {
   identityAllowed,
   resolveIdentity,
 } from "./identity.js";
-import { sendText } from "./actions/shared.js";
+import { sendText, setWhatsAppBotName } from "./actions/shared.js";
 import { saveInboundMedia } from "./media-store.js";
-import { lookupByWaId, rememberMessage } from "./message-store.js";
+import {
+  lookupByWaId,
+  rememberMessage,
+  seedMessageStore,
+} from "./message-store.js";
+import { runTurnWithRecovery } from "./turn-recovery.js";
 import {
   lookupWhatsAppChat,
   registerWhatsAppChat,
@@ -295,6 +298,9 @@ export function createWhatsAppFrontend(
       await performSessionReset(
         chat.chatId,
         resolveChatBackend(chat.chatId, gateway.backend),
+        // The local history store is WhatsApp's only chat record — a
+        // reset clears the model's session, not the conversation log.
+        { keepHistory: true },
       );
       log("whatsapp", `Session reset by ${senderName}`);
       if (sock) {
@@ -310,7 +316,7 @@ export function createWhatsAppFrontend(
         await sendText(
           { sock, gateway },
           chat,
-          "*Commands*\n/reset — clear session & history\n/help — this message",
+          "*Commands*\n/reset — start a fresh session (chat log kept)\n/help — this message",
         ).catch(() => {});
       }
       recordMessageProcessed();
@@ -334,8 +340,8 @@ export function createWhatsAppFrontend(
       : "";
     const prompt = `[${senderName}] msg_id:${msgId}: ${text}${mediaNote}`;
 
-    try {
-      await execute({
+    const runTurn = () =>
+      execute({
         chatId: chat.chatId,
         numericChatId: chat.numericChatId,
         prompt,
@@ -374,13 +380,23 @@ export function createWhatsAppFrontend(
           }
         },
       });
-      recordMessageProcessed();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logError("whatsapp", `[${chat.chatId}] execute failed: ${message}`);
-      recordError(message);
-      recordMessageSettled();
-    }
+
+    await runTurnWithRecovery({
+      chatId: chat.chatId,
+      senderName,
+      runTurn,
+      sendErrorText: async (text) => {
+        if (!sock) return;
+        try {
+          await sendText({ sock, gateway }, chat, text);
+        } catch (sendErr) {
+          logError(
+            "whatsapp",
+            `error delivery failed: ${sendErr instanceof Error ? sendErr.message : sendErr}`,
+          );
+        }
+      },
+    });
   }
 
   /** One socket lifetime. Resolves with what the caller should do next. */
@@ -498,6 +514,12 @@ export function createWhatsAppFrontend(
     getBridgePort: () => gateway.getPort(),
 
     async init() {
+      setWhatsAppBotName(config.botDisplayName);
+      // The in-memory message-id counter restarts at its base every boot,
+      // but history persists — seed it past what the table already holds
+      // so post-restart messages don't re-issue ids INSERT OR IGNORE then
+      // silently drops (chat ids all start with "wa_").
+      seedMessageStore((maxMsgIdForChatPrefix("wa_") ?? 0) + 1);
       gateway.registerFrontendHandler(
         "whatsapp",
         createWhatsAppActionHandler(() => sock, gateway),
