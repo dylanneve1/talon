@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.25.1](https://github.com/dylanneve1/talon/compare/v3.25.0...v3.25.1) (2026-08-23)
+
+
+### Miscellaneous Chores
+
+* refresh README and remove files added by accident ([#777](https://github.com/dylanneve1/talon/issues/777)) ([607502a](https://github.com/dylanneve1/talon/commit/607502a2fbddda4051ba2a83e5c9d001e5ce4f0c))
+
 ## [3.25.0](https://github.com/dylanneve1/talon/compare/v3.24.1...v3.25.0) (2026-08-22)
 
 
