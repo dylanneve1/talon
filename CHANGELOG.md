@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.28.0](https://github.com/dylanneve1/talon/compare/v3.27.0...v3.28.0) (2026-08-23)
+
+
+### Features
+
+* **tools:** cross-frontend send — message any enabled frontend from any session ([#789](https://github.com/dylanneve1/talon/issues/789)) ([2a25fd7](https://github.com/dylanneve1/talon/commit/2a25fd7b82dd0c7f2739e050cc76dd58d2703399))
+
+
+### Continuous Integration
+
+* stop lockfile drift at its source — engine floors and a canonical-lock gate ([#787](https://github.com/dylanneve1/talon/issues/787)) ([fa47cde](https://github.com/dylanneve1/talon/commit/fa47cde9fd4f8e0f93966de5d1b6115bdce6d84c))
+
 ## [3.27.0](https://github.com/dylanneve1/talon/compare/v3.26.0...v3.27.0) (2026-08-23)
 
 
