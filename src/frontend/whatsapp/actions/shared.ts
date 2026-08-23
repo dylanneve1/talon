@@ -12,6 +12,7 @@ import { log, logError } from "../../../util/log.js";
 import type { ActionResult } from "../../../core/types.js";
 import { toWhatsAppChunks } from "../formatting.js";
 import { lookupMessage, rememberMessage } from "../message-store.js";
+import { pushMessage, type HistoryMessage } from "../../../storage/history.js";
 import type { WhatsAppChatInfo } from "../registry.js";
 
 /** WhatsApp's own ceiling for a media upload. */
@@ -129,6 +130,40 @@ export function resolveQuoted(
 }
 
 /**
+ * How the bot signs its own rows in persistent history. Set once at
+ * frontend start from `config.botDisplayName`; the 0 sender id is the
+ * cross-frontend "this is the assistant" convention (native/protocol.ts).
+ */
+let botName = "Talon";
+export function setWhatsAppBotName(name: string): void {
+  if (name.trim()) botName = name.trim();
+}
+
+/**
+ * History labels for outbound media, in HistoryMessage's closed
+ * vocabulary. Payloads with no file analogue (polls, locations, contact
+ * cards) return a text marker instead via `outboundTextMarker`.
+ */
+function outboundMediaType(
+  content: AnyMessageContent,
+): NonNullable<HistoryMessage["mediaType"]> | undefined {
+  if ("image" in content) return "photo";
+  if ("video" in content) return content.gifPlayback ? "animation" : "video";
+  if ("audio" in content) return "voice";
+  if ("sticker" in content) return "sticker";
+  if ("document" in content) return "document";
+  return undefined;
+}
+
+/** A readable stand-in for captionless payloads history can't type. */
+function outboundTextMarker(content: AnyMessageContent): string {
+  if ("poll" in content) return `[poll: ${content.poll.name}]`;
+  if ("location" in content) return "[location]";
+  if ("contacts" in content) return "[contact card]";
+  return "";
+}
+
+/**
  * Send one content payload, remember the resulting message so later
  * tool calls can address it, and report its Talon numeric id.
  */
@@ -141,13 +176,35 @@ export async function sendContent(
   const sent = await ctx.sock.sendMessage(chat.jid, content, options);
   ctx.gateway.incrementMessages(chat.numericChatId);
   if (!sent?.key) return { ok: true };
+  const text =
+    "text" in content
+      ? String(content.text ?? "")
+      : "caption" in content && content.caption
+        ? String(content.caption)
+        : outboundTextMarker(content);
   const msgId = rememberMessage({
     key: sent.key,
     chatId: chat.chatId,
     message: sent,
-    text: "text" in content ? String(content.text ?? "") : "",
+    text,
     senderName: "bot",
   });
+  // Persist the bot's side of the conversation. Without this the history
+  // store held only inbound messages, so read_chat_history showed a
+  // one-sided chat and search_chat_history could never find anything the
+  // bot itself had said — exactly the messages a fresh session needs when
+  // reconstructing context after a reset or restart.
+  const mediaType = outboundMediaType(content);
+  if (text || mediaType) {
+    pushMessage(chat.chatId, {
+      msgId,
+      senderId: 0,
+      senderName: botName,
+      text,
+      timestamp: Date.now(),
+      ...(mediaType ? { mediaType } : {}),
+    });
+  }
   return { ok: true, message_id: msgId };
 }
 

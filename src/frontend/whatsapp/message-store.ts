@@ -41,6 +41,22 @@ const ID_BASE = 1_000_000;
 const MAX_TRACKED = 2_000;
 
 let nextId = ID_BASE;
+
+/**
+ * Raise the id counter past what persistent history already holds.
+ *
+ * The counter is in-memory and restarts at ID_BASE every boot, but the
+ * ids it hands out are also the `msg_id`s written to the history table,
+ * where `INSERT OR IGNORE` + UNIQUE(chat_id, msg_id) dedupes. Without
+ * this seed, the first messages after a daemon restart re-issue ids the
+ * previous run already used — the IGNORE then silently drops them from
+ * history, and a reaction/reply addressed at an old id from history hits
+ * whatever new message reused the number. Called at frontend start with
+ * max(msg_id) over wa_* chats + 1.
+ */
+export function seedMessageStore(floor: number): void {
+  if (Number.isFinite(floor)) nextId = Math.max(nextId, Math.floor(floor));
+}
 const byMsgId = new Map<number, StoredMessage>();
 const byWaId = new Map<string, number>();
 

@@ -108,6 +108,17 @@ export function recentBefore(
   return rows.reverse().map(rowToMessage);
 }
 
+export function recentBeforeTime(
+  chatId: string,
+  beforeTs: number,
+  limit: number,
+): HistoryMessage[] {
+  const rows = getDatabase()
+    .prepare(historySql.recentBeforeTime)
+    .all(chatId, beforeTs, limit) as Row[];
+  return rows.reverse().map(rowToMessage);
+}
+
 export function setFilePath(
   chatId: string,
   msgId: number,
@@ -172,6 +183,19 @@ export function latestMsgId(chatId: string): number | undefined {
   const row = getDatabase().prepare(historySql.latestMsgId).get(chatId) as
     { msg_id: number } | undefined;
   return row?.msg_id;
+}
+
+/**
+ * Highest msg_id over every chat whose id begins with `prefix` (compared
+ * literally — LIKE wildcards in the prefix are escaped). Undefined when no
+ * such chat has any history.
+ */
+export function maxMsgIdForPrefix(prefix: string): number | undefined {
+  const pattern = prefix.replace(/[\\%_]/g, (ch) => `\\${ch}`) + "%";
+  const row = getDatabase()
+    .prepare(historySql.maxMsgIdForPrefix)
+    .get(pattern) as { max_id: number | null } | undefined;
+  return row?.max_id ?? undefined;
 }
 
 export type KnownUser = {

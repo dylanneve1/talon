@@ -33,12 +33,10 @@ import { toolInputToRecord } from "../../core/agent-runtime/events.js";
 import { resolveChatBackend } from "../../core/engine/backend-controller/index.js";
 import { performSessionReset } from "../shared/session-status.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
-import { pushMessage } from "../../storage/history.js";
+import { pushMessage, maxMsgIdForChatPrefix } from "../../storage/history.js";
 import {
-  recordError,
   recordMessageProcessed,
   recordMessageReceived,
-  recordMessageSettled,
 } from "../../util/watchdog.js";
 import { createWhatsAppActionHandler } from "./actions/index.js";
 import {
@@ -47,9 +45,14 @@ import {
   identityAllowed,
   resolveIdentity,
 } from "./identity.js";
-import { sendText } from "./actions/shared.js";
+import { sendText, setWhatsAppBotName } from "./actions/shared.js";
 import { saveInboundMedia } from "./media-store.js";
-import { lookupByWaId, rememberMessage } from "./message-store.js";
+import {
+  lookupByWaId,
+  rememberMessage,
+  seedMessageStore,
+} from "./message-store.js";
+import { runTurnWithRecovery, shouldReplyToCatchUp } from "./turn-recovery.js";
 import {
   lookupWhatsAppChat,
   registerWhatsAppChat,
@@ -217,7 +220,10 @@ export function createWhatsAppFrontend(
     return Boolean(ctx?.participant && isSelf(ctx.participant));
   }
 
-  async function handleInbound(msg: WAMessage): Promise<void> {
+  async function handleInbound(
+    msg: WAMessage,
+    opts: { catchUp?: boolean } = {},
+  ): Promise<void> {
     const jid = msg.key.remoteJid;
     // `fromMe` covers our own sends echoing back; status@broadcast is the
     // Stories feed, which is not a conversation.
@@ -278,13 +284,17 @@ export function createWhatsAppFrontend(
     const replyToWaId =
       msg.message?.extendedTextMessage?.contextInfo?.stanzaId ?? undefined;
     const replyTo = replyToWaId ? lookupByWaId(replyToWaId) : undefined;
+    const platformTs = Number(msg.messageTimestamp) * 1000;
     pushMessage(chat.chatId, {
       msgId,
       senderId: Number(BigInt(canonicalId(identity) ?? "0") % 2147483647n),
       senderName,
       senderHandle: canonicalId(identity),
       text,
-      timestamp: Date.now(),
+      // The platform timestamp, so a catch-up message recorded late still
+      // reads in true order; Date.now() only when Baileys omits it.
+      timestamp:
+        Number.isFinite(platformTs) && platformTs > 0 ? platformTs : Date.now(),
       ...(replyTo ? { replyToMsgId: replyTo.msgId } : {}),
       ...(media ? { mediaType: media.type, filePath: media.filePath } : {}),
     });
@@ -295,6 +305,9 @@ export function createWhatsAppFrontend(
       await performSessionReset(
         chat.chatId,
         resolveChatBackend(chat.chatId, gateway.backend),
+        // The local history store is WhatsApp's only chat record — a
+        // reset clears the model's session, not the conversation log.
+        { keepHistory: true },
       );
       log("whatsapp", `Session reset by ${senderName}`);
       if (sock) {
@@ -310,11 +323,29 @@ export function createWhatsAppFrontend(
         await sendText(
           { sock, gateway },
           chat,
-          "*Commands*\n/reset — clear session & history\n/help — this message",
+          "*Commands*\n/reset — start a fresh session (chat log kept)\n/help — this message",
         ).catch(() => {});
       }
       recordMessageProcessed();
       return;
+    }
+
+    // Catch-up messages (queued while the daemon was down) get a reply
+    // turn only while fresh; stale ones are already recorded above and
+    // the next live turn reads them from history.
+    if (opts.catchUp) {
+      if (!shouldReplyToCatchUp(platformTs)) {
+        log(
+          "whatsapp",
+          `[${chat.chatId}] Recorded offline message from ${senderName} (history only — too old for a reply turn)`,
+        );
+        recordMessageProcessed();
+        return;
+      }
+      log(
+        "whatsapp",
+        `[${chat.chatId}] Catch-up: replying to offline message from ${senderName}`,
+      );
     }
 
     const preview = text || `(${media?.type ?? "media"})`;
@@ -334,8 +365,8 @@ export function createWhatsAppFrontend(
       : "";
     const prompt = `[${senderName}] msg_id:${msgId}: ${text}${mediaNote}`;
 
-    try {
-      await execute({
+    const runTurn = () =>
+      execute({
         chatId: chat.chatId,
         numericChatId: chat.numericChatId,
         prompt,
@@ -374,13 +405,23 @@ export function createWhatsAppFrontend(
           }
         },
       });
-      recordMessageProcessed();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logError("whatsapp", `[${chat.chatId}] execute failed: ${message}`);
-      recordError(message);
-      recordMessageSettled();
-    }
+
+    await runTurnWithRecovery({
+      chatId: chat.chatId,
+      senderName,
+      runTurn,
+      sendErrorText: async (text) => {
+        if (!sock) return;
+        try {
+          await sendText({ sock, gateway }, chat, text);
+        } catch (sendErr) {
+          logError(
+            "whatsapp",
+            `error delivery failed: ${sendErr instanceof Error ? sendErr.message : sendErr}`,
+          );
+        }
+      },
+    });
   }
 
   /** One socket lifetime. Resolves with what the caller should do next. */
@@ -397,11 +438,18 @@ export function createWhatsAppFrontend(
     socket.ev.on("creds.update", saveCreds);
 
     socket.ev.on("messages.upsert", ({ messages, type }) => {
-      // "notify" is a live message; "append" is history sync, which must
-      // not trigger turns for conversations that already happened.
-      if (type !== "notify") return;
+      // "notify" is a live message. "append" is everything delivered out
+      // of band — chiefly messages QUEUED WHILE THE DAEMON WAS DOWN
+      // (Baileys marks offline-queued nodes as append), but also our own
+      // sends echoing back and newsletter posts, which handleInbound's
+      // fromMe/allowlist gates drop. Dropping append wholesale meant any
+      // message sent during a restart simply vanished: never recorded,
+      // never answered. Appends are processed as catch-up: always
+      // recorded, replied to only while fresh.
+      if (type !== "notify" && type !== "append") return;
+      const catchUp = type === "append";
       for (const msg of messages) {
-        void handleInbound(msg).catch((err) => {
+        void handleInbound(msg, { catchUp }).catch((err) => {
           logError(
             "whatsapp",
             `inbound handler failed: ${err instanceof Error ? err.message : err}`,
@@ -498,6 +546,12 @@ export function createWhatsAppFrontend(
     getBridgePort: () => gateway.getPort(),
 
     async init() {
+      setWhatsAppBotName(config.botDisplayName);
+      // The in-memory message-id counter restarts at its base every boot,
+      // but history persists — seed it past what the table already holds
+      // so post-restart messages don't re-issue ids INSERT OR IGNORE then
+      // silently drops (chat ids all start with "wa_").
+      seedMessageStore((maxMsgIdForChatPrefix("wa_") ?? 0) + 1);
       gateway.registerFrontendHandler(
         "whatsapp",
         createWhatsAppActionHandler(() => sock, gateway),
