@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.26.0](https://github.com/dylanneve1/talon/compare/v3.25.3...v3.26.0) (2026-08-23)
+
+
+### Features
+
+* **whatsapp:** harden the socket layer along OpenClaw's patterns ([#784](https://github.com/dylanneve1/talon/issues/784)) ([783fc5b](https://github.com/dylanneve1/talon/commit/783fc5b779b3f542b71ba9b7e0506f077d311406))
+
 ## [3.25.3](https://github.com/dylanneve1/talon/compare/v3.25.2...v3.25.3) (2026-08-23)
 
 
