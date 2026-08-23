@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.25.3](https://github.com/dylanneve1/talon/compare/v3.25.2...v3.25.3) (2026-08-23)
+
+
+### Bug Fixes
+
+* **whatsapp:** continuous sessions — two-sided history, stable ids, offline catch-up, visible errors ([#781](https://github.com/dylanneve1/talon/issues/781)) ([f6d5e65](https://github.com/dylanneve1/talon/commit/f6d5e65f97f2d33bdccecf85147eca94a27ec0f0))
+* **whatsapp:** stop the re-pairing loop burning a code every 2 minutes, and tell the admin ([#783](https://github.com/dylanneve1/talon/issues/783)) ([cc6a949](https://github.com/dylanneve1/talon/commit/cc6a949032f8cd290b1afe3cc72398ac496b49d7))
+
 ## [3.25.2](https://github.com/dylanneve1/talon/compare/v3.25.1...v3.25.2) (2026-08-23)
 
 
