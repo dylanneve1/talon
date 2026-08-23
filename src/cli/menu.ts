@@ -8,6 +8,7 @@ import pc from "picocolors";
 import { existsSync } from "node:fs";
 import { findRunningInstance } from "../core/daemon/discovery.js";
 import { printBanner, loadConfig, isConfigured } from "./config.js";
+import { getFrontendDescriptor } from "../core/frontend-runtime/routing.js";
 import { CONFIG_FILE, PKG_ROOT } from "./context.js";
 import { runSetup } from "./setup.js";
 import { showStatus } from "./status.js";
@@ -36,18 +37,12 @@ export async function mainMenu(): Promise<void> {
   const fes = Array.isArray(config.frontend)
     ? config.frontend
     : [config.frontend];
+  // Labels come from the frontend registry, not a chain here. The old
+  // if/else fell through to "Terminal" for anything it didn't name, so a
+  // WhatsApp install read as "Terminal" in this header. An unknown id now
+  // shows itself rather than impersonating another frontend.
   const frontendLabel = fes
-    .map((f) =>
-      f === "telegram"
-        ? "Telegram"
-        : f === "teams"
-          ? "Teams"
-          : f === "discord"
-            ? "Discord"
-            : f === "native"
-              ? "Native"
-              : "Terminal",
-    )
+    .map((f) => getFrontendDescriptor(f)?.label ?? f)
     .join(" + ");
 
   const action = await p.select({

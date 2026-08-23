@@ -18,6 +18,13 @@ export function printBanner(): void {
   console.log();
 }
 
+/**
+ * The subset of ~/.talon/config.json the CLI reads or prompts for — a
+ * partial view, not the whole schema (that lives in util/config.ts).
+ * Anything absent here is still present at runtime on a loaded config and
+ * MUST be carried through on save: `talon setup` used to rebuild the file
+ * from its own named fields alone and silently dropped every other key.
+ */
 export type Config = {
   frontend: string | string[];
   /** Active backend (`claude` / `kilo` / `opencode` / `codex` / `openai-agents`). */
@@ -54,6 +61,17 @@ export type Config = {
     allowedGuilds?: string[];
     allowedChannels?: string[];
     adminUserIds?: string[];
+    [key: string]: unknown;
+  };
+  // WhatsApp — pairing + allowlists. Session credentials are not here;
+  // they live in ~/.talon/whatsapp-auth/.
+  whatsapp?: {
+    allowedJids?: string[];
+    allowedGroups?: string[];
+    groupPolicy?: "listed" | "with-allowed-user" | "all";
+    respondMode?: "mention" | "all";
+    pairingNumber?: string;
+    sendReadReceipts?: boolean;
     [key: string]: unknown;
   };
 };
@@ -99,6 +117,12 @@ export function isConfigured(config: Config): boolean {
     if (fe === "telegram") return !!config.botToken;
     if (fe === "teams") return !!config.teamsWebhookUrl;
     if (fe === "discord") return !!config.discord?.botToken;
+    // WhatsApp's credentials live in ~/.talon/whatsapp-auth/, not the
+    // config — but the loader hard-requires the block, so its presence is
+    // what "configured" means here. Omitting this case sent every
+    // WhatsApp user through the fail-closed branch below and straight
+    // into the setup wizard on a plain `talon`.
+    if (fe === "whatsapp") return !!config.whatsapp;
     // terminal (stdio) and native (the client bridge) carry no
     // credentials; unknown names fail closed so a typo'd frontend sends
     // the user to setup instead of a daemon that can't start.
