@@ -22,6 +22,7 @@ import {
 import {
   chatIdForJid,
   lookupWhatsAppChat,
+  lookupWhatsAppChatByString,
   registerWhatsAppChat,
   resetWhatsAppRegistry,
 } from "../frontend/whatsapp/registry.js";
@@ -260,6 +261,81 @@ describe("WhatsApp action adapter", () => {
     const result = await handle({ action: "send_message", text: "hi" }, 12345);
     expect(result?.ok).toBe(false);
     expect(String(result?.error)).toMatch(/No WhatsApp chat known/);
+  });
+
+  it("resolves a phone-number cross-send target and registers the chat", async () => {
+    const handle = createWhatsAppActionHandler(() => sock, gateway);
+    const result = await handle(
+      { action: "send_message", text: "hi", target: "+353 87 123 4567" },
+      0,
+    );
+    expect(result?.ok).toBe(true);
+    expect(sent[0].jid).toBe("353871234567@s.whatsapp.net");
+    // Registered on the fly, so numeric-id routing and replies now work.
+    const info = lookupWhatsAppChatByString("wa_dm_353871234567");
+    expect(info?.jid).toBe("353871234567@s.whatsapp.net");
+    expect(lookupWhatsAppChat(info!.numericChatId)).toBe(info);
+  });
+
+  it("resolves a wa_dm_ string target it has never seen", async () => {
+    const handle = createWhatsAppActionHandler(() => sock, gateway);
+    const result = await handle(
+      { action: "send_message", text: "hi", target: "wa_dm_353871234567" },
+      0,
+    );
+    expect(result?.ok).toBe(true);
+    expect(sent[0].jid).toBe("353871234567@s.whatsapp.net");
+  });
+
+  it("resolves a registered numeric chat id target", async () => {
+    const { chat } = handlerFor("353851722396@s.whatsapp.net");
+    const handle = createWhatsAppActionHandler(() => sock, gateway);
+    const result = await handle(
+      {
+        action: "send_message",
+        text: "hi",
+        target: String(chat.numericChatId),
+      },
+      0,
+    );
+    expect(result?.ok).toBe(true);
+    expect(sent[0].jid).toBe("353851722396@s.whatsapp.net");
+  });
+
+  it("resolves a group JID target", async () => {
+    const handle = createWhatsAppActionHandler(() => sock, gateway);
+    const result = await handle(
+      { action: "send_message", text: "hi", target: "120363012345678901@g.us" },
+      0,
+    );
+    expect(result?.ok).toBe(true);
+    expect(sent[0].jid).toBe("120363012345678901@g.us");
+    expect(
+      lookupWhatsAppChatByString("wa_group_120363012345678901")?.isGroup,
+    ).toBe(true);
+  });
+
+  it("fails a cross-send clearly when the socket is down (no silent no-op)", async () => {
+    const handle = createWhatsAppActionHandler(() => null, gateway);
+    const result = await handle(
+      { action: "send_message", text: "hi", target: "+353871234567" },
+      0,
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: "WhatsApp socket is not connected",
+    });
+  });
+
+  it("rejects a target it cannot derive a JID from", async () => {
+    const handle = createWhatsAppActionHandler(() => sock, gateway);
+    const result = await handle(
+      { action: "send_message", text: "hi", target: "not-a-number" },
+      0,
+    );
+    expect(result?.ok).toBe(false);
+    expect(String(result?.error)).toMatch(/Unresolvable WhatsApp target/);
+    expect(sent).toHaveLength(0);
   });
 
   it("maps a moderation op onto WhatsApp's own semantics", async () => {

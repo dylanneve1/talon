@@ -17,6 +17,7 @@
  *   - `plugins`   — plugin hot-reload
  *   - `models`    — model / backend discovery
  *   - `mesh`      — companion device mesh (presence + location)
+ *   - `cross-send` — explicit-target sends through any enabled frontend
  */
 
 import type { ActionResult } from "../../types.js";
@@ -31,7 +32,11 @@ import { scriptHandlers } from "./scripts.js";
 import { skillHandlers } from "./skills.js";
 import { pluginHandlers } from "./plugins.js";
 import { modelHandlers } from "./models.js";
-import { meshHandlers, chatFreeActions } from "./mesh.js";
+import {
+  meshHandlers,
+  chatFreeActions as meshChatFreeActions,
+} from "./mesh.js";
+import { crossSendHandlers, crossSendChatFreeActions } from "./cross-send.js";
 import { nativeHandlers } from "./native.js";
 
 // Null-prototype so a request `action` of "toString" / "constructor" / etc.
@@ -48,8 +53,18 @@ const handlers: SharedActionHandlers = Object.assign(Object.create(null), {
   ...pluginHandlers,
   ...modelHandlers,
   ...meshHandlers,
+  ...crossSendHandlers,
   ...nativeHandlers,
 });
+
+/**
+ * All chat-free actions — each domain module declares its own set, merged
+ * here into the one view the gateway (and `isChatFreeAction`) consults.
+ */
+const chatFreeActions: ReadonlySet<string> = new Set([
+  ...meshChatFreeActions,
+  ...crossSendChatFreeActions,
+]);
 
 export async function handleSharedAction(
   body: Record<string, unknown>,

@@ -25,6 +25,7 @@ import {
   handleChatFreeAction,
   isChatFreeAction,
 } from "./gateway-actions/index.js";
+import { registerCrossSendTarget } from "./gateway-actions/cross-send.js";
 import {
   handleHubRequest,
   getHubSessionCount,
@@ -154,6 +155,9 @@ export class Gateway {
     name: string,
     handler: FrontendActionHandler | null,
   ): void {
+    // Mirror into the cross-send broker so the chat-free `send_via`
+    // action can dispatch to any enabled frontend by explicit name.
+    registerCrossSendTarget(name, handler);
     if (handler === null) {
       this.frontendHandlers.delete(name);
       return;

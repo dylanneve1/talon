@@ -525,6 +525,16 @@ describe("buildHeartbeatSystemPrompt", () => {
     const prompt = buildHeartbeatSystemPrompt();
     expect(prompt).not.toContain("chat_id");
   });
+
+  it("teaches the cross-frontend send_via tool in the outbound block", () => {
+    initHeartbeat({ model: "claude-sonnet-4-6", frontends: ["telegram"] });
+    const prompt = buildHeartbeatSystemPrompt();
+    expect(prompt).toContain("send_via(frontend=");
+    // The target forms are the point: WhatsApp is reachable by phone number
+    // even when only telegram-tools is mounted.
+    expect(prompt).toContain("WhatsApp");
+    expect(prompt).toContain("phone number");
+  });
 });
 
 describe("awaitCurrentRun", () => {

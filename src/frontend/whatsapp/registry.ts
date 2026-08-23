@@ -85,6 +85,45 @@ export function lookupWhatsAppChatByString(
   return byString.get(chatId);
 }
 
+/**
+ * Resolve an explicit send target — the `target` a cross-frontend
+ * `send_via` names — onto chat info, REGISTERING the chat when it's new
+ * so numeric-id routing and replies work from then on. Accepted forms:
+ *
+ *   - a registered Talon id: `wa_dm_*`/`wa_group_*` string, or its
+ *     numeric hash (only resolvable while registered — the hash can't
+ *     be reversed)
+ *   - a raw JID: `<number>@s.whatsapp.net` or `<id>@g.us`
+ *   - a phone number with country code: "+353871234567", "353 87 123 4567"
+ *
+ * Digits with punctuation normalize to a DM JID; an all-digit string is
+ * tried as a registered numeric id first, then treated as a phone number.
+ * Returns undefined when nothing sendable can be derived.
+ */
+export function resolveWhatsAppTarget(
+  raw: unknown,
+): WhatsAppChatInfo | undefined {
+  const target = String(raw ?? "").trim();
+  if (!target) return undefined;
+  const registered = byString.get(target);
+  if (registered) return registered;
+  if (/^\d+$/.test(target)) {
+    const byHash = byNumeric.get(Number(target));
+    if (byHash) return byHash;
+  }
+  if (target.includes("@")) return registerWhatsAppChat(target);
+  if (target.startsWith("wa_group_")) {
+    return registerWhatsAppChat(`${target.slice("wa_group_".length)}@g.us`);
+  }
+  if (target.startsWith("wa_dm_")) {
+    return registerWhatsAppChat(
+      `${target.slice("wa_dm_".length)}@s.whatsapp.net`,
+    );
+  }
+  const digits = target.replace(/[^0-9]/g, "");
+  return digits ? registerWhatsAppChat(`${digits}@s.whatsapp.net`) : undefined;
+}
+
 /** Test seam: forget every registered chat. */
 export function resetWhatsAppRegistry(): void {
   byNumeric.clear();
