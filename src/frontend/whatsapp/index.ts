@@ -16,9 +16,7 @@
 
 import { rmSync } from "node:fs";
 import makeWASocket, {
-  DisconnectReason,
   isJidGroup,
-  useMultiFileAuthState,
   type WAMessage,
   type WASocket,
 } from "baileys";
@@ -53,7 +51,13 @@ import {
   seedMessageStore,
 } from "./message-store.js";
 import { runTurnWithRecovery, shouldReplyToCatchUp } from "./turn-recovery.js";
-import { nextPairingDelayMs, shouldNotifyPairingCode } from "./pairing.js";
+import {
+  classifyClose,
+  nextPairingDelayMs,
+  REPLACED_BACKOFF_MS,
+  shouldNotifyPairingCode,
+} from "./pairing.js";
+import { flushAuthWrites, useAtomicAuthState } from "./auth-state.js";
 import { notifyAdmin } from "../../core/notify.js";
 import {
   lookupWhatsAppChat,
@@ -433,7 +437,9 @@ export function createWhatsAppFrontend(
 
   /** One socket lifetime. Resolves with what the caller should do next. */
   async function connectOnce(): Promise<"reconnect" | "logged-out" | "stop"> {
-    const { state, saveCreds } = await useMultiFileAuthState(dirs.whatsappAuth);
+    // Atomic replacement for Baileys' useMultiFileAuthState — same disk
+    // format, torn-write-proof (see auth-state.ts for why that matters).
+    const { state, saveCreds } = await useAtomicAuthState(dirs.whatsappAuth);
     const socket = makeWASocket({
       auth: state,
       logger: makeWaLogger(),
@@ -445,6 +451,11 @@ export function createWhatsAppFrontend(
       // a ~2½-minute socket lifetime in pairing mode, shorter than it
       // takes a human to pick up their phone and type the code.
       qrTimeout: 120_000,
+      // OpenClaw's production timings: the Baileys 20s connect timeout
+      // is tight on a loaded box, and a slightly faster keepalive spots
+      // a dead transport sooner.
+      connectTimeoutMs: 60_000,
+      keepAliveIntervalMs: 25_000,
     });
     sock = socket;
     socket.ev.on("creds.update", saveCreds);
@@ -545,12 +556,37 @@ export function createWhatsAppFrontend(
               { output?: { statusCode?: number } } | undefined
           )?.output?.statusCode;
           if (stopping) return resolve("stop");
-          if (code === DisconnectReason.loggedOut) return resolve("logged-out");
-          log(
-            "whatsapp",
-            `Connection closed (code ${code ?? "?"}) — reconnecting`,
-          );
-          return resolve("reconnect");
+          const disposition = classifyClose(code, state.creds.registered);
+          switch (disposition.kind) {
+            case "pairing-accepted":
+              // 515 right after a pairing code/QR is SUCCESS, not an
+              // error: WhatsApp requires one reconnect with the same
+              // credentials to complete the login.
+              log(
+                "whatsapp",
+                "Pairing accepted (515) — reconnecting to complete login",
+              );
+              reconnectDelay = RECONNECT_BASE_MS;
+              return resolve("reconnect");
+            case "replaced":
+              // Another socket owns this session (440). Fighting it with
+              // an instant reconnect just steals the session back and
+              // forth; sit out a full minute instead.
+              logWarn(
+                "whatsapp",
+                "Connection replaced by another client (440) — backing off",
+              );
+              reconnectDelay = REPLACED_BACKOFF_MS;
+              return resolve("reconnect");
+            case "logged-out":
+              return resolve("logged-out");
+            default:
+              log(
+                "whatsapp",
+                `Connection closed (code ${code ?? "?"}) — reconnecting`,
+              );
+              return resolve("reconnect");
+          }
         }
       });
     });
@@ -658,6 +694,10 @@ export function createWhatsAppFrontend(
         /* already closed */
       }
       sock = null;
+      // Drain queued credential writes before the process exits — a key
+      // half-written at shutdown is invisible until the server starts
+      // rejecting stanzas with it.
+      await flushAuthWrites();
       await gateway.stop();
       log("whatsapp", "WhatsApp frontend stopped");
     },

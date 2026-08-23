@@ -20,6 +20,7 @@ vi.mock("../util/log.js", () => ({
 }));
 
 import {
+  classifyClose,
   nextPairingDelayMs,
   shouldNotifyPairingCode,
   PAIRING_NOTIFY_FREE_CODES,
@@ -90,5 +91,40 @@ describe("admin notify seam", () => {
       throw new Error("telegram down too");
     });
     await expect(notifyAdmin("x")).resolves.toBe(false);
+  });
+});
+
+describe("close-code taxonomy", () => {
+  it("reads 515 as pairing success, not an error", () => {
+    // Entering a pairing code CLOSES the connection with restartRequired;
+    // the old handler logged it as an anonymous failure and applied
+    // reconnect backoff to the very reconnect that completes the login.
+    expect(classifyClose(515, false)).toEqual({ kind: "pairing-accepted" });
+    expect(classifyClose(515, true)).toEqual({ kind: "pairing-accepted" });
+  });
+
+  it("reads 440 as a session takeover to back off from", () => {
+    expect(classifyClose(440, true)).toEqual({ kind: "replaced" });
+  });
+
+  it("distinguishes a killed session from an expired pairing attempt", () => {
+    expect(classifyClose(401, true)).toEqual({
+      kind: "logged-out",
+      midPairing: false,
+    });
+    expect(classifyClose(401, false)).toEqual({
+      kind: "logged-out",
+      midPairing: true,
+    });
+    expect(classifyClose(403, true)).toEqual({
+      kind: "logged-out",
+      midPairing: false,
+    });
+  });
+
+  it("treats everything else as transient", () => {
+    for (const code of [408, 428, 500, 503, undefined]) {
+      expect(classifyClose(code, true)).toEqual({ kind: "reconnect" });
+    }
   });
 });
