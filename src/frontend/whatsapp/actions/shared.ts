@@ -163,6 +163,57 @@ function outboundTextMarker(content: AnyMessageContent): string {
   return "";
 }
 
+// ── Serialized, time-bounded sends ─────────────────────────────────────────
+//
+// Ported from OpenClaw's socket-timing adapter. Two failure modes this
+// removes, both observed live:
+//   - a send on a dying socket hanging a turn indefinitely ("timed out
+//     waiting for message" with nothing delivered and no error surfaced),
+//   - interleaved sends racing each other's Baileys internals.
+// Every outbound WhatsApp operation goes through one FIFO per process
+// with a hard timeout; on timeout the queue advances so later sends
+// aren't wedged behind the dead one.
+
+const SEND_TIMEOUT_MS = 60_000;
+let sendTail: Promise<unknown> = Promise.resolve();
+
+export class WhatsAppSendTimeoutError extends Error {
+  constructor(operation: string) {
+    super(
+      `WhatsApp ${operation} timed out after ${SEND_TIMEOUT_MS / 1000}s — ` +
+        `delivery state unknown (the socket may be dead or reconnecting)`,
+    );
+    this.name = "WhatsAppSendTimeoutError";
+  }
+}
+
+/**
+ * Run one socket operation serialized behind every earlier one, bounded
+ * by SEND_TIMEOUT_MS. The timeout rejects THIS caller but releases the
+ * queue, so a wedged operation can't dam everything after it.
+ */
+export function boundedSend<T>(
+  operation: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const prev = sendTail.catch(() => {});
+  const result = prev.then(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return Promise.race([
+      run(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new WhatsAppSendTimeoutError(operation)),
+          SEND_TIMEOUT_MS,
+        );
+        timer.unref?.();
+      }),
+    ]).finally(() => clearTimeout(timer));
+  });
+  sendTail = result.catch(() => {});
+  return result;
+}
+
 /**
  * Send one content payload, remember the resulting message so later
  * tool calls can address it, and report its Talon numeric id.
@@ -173,7 +224,9 @@ export async function sendContent(
   content: AnyMessageContent,
   options: { quoted?: WAMessage } = {},
 ): Promise<ActionResult> {
-  const sent = await ctx.sock.sendMessage(chat.jid, content, options);
+  const sent = await boundedSend("sendMessage", () =>
+    ctx.sock.sendMessage(chat.jid, content, options),
+  );
   ctx.gateway.incrementMessages(chat.numericChatId);
   if (!sent?.key) return { ok: true };
   const text =

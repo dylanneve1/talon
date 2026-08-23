@@ -17,7 +17,13 @@ import {
   resolveKey,
 } from "../message-store.js";
 import { recordPin, listPins, forgetPin } from "../pins.js";
-import { resolveQuoted, sendContent, sendText, tryAction } from "./shared.js";
+import {
+  resolveQuoted,
+  sendContent,
+  sendText,
+  tryAction,
+  boundedSend,
+} from "./shared.js";
 import type { WhatsAppActionHandlers } from "./types.js";
 
 /** WhatsApp keeps a pin for 24h, 7d, or 30d — no indefinite option. */
@@ -89,9 +95,11 @@ export const messagingHandlers: WhatsAppActionHandlers = {
       if ("error" in resolved) return { ok: false, error: resolved.error };
       // An empty emoji clears the reaction — WhatsApp's own semantics,
       // and the only way to take one back.
-      await ctx.sock.sendMessage(ctx.chat!.jid, {
-        react: { text: String(body.emoji ?? ""), key: resolved.key },
-      });
+      await boundedSend("react", () =>
+        ctx.sock.sendMessage(ctx.chat!.jid, {
+          react: { text: String(body.emoji ?? ""), key: resolved.key },
+        }),
+      );
       return { ok: true };
     }),
 
@@ -103,10 +111,12 @@ export const messagingHandlers: WhatsAppActionHandlers = {
       if (!text.trim()) {
         return { ok: false, error: "edit_message: text is required" };
       }
-      await ctx.sock.sendMessage(ctx.chat!.jid, {
-        text: toWhatsAppText(text),
-        edit: resolved.key,
-      });
+      await boundedSend("edit", () =>
+        ctx.sock.sendMessage(ctx.chat!.jid, {
+          text: toWhatsAppText(text),
+          edit: resolved.key,
+        }),
+      );
       return { ok: true, message_id: resolved.stored.msgId };
     }),
 
@@ -114,7 +124,9 @@ export const messagingHandlers: WhatsAppActionHandlers = {
     tryAction("delete_message", async () => {
       const resolved = resolveKey(body.message_id, ctx.chat!.chatId);
       if ("error" in resolved) return { ok: false, error: resolved.error };
-      await ctx.sock.sendMessage(ctx.chat!.jid, { delete: resolved.key });
+      await boundedSend("delete", () =>
+        ctx.sock.sendMessage(ctx.chat!.jid, { delete: resolved.key }),
+      );
       forgetPin(ctx.chat!.chatId, resolved.stored.msgId);
       return { ok: true };
     }),
@@ -166,11 +178,13 @@ export const messagingHandlers: WhatsAppActionHandlers = {
       const time =
         PIN_DURATIONS.find((d) => d >= requested) ??
         PIN_DURATIONS[PIN_DURATIONS.length - 1];
-      await ctx.sock.sendMessage(ctx.chat!.jid, {
-        pin: resolved.key,
-        type: proto.PinInChat.Type.PIN_FOR_ALL,
-        time,
-      });
+      await boundedSend("pin", () =>
+        ctx.sock.sendMessage(ctx.chat!.jid, {
+          pin: resolved.key,
+          type: proto.PinInChat.Type.PIN_FOR_ALL,
+          time,
+        }),
+      );
       recordPin(ctx.chat!.chatId, resolved.stored);
       return { ok: true };
     }),
@@ -179,10 +193,12 @@ export const messagingHandlers: WhatsAppActionHandlers = {
     tryAction("unpin_message", async () => {
       const resolved = resolveKey(body.message_id, ctx.chat!.chatId);
       if ("error" in resolved) return { ok: false, error: resolved.error };
-      await ctx.sock.sendMessage(ctx.chat!.jid, {
-        pin: resolved.key,
-        type: proto.PinInChat.Type.UNPIN_FOR_ALL,
-      });
+      await boundedSend("unpin", () =>
+        ctx.sock.sendMessage(ctx.chat!.jid, {
+          pin: resolved.key,
+          type: proto.PinInChat.Type.UNPIN_FOR_ALL,
+        }),
+      );
       forgetPin(ctx.chat!.chatId, resolved.stored.msgId);
       return { ok: true };
     }),
