@@ -1,0 +1,113 @@
+name: Native Provisioning
+
+# Exercises the native-plugin provisioners (src/core/plugin/native-runtimes.ts)
+# against real environments on every OS Talon supports:
+#
+#  - provision-real: fresh venv install of the pinned mempalace, live MCP
+#    handshake, self-heal from a gutted install, and a genuine 3.3.6 → pin
+#    upgrade with the palace migration — on Linux, macOS, and Windows.
+#    Runs on PRs that touch provisioning code, and weekly.
+#
+#  - canary: the same suite provisioned against the LATEST upstream
+#    versions (PyPI mempalace, github-mcp-server:latest, a real chromium
+#    download) instead of the pins. A red canary means the next pin bump
+#    needs work — bump pins only when this is green. Runs weekly and on
+#    manual dispatch; never blocks PRs.
+
+on:
+  pull_request:
+    paths:
+      - "src/core/plugin/**"
+      - "src/plugins/**"
+      - "src/__tests__/native-provision.test.ts"
+      - "src/__tests__/integration/provision-real.test.ts"
+      - ".github/workflows/native-provision.yml"
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  provision-real:
+    name: Pinned (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - run: npm ci
+
+      - name: Provisioning suite against pinned versions
+        env:
+          TALON_PROVISION_REAL: "1"
+        run: npx vitest run src/__tests__/integration/provision-real.test.ts --reporter=verbose
+
+  canary:
+    name: Canary latest (${{ matrix.os }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - run: npm ci
+
+      - name: Provisioning suite against latest upstream
+        env:
+          TALON_PROVISION_REAL: "1"
+          TALON_PROVISION_TARGET: latest
+          TALON_PROVISION_REAL_PLAYWRIGHT: "1"
+        run: npx vitest run src/__tests__/integration/provision-real.test.ts --reporter=verbose
+
+  canary-docker:
+    name: Canary github-mcp-server:latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Image pull + smoke against latest tag
+        env:
+          TALON_PROVISION_REAL_DOCKER: "1"
+          TALON_PROVISION_GITHUB_TAG: latest
+        run: npx vitest run src/__tests__/integration/provision-real.test.ts --reporter=verbose

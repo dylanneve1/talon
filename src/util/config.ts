@@ -267,6 +267,13 @@ const playwrightConfigSchema = z.object({
   enabled: z.boolean().default(false),
   /** Browser engine: chromium (default), chrome, firefox, webkit, msedge */
   browser: z.string().optional(),
+  /**
+   * Download the browser build automatically when missing (default
+   * true). Applies to Playwright-managed engines (chromium, firefox,
+   * webkit); system channels (chrome, msedge) and endpoint mode are
+   * never touched.
+   */
+  autoProvision: z.boolean().optional(),
   /** Run headless (default: true) */
   headless: z.boolean().default(true),
   /** Connect to an existing browser websocket endpoint. */
@@ -289,6 +296,19 @@ const mempalaceSettingsSchema = z.object({
   entityLanguages: z.array(z.string().min(2)).nonempty().optional(),
   /** Enable mempalace diagnostic diaries (sets MEMPAL_VERBOSE=1). */
   verbose: z.boolean().optional(),
+  /**
+   * Exact mempalace version for the Talon-managed venv (default: the
+   * built-in pin). Ignored for operator-managed installs (custom
+   * pythonPath) — those only get an advisory when they drift.
+   */
+  version: z
+    .string()
+    .regex(/^\d+\.\d+\.\d+$/, "exact version, e.g. 3.8.0")
+    .optional(),
+  /** Reconcile the managed venv to the pinned version (default true). */
+  autoUpdate: z.boolean().optional(),
+  /** Create/heal the managed venv automatically (default true). */
+  autoProvision: z.boolean().optional(),
 });
 
 /** mem0 backend settings, shared by `memory.mem0` and the top-level `mem0` section. */
@@ -496,6 +516,13 @@ const configSchema = z.object({
       enabled: z.boolean().default(false),
       /** GitHub personal access token (default: from `gh auth token`) */
       token: z.string().min(1).optional(),
+      /**
+       * github-mcp-server image tag (default: the built-in pin).
+       * "latest" opts out of pinning.
+       */
+      imageTag: z.string().min(1).optional(),
+      /** Pull the pinned Docker image automatically (default true). */
+      autoProvision: z.boolean().optional(),
     })
     .optional(),
 

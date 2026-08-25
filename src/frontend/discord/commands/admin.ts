@@ -237,6 +237,11 @@ export async function handleUpdate(
       await edit(
         `✅ Updated \`${res.before ?? "?"}\` → \`${res.after ?? "?"}\`. ♻️ Restarting…`,
       );
+      // The successor documents any provisioning changes (plugin runtime
+      // upgrades, migrations) back to this channel once it's up.
+      const { armProvisionReport } =
+        await import("../../../core/plugin/provision-journal.js");
+      armProvisionReport("discord", String(i.channelId));
       respawnSelf("discord /update");
     })
     .catch(async (err: unknown) => {

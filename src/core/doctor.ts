@@ -78,6 +78,18 @@ export interface DoctorConfigSlice {
   codexApiKey?: string;
   openaiApiKey?: string;
   openaiBaseUrl?: string;
+  mempalace?: {
+    enabled?: boolean;
+    pythonPath?: string;
+    version?: string;
+  };
+  playwright?: {
+    enabled?: boolean;
+    browser?: string;
+    endpoint?: string;
+    endpointFile?: string;
+  };
+  github?: { enabled?: boolean; imageTag?: string };
 }
 
 function errorNote(err: unknown): string {
@@ -293,6 +305,34 @@ async function checkClaudeConfiguredModels(
     }
   } catch {
     /* catalog unavailable — skip, never break doctor */
+  }
+  return checks;
+}
+
+/**
+ * Native plugin runtimes (MemPalace's venv, Playwright's browser build,
+ * GitHub's Docker image) — the artifacts the provisioners own. The
+ * runtime list and each inspection live in the native-runtimes registry
+ * (src/core/plugin/native-runtimes.ts); a new native plugin shows up
+ * here by registering there. Doctor reads, never mutates: a drifted or
+ * missing runtime reports what will fix it (usually "next talon start").
+ */
+async function checkPluginRuntimes(
+  config: DoctorConfigSlice | undefined,
+): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+  const { NATIVE_RUNTIMES } = await import("./plugin/native-runtimes.js");
+  for (const runtime of NATIVE_RUNTIMES) {
+    if (!runtime.enabled(config)) continue;
+    try {
+      checks.push(...(await runtime.inspect(config!)));
+    } catch (err) {
+      checks.push({
+        label: `${runtime.id} runtime check errored`,
+        status: "warn",
+        detail: errorNote(err),
+      });
+    }
   }
   return checks;
 }
@@ -632,6 +672,7 @@ export async function collectDoctorReport(opts: {
   }
 
   const native = await checkNativeModules();
+  checks.push(...(await checkPluginRuntimes(opts.config)));
   checks.push(...(await checkBackend(opts.config)));
 
   const issues =

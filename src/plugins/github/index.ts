@@ -14,6 +14,7 @@
 import { execFileSync } from "node:child_process";
 import type { TalonPlugin } from "../../core/plugin/types.js";
 import { log, logWarn } from "../../util/log.js";
+import { githubMcpImageRef } from "./provision.js";
 
 /**
  * Resolve a GitHub personal access token.
@@ -34,8 +35,12 @@ function resolveToken(configToken?: string): string | undefined {
   }
 }
 
-export function createGitHubPlugin(config: { token?: string }): TalonPlugin {
+export function createGitHubPlugin(config: {
+  token?: string;
+  imageTag?: string;
+}): TalonPlugin {
   const token = resolveToken(config.token);
+  const image = githubMcpImageRef(config.imageTag);
 
   return {
     name: "github",
@@ -44,14 +49,7 @@ export function createGitHubPlugin(config: { token?: string }): TalonPlugin {
 
     mcpServer: {
       command: "docker",
-      args: [
-        "run",
-        "--rm",
-        "-i",
-        "-e",
-        "GITHUB_PERSONAL_ACCESS_TOKEN",
-        "ghcr.io/github/github-mcp-server",
-      ],
+      args: ["run", "--rm", "-i", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", image],
     },
 
     validateConfig() {
@@ -79,18 +77,18 @@ export function createGitHubPlugin(config: { token?: string }): TalonPlugin {
     },
 
     async init() {
-      // Verify the Docker image exists locally
+      // Verify the pinned Docker image exists locally (the provisioner
+      // pulls it in the background when absent).
       try {
-        execFileSync(
-          "docker",
-          ["image", "inspect", "ghcr.io/github/github-mcp-server"],
-          { timeout: 10_000, stdio: "pipe" },
-        );
-        log("github", "Docker image verified");
+        execFileSync("docker", ["image", "inspect", image], {
+          timeout: 10_000,
+          stdio: "pipe",
+        });
+        log("github", `Docker image verified (${image})`);
       } catch {
         logWarn(
           "github",
-          "Docker image not found locally — will pull on first use (may be slow)",
+          `Docker image ${image} not present yet — pulling in background; docker pulls on first use as fallback`,
         );
       }
 

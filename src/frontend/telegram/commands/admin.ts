@@ -214,6 +214,11 @@ export function registerAdminCommands(
           await edit(
             `✅ Updated <code>${escapeHtml(res.before ?? "?")}</code> → <code>${escapeHtml(res.after ?? "?")}</code>. ♻️ Restarting…`,
           );
+          // The successor documents any provisioning changes (plugin
+          // runtime upgrades, migrations) back to this chat once it's up.
+          const { armProvisionReport } =
+            await import("../../../core/plugin/provision-journal.js");
+          armProvisionReport("telegram", String(ctx.chat.id));
           respawnSelf("telegram /update");
         })
         .catch(async (err: unknown) => {

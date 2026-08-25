@@ -479,11 +479,9 @@ export async function initBackendAndDispatcher(
   if (config.mempalace?.enabled) {
     const { getPlugin } = await import("./core/plugin/index.js");
     if (getPlugin("mempalace")) {
-      const { dirs, files: pathFiles } = await import("./util/paths.js");
-      mempalaceCfg = {
-        pythonPath: config.mempalace.pythonPath ?? pathFiles.mempalacePython,
-        palacePath: config.mempalace.palacePath ?? dirs.palace,
-      };
+      const { resolveMempalacePaths } =
+        await import("./plugins/mempalace/provision.js");
+      mempalaceCfg = resolveMempalacePaths(config.mempalace);
     } else {
       log(
         "mempalace",
@@ -528,6 +526,25 @@ export async function initBackendAndDispatcher(
     frontends: frontendNames,
     mempalace: Boolean(mempalaceCfg),
   });
+
+  // Post-/update provisioning report — if the previous process armed one
+  // before respawning, tell the chat that asked for the update what the
+  // provisioners changed during this boot. Fire-and-forget; the delivery
+  // helper retries while frontends finish registering on the cross-send
+  // broker and gives up quietly.
+  {
+    const { deliverPendingProvisionReport } =
+      await import("./core/plugin/provision-journal.js");
+    const { crossSendHandlers } =
+      await import("./core/engine/gateway-actions/cross-send.js");
+    void deliverPendingProvisionReport(async (frontend, target, text) => {
+      const result = await crossSendHandlers.send_via(
+        { frontend, target, text },
+        0,
+      );
+      return Boolean(result && (result as { ok?: unknown }).ok === true);
+    });
+  }
 
   return { backend };
 }
