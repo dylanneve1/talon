@@ -55,12 +55,16 @@ const WING_MIGRATION = "wing-names";
 
 /**
  * One subprocess proves both facts that matter: the dist is installed
- * (metadata resolves) and the MCP server module actually imports.
+ * (metadata resolves) and the MCP server module actually imports. The
+ * version is printed and flushed BEFORE the import: mempalace's
+ * mcp_server rebinds sys.stdout to stderr at import time to protect the
+ * JSON-RPC channel from stray prints, so anything printed after it
+ * lands on the wrong stream.
  */
 const HEALTH_SNIPPET =
-  "import importlib.metadata as m; v = m.version('mempalace'); import mempalace.mcp_server; print(v)";
+  "import importlib.metadata as m, sys; print(m.version('mempalace')); sys.stdout.flush(); import mempalace.mcp_server";
 
-const PROBE_TIMEOUT_MS = 30_000;
+const PROBE_TIMEOUT_MS = 60_000;
 const VENV_TIMEOUT_MS = 120_000;
 const PIP_TIMEOUT_MS = 900_000;
 const MIGRATE_TIMEOUT_MS = 600_000;

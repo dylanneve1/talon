@@ -25,6 +25,7 @@ import {
   findBasePython,
   runStep,
   venvPython,
+  type ProvisionOutcome,
 } from "../../core/plugin/provision.js";
 import {
   provisionMempalace,
@@ -41,6 +42,9 @@ const REAL_PLAYWRIGHT = process.env.TALON_PROVISION_REAL_PLAYWRIGHT === "1";
 const REAL_DOCKER = process.env.TALON_PROVISION_REAL_DOCKER === "1";
 
 const INSTALL_TIMEOUT = 20 * 60_000;
+
+const detail = (o: ProvisionOutcome): string =>
+  `status=${o.status} error=${o.error ?? "-"} warnings=[${o.warnings.join("; ")}] actions=[${o.actions.join("; ")}]`;
 
 async function resolveTarget(): Promise<string> {
   if (process.env.TALON_PROVISION_TARGET !== "latest") {
@@ -135,7 +139,7 @@ describe.skipIf(!REAL)("mempalace real provisioning", () => {
 
       // Fresh: no venv at all → created, installed, verified.
       const fresh = await provisionMempalace(opts, deps);
-      expect(fresh.status).toBe("ready");
+      expect(fresh.status, detail(fresh)).toBe("ready");
       expect(fresh.version).toBe(target);
       expect(fresh.actions.join(" ")).toContain("created venv");
 
@@ -145,7 +149,7 @@ describe.skipIf(!REAL)("mempalace real provisioning", () => {
 
       // Idempotent second pass: nothing to do.
       const again = await provisionMempalace(opts, deps);
-      expect(again.status).toBe("ready");
+      expect(again.status, detail(again)).toBe("ready");
       expect(again.actions).toHaveLength(0);
 
       // Self-heal: gut site-packages and expect a working reinstall.
@@ -160,7 +164,7 @@ describe.skipIf(!REAL)("mempalace real provisioning", () => {
         force: true,
       });
       const healed = await provisionMempalace(opts, deps);
-      expect(healed.status).toBe("ready");
+      expect(healed.status, detail(healed)).toBe("ready");
       expect(healed.version).toBe(target);
       expect(healed.actions.join(" ")).toContain(
         `installed mempalace ${target}`,
@@ -209,11 +213,11 @@ describe.skipIf(!REAL)("mempalace real provisioning", () => {
         { defaultManagedPython: python, statePath },
       );
       // A healthy-but-behind install reconciles in the background.
-      expect(outcome.status).toBe("ready");
+      expect(outcome.status, detail(outcome)).toBe("ready");
       expect(outcome.version).toBe("3.3.6");
       expect(outcome.background).toBeDefined();
       const settled = await outcome.background!();
-      expect(settled.status).toBe("ready");
+      expect(settled.status, detail(settled)).toBe("ready");
       expect(settled.version).toBe(target);
       expect(settled.actions.join(" ")).toContain(
         `upgraded mempalace 3.3.6 → ${target}`,
@@ -239,7 +243,7 @@ describe.skipIf(!REAL_PLAYWRIGHT)("playwright real provisioning", () => {
           statePath: join(home, "state.json"),
         },
       );
-      expect(outcome.status).toBe("ready");
+      expect(outcome.status, detail(outcome)).toBe("ready");
       expect(outcome.actions.join(" ")).toContain("chromium");
 
       // Second pass sees the build and does nothing.
@@ -250,7 +254,7 @@ describe.skipIf(!REAL_PLAYWRIGHT)("playwright real provisioning", () => {
           statePath: join(home, "state.json"),
         },
       );
-      expect(again.status).toBe("ready");
+      expect(again.status, detail(again)).toBe("ready");
       expect(again.actions).toHaveLength(0);
 
       rmSync(home, { recursive: true, force: true });
@@ -271,7 +275,7 @@ describe.skipIf(!REAL_DOCKER)("github mcp real provisioning", () => {
       );
       // Either already present (ready) or pulled by the background task.
       const settled = outcome.background ? await outcome.background() : outcome;
-      expect(settled.status).toBe("ready");
+      expect(settled.status, detail(settled)).toBe("ready");
 
       const help = await runStep(
         "docker",
