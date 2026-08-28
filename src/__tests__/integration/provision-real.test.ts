@@ -85,6 +85,11 @@ describe.skipIf(!REAL)("mempalace real provisioning", () => {
       expect(fresh.version).toBe(target);
       expect(fresh.actions.join(" ")).toContain("created venv");
 
+      // Idempotent second pass: nothing to do.
+      const again = await provisionMempalace(opts, deps);
+      expect(again.status, detail(again)).toBe("ready");
+      expect(again.actions).toHaveLength(0);
+
       // The runtime actually serves MCP, driven exactly as Talon drives
       // it (the plugin's own command/args/env): store a memory, search it
       // back. The first search loads the embedder, so the timeout is wide.
@@ -112,10 +117,13 @@ describe.skipIf(!REAL)("mempalace real provisioning", () => {
         { timeoutMs: 10 * 60_000 },
       );
 
-      // Idempotent second pass: nothing to do.
-      const again = await provisionMempalace(opts, deps);
-      expect(again.status, detail(again)).toBe("ready");
-      expect(again.actions).toHaveLength(0);
+      // The palace now holds data, so the next pass applies the one-time
+      // wing-name migration — and only once (ledgered), never again.
+      const migrated = await provisionMempalace(opts, deps);
+      expect(migrated.status, detail(migrated)).toBe("ready");
+      expect(migrated.actions.join(" ")).toContain("wing-name migration");
+      const ledgered = await provisionMempalace(opts, deps);
+      expect(ledgered.actions, detail(ledgered)).toHaveLength(0);
 
       // Self-heal: gut site-packages and expect a working reinstall.
       const purelib = await runStep(
