@@ -3,9 +3,15 @@
  * path that re-reads config, tears down, and re-loads everything.
  */
 
-import { log, logError } from "../../util/log.js";
+import { log, logError, logWarn } from "../../util/log.js";
 import type { TalonConfig } from "../../util/config.js";
 import { registry, reloadState } from "./registry.js";
+import type { ProvisionOutcome } from "./provision.js";
+import { NATIVE_RUNTIMES, type NativePluginId } from "./native-runtimes.js";
+import {
+  recordProvisionEvents,
+  trackBackgroundProvision,
+} from "./provision-journal.js";
 import {
   initPluginWithTimeout,
   loadPlugins,
@@ -13,16 +19,85 @@ import {
 } from "./loader.js";
 
 /**
+ * Surface a provisioning outcome in the logs and the journal, and fire
+ * its background reconcile task (fire-and-forget: the plugin is already
+ * serving on whatever the outcome declared usable).
+ */
+function reportProvision(
+  pluginName: NativePluginId,
+  outcome: ProvisionOutcome,
+): void {
+  recordProvisionEvents(pluginName, outcome.actions);
+  for (const action of outcome.actions) {
+    log(pluginName, `provision: ${action}`);
+  }
+  for (const warning of outcome.warnings) {
+    logWarn(pluginName, `provision: ${warning}`);
+  }
+  if (outcome.status === "failed" && outcome.error) {
+    logError(pluginName, `provision failed: ${outcome.error}`);
+  }
+  const background = outcome.background;
+  if (background) {
+    // Tracked so the post-update report waits for it to settle (its
+    // actions are the changes worth reporting).
+    void trackBackgroundProvision(
+      background()
+        .then((result) =>
+          reportProvision(pluginName, { ...result, background: undefined }),
+        )
+        .catch((err) =>
+          logError(
+            pluginName,
+            `background provision: ${err instanceof Error ? err.message : err}`,
+          ),
+        ),
+    );
+  }
+}
+
+/**
+ * Provision every enabled native runtime (see native-runtimes.ts) and
+ * return the outcomes so plugin construction can read what it got
+ * (e.g. the installed version). A provisioner that throws is treated
+ * as a failed pass, never a failed boot.
+ */
+async function provisionNativeRuntimes(
+  config: TalonConfig,
+): Promise<Map<NativePluginId, ProvisionOutcome>> {
+  const outcomes = new Map<NativePluginId, ProvisionOutcome>();
+  for (const runtime of NATIVE_RUNTIMES) {
+    if (!runtime.enabled(config)) continue;
+    try {
+      const outcome = await runtime.provision(config);
+      outcomes.set(runtime.id, outcome);
+      reportProvision(runtime.id, outcome);
+    } catch (err) {
+      logError(
+        runtime.id,
+        `provision: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+  return outcomes;
+}
+
+/**
  * Load built-in plugins (GitHub, MemPalace, mem0, Playwright) based on config flags.
  * Shared by both bootstrap and hot-reload to avoid duplication.
  */
 export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
+  const provisioned = await provisionNativeRuntimes(config);
+
   const github = config.github;
   if (github?.enabled) {
     try {
       const { createGitHubPlugin } =
         await import("../../plugins/github/index.js");
-      const gh = createGitHubPlugin({ token: github.token });
+      const gh = createGitHubPlugin({
+        token: github.token,
+        imageTag: github.imageTag,
+      });
       const ghConfig = github as unknown as Record<string, unknown>;
       const loaded = registerPlugin(gh, ghConfig);
       if (loaded) {
@@ -47,14 +122,15 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
     try {
       const { createMempalacePlugin } =
         await import("../../plugins/mempalace/index.js");
-      const { dirs, files: pf } = await import("../../util/paths.js");
-      const pythonPath = mempalace.pythonPath ?? pf.mempalacePython;
-      const palacePath = mempalace.palacePath ?? dirs.palace;
+      const { resolveMempalacePaths } =
+        await import("../../plugins/mempalace/provision.js");
+      const { pythonPath, palacePath } = resolveMempalacePaths(mempalace);
       const mp = createMempalacePlugin({
         pythonPath,
         palacePath,
         entityLanguages: mempalace.entityLanguages,
         verbose: mempalace.verbose,
+        installedVersion: provisioned.get("mempalace")?.version,
       });
       const mpConfig = mempalace as unknown as Record<string, unknown>;
       const loaded = registerPlugin(mp, mpConfig);

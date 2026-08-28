@@ -297,6 +297,8 @@ GitHub API access via the official GitHub MCP server. Gives the agent access to 
 
 The token is optional --- defaults to the output of `gh auth token` if the GitHub CLI is authenticated.
 
+The server image is pinned to a known-good tag and pulled in the background at boot when absent (docker still pulls on first use as the fallback). Override with `"imageTag"` (`"latest"` opts out of pinning); `"autoProvision": false` disables the pre-pull.
+
 ### Long-term Memory
 
 Talon supports two long-term memory backends, selected via the unified `memory` section:
@@ -316,14 +318,9 @@ Set `"backend"` to `"mempalace"` (local, vector search + knowledge graph) or `"m
 
 Structured long-term memory with vector search. The agent can store, search, and retrieve memories semantically. Integrates with Dream mode for automatic memory consolidation and personal diary entries.
 
-**Requirements:** Python 3.10+ with the `mempalace` package.
+**Requirements:** Python 3.10+ on PATH. Nothing else — Talon provisions its own environment.
 
-```bash
-# Set up a Python environment
-python -m venv ~/.talon/mempalace-venv
-~/.talon/mempalace-venv/bin/pip install mempalace    # Unix
-# or: ~/.talon/mempalace-venv/Scripts/pip install mempalace   # Windows
-```
+On first boot Talon creates a venv at `~/.talon/mempalace-venv` and installs the pinned `mempalace` version into it. From then on the venv is **self-maintaining**: version drift against the pin reconciles automatically in the background, a broken install (half-written site-packages, a gutted venv) self-heals at the next start, and one-time palace data migrations (e.g. the ≥3.4 wing-name normalization) are applied exactly once, safely and idempotently. Failed upgrades never take the working install down — the current version keeps serving and the retry backs off.
 
 ```json
 {
@@ -332,13 +329,17 @@ python -m venv ~/.talon/mempalace-venv
     "backend": "mempalace",
     "mempalace": {
       "palacePath": "~/.talon/workspace/palace",
-      "pythonPath": "~/.talon/mempalace-venv/bin/python"
+      "version": "3.8.0",
+      "autoUpdate": true,
+      "autoProvision": true
     }
   }
 }
 ```
 
-Both paths are optional --- defaults to `~/.talon/workspace/palace/` and the venv Python respectively.
+Everything is optional --- `palacePath` defaults to `~/.talon/workspace/palace/`, `version` defaults to the built-in pin, and both `auto*` flags default to `true`. Leave `pythonPath` unset to use the managed venv --- its interpreter is `~/.talon/mempalace-venv/bin/python` on Linux/macOS and `~/.talon/mempalace-venv/Scripts/python.exe` on Windows; any other value is treated as operator-managed (see below). `autoProvision` governs creating and healing the venv; `autoUpdate` governs reconciling a working venv to the pin --- they are independent.
+
+**Bring your own environment:** point `pythonPath` at any interpreter — a `uv tool` install, pipx, conda, or your own venv — and Talon treats it as operator-managed: it is probed and reported on (`talon doctor` shows the exact upgrade command for your install flavor) but never mutated.
 
 #### mem0 backend
 
@@ -378,6 +379,8 @@ Headless browser automation via the Playwright MCP server. The agent can browse 
 ```
 
 Supported browsers: `chromium` (default), `chrome`, `firefox`, `webkit`, `msedge`.
+
+For Playwright-managed engines (`chromium`, `firefox`, `webkit`) the browser build is downloaded automatically at boot when missing — version-matched to the bundled `@playwright/mcp`. System channels (`chrome`, `msedge`) and endpoint mode are never touched. `"autoProvision": false` disables the download.
 
 ### Brave Search
 

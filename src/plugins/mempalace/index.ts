@@ -10,8 +10,15 @@
  *     "palacePath": "/path/to/palace",         // optional, defaults to ~/.talon/workspace/palace/
  *     "pythonPath": "/path/to/python",         // optional, defaults to mempalace venv python (bin/python on Unix, Scripts/python.exe on Windows)
  *     "entityLanguages": ["en", "ja"],         // optional, BCP 47 codes (mempalace >= 3.3)
- *     "verbose": false                          // optional, enables MEMPAL_VERBOSE diagnostics
+ *     "verbose": false,                         // optional, enables MEMPAL_VERBOSE diagnostics
+ *     "version": "3.8.0",                       // optional, overrides the built-in pin (managed venv only)
+ *     "autoUpdate": true,                       // optional, reconcile managed venv to the pin
+ *     "autoProvision": true                     // optional, create/heal the managed venv
  *   }
+ *
+ * The default venv is provisioned automatically at boot (see
+ * ./provision.ts); a custom pythonPath is operator-managed and never
+ * mutated.
  */
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -38,8 +45,11 @@ export function createMempalacePlugin(config: {
   entityLanguages?: readonly string[];
   /** When true, sets MEMPAL_VERBOSE=1 so the MCP server logs diagnostic diaries. */
   verbose?: boolean;
+  /** Version the provisioner found/installed — logging only. */
+  installedVersion?: string;
 }): TalonPlugin {
-  const { pythonPath, palacePath, entityLanguages, verbose } = config;
+  const { pythonPath, palacePath, entityLanguages, verbose, installedVersion } =
+    config;
 
   const envVars: Record<string, string> = {
     MEMPALACE_PALACE_PATH: palacePath,
@@ -142,7 +152,11 @@ export function createMempalacePlugin(config: {
         entityLanguages && entityLanguages.length > 0
           ? ` (languages: ${entityLanguages.join(",")})`
           : "";
-      log("mempalace", `Ready (palace: ${palacePath})${langSuffix}`);
+      const versionSuffix = installedVersion ? ` v${installedVersion}` : "";
+      log(
+        "mempalace",
+        `Ready${versionSuffix} (palace: ${palacePath})${langSuffix}`,
+      );
     },
 
     getEnvVars() {

@@ -1,0 +1,293 @@
+name: Native Provisioning
+
+# Exercises the native-plugin provisioners (src/core/plugin/native-runtimes.ts)
+# against real environments on every OS Talon supports, and keeps the
+# version pins current automatically:
+#
+#  - provision-real: fresh venv install of the pinned mempalace, a real
+#    MCP session that stores and searches a memory, self-heal from a
+#    gutted install, and a genuine 3.3.6 → pin upgrade with the palace
+#    migration — on Linux, macOS, and Windows. The same matrix downloads
+#    the chromium build and drives @playwright/mcp through a navigation;
+#    a Linux job pulls the pinned github-mcp-server image and reads a file
+#    through it with the workflow token. Every runtime is exercised the
+#    way Talon spawns it (the plugin's own command/args/env), not just
+#    installed. Runs on PRs that touch provisioning code, and daily (the
+#    pins don't move, but their unpinned transitive deps do — this
+#    catches that).
+#
+#  - detect → canary → autobump (daily + manual dispatch): detect reads
+#    the pins from source and asks upstream (PyPI, github-mcp-server
+#    releases) for the latest versions. When something is newer, the
+#    canary matrix runs the full real-install suite against the EXACT
+#    candidate version on all three OSes (plus a real chromium download
+#    and a docker pull+smoke). Only the targets whose canary came back
+#    green get their pin bumped: autobump opens a conventional-commit PR
+#    and requests auto-merge, so the bump still passes the normal CI
+#    gauntlet (including provision-real re-running against the new pin)
+#    before it lands. A major-version jump never auto-merges — the PR is
+#    opened for a human.
+#
+#  Full autonomy needs a classic/fine-grained PAT in the AUTOBUMP_TOKEN
+#  secret: PRs opened with the default GITHUB_TOKEN do not trigger CI
+#  (GitHub's recursion guard), so without it the bump PR carries the
+#  canary evidence but waits for a manual merge.
+
+on:
+  pull_request:
+    paths:
+      - "src/core/plugin/**"
+      - "src/plugins/**"
+      - "src/__tests__/native-provision.test.ts"
+      - "src/__tests__/integration/provision-real.test.ts"
+      - "src/__tests__/integration/mcp-stdio-probe.ts"
+      - ".github/workflows/native-provision.yml"
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  provision-real:
+    name: Pinned (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - run: npm ci
+
+      - name: Provisioning suite against pinned versions
+        env:
+          TALON_PROVISION_REAL: "1"
+          TALON_PROVISION_REAL_PLAYWRIGHT: "1"
+        run: npx vitest run src/__tests__/integration/provision-real.test.ts --reporter=verbose
+
+  provision-docker:
+    name: Pinned github-mcp-server
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Image pull + MCP session against the pinned tag
+        env:
+          TALON_PROVISION_REAL_DOCKER: "1"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx vitest run src/__tests__/integration/provision-real.test.ts --reporter=verbose
+
+  detect:
+    name: Detect upstream versions
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mempalace_pin: ${{ steps.versions.outputs.mempalace_pin }}
+      mempalace_latest: ${{ steps.versions.outputs.mempalace_latest }}
+      mempalace_bump: ${{ steps.versions.outputs.mempalace_bump }}
+      github_pin: ${{ steps.versions.outputs.github_pin }}
+      github_latest: ${{ steps.versions.outputs.github_latest }}
+      github_bump: ${{ steps.versions.outputs.github_bump }}
+      any_bump: ${{ steps.versions.outputs.any_bump }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compare pins against upstream
+        id: versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # strictly_newer PIN CANDIDATE — true when CANDIDATE > PIN
+          strictly_newer() {
+            [ "$1" != "$2" ] &&
+              [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$2" ]
+          }
+
+          mp_pin=$(grep -oP 'MEMPALACE_PINNED_VERSION = "\K[0-9.]+' src/plugins/mempalace/provision.ts)
+          mp_latest=$(curl -fsSL https://pypi.org/pypi/mempalace/json | jq -r .info.version)
+          gh_pin=$(grep -oP 'GITHUB_MCP_PINNED_TAG = "\K[^"]+' src/plugins/github/provision.ts)
+          gh_latest=$(gh api repos/github/github-mcp-server/releases/latest -q .tag_name)
+
+          mp_bump=false; gh_bump=false
+          strictly_newer "$mp_pin" "$mp_latest" && mp_bump=true
+          strictly_newer "${gh_pin#v}" "${gh_latest#v}" && gh_bump=true
+
+          {
+            echo "mempalace_pin=$mp_pin"
+            echo "mempalace_latest=$mp_latest"
+            echo "mempalace_bump=$mp_bump"
+            echo "github_pin=$gh_pin"
+            echo "github_latest=$gh_latest"
+            echo "github_bump=$gh_bump"
+            echo "any_bump=$([ "$mp_bump" = true ] || [ "$gh_bump" = true ] && echo true || echo false)"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  canary:
+    name: Canary mempalace ${{ needs.detect.outputs.mempalace_latest }} (${{ matrix.os }})
+    needs: detect
+    if: needs.detect.outputs.mempalace_bump == 'true' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - run: npm ci
+
+      - name: Provisioning suite against the candidate version
+        env:
+          TALON_PROVISION_REAL: "1"
+          TALON_PROVISION_TARGET: ${{ needs.detect.outputs.mempalace_latest }}
+          TALON_PROVISION_REAL_PLAYWRIGHT: "1"
+        run: npx vitest run src/__tests__/integration/provision-real.test.ts --reporter=verbose
+
+  canary-docker:
+    name: Canary github-mcp-server ${{ needs.detect.outputs.github_latest }}
+    needs: detect
+    if: needs.detect.outputs.github_bump == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Image pull + MCP session against the candidate tag
+        env:
+          TALON_PROVISION_REAL_DOCKER: "1"
+          TALON_PROVISION_GITHUB_TAG: ${{ needs.detect.outputs.github_latest }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx vitest run src/__tests__/integration/provision-real.test.ts --reporter=verbose
+
+  autobump:
+    name: Bump green pins
+    needs: [detect, canary, canary-docker]
+    if: >-
+      always() && needs.detect.result == 'success' &&
+      needs.detect.outputs.any_bump == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.AUTOBUMP_TOKEN != '' && secrets.AUTOBUMP_TOKEN || github.token }}
+
+      - name: Bump each pin whose canary is green, open auto-merge PR
+        env:
+          GH_TOKEN: ${{ secrets.AUTOBUMP_TOKEN != '' && secrets.AUTOBUMP_TOKEN || github.token }}
+          HAS_PAT: ${{ secrets.AUTOBUMP_TOKEN != '' }}
+          MP_PIN: ${{ needs.detect.outputs.mempalace_pin }}
+          MP_LATEST: ${{ needs.detect.outputs.mempalace_latest }}
+          MP_BUMP: ${{ needs.detect.outputs.mempalace_bump }}
+          MP_CANARY: ${{ needs.canary.result }}
+          GHM_PIN: ${{ needs.detect.outputs.github_pin }}
+          GHM_LATEST: ${{ needs.detect.outputs.github_latest }}
+          GHM_BUMP: ${{ needs.detect.outputs.github_bump }}
+          GHM_CANARY: ${{ needs.canary-docker.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          summary=(); evidence=(); major_jump=false
+
+          major() { echo "${1#v}" | cut -d. -f1; }
+
+          if [ "$MP_BUMP" = "true" ] && [ "$MP_CANARY" = "success" ]; then
+            sed -i "s/MEMPALACE_PINNED_VERSION = \"$MP_PIN\"/MEMPALACE_PINNED_VERSION = \"$MP_LATEST\"/" \
+              src/plugins/mempalace/provision.ts
+            sed -i "s/\"version\": \"$MP_PIN\"/\"version\": \"$MP_LATEST\"/" README.md
+            summary+=("mempalace $MP_LATEST")
+            evidence+=("- mempalace \`$MP_PIN\` → \`$MP_LATEST\` — canary green on ubuntu/macos/windows (fresh install, MCP handshake, self-heal, 3.3.6→candidate upgrade + palace migration)")
+            [ "$(major "$MP_PIN")" != "$(major "$MP_LATEST")" ] && major_jump=true
+          elif [ "$MP_BUMP" = "true" ]; then
+            echo "mempalace $MP_LATEST available but canary result was '$MP_CANARY' — not bumping"
+          fi
+
+          if [ "$GHM_BUMP" = "true" ] && [ "$GHM_CANARY" = "success" ]; then
+            sed -i "s/GITHUB_MCP_PINNED_TAG = \"$GHM_PIN\"/GITHUB_MCP_PINNED_TAG = \"$GHM_LATEST\"/" \
+              src/plugins/github/provision.ts
+            summary+=("github-mcp $GHM_LATEST")
+            evidence+=("- github-mcp-server \`$GHM_PIN\` → \`$GHM_LATEST\` — image pull + smoke green")
+            [ "$(major "$GHM_PIN")" != "$(major "$GHM_LATEST")" ] && major_jump=true
+          elif [ "$GHM_BUMP" = "true" ]; then
+            echo "github-mcp-server $GHM_LATEST available but canary result was '$GHM_CANARY' — not bumping"
+          fi
+
+          git diff --quiet && { echo "no green bumps to apply"; exit 0; }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          title="fix(plugins): bump native runtime pins ($(IFS=', '; echo "${summary[*]}"))"
+          git checkout -b autobump/native-pins
+          git commit -am "$title"
+          git push -f origin HEAD:autobump/native-pins
+
+          body="Automated pin bump from the [native-provision canary]($RUN_URL). Each target below passed the full real-environment suite against the exact candidate version before this PR was opened; the provision-real matrix on this PR re-validates the new pins.
+
+          $(printf '%s\n' "${evidence[@]}")
+
+          Opened automatically by the native-provision workflow."
+
+          existing=$(gh pr list --head autobump/native-pins --state open --json number -q '.[0].number' || true)
+          if [ -n "$existing" ]; then
+            echo "updating existing autobump PR #$existing (branch force-pushed)"
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$existing" \
+              -f title="$title" -f body="$body" >/dev/null
+            pr_url=$(gh pr view "$existing" --json url -q .url)
+          else
+            pr_url=$(gh pr create --title "$title" --body "$body")
+          fi
+
+          if [ "$major_jump" = "true" ]; then
+            echo "major-version jump — leaving $pr_url for human review, no auto-merge"
+          elif [ "$HAS_PAT" != "true" ]; then
+            echo "no AUTOBUMP_TOKEN — CI will not trigger on this PR; merge $pr_url manually on green"
+          else
+            gh pr merge --auto --squash "$pr_url"
+          fi
