@@ -34,7 +34,11 @@ import { createMempalacePlugin } from "../../plugins/mempalace/index.js";
 import { provisionPlaywright } from "../../plugins/playwright/provision.js";
 import { createPlaywrightPlugin } from "../../plugins/playwright/index.js";
 import { createGitHubPlugin } from "../../plugins/github/index.js";
-import { withPluginMcp } from "./mcp-stdio-probe.js";
+import {
+  currentRuntime,
+  talonSelfInvocation,
+  withPluginMcp,
+} from "./mcp-stdio-probe.js";
 import {
   provisionGithubMcp,
   githubMcpImageRef,
@@ -60,6 +64,25 @@ async function resolveTarget(): Promise<string> {
 
 /** A memory stored through MCP and expected back from search, verbatim. */
 const MEMORY = "The provisioning canary bumps pins only when green.";
+
+/**
+ * Every MCP session below runs under Talon's `_mcp-launch` supervisor on
+ * the runtime executing this file — the production chain for a source
+ * run, and the one piece that differs between node and bun.
+ */
+const SESSION = { supervise: true } as const;
+
+describe("runtime under test", () => {
+  it("is the runtime the CI job claims (TALON_EXPECT_RUNTIME)", () => {
+    const expected = process.env.TALON_EXPECT_RUNTIME;
+    if (expected) expect(currentRuntime()).toBe(expected);
+    // The supervisor re-invocation must point at this repo's CLI on the
+    // same runtime, never at the test runner.
+    const [command, ...args] = talonSelfInvocation();
+    expect(command).toBe(process.execPath);
+    expect(args.at(-1)).toMatch(/src[\\/]cli\.ts$/);
+  });
+});
 
 describe.skipIf(!REAL)("mempalace real provisioning", () => {
   it(
@@ -114,7 +137,7 @@ describe.skipIf(!REAL)("mempalace real provisioning", () => {
           });
           expect(found).toContain(MEMORY);
         },
-        { timeoutMs: 10 * 60_000 },
+        { ...SESSION, timeoutMs: 10 * 60_000 },
       );
 
       // The palace now holds data, so the next pass applies the one-time
@@ -244,7 +267,7 @@ describe.skipIf(!REAL_PLAYWRIGHT)("playwright real provisioning", () => {
           const snapshot = await mcp.callText("browser_snapshot", {});
           expect(snapshot).toContain("talon-provision-ci");
         },
-        { extraEnv: { PLAYWRIGHT_BROWSERS_PATH: browsers } },
+        { ...SESSION, extraEnv: { PLAYWRIGHT_BROWSERS_PATH: browsers } },
       );
 
       rmSync(home, { recursive: true, force: true });
@@ -293,6 +316,7 @@ describe.skipIf(!REAL_DOCKER)("github mcp real provisioning", () => {
           });
           expect(pkg).toContain('"name"');
         },
+        SESSION,
       );
 
       rmSync(home, { recursive: true, force: true });
