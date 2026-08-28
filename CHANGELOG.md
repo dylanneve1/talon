@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.28.1](https://github.com/dylanneve1/talon/compare/v3.28.0...v3.28.1) (2026-08-28)
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump oxlint in the dev-dependencies group ([#796](https://github.com/dylanneve1/talon/issues/796)) ([b292196](https://github.com/dylanneve1/talon/commit/b292196f6f33ad0d2c288332a324e5f36515702a))
+* **deps:** Bump @anthropic-ai/claude-agent-sdk ([#794](https://github.com/dylanneve1/talon/issues/794)) ([64fd394](https://github.com/dylanneve1/talon/commit/64fd394e58b1930979bb024da856a9ead9a3ebe9))
+* **deps:** Bump @anthropic-ai/claude-agent-sdk ([#795](https://github.com/dylanneve1/talon/issues/795)) ([8a939bd](https://github.com/dylanneve1/talon/commit/8a939bdb78946f131f04a081700a0aab2de7b95b))
+* **deps:** Bump actions/setup-java from 5 to 6 ([bb990b8](https://github.com/dylanneve1/talon/commit/bb990b89089706fe96ae5aa6f750d9d45a195ab6))
+* **deps:** Bump actions/setup-java from 5 to 6 ([16983a5](https://github.com/dylanneve1/talon/commit/16983a546d133433944637714efab0697ead84b4))
+* **deps:** Bump github/codeql-action from 4.37.7 to 4.37.8 ([#792](https://github.com/dylanneve1/talon/issues/792)) ([41e2027](https://github.com/dylanneve1/talon/commit/41e2027471e77c92a1dfef64c1a5f94792aa2dd0))
+* **deps:** Bump the production-dependencies group with 4 updates ([#798](https://github.com/dylanneve1/talon/issues/798)) ([59683b9](https://github.com/dylanneve1/talon/commit/59683b9f49a1d3f928abc7bfe0ead22352ef22f9))
+* **deps:** Bump the production-dependencies group with 6 updates ([#791](https://github.com/dylanneve1/talon/issues/791)) ([9779b38](https://github.com/dylanneve1/talon/commit/9779b38f92367be71f1fdf4c93295ff995ac39c3))
+
 ## [3.28.0](https://github.com/dylanneve1/talon/compare/v3.27.0...v3.28.0) (2026-08-23)
 
 
