@@ -4,11 +4,17 @@ name: Native Provisioning
 # against real environments on every OS Talon supports, and keeps the
 # version pins current automatically:
 #
-#  - provision-real: fresh venv install of the pinned mempalace, live MCP
-#    handshake, self-heal from a gutted install, and a genuine 3.3.6 → pin
-#    upgrade with the palace migration — on Linux, macOS, and Windows.
-#    Runs on PRs that touch provisioning code, and daily (the pins don't
-#    move, but their unpinned transitive deps do — this catches that).
+#  - provision-real: fresh venv install of the pinned mempalace, a real
+#    MCP session that stores and searches a memory, self-heal from a
+#    gutted install, and a genuine 3.3.6 → pin upgrade with the palace
+#    migration — on Linux, macOS, and Windows. The same matrix downloads
+#    the chromium build and drives @playwright/mcp through a navigation;
+#    a Linux job pulls the pinned github-mcp-server image and reads a file
+#    through it with the workflow token. Every runtime is exercised the
+#    way Talon spawns it (the plugin's own command/args/env), not just
+#    installed. Runs on PRs that touch provisioning code, and daily (the
+#    pins don't move, but their unpinned transitive deps do — this
+#    catches that).
 #
 #  - detect → canary → autobump (daily + manual dispatch): detect reads
 #    the pins from source and asks upstream (PyPI, github-mcp-server
@@ -34,6 +40,7 @@ on:
       - "src/plugins/**"
       - "src/__tests__/native-provision.test.ts"
       - "src/__tests__/integration/provision-real.test.ts"
+      - "src/__tests__/integration/mcp-stdio-probe.ts"
       - ".github/workflows/native-provision.yml"
   schedule:
     - cron: "23 5 * * *"
@@ -72,6 +79,27 @@ jobs:
       - name: Provisioning suite against pinned versions
         env:
           TALON_PROVISION_REAL: "1"
+          TALON_PROVISION_REAL_PLAYWRIGHT: "1"
+        run: npx vitest run src/__tests__/integration/provision-real.test.ts --reporter=verbose
+
+  provision-docker:
+    name: Pinned github-mcp-server
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Image pull + MCP session against the pinned tag
+        env:
+          TALON_PROVISION_REAL_DOCKER: "1"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx vitest run src/__tests__/integration/provision-real.test.ts --reporter=verbose
 
   detect:
@@ -168,10 +196,11 @@ jobs:
 
       - run: npm ci
 
-      - name: Image pull + smoke against the candidate tag
+      - name: Image pull + MCP session against the candidate tag
         env:
           TALON_PROVISION_REAL_DOCKER: "1"
           TALON_PROVISION_GITHUB_TAG: ${{ needs.detect.outputs.github_latest }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx vitest run src/__tests__/integration/provision-real.test.ts --reporter=verbose
 
   autobump:

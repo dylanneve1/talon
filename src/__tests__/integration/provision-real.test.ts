@@ -17,7 +17,6 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,7 +30,11 @@ import {
   provisionMempalace,
   MEMPALACE_PINNED_VERSION,
 } from "../../plugins/mempalace/provision.js";
+import { createMempalacePlugin } from "../../plugins/mempalace/index.js";
 import { provisionPlaywright } from "../../plugins/playwright/provision.js";
+import { createPlaywrightPlugin } from "../../plugins/playwright/index.js";
+import { createGitHubPlugin } from "../../plugins/github/index.js";
+import { withPluginMcp } from "./mcp-stdio-probe.js";
 import {
   provisionGithubMcp,
   githubMcpImageRef,
@@ -55,69 +58,8 @@ async function resolveTarget(): Promise<string> {
   return data.info.version;
 }
 
-/**
- * Spawn the mempalace MCP server over stdio and complete a JSON-RPC
- * initialize handshake — the same contract the Claude SDK relies on.
- */
-async function mcpInitialize(
-  python: string,
-  palace: string,
-): Promise<{ serverName?: string }> {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(
-      python,
-      ["-m", "mempalace.mcp_server", "--palace", palace],
-      { env: { ...process.env, MEMPALACE_PALACE_PATH: palace } },
-    );
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      rejectPromise(new Error("MCP initialize timed out"));
-    }, 120_000);
-
-    let buffer = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString();
-      for (const line of buffer.split("\n")) {
-        if (!line.trim()) continue;
-        try {
-          const msg = JSON.parse(line) as {
-            id?: number;
-            result?: { serverInfo?: { name?: string } };
-          };
-          if (msg.id === 1 && msg.result) {
-            clearTimeout(timer);
-            child.kill("SIGKILL");
-            resolvePromise({ serverName: msg.result.serverInfo?.name });
-            return;
-          }
-        } catch {
-          /* partial line — keep buffering */
-        }
-      }
-    });
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      rejectPromise(err);
-    });
-    child.on("exit", (code) => {
-      clearTimeout(timer);
-      rejectPromise(new Error(`MCP server exited early (code ${code})`));
-    });
-
-    child.stdin.write(
-      JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "initialize",
-        params: {
-          protocolVersion: "2024-11-05",
-          capabilities: {},
-          clientInfo: { name: "talon-provision-ci", version: "0" },
-        },
-      }) + "\n",
-    );
-  });
-}
+/** A memory stored through MCP and expected back from search, verbatim. */
+const MEMORY = "The provisioning canary bumps pins only when green.";
 
 describe.skipIf(!REAL)("mempalace real provisioning", () => {
   it(
@@ -143,9 +85,32 @@ describe.skipIf(!REAL)("mempalace real provisioning", () => {
       expect(fresh.version).toBe(target);
       expect(fresh.actions.join(" ")).toContain("created venv");
 
-      // The runtime actually serves MCP.
-      const handshake = await mcpInitialize(python, palace);
-      expect(handshake.serverName).toBeTruthy();
+      // The runtime actually serves MCP, driven exactly as Talon drives
+      // it (the plugin's own command/args/env): store a memory, search it
+      // back. The first search loads the embedder, so the timeout is wide.
+      await withPluginMcp(
+        createMempalacePlugin({ pythonPath: python, palacePath: palace }),
+        async (mcp) => {
+          expect(mcp.tools).toEqual(
+            expect.arrayContaining([
+              "mempalace_add_drawer",
+              "mempalace_search",
+            ]),
+          );
+          const added = await mcp.callText("mempalace_add_drawer", {
+            wing: "talon-ci",
+            room: "decisions",
+            content: MEMORY,
+          });
+          expect(added).toContain('"success": true');
+          const found = await mcp.callText("mempalace_search", {
+            query: "when does the canary bump pins",
+            limit: 3,
+          });
+          expect(found).toContain(MEMORY);
+        },
+        { timeoutMs: 10 * 60_000 },
+      );
 
       // Idempotent second pass: nothing to do.
       const again = await provisionMempalace(opts, deps);
@@ -257,6 +222,23 @@ describe.skipIf(!REAL_PLAYWRIGHT)("playwright real provisioning", () => {
       expect(again.status, detail(again)).toBe("ready");
       expect(again.actions).toHaveLength(0);
 
+      // The build actually launches under @playwright/mcp with the
+      // plugin's own args (headless, no-sandbox): navigate, read the page.
+      await withPluginMcp(
+        createPlaywrightPlugin({ browser: "chromium", headless: true }),
+        async (mcp) => {
+          expect(mcp.tools).toEqual(
+            expect.arrayContaining(["browser_navigate", "browser_snapshot"]),
+          );
+          await mcp.callText("browser_navigate", {
+            url: "data:text/html,<title>Talon Probe</title><h1>talon-provision-ci</h1>",
+          });
+          const snapshot = await mcp.callText("browser_snapshot", {});
+          expect(snapshot).toContain("talon-provision-ci");
+        },
+        { extraEnv: { PLAYWRIGHT_BROWSERS_PATH: browsers } },
+      );
+
       rmSync(home, { recursive: true, force: true });
     },
   );
@@ -283,6 +265,27 @@ describe.skipIf(!REAL_DOCKER)("github mcp real provisioning", () => {
         { timeoutMs: 120_000 },
       );
       expect(help.ok).toBe(true);
+
+      // A real stdio session through the plugin's docker command line;
+      // with a token (CI's GITHUB_TOKEN) a read-only call round-trips to
+      // the API for the repository under test.
+      const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+      await withPluginMcp(
+        createGitHubPlugin({ token, imageTag }),
+        async (mcp) => {
+          expect(mcp.tools).toContain("get_file_contents");
+          if (!token) return;
+          const [owner, repo] = (
+            process.env.GITHUB_REPOSITORY ?? "dylanneve1/talon"
+          ).split("/");
+          const pkg = await mcp.callText("get_file_contents", {
+            owner,
+            repo,
+            path: "package.json",
+          });
+          expect(pkg).toContain('"name"');
+        },
+      );
 
       rmSync(home, { recursive: true, force: true });
     },
