@@ -92,14 +92,38 @@ export function armProvisionReport(frontend: string, target: string): void {
   }
 }
 
-const DELIVER_ATTEMPTS = 6;
-const DELIVER_DELAY_MS = 5_000;
+const DELIVER_ATTEMPTS = 60;
+const DELIVER_DELAY_MS = 15_000;
+
+/**
+ * Background reconcile tasks still running (a version upgrade, a docker
+ * pull). The post-update report waits for them: their actions are the
+ * changes worth reporting, and they settle minutes after boot.
+ */
+let backgroundInFlight = 0;
+
+/** Track a background provisioning task until it settles (including its journaling). */
+export function trackBackgroundProvision<T>(task: Promise<T>): Promise<T> {
+  backgroundInFlight++;
+  return task.finally(() => {
+    backgroundInFlight--;
+  });
+}
+
+export function backgroundProvisionInFlight(): number {
+  return backgroundInFlight;
+}
 
 /**
  * Deliver the pending report, if one is armed and this boot's
- * provisioning actually changed something. Retries a few times because
- * it races frontend registration on the cross-send broker; gives up
- * quietly — this is a courtesy message, not state.
+ * provisioning changed something. Waits for the boot's background
+ * reconcile tasks to settle before reading the journal, so the report
+ * covers what they did rather than a snapshot taken while pip was still
+ * running, and retries the send because it races frontend registration
+ * on the cross-send broker. Bounded (~15 minutes, matching the longest
+ * provisioner timeout), then gives up quietly — this is a courtesy
+ * message, not state. Returns immediately when nothing is pending and
+ * nothing changed.
  */
 export async function deliverPendingProvisionReport(
   send: (frontend: string, target: string, text: string) => Promise<boolean>,
@@ -108,34 +132,41 @@ export async function deliverPendingProvisionReport(
 ): Promise<void> {
   const pending = readJson<PendingReport>(pendingPath());
   if (!pending?.frontend || !pending.target || !pending.since) return;
+  // Consume the marker up front so a crashy boot can't replay a stale
+  // report later; the wait loop below keeps it alive in memory.
   try {
     rmSync(pendingPath(), { force: true });
   } catch {
     /* already gone is fine */
   }
 
-  const events = provisionEventsSince(pending.since);
-  if (events.length === 0) return;
-
-  const lines = events.map((e) => `• ${e.plugin}: ${e.action}`);
-  const text = `♻️ Back online. Provisioning changes during the update:\n${lines.join("\n")}`;
-
   for (let attempt = 1; attempt <= DELIVER_ATTEMPTS; attempt++) {
-    try {
-      if (await send(pending.frontend, pending.target, text)) {
-        log(
-          "plugin",
-          `Post-update provision report delivered (${events.length} change${events.length === 1 ? "" : "s"})`,
-        );
-        return;
+    // Report only once the background work is done — or, on the last
+    // attempt, whatever has landed so far rather than nothing.
+    const settled = backgroundInFlight === 0 || attempt === DELIVER_ATTEMPTS;
+    if (settled) {
+      const events = provisionEventsSince(pending.since);
+      if (events.length === 0 && backgroundInFlight === 0) return;
+      if (events.length > 0) {
+        const lines = events.map((e) => `• ${e.plugin}: ${e.action}`);
+        const text = `♻️ Back online. Provisioning changes during the update:\n${lines.join("\n")}`;
+        try {
+          if (await send(pending.frontend, pending.target, text)) {
+            log(
+              "plugin",
+              `Post-update provision report delivered (${events.length} change${events.length === 1 ? "" : "s"})`,
+            );
+            return;
+          }
+        } catch {
+          /* fall through to retry */
+        }
       }
-    } catch {
-      /* fall through to retry */
     }
     if (attempt < DELIVER_ATTEMPTS) await sleep(DELIVER_DELAY_MS);
   }
   logWarn(
     "plugin",
-    `Post-update provision report not delivered (${pending.frontend} unavailable)`,
+    `Post-update provision report not delivered (${pending.frontend} unavailable or provisioning still running)`,
   );
 }

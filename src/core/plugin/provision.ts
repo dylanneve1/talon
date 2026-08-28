@@ -239,11 +239,10 @@ export function expandHome(path: string, home: string): string {
 
 /** Human-readable failure detail from an exec result (spawn error, last stderr line, or exit code). */
 export function failDetail(result: ExecResult): string {
-  return (
-    result.error ??
-    result.stderr.trim().split("\n").pop()?.slice(0, 300) ??
-    `exit ${result.code}`
-  );
+  // An empty stderr yields "" from pop(), which is not nullish — treat
+  // it as absent so the exit-code fallback actually fires.
+  const tail = result.stderr.trim().split("\n").pop()?.slice(0, 300);
+  return result.error ?? (tail || `exit ${result.code ?? "?"}`);
 }
 
 /** Record a successful pass: clears the failure streak, persists. */

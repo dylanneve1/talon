@@ -162,7 +162,11 @@ export async function inspectGithub(
     {
       label: `GitHub MCP image not pulled (${image})`,
       status: "warn",
-      detail: "pulls in the background at next talon start",
+      detail:
+        section.autoProvision === false
+          ? `automatic pull disabled (github.autoProvision: false) — run: docker pull ${image}`
+          : "pulls in the background at next talon start",
+      issue: true,
     },
   ];
 }

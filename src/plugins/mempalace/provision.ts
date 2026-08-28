@@ -11,7 +11,9 @@
  * Ordering guarantees, in priority order:
  *   1. A working install keeps working. Upgrade failures (network down,
  *      PyPI outage) leave the current version serving and retry later
- *      with backoff.
+ *      with backoff; pip downloads everything before it touches the
+ *      environment, and if a failure does land mid-mutation the pass
+ *      rolls back to the previous version before reporting.
  *   2. Version drift reconciles in the background — boot never blocks on
  *      pip when a usable install exists.
  *   3. Destructive healing (venv --clear) only ever targets the
@@ -52,6 +54,8 @@ const PYTHON_MIN = { major: 3, minor: 10 };
 
 /** One-time palace migration ledger key (mempalace >= 3.4 wing renames). */
 const WING_MIGRATION = "wing-names";
+/** First mempalace release that ships `migrate-wings`. */
+const WING_MIGRATION_MIN_VERSION = "3.4.0";
 
 /**
  * One subprocess proves both facts that matter: the dist is installed
@@ -139,8 +143,16 @@ export function classifyExternalInstall(pythonPath: string): string {
   return "external";
 }
 
-/** The exact upgrade command for an operator-managed install's flavor. */
-function upgradeHint(kind: string, python: string, target: string): string {
+/**
+ * The exact command that puts an operator-managed install on the pinned
+ * version, per flavor. Works in both directions (a newer-than-pin
+ * install reconciles down), hence the neutral name.
+ */
+export function reconcileHint(
+  kind: string,
+  python: string,
+  target: string,
+): string {
   if (kind === "uv-tool") {
     return `uv tool install --force 'mempalace==${target}'`;
   }
@@ -213,18 +225,19 @@ export async function provisionMempalace(
     return outcome;
   }
 
-  if (section.autoProvision === false) {
+  // autoProvision governs creating/healing an unusable venv; autoUpdate
+  // governs reconciling a working one. Independent settings, so a
+  // healthy-but-drifted venv with autoProvision off still reaches the
+  // update path below (which never rebuilds a working install).
+  if (!probe.healthy && section.autoProvision === false) {
     return {
-      status: probe.healthy ? "ready" : "failed",
-      version: probe.version,
+      status: "failed",
       kind: "managed-venv",
       actions: [],
       warnings: [
-        probe.healthy
-          ? `installed ${probe.version}, pinned ${target} — autoProvision is off, run: ${python} -m pip install --upgrade 'mempalace==${target}'`
-          : `mempalace not usable (${probe.error}) and autoProvision is off — create the venv manually (see README) or re-enable autoProvision`,
+        `mempalace not usable (${probe.error}) and autoProvision is off — create the venv manually (see README) or re-enable autoProvision`,
       ],
-      error: probe.healthy ? undefined : probe.error,
+      error: probe.error,
     };
   }
 
@@ -290,7 +303,7 @@ function externalOutcome(
   pathExists: (p: string) => boolean,
 ): ProvisionOutcome {
   const kind = classifyExternalInstall(python);
-  const hint = upgradeHint(kind, python, target);
+  const hint = reconcileHint(kind, python, target);
   if (!pathExists(python)) {
     return {
       status: "failed",
@@ -314,9 +327,9 @@ function externalOutcome(
     };
   }
   const warnings: string[] = [];
-  if (compareVersions(probe.version!, target) < 0) {
+  if (compareVersions(probe.version!, target) !== 0) {
     warnings.push(
-      `installed ${probe.version}, Talon pins ${target} — operator-managed (${kind}), upgrade with: ${hint}`,
+      `installed ${probe.version}, Talon pins ${target} — operator-managed (${kind}), reconcile with: ${hint}`,
     );
   }
   return {
@@ -369,19 +382,28 @@ async function reconcile(ctx: ReconcileContext): Promise<ProvisionOutcome> {
   const warnings: string[] = [];
   let recreatedThisPass = false;
 
-  const fail = (error: string): ProvisionOutcome => {
+  const fail = async (error: string): Promise<ProvisionOutcome> => {
     markProvisionFailure(ctx.statePath, ctx.state, target, error, ctx.now());
     if (ctx.previous) {
+      // Trust nothing: the upgrade may have died mid-mutation. Re-probe
+      // the venv and, if the previous install is gone, put it back before
+      // reporting — "staying on X" must be true, not assumed.
+      const kept = await ensurePrevious(ctx, ctx.previous.version);
+      if (kept) {
+        warnings.push(
+          `upgrade to ${target} failed (${error}) — staying on working ${kept.version}${kept.restored ? " (rolled back)" : ""}, will retry with backoff`,
+        );
+        return {
+          status: "degraded",
+          version: kept.version,
+          kind: "managed-venv",
+          actions,
+          warnings,
+        };
+      }
       warnings.push(
-        `upgrade to ${target} failed (${error}) — staying on working ${ctx.previous.version}, will retry with backoff`,
+        `upgrade to ${target} failed (${error}) and the previous ${ctx.previous.version} could not be restored — self-heals at the next provision pass`,
       );
-      return {
-        status: "degraded",
-        version: ctx.previous.version,
-        kind: "managed-venv",
-        actions,
-        warnings,
-      };
     }
     return {
       status: "failed",
@@ -439,7 +461,7 @@ async function reconcile(ctx: ReconcileContext): Promise<ProvisionOutcome> {
   // Step 1 — ensure an interpreter exists at all.
   if (!pathExists(python)) {
     const err = await recreateVenv();
-    if (err) return fail(err);
+    if (err) return await fail(err);
   }
 
   // Step 2 — install/upgrade. A pass that started from a broken-but-present
@@ -466,15 +488,15 @@ async function reconcile(ctx: ReconcileContext): Promise<ProvisionOutcome> {
     if (!err) installed = await pipInstall(false);
   }
 
-  if (!installed.ok) return fail(failDetail(installed));
+  if (!installed.ok) return await fail(failDetail(installed));
 
   // Step 4 — trust nothing: verify the interpreter now serves the target.
   const verify = await probeHealth(exec, python);
   if (!verify.healthy) {
-    return fail(`installed but not importable: ${verify.error}`);
+    return await fail(`installed but not importable: ${verify.error}`);
   }
   if (verify.version !== target) {
-    return fail(
+    return await fail(
       `expected ${target} after install, found ${verify.version ?? "nothing"}`,
     );
   }
@@ -499,16 +521,55 @@ async function reconcile(ctx: ReconcileContext): Promise<ProvisionOutcome> {
 }
 
 /**
+ * After a failed upgrade: confirm the previous install still serves, or
+ * reinstall it. Returns what is serving now, or undefined when the venv
+ * is broken beyond a one-shot rollback (the next pass's heal ladder
+ * takes over from there).
+ */
+async function ensurePrevious(
+  ctx: ReconcileContext,
+  previous: string,
+): Promise<{ version: string; restored: boolean } | undefined> {
+  const still = await probeHealth(ctx.exec, ctx.python);
+  if (still.healthy) return { version: still.version!, restored: false };
+  const rollback = await ctx.exec(
+    ctx.python,
+    [
+      "-m",
+      "pip",
+      "install",
+      "--force-reinstall",
+      "--no-deps",
+      `mempalace==${previous}`,
+    ],
+    { timeoutMs: PIP_TIMEOUT_MS, env: { PIP_DISABLE_PIP_VERSION_CHECK: "1" } },
+  );
+  if (!rollback.ok) return undefined;
+  const after = await probeHealth(ctx.exec, ctx.python);
+  return after.healthy
+    ? { version: after.version!, restored: true }
+    : undefined;
+}
+
+/**
  * One-time palace data migrations, applied only to palaces that already
  * hold data (a chroma store) and recorded in the state ledger so they
  * run exactly once per deployment. `migrate-wings` itself is idempotent,
- * so a lost ledger costs one harmless re-run, never data.
+ * so a lost ledger costs one harmless re-run, never data. Gated on the
+ * serving version actually shipping the command — a pin below 3.4 has
+ * nothing to migrate to.
  */
 async function maybeMigratePalace(
   ctx: ReconcileContext,
   outcome: ProvisionOutcome,
 ): Promise<void> {
   if (ctx.state.migrations?.[WING_MIGRATION]) return;
+  if (
+    compareVersions(outcome.version ?? ctx.target, WING_MIGRATION_MIN_VERSION) <
+    0
+  ) {
+    return;
+  }
   if (!ctx.pathExists(join(ctx.palace, "chroma.sqlite3"))) return;
 
   const result = await ctx.exec(
@@ -554,16 +615,21 @@ export async function inspectMempalace(
   const pin = section.version ?? MEMPALACE_PINNED_VERSION;
   const managed =
     python === resolve(deps.defaultManagedPython ?? files.mempalacePython);
-  const kind = managed ? "managed venv" : classifyExternalInstall(python);
+  const flavor = managed ? "managed venv" : classifyExternalInstall(python);
+  const hint = reconcileHint(flavor, python, pin);
+  const provisionOff = section.autoProvision === false;
+  const updateOff = section.autoUpdate === false;
 
   if (!pathExists(python)) {
     return [
       {
-        label: `MemPalace runtime missing (${kind})`,
-        status: managed ? "warn" : "fail",
+        label: `MemPalace runtime missing (${flavor})`,
+        status: managed && !provisionOff ? "warn" : "fail",
         detail: managed
-          ? `provisions automatically at next talon start (pin ${pin})`
-          : `python not found at ${python}`,
+          ? provisionOff
+            ? `automatic provisioning disabled (mempalace.autoProvision: false) — create the venv manually (see README) or re-enable it`
+            : `provisions automatically at next talon start (pin ${pin})`
+          : `python not found at ${python} — fix the path or install with: ${hint}`,
         issue: true,
       },
     ];
@@ -572,25 +638,29 @@ export async function inspectMempalace(
   if (!probe.healthy) {
     return [
       {
-        label: `MemPalace broken (${kind})`,
-        status: "warn",
+        label: `MemPalace broken (${flavor})`,
+        status: managed && !provisionOff ? "warn" : "fail",
         detail: managed
-          ? "self-heals at next talon start"
-          : `mempalace not importable from ${python} (${probe.error})`,
+          ? provisionOff
+            ? `not importable (${probe.error}); automatic healing disabled (mempalace.autoProvision: false) — repair manually or re-enable it`
+            : "self-heals at next talon start"
+          : `mempalace not importable from ${python} (${probe.error}) — install with: ${hint}`,
         issue: true,
       },
     ];
   }
   if (probe.version === pin) {
-    return [{ label: `MemPalace ${probe.version} (${kind})`, status: "ok" }];
+    return [{ label: `MemPalace ${probe.version} (${flavor})`, status: "ok" }];
   }
   return [
     {
-      label: `MemPalace ${probe.version}, pinned ${pin} (${kind})`,
+      label: `MemPalace ${probe.version}, pinned ${pin} (${flavor})`,
       status: "warn",
       detail: managed
-        ? "reconciles at next talon start"
-        : "operator-managed install — upgrade when ready",
+        ? updateOff
+          ? `automatic update disabled (mempalace.autoUpdate: false) — run: ${hint}`
+          : "reconciles at next talon start"
+        : `operator-managed install — reconcile when ready with: ${hint}`,
       issue: managed,
     },
   ];

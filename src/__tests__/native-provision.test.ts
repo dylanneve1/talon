@@ -36,6 +36,7 @@ import {
 } from "../plugins/playwright/provision.js";
 import {
   githubMcpImageRef,
+  inspectGithub,
   provisionGithubMcp,
   GITHUB_MCP_PINNED_TAG,
 } from "../plugins/github/provision.js";
@@ -198,6 +199,19 @@ describe("mempalace provisioner", () => {
     expect(outcome.warnings.join(" ")).toContain("uv tool install --force");
     // Only the probe ran — no pip, no venv.
     expect(exec.calls).toHaveLength(1);
+
+    // Newer than the pin is drift too — same advisory, neutral wording.
+    const ahead = await provisionMempalace(
+      { pythonPath: uvPython, palacePath: p.palace },
+      {
+        exec: fakeExec([probeRule("99.0.0")]),
+        defaultManagedPython: p.python,
+        statePath: p.state,
+        pathExists: (x) => x === uvPython,
+      },
+    );
+    expect(ahead.status).toBe("ready");
+    expect(ahead.warnings.join(" ")).toContain("reconcile with: uv tool");
   });
 
   it("fails an external install with a missing interpreter, with an install hint", async () => {
@@ -414,6 +428,108 @@ describe("mempalace provisioner", () => {
     );
   });
 
+  it("autoProvision:false still reconciles a healthy drifted venv (autoUpdate is independent)", async () => {
+    const p = dir();
+    const exec = fakeExec([
+      probeRule("3.3.5"),
+      { match: (_c, a) => has(a, "pip"), result: { ok: true } },
+    ]);
+    const outcome = await provisionMempalace(
+      { pythonPath: p.python, palacePath: p.palace, autoProvision: false },
+      {
+        exec,
+        defaultManagedPython: p.python,
+        statePath: p.state,
+        pathExists: (x) => x === p.python,
+      },
+    );
+    expect(outcome.status).toBe("ready");
+    expect(outcome.background).toBeDefined();
+
+    // …but never creates or heals: a broken venv stays broken, reported.
+    const broken = await provisionMempalace(
+      { pythonPath: p.python, palacePath: p.palace, autoProvision: false },
+      {
+        exec: fakeExec([]),
+        defaultManagedPython: p.python,
+        statePath: p.state,
+        pathExists: () => false,
+      },
+    );
+    expect(broken.status).toBe("failed");
+    expect(broken.warnings.join(" ")).toContain("autoProvision is off");
+  });
+
+  it("rolls back when a failed upgrade leaves the venv broken", async () => {
+    const p = dir();
+    let installed = "3.3.5";
+    let upgradeAttempts = 0;
+    const exec = fakeExec([
+      {
+        match: (_c, a) =>
+          has(a, "-c") &&
+          String(a[a.length - 1]).includes("importlib.metadata"),
+        get result() {
+          return installed
+            ? { ok: true, stdout: `${installed}\n` }
+            : { ok: false, stderr: "ModuleNotFoundError: mempalace" };
+        },
+      },
+    ]);
+    // Script pip by hand: the upgrade dies mid-mutation (install gone),
+    // the rollback reinstalls the previous version.
+    const scripted: ExecFn = async (cmd, args, opts) => {
+      if (has(args, "pip") && has(args, "install")) {
+        const spec = String(args[args.length - 1]);
+        if (spec === "mempalace==3.3.5" && has(args, "--force-reinstall")) {
+          installed = "3.3.5";
+          return { ok: true, code: 0, stdout: "", stderr: "" };
+        }
+        upgradeAttempts++;
+        installed = "";
+        return { ok: false, code: 1, stdout: "", stderr: "killed" };
+      }
+      if (has(args, "ensurepip")) {
+        return { ok: true, code: 0, stdout: "", stderr: "" };
+      }
+      return exec(cmd, args, opts);
+    };
+    const outcome = await provisionMempalace(
+      { pythonPath: p.python, palacePath: p.palace },
+      {
+        exec: scripted,
+        defaultManagedPython: p.python,
+        statePath: p.state,
+        pathExists: (x) => x === p.python || x === p.venv,
+      },
+    );
+    const settled = await outcome.background!();
+    expect(settled.status).toBe("degraded");
+    expect(settled.version).toBe("3.3.5");
+    expect(settled.warnings.join(" ")).toContain("rolled back");
+    expect(upgradeAttempts).toBeGreaterThan(0);
+    expect(installed).toBe("3.3.5");
+  });
+
+  it("skips the wing-name migration when the serving version predates it", async () => {
+    const p = dir();
+    mkdirSync(p.palace, { recursive: true });
+    writeFileSync(join(p.palace, "chroma.sqlite3"), "");
+    const exec = fakeExec([probeRule("3.3.6")]);
+    const outcome = await provisionMempalace(
+      { pythonPath: p.python, palacePath: p.palace, version: "3.3.6" },
+      {
+        exec,
+        defaultManagedPython: p.python,
+        statePath: p.state,
+        pathExists: (x) => x === p.python || x.endsWith("chroma.sqlite3"),
+      },
+    );
+    expect(outcome.status).toBe("ready");
+    expect(exec.calls.some((c) => has(c.args, "migrate-wings"))).toBe(false);
+    expect(outcome.warnings).toHaveLength(0);
+  });
+
   it("autoUpdate:false reports drift without reconciling", async () => {
     const p = dir();
     const exec = fakeExec([probeRule("3.3.5")]);
@@ -463,8 +579,56 @@ describe("mempalace provisioner", () => {
       },
     );
     expect(external[0].issue).toBeFalsy();
+    expect(external[0].detail).toContain("pip install --upgrade");
+
+    // Disabled automation is reported as such — never a promised restart fix.
+    const updateOff = await inspectMempalace(
+      { pythonPath: p.python, autoUpdate: false },
+      {
+        exec: fakeExec([probeRule("3.3.5")]),
+        defaultManagedPython: p.python,
+        pathExists: (x) => x === p.python,
+      },
+    );
+    expect(updateOff[0].detail).toContain("autoUpdate: false");
+    expect(updateOff[0].detail).toContain("pip install");
+
+    const missingOff = await inspectMempalace(
+      { pythonPath: p.python, autoProvision: false },
+      {
+        exec: fakeExec([]),
+        defaultManagedPython: p.python,
+        pathExists: () => false,
+      },
+    );
+    expect(missingOff[0].status).toBe("fail");
+    expect(missingOff[0].detail).toContain("autoProvision: false");
+
+    const brokenOff = await inspectMempalace(
+      { pythonPath: p.python, autoProvision: false },
+      {
+        exec: fakeExec([]),
+        defaultManagedPython: p.python,
+        pathExists: (x) => x === p.python,
+      },
+    );
+    expect(brokenOff[0].status).toBe("fail");
+    expect(brokenOff[0].detail).toContain("repair manually");
   });
 });
+
+/** A playwright-core registry fixture: chromium ships with its headless shell. */
+const REGISTRY = [
+  { name: "chromium", revision: "1181" },
+  { name: "chromium-headless-shell", revision: "1181" },
+  { name: "firefox", revision: "1500" },
+  {
+    name: "webkit",
+    revision: "2342",
+    revisionOverrides: { mac14: "2251" },
+  },
+];
+const COMPLETE = (p: string) => p.endsWith("INSTALLATION_COMPLETE");
 
 describe("playwright provisioner", () => {
   it("skips endpoint mode and system channels", async () => {
@@ -481,14 +645,92 @@ describe("playwright provisioner", () => {
     ).toBe("skipped");
   });
 
-  it("is a no-op when the build is already present", async () => {
+  it("is a no-op when the required revisions are present and complete", async () => {
     const exec = fakeExec([]);
     const outcome = await provisionPlaywright(
       { browser: "chromium" },
-      { exec, listDir: () => ["chromium-1181", "ffmpeg-1010"] },
+      {
+        exec,
+        registry: REGISTRY,
+        listDir: () => [
+          "chromium-1181",
+          "chromium_headless_shell-1181",
+          "ffmpeg-1010",
+        ],
+        pathExists: COMPLETE,
+      },
     );
     expect(outcome.status).toBe("ready");
     expect(exec.calls).toHaveLength(0);
+  });
+
+  it("treats a stale revision, a missing headless shell, or an incomplete download as absent", async () => {
+    const d = tmp();
+    const run = (listDir: () => string[], pathExists = COMPLETE) =>
+      provisionPlaywright(
+        { browser: "chromium" },
+        {
+          exec: fakeExec([
+            { match: (_c, a) => has(a, "install"), result: { ok: true } },
+          ]),
+          registry: REGISTRY,
+          listDir,
+          pathExists: (p) => p.endsWith("cli.js") || pathExists(p),
+          cliPath: "/repo/node_modules/playwright-core/cli.js",
+          statePath: join(d, "state.json"),
+        },
+      );
+    // Older playwright-core's build only.
+    expect(
+      (await run(() => ["chromium-1100", "chromium_headless_shell-1100"]))
+        .actions,
+    ).toHaveLength(1);
+    // Headed build present, headless shell missing.
+    expect((await run(() => ["chromium-1181"])).actions).toHaveLength(1);
+    // Both dirs exist but one download never finished.
+    expect(
+      (
+        await run(
+          () => ["chromium-1181", "chromium_headless_shell-1181"],
+          (p) => COMPLETE(p) && !p.includes("headless"),
+        )
+      ).actions,
+    ).toHaveLength(1);
+  });
+
+  it("accepts a per-platform revision override build", async () => {
+    const outcome = await provisionPlaywright(
+      { browser: "webkit" },
+      {
+        exec: fakeExec([]),
+        registry: REGISTRY,
+        listDir: () => ["webkit_mac14_special-2251"],
+        pathExists: COMPLETE,
+      },
+    );
+    expect(outcome.status).toBe("ready");
+  });
+
+  it("forwards the injected environment to the CLI", async () => {
+    const d = tmp();
+    const seen: Array<Record<string, string> | undefined> = [];
+    const exec: ExecFn = async (_c, _a, opts) => {
+      seen.push(opts.env);
+      return { ok: true, code: 0, stdout: "", stderr: "" };
+    };
+    await provisionPlaywright(
+      { browser: "chromium" },
+      {
+        exec,
+        registry: REGISTRY,
+        listDir: () => [],
+        cliPath: "/x/cli.js",
+        pathExists: () => true,
+        statePath: join(d, "state.json"),
+        env: { PLAYWRIGHT_BROWSERS_PATH: "/isolated", DROPPED: undefined },
+      },
+    );
+    expect(seen[0]).toEqual({ PLAYWRIGHT_BROWSERS_PATH: "/isolated" });
   });
 
   it("downloads a missing build via the bundled CLI", async () => {
@@ -544,9 +786,11 @@ describe("playwright provisioner", () => {
   });
 
   it("resolves the browsers root per OS with env overrides", () => {
-    expect(browsersRoot("linux", "/h", {})).toBe("/h/.cache/ms-playwright");
+    expect(browsersRoot("linux", "/h", {})).toBe(
+      join("/h", ".cache", "ms-playwright"),
+    );
     expect(browsersRoot("darwin", "/h", {})).toBe(
-      "/h/Library/Caches/ms-playwright",
+      join("/h", "Library", "Caches", "ms-playwright"),
     );
     expect(
       browsersRoot("linux", "/h", { PLAYWRIGHT_BROWSERS_PATH: "/custom" }),
@@ -557,13 +801,25 @@ describe("playwright provisioner", () => {
     expect(
       inspectPlaywright(
         { browser: "chromium" },
-        { listDir: () => ["chromium-1"] },
+        {
+          registry: REGISTRY,
+          listDir: () => ["chromium-1181", "chromium_headless_shell-1181"],
+          pathExists: COMPLETE,
+        },
       )[0].status,
     ).toBe("ok");
-    expect(
-      inspectPlaywright({ browser: "chromium" }, { listDir: () => [] })[0]
-        .status,
-    ).toBe("warn");
+    const missing = inspectPlaywright(
+      { browser: "chromium" },
+      { registry: REGISTRY, listDir: () => [] },
+    )[0];
+    expect(missing.status).toBe("warn");
+    expect(missing.detail).toContain("next talon start");
+    const off = inspectPlaywright(
+      { browser: "chromium", autoProvision: false },
+      { registry: REGISTRY, listDir: () => [] },
+    )[0];
+    expect(off.detail).toContain("autoProvision: false");
+    expect(off.detail).toContain("npx playwright install chromium");
     expect(inspectPlaywright({ endpoint: "ws://x" })[0].status).toBe("info");
   });
 });
@@ -619,6 +875,20 @@ describe("github provisioner", () => {
   });
 });
 
+describe("github doctor", () => {
+  it("counts a missing image as an issue and reflects disabled auto-pull", async () => {
+    const exec = fakeExec([
+      { match: (_c, a) => has(a, "inspect"), result: { ok: false } },
+    ]);
+    const auto = (await inspectGithub({}, { exec }))[0];
+    expect(auto.issue).toBe(true);
+    expect(auto.detail).toContain("next talon start");
+    const off = (await inspectGithub({ autoProvision: false }, { exec }))[0];
+    expect(off.issue).toBe(true);
+    expect(off.detail).toContain("docker pull");
+  });
+});
+
 describe("native runtime registry", () => {
   it("gates each runtime on its enabled flag", () => {
     const ids = NATIVE_RUNTIMES.map((r) => r.id);
@@ -667,6 +937,41 @@ describe("provision journal", () => {
     await journal.deliverPendingProvisionReport(async () => {
       throw new Error("should not send");
     });
+  });
+
+  it("waits for tracked background provisioning before reporting", async () => {
+    const { journal } = await freshJournal();
+    journal.armProvisionReport("telegram", "9");
+    let finish!: () => void;
+    const upgrade = new Promise<void>((r) => {
+      finish = r;
+    });
+    void journal.trackBackgroundProvision(
+      upgrade.then(() =>
+        journal.recordProvisionEvents("mempalace", ["upgraded 3.3.5 → 3.8.0"]),
+      ),
+    );
+
+    const sent: string[] = [];
+    let ticks = 0;
+    const delivery = journal.deliverPendingProvisionReport(
+      async (_f, _t, text) => {
+        sent.push(text);
+        return true;
+      },
+      async () => {
+        // The first sleep is the "still running" wait; let the task land.
+        if (ticks++ === 0) {
+          finish();
+          await upgrade;
+          await new Promise((r) => setImmediate(r));
+        }
+      },
+    );
+    await delivery;
+    expect(journal.backgroundProvisionInFlight()).toBe(0);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain("upgraded 3.3.5 → 3.8.0");
   });
 
   it("stays silent when nothing changed and retries a busy frontend", async () => {

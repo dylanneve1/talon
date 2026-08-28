@@ -329,7 +329,6 @@ On first boot Talon creates a venv at `~/.talon/mempalace-venv` and installs the
     "backend": "mempalace",
     "mempalace": {
       "palacePath": "~/.talon/workspace/palace",
-      "pythonPath": "~/.talon/mempalace-venv/bin/python",
       "version": "3.8.0",
       "autoUpdate": true,
       "autoProvision": true
@@ -338,7 +337,7 @@ On first boot Talon creates a venv at `~/.talon/mempalace-venv` and installs the
 }
 ```
 
-Everything is optional --- paths default to `~/.talon/workspace/palace/` and the managed venv, `version` defaults to the built-in pin, and both `auto*` flags default to `true`.
+Everything is optional --- `palacePath` defaults to `~/.talon/workspace/palace/`, `version` defaults to the built-in pin, and both `auto*` flags default to `true`. Leave `pythonPath` unset to use the managed venv --- its interpreter is `~/.talon/mempalace-venv/bin/python` on Linux/macOS and `~/.talon/mempalace-venv/Scripts/python.exe` on Windows; any other value is treated as operator-managed (see below). `autoProvision` governs creating and healing the venv; `autoUpdate` governs reconciling a working venv to the pin --- they are independent.
 
 **Bring your own environment:** point `pythonPath` at any interpreter — a `uv tool` install, pipx, conda, or your own venv — and Talon treats it as operator-managed: it is probed and reported on (`talon doctor` shows the exact upgrade command for your install flavor) but never mutated.
 

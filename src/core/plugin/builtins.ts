@@ -8,7 +8,10 @@ import type { TalonConfig } from "../../util/config.js";
 import { registry, reloadState } from "./registry.js";
 import type { ProvisionOutcome } from "./provision.js";
 import { NATIVE_RUNTIMES, type NativePluginId } from "./native-runtimes.js";
-import { recordProvisionEvents } from "./provision-journal.js";
+import {
+  recordProvisionEvents,
+  trackBackgroundProvision,
+} from "./provision-journal.js";
 import {
   initPluginWithTimeout,
   loadPlugins,
@@ -36,16 +39,20 @@ function reportProvision(
   }
   const background = outcome.background;
   if (background) {
-    void background()
-      .then((result) =>
-        reportProvision(pluginName, { ...result, background: undefined }),
-      )
-      .catch((err) =>
-        logError(
-          pluginName,
-          `background provision: ${err instanceof Error ? err.message : err}`,
+    // Tracked so the post-update report waits for it to settle (its
+    // actions are the changes worth reporting).
+    void trackBackgroundProvision(
+      background()
+        .then((result) =>
+          reportProvision(pluginName, { ...result, background: undefined }),
+        )
+        .catch((err) =>
+          logError(
+            pluginName,
+            `background provision: ${err instanceof Error ? err.message : err}`,
+          ),
         ),
-      );
+    );
   }
 }
 

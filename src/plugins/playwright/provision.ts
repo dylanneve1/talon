@@ -13,9 +13,9 @@
  * OS; endpoint mode — the browser lives on the remote end.
  */
 
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { DoctorCheck } from "../../core/doctor.js";
 import {
   failDetail,
@@ -52,6 +52,16 @@ export interface PlaywrightProvisionDeps {
   cliPath?: string;
   pathExists?: (p: string) => boolean;
   listDir?: (p: string) => string[];
+  /** playwright-core's browser registry (default: browsers.json beside the CLI). */
+  registry?: BrowserDescriptor[];
+}
+
+/** One entry of playwright-core's browsers.json. */
+export interface BrowserDescriptor {
+  name: string;
+  revision: string;
+  /** Per-host-platform revisions (e.g. webkit on older macOS). */
+  revisionOverrides?: Record<string, string>;
 }
 
 /**
@@ -93,16 +103,57 @@ const safeListDir = (p: string): string[] => {
   }
 };
 
+/** browsers.json shipped beside the CLI — the revisions this playwright-core needs. */
+function readRegistry(cli: string): BrowserDescriptor[] {
+  try {
+    const parsed = JSON.parse(
+      readFileSync(join(dirname(cli), "browsers.json"), "utf-8"),
+    ) as { browsers?: BrowserDescriptor[] };
+    return Array.isArray(parsed.browsers) ? parsed.browsers : [];
+  } catch {
+    return [];
+  }
+}
+
 /**
- * The engine build's presence is a directory-name check, not a
- * subprocess: any build dir for the engine counts (chromium-1181,
- * chromium_headless_shell-…).
+ * The build directories the registry requires for an engine: the engine
+ * itself plus its headless-shell companion (chromium runs headless via
+ * chromium-headless-shell; `install chromium` fetches both). Named the
+ * way playwright-core's registry names them — `<name with _>-<revision>`,
+ * or `<name>_<platform>_special-<revision>` for a per-platform override
+ * — and complete only once the registry's INSTALLATION_COMPLETE marker
+ * is present, so a stale revision from an older playwright-core or a
+ * half-downloaded build never passes for ready.
+ */
+function requiredBuildDirs(
+  browser: string,
+  registry: BrowserDescriptor[],
+): string[][] {
+  return registry
+    .filter((d) => d.name === browser || d.name === `${browser}-headless-shell`)
+    .map((d) => {
+      const prefix = d.name.replaceAll("-", "_");
+      return [
+        `${prefix}-${d.revision}`,
+        ...Object.entries(d.revisionOverrides ?? {}).map(
+          ([platform, revision]) => `${prefix}_${platform}_special-${revision}`,
+        ),
+      ];
+    });
+}
+
+/**
+ * Whether the engine's required builds are present and complete. Pure
+ * filesystem inspection, no subprocess. Without a readable registry
+ * (unexpected — it ships with playwright-core) any build directory for
+ * the engine counts, which is the pre-registry behavior.
  */
 function browserPresent(
   browser: string,
+  cli: string,
   deps: Pick<
     PlaywrightProvisionDeps,
-    "platform" | "home" | "env" | "listDir"
+    "platform" | "home" | "env" | "listDir" | "pathExists" | "registry"
   > = {},
 ): boolean {
   const root = browsersRoot(
@@ -110,8 +161,33 @@ function browserPresent(
     deps.home ?? homedir(),
     deps.env ?? process.env,
   );
-  return (deps.listDir ?? safeListDir)(root).some((name) =>
-    name.startsWith(browser),
+  const present = new Set((deps.listDir ?? safeListDir)(root));
+  const pathExists = deps.pathExists ?? existsSync;
+  const required = requiredBuildDirs(
+    browser,
+    deps.registry ?? readRegistry(cli),
+  );
+  if (required.length === 0) {
+    return [...present].some((name) => name.startsWith(browser));
+  }
+  return required.every((candidates) =>
+    candidates.some(
+      (dir) =>
+        present.has(dir) &&
+        pathExists(join(root, dir, "INSTALLATION_COMPLETE")),
+    ),
+  );
+}
+
+/** Forward the injected environment (e.g. PLAYWRIGHT_BROWSERS_PATH) to the CLI. */
+function execEnv(
+  env: Record<string, string | undefined> | undefined,
+): Record<string, string> | undefined {
+  if (!env) return undefined;
+  return Object.fromEntries(
+    Object.entries(env).filter(
+      (e): e is [string, string] => e[1] !== undefined,
+    ),
   );
 }
 
@@ -139,11 +215,11 @@ export async function provisionPlaywright(
     return { status: "skipped", kind: "managed", actions: [], warnings: [] };
   }
 
-  if (browserPresent(browser, deps)) {
+  const cli = deps.cliPath ?? defaultCliPath();
+  if (browserPresent(browser, cli, deps)) {
     return { status: "ready", kind: "managed", actions: [], warnings: [] };
   }
 
-  const cli = deps.cliPath ?? defaultCliPath();
   if (!pathExists(cli)) {
     return {
       status: "failed",
@@ -173,6 +249,7 @@ export async function provisionPlaywright(
 
   const installed = await exec(process.execPath, [cli, "install", browser], {
     timeoutMs: INSTALL_TIMEOUT_MS,
+    env: execEnv(deps.env),
   });
   if (!installed.ok) {
     const detail = failDetail(installed);
@@ -228,13 +305,17 @@ export function inspectPlaywright(
       },
     ];
   }
+  const cli = deps.cliPath ?? defaultCliPath();
   return [
-    browserPresent(browser, deps)
+    browserPresent(browser, cli, deps)
       ? { label: `Playwright ${browser} build present`, status: "ok" }
       : {
           label: `Playwright ${browser} build missing`,
           status: "warn",
-          detail: "downloads automatically at next talon start",
+          detail:
+            section.autoProvision === false
+              ? `automatic download disabled (playwright.autoProvision: false) — run: npx playwright install ${browser}`
+              : "downloads automatically at next talon start",
           issue: true,
         },
   ];
