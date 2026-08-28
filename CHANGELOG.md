@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.29.0](https://github.com/dylanneve1/talon/compare/v3.28.1...v3.29.0) (2026-08-28)
+
+
+### Features
+
+* **plugins:** self-installing, self-healing native plugin runtimes ([#793](https://github.com/dylanneve1/talon/issues/793)) ([7bdc301](https://github.com/dylanneve1/talon/commit/7bdc30111d35dec318c469d93f1f2c10f8f013ad))
+
 ## [3.28.1](https://github.com/dylanneve1/talon/compare/v3.28.0...v3.28.1) (2026-08-28)
 
 
