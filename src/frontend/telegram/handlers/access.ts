@@ -41,12 +41,29 @@ export function trackDmUser(
 
 export function setAccessControl(cfg: {
   allowedUsers?: number[];
+  blockedUsers?: number[];
   adminUserId?: number;
 }): void {
   accessConfig.allowedUserIds = cfg.allowedUsers?.length
     ? new Set(cfg.allowedUsers)
     : null;
+  accessConfig.blockedUserIds = cfg.blockedUsers?.length
+    ? new Set(cfg.blockedUsers)
+    : null;
   accessConfig.adminId = cfg.adminUserId ?? 0;
+}
+
+/**
+ * Blocked senders are dropped before any other check, in silence.
+ *
+ * The whitelist already stops an unknown sender being *acted on*, but it still
+ * answers them with a warning and pings the admin. For a spammer or a
+ * prompt-injection sender that reply is the payoff — it confirms a live bot is
+ * reading — and the admin ping is the cost. Blocking removes both.
+ */
+function isBlocked(senderId: number | undefined): boolean {
+  if (!accessConfig.blockedUserIds || senderId === undefined) return false;
+  return accessConfig.blockedUserIds.has(senderId);
 }
 
 /**
@@ -114,15 +131,24 @@ export function shouldHandleInGroup(ctx: Context): boolean {
 }
 
 /**
- * Full access check: DM whitelist + group admin membership.
+ * Full access check: denylist, then DM whitelist + group admin membership.
  * Returns true if the message should be processed.
- * Warns unauthorized users and notifies the admin.
+ * Warns unauthorized users and notifies the admin — except blocked users,
+ * who are dropped silently.
  */
 export async function isAccessAllowed(
   ctx: Context,
   bot: Bot,
 ): Promise<boolean> {
   if (!ctx.chat) return false;
+
+  // Denylist wins over everything, including the group path: a blocked user
+  // gets no reply and generates no notification, anywhere.
+  if (isBlocked(ctx.from?.id)) {
+    log("users", `Dropped message from blocked user [id:${ctx.from?.id}]`);
+    return false;
+  }
+
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
 
   if (!isGroup) {

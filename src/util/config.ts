@@ -395,6 +395,10 @@ const configSchema = z.object({
   apiHash: z.string().optional(),
   adminUserId: z.number().int().optional(),
   allowedUsers: z.array(z.number().int()).optional(), // Whitelist of user IDs allowed to DM the bot
+  // Denylist of user IDs dropped in silence — no warning reply, no admin
+  // notification. For spam and prompt-injection senders, where the warning
+  // itself is the reward: it confirms a live bot is reading.
+  blockedUsers: z.array(z.number().int()).optional(),
   pulse: z.boolean().default(true),
   pulseIntervalMs: z.number().int().min(60000).default(300000),
   /**
