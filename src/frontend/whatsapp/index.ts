@@ -53,7 +53,7 @@ import {
   seedMessageStore,
 } from "./message-store.js";
 import { runTurnWithRecovery, shouldReplyToCatchUp } from "./turn-recovery.js";
-import { classifyClose, REPLACED_BACKOFF_MS } from "./pairing.js";
+import { classifyClose, isPaired, REPLACED_BACKOFF_MS } from "./pairing.js";
 import { isManualPairingActive, onPairingComplete } from "./pairing-lock.js";
 import { flushAuthWrites, useAtomicAuthState } from "./auth-state.js";
 import { makeWaLogger } from "./wa-logger.js";
@@ -527,11 +527,15 @@ export function createWhatsAppFrontend(
             case "logged-out":
               return resolve("logged-out");
             default:
-              // A socket that died without ever registering is a pairing
-              // window that expired — reconnecting would just open QR
+              // A socket that died without ever completing a login is a
+              // pairing window that expired — reconnecting would just open QR
               // session after QR session against WhatsApp's servers.
               // Park instead; /whatsapp pair opens the next one.
-              if (!state.creds.registered) return resolve("unpaired");
+              //
+              // Test with isPaired, not creds.registered: a QR-linked session
+              // never sets that flag, so the flag alone parks a healthy
+              // session on its first ordinary disconnect.
+              if (!isPaired(state.creds)) return resolve("unpaired");
               log(
                 "whatsapp",
                 `Connection closed (code ${code ?? "?"}) — reconnecting`,
@@ -556,7 +560,17 @@ export function createWhatsAppFrontend(
             resolvePath(dirs.whatsappAuth, "creds.json"),
             "utf-8",
           );
-          if ((JSON.parse(raw) as { registered?: boolean }).registered) return;
+          // Same trap as above: waiting on `registered` alone means a QR
+          // re-link can never end the park, because that flag stays false.
+          if (
+            isPaired(
+              JSON.parse(raw) as {
+                registered?: boolean;
+                me?: { id?: string } | null;
+              },
+            )
+          )
+            return;
         } catch {
           /* no creds yet — stay parked */
         }
