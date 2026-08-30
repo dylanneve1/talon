@@ -1,5 +1,23 @@
 # Changelog
 
+## [3.30.0](https://github.com/dylanneve1/talon/compare/v3.29.0...v3.30.0) (2026-08-30)
+
+
+### Features
+
+* **telegram:** blockedUsers denylist, dropped in silence ([#805](https://github.com/dylanneve1/talon/issues/805)) ([dbaf892](https://github.com/dylanneve1/talon/commit/dbaf8926fe32f7647f3081149a7de2727b9739bf))
+
+
+### Bug Fixes
+
+* **whatsapp:** a QR-linked session is not an unpaired one ([#806](https://github.com/dylanneve1/talon/issues/806)) ([364ab80](https://github.com/dylanneve1/talon/commit/364ab80ddb06494a88b26e2896a1350cb58b47b6))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump @types/node in the dev-dependencies group ([#802](https://github.com/dylanneve1/talon/issues/802)) ([1498178](https://github.com/dylanneve1/talon/commit/1498178e2f387984ff595190c07b1f70045e4c47))
+* **deps:** Bump the production-dependencies group with 2 updates ([#803](https://github.com/dylanneve1/talon/issues/803)) ([667d8e1](https://github.com/dylanneve1/talon/commit/667d8e1ceb88e6fdcaaf0f104de41e7f9a96fc57))
+
 ## [3.29.0](https://github.com/dylanneve1/talon/compare/v3.28.1...v3.29.0) (2026-08-28)
 
 
