@@ -1,5 +1,25 @@
 # Changelog
 
+## [3.31.0](https://github.com/dylanneve1/talon/compare/v3.30.0...v3.31.0) (2026-09-01)
+
+
+### Features
+
+* **companion:** root execution tier for device control ([#812](https://github.com/dylanneve1/talon/issues/812)) ([c00a169](https://github.com/dylanneve1/talon/commit/c00a169b6341ecdf99c4c7dbed7e96a8f97672ae))
+
+
+### Bug Fixes
+
+* **plugins:** bump native runtime pins (mempalace 3.9.0) ([#808](https://github.com/dylanneve1/talon/issues/808)) ([f538646](https://github.com/dylanneve1/talon/commit/f538646235857487dc6bc3051c2b2a33267daa16))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump the dev-dependencies group with 2 updates ([#809](https://github.com/dylanneve1/talon/issues/809)) ([4088006](https://github.com/dylanneve1/talon/commit/4088006e82c22964d00f6b769bbc51b4dfbd6ee8))
+* **deps:** Bump actions/setup-python from 6 to 7 ([754082c](https://github.com/dylanneve1/talon/commit/754082c149e2bf57f5b562d9741b880957f9e3a8))
+* **deps:** Bump github/codeql-action from 4.37.8 to 4.37.9 ([#810](https://github.com/dylanneve1/talon/issues/810)) ([25688de](https://github.com/dylanneve1/talon/commit/25688de6891aefdc5f987ba2dac1af1775467766))
+* **deps:** Bump the production-dependencies group with 7 updates ([#811](https://github.com/dylanneve1/talon/issues/811)) ([361b002](https://github.com/dylanneve1/talon/commit/361b0024be83ab1e35e1b8d0f322c7200374c8e1))
+
 ## [3.30.0](https://github.com/dylanneve1/talon/compare/v3.29.0...v3.30.0) (2026-08-30)
 
 
