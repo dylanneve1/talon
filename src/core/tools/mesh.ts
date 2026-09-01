@@ -85,7 +85,7 @@ export const meshTools: ToolDefinition[] = [
   {
     name: "device_exec",
     description:
-      "Run a shell command ON a Talon companion device (e.g. the phone) and return its stdout/stderr/exit code. The device executes it in its own sandbox (Android: app UID, or elevated via Shizuku if available). Use for on-device tasks like tidying a folder. Prefer `teleport` for a sustained session. For persistent streams (log tailing, watchers), background with output redirected to a file — `cmd > /tmp/out.log 2>&1 &` returns immediately; poll the file with device_read_file.",
+      "Run a shell command ON a Talon companion device (e.g. the phone) and return its stdout/stderr/exit code. The device executes it at the highest privilege it has (Android: root if the device grants it, else Shizuku's shell UID, else the app UID; the result's `via` says which). Use for on-device tasks like tidying a folder. Prefer `teleport` for a sustained session. For persistent streams (log tailing, watchers), background with output redirected to a file — `cmd > /tmp/out.log 2>&1 &` returns immediately; poll the file with device_read_file.",
     schema: {
       device: deviceParam,
       cmd: z.string().describe("The shell command to run on the device."),
@@ -167,7 +167,7 @@ export const meshTools: ToolDefinition[] = [
   {
     name: "update_device",
     description:
-      "Remotely update a Talon companion (Android): stream a new APK from the daemon to the device and silently reinstall it via Shizuku, keeping app data. The companion's mesh runs in a foreground service that auto-restarts after the package is replaced, so the connection returns on its own within seconds — no manual reopen. The APK is hashed and the device verifies it before installing (a truncated push is refused; a differently-signed APK is refused by Android). Requires the device to have device control on and Shizuku granted. Confirm success with get_device_status afterwards (appVersion should change).",
+      "Remotely update a Talon companion (Android): stream a new APK from the daemon to the device and silently reinstall it at an elevated tier (root or Shizuku), keeping app data. The companion's mesh runs in a foreground service that auto-restarts after the package is replaced, so the connection returns on its own within seconds — no manual reopen. The APK is hashed and the device verifies it before installing (a truncated push is refused; a differently-signed APK is refused by Android). Requires the device to have device control on and either root or Shizuku granted. Confirm success with get_device_status afterwards (appVersion should change).",
     schema: {
       device: deviceParam,
       apk_path: z
