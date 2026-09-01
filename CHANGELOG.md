@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.32.0](https://github.com/dylanneve1/talon/compare/v3.31.0...v3.32.0) (2026-09-01)
+
+
+### Features
+
+* **mesh:** one-tap device pairing via /mesh link ([#815](https://github.com/dylanneve1/talon/issues/815)) ([3b18c34](https://github.com/dylanneve1/talon/commit/3b18c34278112d17e1596aab6d79a58d6ee79523))
+
 ## [3.31.0](https://github.com/dylanneve1/talon/compare/v3.30.0...v3.31.0) (2026-09-01)
 
 
