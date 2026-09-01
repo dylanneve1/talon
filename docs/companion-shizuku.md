@@ -1,7 +1,9 @@
 # Companion device control (teleport) + Shizuku
 
 The Talon companion answers remote **exec / filesystem** commands over the
-mesh — the device half of `teleport`. Two privilege tiers:
+mesh — the device half of `teleport`. This page covers the app-UID and Shizuku
+tiers; **root** (and the system-uid ROM build) is
+[companion-root.md](companion-root.md), and it outranks everything here.
 
 ## 1. App-UID (default, always available)
 
@@ -29,6 +31,10 @@ off, the device advertises no exec/fs capabilities and refuses those commands.
 When the [Shizuku](https://shizuku.rikka.app/) app is installed and running
 (started via wireless ADB or root), exec commands run at **shell (ADB) UID** —
 far more of the system than the app UID, without rooting the device.
+
+If Shizuku's own server was started while `adbd` was root (`adb root` first),
+that server runs at uid 0 and these commands are really **root** commands.
+Talon reads `Shizuku.getUid()` and reports the tier it actually gets.
 
 Wiring (already in this repo):
 

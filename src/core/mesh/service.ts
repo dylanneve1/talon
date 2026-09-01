@@ -888,7 +888,7 @@ export class MeshService {
 
   /**
    * `update_device`: remote self-update for the companion. Streams a new APK
-   * to the device, then tells it to silently install (via Shizuku) and
+   * to the device, then tells it to silently install (root or Shizuku) and
    * restart. The mesh foreground service's autoRunOnMyPackageReplaced brings
    * the connection back on its own — the link drops only for the seconds the
    * process is swapped, no manual reopen.
@@ -914,7 +914,7 @@ export class MeshService {
     if (target.capabilities && !target.capabilities.includes("install_apk")) {
       return {
         ok: false,
-        text: `${target.name} can't self-update — it needs a companion build with the install_apk capability and Shizuku enabled (device control on).`,
+        text: `${target.name} can't self-update — it needs a companion build with the install_apk capability and root or Shizuku enabled (device control on).`,
       };
     }
 

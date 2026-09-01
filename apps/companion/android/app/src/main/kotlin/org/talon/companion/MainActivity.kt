@@ -7,6 +7,7 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var shizuku: ShizukuBridge? = null
+    private var root: RootBridge? = null
     private var voice: VoiceBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -21,6 +22,16 @@ class MainActivity : FlutterActivity() {
         // activity's lifecycle (the mesh answers exec commands while the app is
         // backgrounded).
         shizuku = ShizukuBridge(channel, applicationContext)
+
+        // Root tier (su / adb-root agent), the rung above Shizuku. Same
+        // application-context reasoning: the su shell is process-wide and must
+        // outlive this activity, since the mesh answers commands with the app
+        // backgrounded.
+        val rootChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            RootBridge.CHANNEL,
+        )
+        root = RootBridge(rootChannel, applicationContext)
 
         // Voice mode: STT/TTS + default-assistant plumbing. Activity-scoped
         // (unlike Shizuku) because it drives runtime-permission prompts and
