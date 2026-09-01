@@ -360,13 +360,22 @@ export function renderMeshReport(
 
 /** What `/mesh` says about the bridge a new device would dial. */
 export type MeshReachability =
-  | { ok: true; url: string; authRequired: boolean; fingerprint?: string }
+  | {
+      ok: true;
+      url: string;
+      authRequired: boolean;
+      token?: string;
+      fingerprint?: string;
+    }
   | { ok: false; text: string };
 
 /**
- * The bridge footer. Never prints the bearer token: `/mesh link` mints a
- * single-use grant for that, so a credential doesn't sit in chat scrollback
- * for as long as the chat exists.
+ * The bridge footer.
+ *
+ * The bearer token and certificate appear when the caller passed them, which
+ * `/mesh` does for the configured admin and not for anyone else: an operator
+ * asking their own daemon how to reach itself should get the answer, while a
+ * group member reading the fleet has no business holding the key to it.
  */
 function bridgeLines(bridge?: MeshReachability): string[] {
   if (!bridge) return [];
@@ -375,6 +384,10 @@ function bridgeLines(bridge?: MeshReachability): string[] {
   return [
     "",
     `<b>Bridge</b> <code>${escapeHtml(bridge.url)}</code> · ${auth}`,
+    ...(bridge.token ? [`Token <code>${escapeHtml(bridge.token)}</code>`] : []),
+    ...(bridge.fingerprint
+      ? [`Certificate <code>${escapeHtml(bridge.fingerprint)}</code>`]
+      : []),
     "Run <code>/mesh link</code> for a one-tap pairing link.",
   ];
 }

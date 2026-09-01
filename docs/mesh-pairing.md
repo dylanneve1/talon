@@ -20,11 +20,19 @@ problem.
 page whose button is a `talon://pair` deep link carrying the credentials, so
 the companion fills in its own connection form and connects.
 
-Minting a link hands out a bridge credential, so it is gated on the configured
-admin user id — reading the fleet is not the same act as handing out the keys
-to it. Plain `/mesh` never prints the bearer token for the same reason: a
-token in chat scrollback lives as long as the chat does, while a grant expires
-in ten minutes and dies on first use.
+Who sees what:
+
+- **The admin** gets the whole connection profile in plain `/mesh` — URL,
+  bearer token, certificate fingerprint — because an operator asking their own
+  daemon how to reach itself should get an answer, not a scavenger hunt
+  through config files. `/mesh link` is theirs too.
+- **Everyone else** gets the address and whether a token is needed, and
+  nothing more. A group member reading the fleet has no business holding the
+  key to it.
+
+The link is still the better way to move credentials onto a phone: it expires
+in ten minutes and dies on first use, while a token pasted into a chat lives
+as long as the chat does.
 
 ## What the link actually is
 

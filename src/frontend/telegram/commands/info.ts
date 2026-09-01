@@ -2,13 +2,14 @@
  * Informational commands — /start, /help, /ping, /plugins.
  */
 
-import type { Bot } from "grammy";
+import type { Bot, Context } from "grammy";
 import { isUserClientReady } from "../userbot.js";
 import { escapeHtml } from "../formatting.js";
 import {
   formatDuration,
   renderMeshPairLink,
   renderMeshReport,
+  type MeshReachability,
 } from "../helpers/index.js";
 import { isAuthorizedAdmin } from "./state.js";
 import { getLoadedPlugins } from "../../../core/plugin/index.js";
@@ -109,6 +110,25 @@ export function registerInfoCommands(bot: Bot): void {
     }
   });
 
+  /**
+   * The bridge footer `/mesh` prints for this caller.
+   *
+   * The admin gets the whole connection profile — URL, bearer token,
+   * certificate — because an operator asking their own daemon how to reach
+   * itself should get an answer rather than a scavenger hunt through config
+   * files. Everyone else gets the address only: a group member reading the
+   * fleet has no business holding the key to it.
+   */
+  const bridgeFor = (ctx: Context): MeshReachability => {
+    const reach = getMeshService().bridgeReachability();
+    if (!reach.ok || isAuthorizedAdmin(ctx)) return reach;
+    return {
+      ok: true,
+      url: reach.url,
+      authRequired: reach.authRequired,
+    };
+  };
+
   bot.command("mesh", async (ctx) => {
     const arg = (ctx.match ?? "").toString().trim();
     // `/mesh link` mints a bridge credential and posts it into the chat, so
@@ -150,11 +170,7 @@ export function registerInfoCommands(bot: Bot): void {
       bot,
       ctx.chat.id,
       sent.message_id,
-      renderMeshReport(
-        results,
-        Date.now(),
-        getMeshService().bridgeReachability(),
-      ),
+      renderMeshReport(results, Date.now(), bridgeFor(ctx)),
     );
   });
 

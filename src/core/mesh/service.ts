@@ -1246,11 +1246,22 @@ export class MeshService {
 
   /**
    * How this bridge is reachable, for an operator asking "what do I point a
-   * device at?". Never includes the bearer token — that travels through a
-   * minted pairing grant, not a chat message that stays in scrollback.
+   * device at?".
+   *
+   * The bearer token comes back with it. Deciding who may see a credential is
+   * the caller's job, not this seam's — the Telegram `/mesh` shows it to the
+   * configured admin and withholds it from everyone else — and an operator who
+   * asked their own daemon for its own connection details should get an
+   * answer, not a lecture.
    */
   bridgeReachability():
-    | { ok: true; url: string; authRequired: boolean; fingerprint?: string }
+    | {
+        ok: true;
+        url: string;
+        authRequired: boolean;
+        token?: string;
+        fingerprint?: string;
+      }
     | { ok: false; text: string } {
     const info = this.bridgeInfo;
     if (!info) return { ok: false, text: "The native bridge isn't running." };
@@ -1260,6 +1271,7 @@ export class MeshService {
       ok: true,
       url: base,
       authRequired: Boolean(info.token),
+      ...(info.token ? { token: info.token } : {}),
       ...(info.fingerprint ? { fingerprint: info.fingerprint } : {}),
     };
   }

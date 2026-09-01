@@ -6,7 +6,10 @@ import {
   pairLink,
   pairPage,
 } from "../core/mesh/companion-pairing.js";
-import { renderMeshPairLink } from "../frontend/telegram/helpers/diagnostics.js";
+import {
+  renderMeshPairLink,
+  renderMeshReport,
+} from "../frontend/telegram/helpers/diagnostics.js";
 
 const grantInput = {
   bridgeUrl: "https://192.168.1.20:19880",
@@ -149,5 +152,47 @@ describe("renderMeshPairLink", () => {
     });
 
     expect(out).toContain("bridge isn&#39;t running");
+  });
+});
+
+describe("the /mesh bridge footer", () => {
+  const bridge = {
+    ok: true as const,
+    url: "https://192.168.1.20:19880",
+    authRequired: true,
+    token: "s3cr3t-token",
+    fingerprint: "AA:BB:CC",
+  };
+
+  it("shows the admin the whole connection profile", () => {
+    // An operator asking their own daemon how to reach itself should get an
+    // answer, not a scavenger hunt through config files.
+    const out = renderMeshReport([], Date.now(), bridge);
+
+    expect(out).toContain("192.168.1.20:19880");
+    expect(out).toContain("s3cr3t-token");
+    expect(out).toContain("AA:BB:CC");
+  });
+
+  it("gives a non-admin the address without the key to it", () => {
+    const { token: _t, fingerprint: _f, ...redacted } = bridge;
+    const out = renderMeshReport([], Date.now(), redacted);
+
+    expect(out).toContain("192.168.1.20:19880");
+    expect(out).toContain("token required");
+    expect(out).not.toContain("s3cr3t-token");
+  });
+
+  it("says why there is nothing to dial", () => {
+    const out = renderMeshReport([], Date.now(), {
+      ok: false,
+      text: "The native bridge isn't running.",
+    });
+
+    expect(out).toContain("bridge isn&#39;t running");
+  });
+
+  it("stays silent when no reachability was passed", () => {
+    expect(renderMeshReport([], Date.now())).not.toContain("Bridge");
   });
 });
