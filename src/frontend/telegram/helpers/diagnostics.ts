@@ -388,7 +388,13 @@ function bridgeLines(bridge?: MeshReachability): string[] {
  */
 export function renderMeshPairLink(
   minted:
-    | { ok: true; link: string; url: string; token: string; fingerprint?: string }
+    | {
+        ok: true;
+        link: string;
+        url: string;
+        token: string;
+        fingerprint?: string;
+      }
     | { ok: false; text: string },
 ): string {
   if (!minted.ok) {

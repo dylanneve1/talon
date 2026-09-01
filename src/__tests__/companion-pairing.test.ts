@@ -43,7 +43,7 @@ describe("CompanionPairStore", () => {
     const store = new CompanionPairStore();
     const grant = store.create({
       ...grantInput,
-      label: '<img src=x onerror=alert(1)>',
+      label: "<img src=x onerror=alert(1)>",
     });
 
     const claimed = store.claim(grant.token);

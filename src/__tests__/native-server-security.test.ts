@@ -332,7 +332,7 @@ describe("bridge server device addressing", () => {
             ? null
             : {
                 contentType: "text/html; charset=utf-8",
-                body: "<a href=\"talon://pair?u=x\">Open</a>",
+                body: '<a href="talon://pair?u=x">Open</a>',
               };
         },
       },

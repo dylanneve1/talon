@@ -1183,7 +1183,13 @@ export class MeshService {
     label?: unknown,
     bridgeUrl?: unknown,
   ):
-    | { ok: true; link: string; url: string; token: string; fingerprint?: string }
+    | {
+        ok: true;
+        link: string;
+        url: string;
+        token: string;
+        fingerprint?: string;
+      }
     | { ok: false; text: string } {
     const info = this.bridgeInfo;
     if (!info) {
