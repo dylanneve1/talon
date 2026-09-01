@@ -155,6 +155,7 @@ describe("bridge server over TLS", () => {
     acceptFileUpload: async () => ({ ok: false, error: "unused" }),
     openFileDownload: async () => null,
     openNodeInstall: () => null,
+    openCompanionPair: () => null,
     openNodeBinary: () => null,
   };
 

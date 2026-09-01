@@ -321,12 +321,53 @@ class _ConnectScreenState extends State<ConnectScreen> {
         ),
       ];
 
+  /// Fill the form from a `talon://pair` link on the clipboard.
+  ///
+  /// The deep link normally arrives by tapping the pairing page's button, but
+  /// that button is inert if the phone's browser hands the scheme nowhere —
+  /// and on a car head unit "tap the link" is not always available at all. The
+  /// values are printed on the same page, so long-pressing the link and
+  /// pasting it here is the escape hatch that always works.
+  Future<void> _pastePairLink() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text?.trim() ?? '';
+    final config =
+        text.isEmpty ? null : ConnectionConfig.fromPairLink(text);
+    if (config == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No talon://pair link on the clipboard.'),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _remote = true;
+      _host.text = config.host;
+      _port.text = config.port.toString();
+      _token.text = config.token ?? '';
+      _tls = config.tls;
+      _hostError = null;
+      _portError = null;
+    });
+  }
+
   List<Widget> _remoteFields() => [
         const _Hint(
           'Point at a Talon bridge running elsewhere — your desktop or a '
           'server. Set its host to 0.0.0.0 and a token to allow remote access.',
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: _pastePairLink,
+            icon: const Icon(Icons.link, size: 16),
+            label: const Text('Paste a pairing link'),
+          ),
+        ),
+        const SizedBox(height: 6),
         _field(_host, 'Host or IP',
             hint: '192.168.1.20',
             errorText: _hostError,

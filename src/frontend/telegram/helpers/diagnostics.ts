@@ -310,9 +310,18 @@ function meshDeviceLine(r: MeshPingResult, now: number): string {
 export function renderMeshReport(
   results: MeshPingResult[],
   now = Date.now(),
+  bridge?: MeshReachability,
 ): string {
   if (results.length === 0) {
-    return "<b>Mesh</b>\n\n<i>No devices have registered yet.</i>";
+    // An empty fleet is the one case where "what do I point a device at?" is
+    // the only useful thing to say, so the bridge line carries the answer
+    // instead of leaving the operator to hunt for host and port.
+    return [
+      "<b>Mesh</b>",
+      "",
+      "<i>No devices have registered yet.</i>",
+      ...bridgeLines(bridge),
+    ].join("\n");
   }
 
   const responding = results
@@ -344,6 +353,57 @@ export function renderMeshReport(
   section("Responding", responding);
   section("Unreachable", unreachable);
   section("Offline", offline);
+  lines.push(...bridgeLines(bridge));
 
   return lines.join("\n");
+}
+
+/** What `/mesh` says about the bridge a new device would dial. */
+export type MeshReachability =
+  | { ok: true; url: string; authRequired: boolean; fingerprint?: string }
+  | { ok: false; text: string };
+
+/**
+ * The bridge footer. Never prints the bearer token: `/mesh link` mints a
+ * single-use grant for that, so a credential doesn't sit in chat scrollback
+ * for as long as the chat exists.
+ */
+function bridgeLines(bridge?: MeshReachability): string[] {
+  if (!bridge) return [];
+  if (!bridge.ok) return ["", `<b>Bridge</b> — ${escapeHtml(bridge.text)}`];
+  const auth = bridge.authRequired ? "token required" : "no token";
+  return [
+    "",
+    `<b>Bridge</b> <code>${escapeHtml(bridge.url)}</code> · ${auth}`,
+    "Run <code>/mesh link</code> for a one-tap pairing link.",
+  ];
+}
+
+/**
+ * Render a minted pairing link, or why one couldn't be minted.
+ *
+ * The values are printed alongside the link because the link's whole payoff
+ * — the phone configuring itself — depends on the companion already being
+ * installed, and the fallback needs to be right there when it isn't.
+ */
+export function renderMeshPairLink(
+  minted:
+    | { ok: true; link: string; url: string; token: string; fingerprint?: string }
+    | { ok: false; text: string },
+): string {
+  if (!minted.ok) {
+    return `<b>Pairing</b>\n\n${escapeHtml(minted.text)}`;
+  }
+  return [
+    "<b>Pair a device</b>",
+    "",
+    `Open on the phone: ${escapeHtml(minted.link)}`,
+    "",
+    "Single-use, expires in 10 minutes. If the companion isn't installed yet:",
+    `  Bridge <code>${escapeHtml(minted.url)}</code>`,
+    `  Token <code>${escapeHtml(minted.token)}</code>`,
+    ...(minted.fingerprint
+      ? [`  Certificate <code>${escapeHtml(minted.fingerprint)}</code>`]
+      : []),
+  ].join("\n");
 }

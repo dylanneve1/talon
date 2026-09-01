@@ -5,7 +5,12 @@
 import type { Bot } from "grammy";
 import { isUserClientReady } from "../userbot.js";
 import { escapeHtml } from "../formatting.js";
-import { formatDuration, renderMeshReport } from "../helpers/index.js";
+import {
+  formatDuration,
+  renderMeshPairLink,
+  renderMeshReport,
+} from "../helpers/index.js";
+import { isAuthorizedAdmin } from "./state.js";
 import { getLoadedPlugins } from "../../../core/plugin/index.js";
 import { getMeshService } from "../../../core/mesh/index.js";
 import type { MeshPingResult } from "../../../core/mesh/service.js";
@@ -105,6 +110,29 @@ export function registerInfoCommands(bot: Bot): void {
   });
 
   bot.command("mesh", async (ctx) => {
+    const arg = (ctx.match ?? "").toString().trim();
+    // `/mesh link` mints a bridge credential and posts it into the chat, so
+    // it is admin-gated even though plain `/mesh` is not — reading the fleet
+    // is not the same act as handing out the keys to it.
+    if (/^(link|pair)\b/i.test(arg)) {
+      if (!isAuthorizedAdmin(ctx)) {
+        await ctx.reply("Only the configured admin can mint a pairing link.");
+        return;
+      }
+      // `/mesh link Car` names the connection on the phone; with no name it
+      // inherits the bot's, which is what the operator already calls this
+      // daemon everywhere else.
+      const named = arg.replace(/^(link|pair)\b/i, "").trim();
+      const minted = getMeshService().makeCompanionPairLink(
+        named || ctx.me.first_name,
+      );
+      await ctx.reply(renderMeshPairLink(minted), {
+        parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
+      });
+      return;
+    }
+
     const sent = await ctx.reply("Pinging mesh devices…");
     let results: MeshPingResult[];
     try {
@@ -122,7 +150,11 @@ export function registerInfoCommands(bot: Bot): void {
       bot,
       ctx.chat.id,
       sent.message_id,
-      renderMeshReport(results),
+      renderMeshReport(
+        results,
+        Date.now(),
+        getMeshService().bridgeReachability(),
+      ),
     );
   });
 
