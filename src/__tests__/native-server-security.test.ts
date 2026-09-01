@@ -60,6 +60,7 @@ const handlers: BridgeServerHandlers = {
   acceptFileUpload: async () => ({ ok: false, error: "unused" }),
   openFileDownload: async () => null,
   openNodeInstall: () => null,
+  openCompanionPair: () => null,
   openNodeBinary: () => null,
 };
 
@@ -317,5 +318,75 @@ describe("bridge server device addressing", () => {
     await get(port, "/devices/file?transfer=t1&deviceId=phone", "secret");
     await get(port, "/devices/file?transfer=t1", "secret");
     expect(seen).toEqual(["phone", undefined]);
+  });
+  it("serves a pairing grant pre-auth, once, and never caches it", async () => {
+    const served: Array<[string, string]> = [];
+    server = new BridgeServer(
+      { host: "127.0.0.1", port: 0, token: "secret", startedAt: "boot" },
+      {
+        ...handlers,
+        openCompanionPair: (token, format) => {
+          served.push([token, format]);
+          // One grant, one serve — the store's own single-use latch.
+          return served.length > 1
+            ? null
+            : {
+                contentType: "text/html; charset=utf-8",
+                body: '<a href="talon://pair?u=x">Open</a>',
+              };
+        },
+      },
+    );
+    const port = await server.start();
+
+    // No Authorization header: the whole point is a phone that holds no
+    // bridge credential yet, so the grant must be the entire authorization.
+    const first = await get(port, "/pair?grant=g1");
+    expect(first.status).toBe(200);
+    expect(first.headers.get("cache-control")).toBe("no-store");
+    expect(await first.text()).toContain("talon://pair");
+
+    const replay = await get(port, "/pair?grant=g1");
+    expect(replay.status).toBe(404);
+    // The route asks both times — refusing a spent grant is the store's
+    // job, not the transport's.
+    expect(served).toEqual([
+      ["g1", "html"],
+      ["g1", "html"],
+    ]);
+  });
+
+  it("asks for JSON when the companion does", async () => {
+    const formats: string[] = [];
+    server = new BridgeServer(
+      { host: "127.0.0.1", port: 0, token: "secret", startedAt: "boot" },
+      {
+        ...handlers,
+        openCompanionPair: (_token, format) => {
+          formats.push(format);
+          return {
+            contentType: "application/json; charset=utf-8",
+            body: '{"url":"http://h:1"}',
+          };
+        },
+      },
+    );
+    const port = await server.start();
+
+    await get(port, "/pair?grant=g1&format=json");
+    await fetch(`http://127.0.0.1:${port}/pair?grant=g2`, {
+      headers: { Accept: "application/json" },
+    });
+    expect(formats).toEqual(["json", "json"]);
+  });
+
+  it("refuses a /pair request with no grant at all", async () => {
+    server = new BridgeServer(
+      { host: "127.0.0.1", port: 0, token: "secret", startedAt: "boot" },
+      handlers,
+    );
+    const port = await server.start();
+    const res = await get(port, "/pair");
+    expect(res.status).toBe(404);
   });
 });

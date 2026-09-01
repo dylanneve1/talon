@@ -2,10 +2,16 @@
  * Informational commands — /start, /help, /ping, /plugins.
  */
 
-import type { Bot } from "grammy";
+import type { Bot, Context } from "grammy";
 import { isUserClientReady } from "../userbot.js";
 import { escapeHtml } from "../formatting.js";
-import { formatDuration, renderMeshReport } from "../helpers/index.js";
+import {
+  formatDuration,
+  renderMeshPairLink,
+  renderMeshReport,
+  type MeshReachability,
+} from "../helpers/index.js";
+import { isAuthorizedAdmin } from "./state.js";
 import { getLoadedPlugins } from "../../../core/plugin/index.js";
 import { getMeshService } from "../../../core/mesh/index.js";
 import type { MeshPingResult } from "../../../core/mesh/service.js";
@@ -104,7 +110,49 @@ export function registerInfoCommands(bot: Bot): void {
     }
   });
 
+  /**
+   * The bridge footer `/mesh` prints for this caller.
+   *
+   * The admin gets the whole connection profile — URL, bearer token,
+   * certificate — because an operator asking their own daemon how to reach
+   * itself should get an answer rather than a scavenger hunt through config
+   * files. Everyone else gets the address only: a group member reading the
+   * fleet has no business holding the key to it.
+   */
+  const bridgeFor = (ctx: Context): MeshReachability => {
+    const reach = getMeshService().bridgeReachability();
+    if (!reach.ok || isAuthorizedAdmin(ctx)) return reach;
+    return {
+      ok: true,
+      url: reach.url,
+      authRequired: reach.authRequired,
+    };
+  };
+
   bot.command("mesh", async (ctx) => {
+    const arg = (ctx.match ?? "").toString().trim();
+    // `/mesh link` mints a bridge credential and posts it into the chat, so
+    // it is admin-gated even though plain `/mesh` is not — reading the fleet
+    // is not the same act as handing out the keys to it.
+    if (/^(link|pair)\b/i.test(arg)) {
+      if (!isAuthorizedAdmin(ctx)) {
+        await ctx.reply("Only the configured admin can mint a pairing link.");
+        return;
+      }
+      // `/mesh link Car` names the connection on the phone; with no name it
+      // inherits the bot's, which is what the operator already calls this
+      // daemon everywhere else.
+      const named = arg.replace(/^(link|pair)\b/i, "").trim();
+      const minted = getMeshService().makeCompanionPairLink(
+        named || ctx.me.first_name,
+      );
+      await ctx.reply(renderMeshPairLink(minted), {
+        parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
+      });
+      return;
+    }
+
     const sent = await ctx.reply("Pinging mesh devices…");
     let results: MeshPingResult[];
     try {
@@ -122,7 +170,7 @@ export function registerInfoCommands(bot: Bot): void {
       bot,
       ctx.chat.id,
       sent.message_id,
-      renderMeshReport(results),
+      renderMeshReport(results, Date.now(), bridgeFor(ctx)),
     );
   });
 

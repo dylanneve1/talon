@@ -8,6 +8,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private var shizuku: ShizukuBridge? = null
     private var root: RootBridge? = null
+    private var pair: PairBridge? = null
     private var voice: VoiceBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -33,6 +34,17 @@ class MainActivity : FlutterActivity() {
         )
         root = RootBridge(rootChannel, applicationContext)
 
+        // `talon://pair` deep links (the daemon's /mesh link). Created before
+        // the intent is inspected below so a cold start's link is held for
+        // Dart, which only asks for it once the UI is up.
+        pair = PairBridge(
+            MethodChannel(
+                flutterEngine.dartExecutor.binaryMessenger,
+                PairBridge.CHANNEL,
+            ),
+        )
+        if (isPairIntent(intent)) pair?.offer(intent.dataString)
+
         // Voice mode: STT/TTS + default-assistant plumbing. Activity-scoped
         // (unlike Shizuku) because it drives runtime-permission prompts and
         // settings intents, which need a real activity.
@@ -53,7 +65,12 @@ class MainActivity : FlutterActivity() {
         // Already running and the assist gesture re-launched us (singleTop):
         // push the event so the live UI jumps into voice mode immediately.
         if (isAssistIntent(intent)) voice?.onAssistLaunch(warm = true)
+        if (isPairIntent(intent)) pair?.offer(intent.dataString)
     }
+
+    private fun isPairIntent(intent: Intent?): Boolean =
+        intent?.action == Intent.ACTION_VIEW &&
+            intent.data?.scheme.equals("talon", ignoreCase = true)
 
     private fun isAssistIntent(intent: Intent?): Boolean =
         intent?.action == Intent.ACTION_ASSIST ||

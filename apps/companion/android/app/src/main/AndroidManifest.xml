@@ -82,6 +82,17 @@
                 <action android:name="android.intent.action.VOICE_COMMAND"/>
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
+            <!-- Pairing deep link: the daemon's `/mesh link` hands the phone a
+                 page whose button is talon://pair?u=…&t=…&f=…, carrying the
+                 bridge URL, bearer token and certificate fingerprint so the
+                 connection configures itself. BROWSABLE is what lets the
+                 browser (and Telegram's in-app browser) hand it over. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="talon" android:host="pair"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

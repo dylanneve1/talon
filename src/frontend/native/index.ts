@@ -1263,6 +1263,7 @@ export function createNativeFrontend(
       mesh.acceptFileUpload(token, body, fromDeviceId),
     openFileDownload: (token, fromDeviceId) =>
       mesh.openFileDownload(token, fromDeviceId),
+    openCompanionPair: (token, format) => mesh.openCompanionPair(token, format),
     openNodeInstall: (token) => mesh.openNodeInstall(token),
     openNodeBinary: (token) => mesh.openNodeBinary(token),
   };

@@ -43,6 +43,12 @@ import {
   resolveNodeBinary,
   type NodeBinaryResolver,
 } from "./node-binaries.js";
+import {
+  CompanionPairStore,
+  pairLink,
+  pairPage,
+  type CompanionPairPayload,
+} from "./companion-pairing.js";
 import { installOneLiner, NodeProvisionStore } from "./node-provision.js";
 import { MeshRegistry } from "./registry.js";
 import { TransferStore } from "./transfers.js";
@@ -174,6 +180,8 @@ export class MeshService {
   private readonly transfers = new TransferStore();
   /** One-time grants for bridge-served node installers. */
   private readonly provision = new NodeProvisionStore();
+  /** One-time grants that hand a phone this bridge's connection details. */
+  private readonly companionPairs = new CompanionPairStore();
   private readonly resolveNode: NodeBinaryResolver;
   private bridgeInfo: MeshBridgeInfo | null = null;
   private readonly freshFixTimeoutMs: number;
@@ -1159,6 +1167,112 @@ export class MeshService {
         `It installs talon-node ${bin.version} (sha256-verified against ${grant.sha256.slice(0, 12)}…), pins the bridge certificate, and registers a boot service — the host appears on the mesh within a minute.`,
         `Single-use link, expires in 30 minutes. The host must be able to reach ${base}.`,
       ].join("\n"),
+    };
+  }
+
+  /**
+   * Mint a single-use link that connects a phone to this bridge without
+   * anyone typing an address or a token — the companion half of
+   * {@link makeNodeInstallLink}.
+   *
+   * Returns the link plus the values it carries, so a caller (a `/mesh`
+   * reply, say) can print both: the link is the one-tap path, the values are
+   * what someone falls back to when the app isn't installed yet.
+   */
+  makeCompanionPairLink(
+    label?: unknown,
+    bridgeUrl?: unknown,
+  ):
+    | {
+        ok: true;
+        link: string;
+        url: string;
+        token: string;
+        fingerprint?: string;
+      }
+    | { ok: false; text: string } {
+    const info = this.bridgeInfo;
+    if (!info) {
+      return {
+        ok: false,
+        text: "The native bridge isn't running, so there is nothing for a phone to connect to. Enable the native frontend first.",
+      };
+    }
+    if (!info.token) {
+      return {
+        ok: false,
+        text: "The bridge has no bearer token (loopback-only bind), and companions authenticate with one. Set native.host to a reachable address (a token is auto-minted) and restart.",
+      };
+    }
+    const base = this.bridgeBaseUrl(info, bridgeUrl);
+    if (typeof base !== "string") return { ok: false, text: base.error };
+    const grant = this.companionPairs.create({
+      bridgeUrl: base,
+      bearerToken: info.token,
+      ...(info.fingerprint ? { fingerprint: info.fingerprint } : {}),
+      ...(typeof label === "string" && label.trim()
+        ? { label: label.trim() }
+        : {}),
+    });
+    return {
+      ok: true,
+      link: pairLink(grant),
+      url: base,
+      token: info.token,
+      ...(info.fingerprint ? { fingerprint: info.fingerprint } : {}),
+    };
+  }
+
+  /**
+   * GET /pair — serve a pairing grant (single-use), as the landing page or
+   * as the JSON the companion reads.
+   */
+  openCompanionPair(
+    token: string,
+    format: "html" | "json",
+  ): { contentType: string; body: string } | null {
+    const payload = this.companionPairs.claim(token);
+    if (!payload) return null;
+    return format === "json"
+      ? {
+          contentType: "application/json; charset=utf-8",
+          body: JSON.stringify(payload satisfies CompanionPairPayload),
+        }
+      : {
+          contentType: "text/html; charset=utf-8",
+          body: pairPage(payload),
+        };
+  }
+
+  /**
+   * How this bridge is reachable, for an operator asking "what do I point a
+   * device at?".
+   *
+   * The bearer token comes back with it. Deciding who may see a credential is
+   * the caller's job, not this seam's — the Telegram `/mesh` shows it to the
+   * configured admin and withholds it from everyone else — and an operator who
+   * asked their own daemon for its own connection details should get an
+   * answer, not a lecture.
+   */
+  bridgeReachability():
+    | {
+        ok: true;
+        url: string;
+        authRequired: boolean;
+        token?: string;
+        fingerprint?: string;
+      }
+    | { ok: false; text: string } {
+    const info = this.bridgeInfo;
+    if (!info) return { ok: false, text: "The native bridge isn't running." };
+    const base = this.bridgeBaseUrl(info);
+    if (typeof base !== "string") return { ok: false, text: base.error };
+    return {
+      ok: true,
+      url: base,
+      authRequired: Boolean(info.token),
+      ...(info.token ? { token: info.token } : {}),
+      ...(info.fingerprint ? { fingerprint: info.fingerprint } : {}),
     };
   }
 
