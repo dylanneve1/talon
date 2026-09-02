@@ -13,84 +13,22 @@
 
 import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
 import { NATIVE_MODULES } from "../native/registry.js";
 import { dirs } from "../util/paths.js";
+import { getBackend, listBackends } from "./agent-runtime/backend-registry.js";
+import type {
+  DoctorCheck,
+  DoctorConfigSlice,
+  DoctorReport,
+  NativeModuleCheck,
+} from "./doctor-types.js";
 
-type DoctorStatus = "ok" | "warn" | "fail" | "info";
-
-export interface DoctorCheck {
-  label: string;
-  status: DoctorStatus;
-  detail?: string;
-  /**
-   * Counts toward the issue total even when status is "warn" — used
-   * for soft failures like missing backend auth where the bot still
-   * starts but a backend won't work.
-   */
-  issue?: boolean;
-  /**
-   * A backend that is configured but not serving chats. Renderers group
-   * these away from the environment so a handful of idle providers can't
-   * bury the checks that describe the running deployment.
-   */
-  inactive?: boolean;
-}
-
-/** One embedded native module: provenance plus a live self-test result. */
-export interface NativeModuleCheck {
-  name: string;
-  /** Source language ("Rust", "Zig", "C", "C++", "Gleam"). */
-  language: string;
-  /** Compile target ("wasm32-unknown-unknown", "wasm32-freestanding", "JavaScript"). */
-  target: string;
-  /** Embedded artifact size, when the module ships as wasm bytes. */
-  sizeBytes?: number;
-  ok: boolean;
-  /** Failure detail when !ok. */
-  note?: string;
-}
-
-export interface DoctorReport {
-  checks: DoctorCheck[];
-  native: NativeModuleCheck[];
-  /** Failed checks + warn-with-issue checks + failed native modules. */
-  issues: number;
-}
-
-/**
- * The slice of config doctor reads. Both the CLI's local Config and
- * TalonConfig satisfy this structurally.
- */
-export interface DoctorConfigSlice {
-  frontend: string | string[];
-  backend?: string;
-  /** Backends config exposes. Empty / absent means every registered one. */
-  enabledBackends?: string[];
-  model?: string;
-  heartbeatModel?: string;
-  heartbeatBackend?: string;
-  botToken?: string;
-  teamsWebhookUrl?: string;
-  discord?: { botToken?: string };
-  whatsapp?: object;
-  claudeBinary?: string;
-  codexApiKey?: string;
-  openaiApiKey?: string;
-  openaiBaseUrl?: string;
-  mempalace?: {
-    enabled?: boolean;
-    pythonPath?: string;
-    version?: string;
-  };
-  playwright?: {
-    enabled?: boolean;
-    browser?: string;
-    endpoint?: string;
-    endpointFile?: string;
-  };
-  github?: { enabled?: boolean; imageTag?: string };
-}
+export type {
+  DoctorCheck,
+  DoctorConfigSlice,
+  DoctorReport,
+  NativeModuleCheck,
+} from "./doctor-types.js";
 
 function errorNote(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -230,85 +168,6 @@ async function checkNamespaceDir(): Promise<DoctorCheck> {
   };
 }
 
-function binaryOnPath(name: string): boolean {
-  try {
-    const lookupCmd = process.platform === "win32" ? "where" : "which";
-    execFileSync(lookupCmd, [name], { stdio: "pipe" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Validate models pinned in config against the Claude backend's static
- * catalog. A model that has been withdrawn from the catalog (it
- * happens: deprecations, policy pulls) makes every turn silently run
- * the backend default while the config keeps naming the dead id —
- * this check is where that finally becomes visible. Claude-only: this
- * catalog is a static import; other backends need a live server and
- * are audited at boot instead (core/engine/model-audit.ts).
- */
-async function checkClaudeConfiguredModels(
-  config: DoctorConfigSlice | undefined,
-): Promise<DoctorCheck[]> {
-  const checks: DoctorCheck[] = [];
-  const targets: Array<{ key: string; model?: string; backendId?: string }> = [
-    { key: "model", model: config?.model, backendId: config?.backend },
-    {
-      key: "heartbeatModel",
-      model: config?.heartbeatModel,
-      backendId: config?.heartbeatBackend ?? config?.backend,
-    },
-  ];
-  try {
-    const { resolveModel } =
-      await import("../backend/claude-sdk/model-provider.js");
-    // Doctor runs standalone — live SDK model discovery hasn't happened,
-    // so the registry may be empty. Seed the static catalog (the same
-    // list the setup wizard offers) so alias pins like "opus" resolve.
-    // The static list is a snapshot: a model can exist upstream and not
-    // here, which is why findings are warn-level, never fail.
-    const { getModels } = await import("./models/catalog.js");
-    if (getModels("anthropic").length === 0) {
-      const [{ registerClaudeModelsStatic }, { CLAUDE_MODELS_STATIC }] =
-        await Promise.all([
-          import("../backend/claude-sdk/models/discovery.js"),
-          import("../backend/claude-sdk/models/static.js"),
-        ]);
-      registerClaudeModelsStatic(CLAUDE_MODELS_STATIC);
-    }
-    for (const { key, model, backendId } of targets) {
-      if (!model || model === "default") continue;
-      if ((backendId ?? "claude") !== "claude") continue;
-      const res = await resolveModel(model);
-      if (res.kind === "exact") {
-        checks.push({
-          label: `Model (${key}): ${model} → ${res.model.displayName}`,
-          status: "ok",
-        });
-      } else if (res.kind === "ambiguous") {
-        checks.push({
-          label: `Model (${key}): "${model}" is ambiguous`,
-          status: "warn",
-          detail: res.matches.map((m) => m.displayName).join(", "),
-          issue: true,
-        });
-      } else {
-        checks.push({
-          label: `Model (${key}): "${model}" not selectable on claude`,
-          status: "warn",
-          detail: "turns silently run the backend default — update config.json",
-          issue: true,
-        });
-      }
-    }
-  } catch {
-    /* catalog unavailable — skip, never break doctor */
-  }
-  return checks;
-}
-
 /**
  * Native plugin runtimes (MemPalace's venv, Playwright's browser build,
  * GitHub's Docker image) — the artifacts the provisioners own. The
@@ -337,17 +196,12 @@ async function checkPluginRuntimes(
   return checks;
 }
 
-/** Every backend id doctor knows how to inspect. */
-const KNOWN_BACKENDS = [
-  "claude",
-  "codex",
-  "kilo",
-  "opencode",
-  "openai-agents",
-] as const;
-
 /**
- * Binary / auth checks across every backend the config exposes.
+ * Binary / auth checks across every backend the config exposes, each
+ * supplied by its own factory (`BackendFactory.doctor`) — doctor composes
+ * whatever is registered and hardcodes nothing about any backend. The
+ * caller must have loaded the factories (`loadBuiltinBackends`); an active
+ * backend that is not registered is reported as such, loudly.
  *
  * Only the active one counts toward the issue total; the rest are reported
  * so a switch doesn't have to be the thing that discovers a backend can't
@@ -361,11 +215,11 @@ async function checkBackend(
   const active = config?.backend ?? "claude";
   const exposed = config?.enabledBackends?.length
     ? config.enabledBackends
-    : [...KNOWN_BACKENDS];
+    : listBackends().map((b) => b.id);
 
   const checks = await checkOneBackend(active, config, true);
   for (const id of exposed) {
-    if (id === active || !KNOWN_BACKENDS.includes(id as never)) continue;
+    if (id === active || !getBackend(id)) continue;
     // An idle backend's missing binary is a heads-up, not a fault of this
     // deployment: downgrade it and keep it out of the issue count.
     for (const check of await checkOneBackend(id, config, false)) {
@@ -385,121 +239,35 @@ async function checkOneBackend(
   config: DoctorConfigSlice | undefined,
   isActive: boolean,
 ): Promise<DoctorCheck[]> {
-  const checks: DoctorCheck[] = [];
-
-  if (backend === "claude") {
-    if (config?.claudeBinary) {
-      checks.push(
-        binaryOnPath(config.claudeBinary)
-          ? {
-              label: "Claude Code binary",
-              status: "ok",
-              detail: config.claudeBinary,
-            }
-          : {
-              label: "Claude Code binary not found",
-              status: "fail",
-              detail: config.claudeBinary,
-            },
-      );
-    } else {
-      checks.push(
-        binaryOnPath("claude")
-          ? { label: "Claude Code installed", status: "ok" }
-          : { label: "Claude Code not found", status: "fail" },
-      );
-    }
-    // Model resolution spawns a probe — worth it for the backend actually
-    // serving chats, wasteful for one nobody is using.
-    if (isActive) checks.push(...(await checkClaudeConfiguredModels(config)));
-  } else if (backend === "codex") {
-    if (!binaryOnPath("codex")) {
-      checks.push({
-        label: "Codex CLI not found",
+  const factory = getBackend(backend);
+  if (!factory) {
+    const known = listBackends().map((b) => b.id);
+    return [
+      {
+        label: `Backend "${backend}" is not registered`,
         status: "fail",
-        detail: "npm i -g @openai/codex",
-      });
-      return checks;
-    }
-    checks.push({ label: "Codex CLI installed", status: "ok" });
-    const { detectCodexAuth } = await import("../backend/codex/auth.js");
-    const auth = detectCodexAuth({
-      codexApiKey: config?.codexApiKey,
-      openaiApiKey: config?.openaiApiKey,
-      openaiBaseUrl: config?.openaiBaseUrl,
-    });
-    for (const diagnostic of auth.diagnostics) {
-      checks.push({ label: diagnostic, status: "warn" });
-    }
-    if (auth.mode !== "none") {
-      checks.push({
-        label: "Codex auth",
-        status: "ok",
-        detail: auth.baseUrl ? `${auth.source} (${auth.baseUrl})` : auth.source,
-      });
-    } else {
-      checks.push({
-        label: "Codex auth missing",
-        status: "warn",
-        detail:
-          "set CODEX_API_KEY, TALON_CODEX_KEY, codexApiKey, or run `codex login`",
+        detail: known.length
+          ? `known: ${known.join(", ")}`
+          : "no backends loaded — call loadBuiltinBackends() first",
         issue: true,
-      });
-    }
-  } else if (backend === "kilo" || backend === "opencode") {
-    // The SDK ships as an npm dep but only talks to a server it spawns from
-    // the CLI of the same name (`cross-spawn` → PATH lookup). A present
-    // package with an absent binary fails at the first turn with a bare
-    // ENOENT, so check what actually gets executed.
-    const label = backend === "kilo" ? "Kilo" : "OpenCode";
-    checks.push(
-      binaryOnPath(backend)
-        ? { label: `${label} CLI installed`, status: "ok" }
-        : {
-            label: `${label} CLI not found`,
-            status: "fail",
-            detail: `the ${label} SDK spawns \`${backend}\` — install it or this backend cannot start`,
-            issue: true,
-          },
-    );
-  } else if (backend === "openai-agents") {
-    checks.push({ label: "OpenAI Agents SDK bundled", status: "ok" });
-    const hasEnvKey = Boolean(process.env.OPENAI_API_KEY);
-    const hasCfgKey = Boolean(config?.openaiApiKey);
-    if (hasEnvKey || hasCfgKey) {
-      const sources: string[] = [];
-      if (hasEnvKey) sources.push("OPENAI_API_KEY env");
-      if (hasCfgKey) sources.push("openaiApiKey in talon.json");
-      checks.push({
-        label: "OpenAI Agents auth",
-        status: "ok",
-        detail: sources.join(", "),
-      });
-    } else {
-      checks.push({
-        label: "OpenAI Agents auth missing",
-        status: "warn",
-        detail: "set OPENAI_API_KEY or openaiApiKey in talon.json",
-        issue: true,
-      });
-    }
-    const envBase = process.env.OPENAI_BASE_URL;
-    const cfgBase = config?.openaiBaseUrl;
-    if (envBase || cfgBase) {
-      checks.push({
-        label: "OpenAI-compatible endpoint",
-        status: "ok",
-        detail: envBase ? `env (${envBase})` : `config (${cfgBase})`,
-      });
-    } else {
-      checks.push({
-        label: "Endpoint: api.openai.com (default)",
-        status: "info",
-      });
-    }
+      },
+    ];
   }
-
-  return checks;
+  if (!factory.doctor) {
+    return [{ label: `${factory.label}: no doctor checks`, status: "info" }];
+  }
+  try {
+    return await factory.doctor(config, isActive);
+  } catch (err) {
+    return [
+      {
+        label: `${factory.label} doctor check errored`,
+        status: "warn",
+        detail: errorNote(err),
+        issue: isActive,
+      },
+    ];
+  }
 }
 
 /**

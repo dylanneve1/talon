@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   checkNativeModules,
@@ -39,6 +39,13 @@ describe("checkNativeModules", () => {
 });
 
 describe("collectDoctorReport", () => {
+  // Backend checks come from the factories' own doctor slots, so the
+  // registry has to hold them — exactly what `talon doctor` does.
+  beforeAll(async () => {
+    const { loadBuiltinBackends } = await import("../backend/builtins.js");
+    await loadBuiltinBackends();
+  });
+
   it("fails the config check when no config file exists", async () => {
     const report = await collectDoctorReport({ hasConfigFile: false });
     const labels = report.checks.map((c) => c.label);

@@ -198,10 +198,15 @@ keep OpenAI-compatible endpoint credentials without hijacking Codex.
 2. The factory's `init` is called once at startup and returns a
    `Backend` composed via `composeBackend(...)`. Wire in as many of
    the capability slots as your SDK supports; `core/` falls back
-   gracefully when a slot is missing.
+   gracefully when a slot is missing. Implement `doctor(config,
+   isActive)` too — `talon doctor` composes each backend's own binary /
+   auth / catalog checks off the registry and knows nothing about any
+   backend itself, so a factory without the slot is reported as having
+   nothing to check.
 
-3. Add `await import("./backend/<name>/factory.js");` to
-   `bootstrap.ts`'s factory-loading block.
+3. Add `await import("./<name>/factory.js");` to
+   `backend/builtins.ts` — the one list bootstrap, `talon doctor`, and
+   the registry tests all load.
 
 4. Add `"<name>"` to the `backend` enum in
    `src/util/config.ts` so config validation accepts it.
