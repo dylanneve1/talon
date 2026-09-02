@@ -48,7 +48,7 @@ const DELIVERY_ACTIONS = new Set(["end_turn", "send", "react"]);
  * Keep them small and total; compound conditions get their own named predicate
  * rather than being expressed in the data.
  */
-export const BUILTIN_PREDICATES: Readonly<Record<string, ReflexPredicate>> = {
+const BUILTIN_PREDICATES: Readonly<Record<string, ReflexPredicate>> = {
   /** Always-on trigger. */
   always: () => true,
 
@@ -85,7 +85,7 @@ function resolve(
 }
 
 /** Evaluate one reflex against a context. */
-export function evaluateReflex(
+function evaluateReflex(
   reflex: ReflexPayload,
   ctx: ReflexContext,
   overrides?: Readonly<Record<string, ReflexPredicate>>,

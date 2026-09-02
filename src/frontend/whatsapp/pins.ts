@@ -45,8 +45,3 @@ export function forgetPin(chatId: string, msgId: number): void {
 export function listPins(chatId: string): PinnedMessage[] {
   return pinsByChat.get(chatId) ?? [];
 }
-
-/** Test seam: forget every recorded pin. */
-export function resetPins(): void {
-  pinsByChat.clear();
-}

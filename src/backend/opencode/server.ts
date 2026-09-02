@@ -44,7 +44,6 @@ import {
   resolveProviderID as resolveProviderIDShared,
   getRegisteredMcpServerNames as getRegisteredMcpServerNamesShared,
   errMsg as sharedErrMsg,
-  TALON_MCP_SERVER_NAME as SHARED_TALON_MCP_SERVER_NAME,
   type RemoteServerState,
 } from "../remote-server/index.js";
 
@@ -55,7 +54,6 @@ const OPENCODE_HOSTNAME = "127.0.0.1";
 // isolated server alongside a running production Talon (which holds 4096).
 const OPENCODE_PORT = Number(process.env.OPENCODE_PORT ?? 4096);
 const OPENCODE_BASE_URL = `http://${OPENCODE_HOSTNAME}:${OPENCODE_PORT}`;
-const TALON_MCP_SERVER_NAME = SHARED_TALON_MCP_SERVER_NAME;
 // Text-preferred delivery: plain assistant text is the reply; tools
 // only for genuine side effects. Single-sourced from the shared
 // contract templates (prompts/system/contract-text-preferred.md).
@@ -238,11 +236,4 @@ export function getRegisteredMcpServerNames(): string[] {
 
 const errMsg = sharedErrMsg;
 
-export {
-  OPENCODE_HOSTNAME,
-  OPENCODE_PORT,
-  OPENCODE_BASE_URL,
-  TALON_MCP_SERVER_NAME,
-  OPENCODE_SYSTEM_PROMPT_SUFFIX,
-  errMsg,
-};
+export { OPENCODE_BASE_URL, OPENCODE_SYSTEM_PROMPT_SUFFIX, errMsg };

@@ -58,5 +58,3 @@ export type FrontendCreate = (
 
 /** A fully-registered frontend: identity plus the factory. */
 export type FrontendFactory = FrontendDescriptor & { create: FrontendCreate };
-
-export type { FrontendDescriptor } from "./registry.js";

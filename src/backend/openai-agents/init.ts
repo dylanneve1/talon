@@ -48,7 +48,7 @@ import type { FrontendName } from "../../core/agent-runtime/backend-registry.js"
 import { log, logWarn } from "../../util/log.js";
 import { nonTerminalFrontends } from "../shared/frontends.js";
 import { getState } from "./state.js";
-import { startDiscovery, refreshDiscovery } from "./discovery.js";
+import { startDiscovery } from "./discovery.js";
 
 /**
  * Initialise the OpenAI Agents backend.
@@ -178,23 +178,6 @@ export function initOpenAIAgentsAgent(
   // render so the user doesn't see "0 models" just because the HTTP
   // call hasn't returned yet — see `discovery.ts#awaitDiscovery`.
   void startDiscovery(effectiveBaseURL, apiKey);
-}
-
-/**
- * Trigger a fresh discovery fetch using the resolved endpoint stored
- * on state at init time. Returns the new promise so callers can await
- * if they want; safe to fire-and-forget.
- *
- * Useful when the operator wants to refresh the catalog without
- * restarting Talon — e.g. after an endpoint outage clears or a new
- * model is published.
- */
-export function triggerDiscoveryRefresh(): Promise<void> {
-  const state = getState();
-  if (!state.baseURL) {
-    return Promise.resolve();
-  }
-  return refreshDiscovery(state.baseURL, state.apiKey);
 }
 
 /**

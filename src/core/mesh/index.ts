@@ -7,21 +7,4 @@
  */
 
 export { MeshRegistry } from "./registry.js";
-export {
-  MeshService,
-  getMeshService,
-  setMeshService,
-  type MeshTransport,
-  type MeshServiceOptions,
-  type MeshToolResult,
-} from "./service.js";
-export {
-  sanitizeCapabilities,
-  toDeviceInfo,
-  toDeviceLocation,
-  type DeviceCommand,
-  type DeviceCommandResult,
-  type DeviceInfo,
-  type DeviceLocation,
-  type DevicePlatform,
-} from "./types.js";
+export { MeshService, getMeshService, setMeshService } from "./service.js";

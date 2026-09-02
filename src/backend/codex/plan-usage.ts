@@ -161,8 +161,3 @@ export async function getPlanUsage(): Promise<PlanUsage | undefined> {
   if (loaded) cache = { value: loaded, fetchedAt: loaded.fetchedAt };
   return loaded ?? cache?.value;
 }
-
-export function resetCodexPlanUsageForTest(): void {
-  cache = undefined;
-  inFlight = undefined;
-}

@@ -16,15 +16,11 @@
  * talon.json — carried to the subprocess as comma-separated env vars.
  */
 
-import { dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { isBunRuntime } from "../../util/runtime.js";
-
 // ── Env-var names (shared constants, not stringly-typed call sites) ────────
 
-export const ENV_BRIDGE_URL = "TALON_BRIDGE_URL";
-export const ENV_CHAT_ID = "TALON_CHAT_ID";
-export const ENV_FRONTEND = "TALON_FRONTEND";
+const ENV_BRIDGE_URL = "TALON_BRIDGE_URL";
+const ENV_CHAT_ID = "TALON_CHAT_ID";
+const ENV_FRONTEND = "TALON_FRONTEND";
 export const ENV_DISABLED_TOOLS = "TALON_DISABLED_TOOLS";
 export const ENV_DISABLED_TOOL_TAGS = "TALON_DISABLED_TOOL_TAGS";
 
@@ -61,32 +57,6 @@ export function buildTalonMcpEnv(
 }
 
 // ── Spawn spec ──────────────────────────────────────────────────────────────
-
-/**
- * The command line that launches Talon's unified MCP tool server.
- *
- * tsx as a Node loader is passed via `--import <file-url>`: Node
- * accepts URLs or absolute paths, but on Windows a raw backslash path
- * is ambiguous between path and URL — `pathToFileURL` always parses
- * as a loader URL. `node --import` (vs spawning `npx`/`tsx` directly)
- * also sidesteps the Node 20.19+ refusal to spawn `.cmd` shims
- * without `shell: true` (CVE-2024-27980 mitigation).
- *
- * Returns a fresh array: callers wrap it in their own supervisor
- * (`wrapMcpServer` / `wrapMcpCommand`) and may mutate it.
- */
-export function talonMcpServerCommand(): string[] {
-  const here = dirname(fileURLToPath(import.meta.url));
-  // Bun executes the TS entry natively — no loader, and use the running
-  // bun binary itself so the child matches the daemon's runtime.
-  if (isBunRuntime()) {
-    return [process.execPath, resolve(here, "mcp-server.ts")];
-  }
-  const tsxImport = pathToFileURL(
-    resolve(here, "../../../node_modules/tsx/dist/esm/index.mjs"),
-  ).href;
-  return ["node", "--import", tsxImport, resolve(here, "mcp-server.ts")];
-}
 
 // ── Parser (server side) ────────────────────────────────────────────────────
 

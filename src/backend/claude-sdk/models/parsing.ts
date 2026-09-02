@@ -167,7 +167,7 @@ export function describeSdkModel(model: SdkModelInfo): ParsedModelIdentity {
   };
 }
 
-export function buildFamilyKey(identity: ParsedModelIdentity): string | null {
+function buildFamilyKey(identity: ParsedModelIdentity): string | null {
   return identity.family
     ? `${identity.family}:${identity.version ?? "*"}`
     : null;
@@ -178,7 +178,7 @@ export function buildFamilyKey(identity: ParsedModelIdentity): string | null {
  * context size. Base and 1M variants of one family+version land in separate
  * buckets so both surface in the picker, while redundant longhand ids collapse.
  */
-export function buildVariantKey(identity: ParsedModelIdentity): string | null {
+function buildVariantKey(identity: ParsedModelIdentity): string | null {
   const familyKey = buildFamilyKey(identity);
   if (!familyKey) return null;
   return `${familyKey}:${identity.isOneMillion ? "1m" : "base"}`;

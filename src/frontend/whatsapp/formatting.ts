@@ -17,7 +17,7 @@ import { marked, type Token, type Tokens } from "marked";
 import { splitMessage } from "../telegram/formatting.js";
 
 /** WhatsApp accepts far more, but long bubbles read badly on a phone. */
-export const WHATSAPP_MAX_TEXT = 4096;
+const WHATSAPP_MAX_TEXT = 4096;
 
 /** Rendered width of a table cell, for the monospace fallback. */
 const MAX_TABLE_CELL = 24;

@@ -41,7 +41,7 @@ export interface UpdateOptions {
 }
 
 /** One executed step in an update run. */
-export interface UpdateStep {
+interface UpdateStep {
   label: string;
   ok: boolean;
   output: string;

@@ -163,8 +163,3 @@ export async function getPlanUsage(): Promise<PlanUsage | undefined> {
 export function invalidatePlanUsage(): void {
   if (cache) cache.fetchedAt = 0;
 }
-
-export function resetPlanUsageForTest(): void {
-  cache = undefined;
-  inFlight = undefined;
-}

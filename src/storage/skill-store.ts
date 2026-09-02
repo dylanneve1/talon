@@ -66,15 +66,15 @@ const BODY_MAX_BYTES = 128 * 1024;
 const PROMPT_LIST_LIMIT = 25;
 const SEARCH_RESULT_LIMIT = 10;
 
-export function skillsDir(): string {
+function skillsDir(): string {
   return dirs.skills;
 }
 
-export function skillDir(name: string): string {
+function skillDir(name: string): string {
   return resolve(skillsDir(), name);
 }
 
-export function skillFilePath(name: string): string {
+function skillFilePath(name: string): string {
   return resolve(skillDir(name), SKILL_FILE);
 }
 

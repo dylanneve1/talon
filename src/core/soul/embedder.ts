@@ -23,13 +23,13 @@ export interface Embedder {
 
 // ── Vector math ──────────────────────────────────────────────────────────────
 
-export function dot(a: readonly number[], b: readonly number[]): number {
+function dot(a: readonly number[], b: readonly number[]): number {
   let s = 0;
   for (let i = 0; i < a.length; i++) s += a[i]! * b[i]!;
   return s;
 }
 
-export function norm(a: readonly number[]): number {
+function norm(a: readonly number[]): number {
   return Math.sqrt(dot(a, a));
 }
 

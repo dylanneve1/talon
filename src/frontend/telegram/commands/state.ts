@@ -11,7 +11,7 @@ import type { Context } from "grammy";
 import type { Backend } from "../../../core/agent-runtime/capabilities.js";
 
 /** Admin user ID is set via talon.json or TALON_ADMIN_USER_ID env var. */
-export const adminState = { adminUserId: 0 };
+const adminState = { adminUserId: 0 };
 
 /** Set the admin user ID (called from config at startup). */
 export function setAdminUserId(id: number | undefined): void {

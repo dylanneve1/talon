@@ -16,7 +16,6 @@
 export {
   setAccessControl,
   shouldHandleInGroup,
-  isAccessAllowed,
   extractUnauthorizedPreview,
 } from "./access.js";
 export {

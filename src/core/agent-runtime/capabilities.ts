@@ -188,7 +188,7 @@ export interface SessionBackend {
  * the live registry. Returns the diff so the dispatcher can log
  * what changed.
  */
-export interface ToolRefreshResult {
+interface ToolRefreshResult {
   added: string[];
   removed: string[];
   errors: Record<string, string>;

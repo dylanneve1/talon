@@ -63,6 +63,12 @@ jobs:
       - name: Architecture boundaries (dependency-cruiser)
         run: npm run depcruise
 
+      # Dead exports/types/deps. Zero tolerance: the tree was swept clean in
+      # the 2026-09 code-health pass (docs/code-health.md §4); anything new
+      # is a fresh regression, not baseline.
+      - name: Dead code (knip)
+        run: npm run knip
+
       - name: Ratchet gates
         run: npm run ratchets
 

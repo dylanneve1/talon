@@ -4,7 +4,7 @@ import { logWarn } from "../../util/log.js";
 
 const DEFAULT_REMOTE_TURN_TIMEOUT_MS = 10 * 60_000;
 
-export function remoteTurnTimeoutMs(): number {
+function remoteTurnTimeoutMs(): number {
   const configured = Number(process.env.TALON_REMOTE_TURN_TIMEOUT_MS);
   return Number.isFinite(configured) && configured > 0
     ? configured

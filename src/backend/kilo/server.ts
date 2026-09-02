@@ -27,8 +27,6 @@ import { buildDeliveryContract } from "../shared/delivery-contract.js";
 import {
   guessProviderID,
   getBucketPriority,
-  normalizeModelLookup,
-  parseRemoteModelQuery as parseOpenCodeModelQuery,
 } from "../remote-server/model-catalog/index.js";
 import {
   createRemoteServerState,
@@ -44,23 +42,19 @@ import {
   resolveProviderID as resolveProviderIDShared,
   getRegisteredMcpServerNames as getRegisteredMcpServerNamesShared,
   errMsg as sharedErrMsg,
-  TALON_MCP_SERVER_NAME as SHARED_TALON_MCP_SERVER_NAME,
   type RemoteServerState,
 } from "../remote-server/index.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
 /** Loopback hostname Talon binds the Kilo server on — never exposed externally. */
-export const KILO_HOSTNAME = "127.0.0.1";
+const KILO_HOSTNAME = "127.0.0.1";
 /** Default TCP port for the local Kilo server. Overridable via `KILO_PORT`
  *  env var so integration tests can spawn an isolated Kilo server alongside
  *  a running production Talon (which holds the default 4097). */
-export const KILO_PORT = Number(process.env.KILO_PORT ?? 4097);
+const KILO_PORT = Number(process.env.KILO_PORT ?? 4097);
 /** Convenience URL composed from KILO_HOSTNAME + KILO_PORT. */
 export const KILO_BASE_URL = `http://${KILO_HOSTNAME}:${KILO_PORT}`;
-/** Re-export of the chat MCP server name prefix shared across backends. */
-export const TALON_MCP_SERVER_NAME = SHARED_TALON_MCP_SERVER_NAME;
-
 /**
  * System-prompt suffix appended to the user-configured system prompt.
  *
@@ -314,21 +308,7 @@ export function getRegisteredMcpServerNames(): string[] {
   return getRegisteredMcpServerNamesShared(state);
 }
 
-export function getGatewayPortFn(): () => number {
-  return state.gatewayPortFn;
-}
-
-export function getFrontendName(): FrontendName {
-  return state.frontendName;
-}
-
 /** Common error→message helper, re-exported for legacy importers. */
 export const errMsg = sharedErrMsg;
 
 // Re-export the model-helper imports for kilo-internal consumers
-export {
-  guessProviderID,
-  getBucketPriority,
-  normalizeModelLookup,
-  parseOpenCodeModelQuery,
-};

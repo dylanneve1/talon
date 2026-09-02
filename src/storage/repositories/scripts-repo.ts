@@ -79,11 +79,6 @@ export function all(): Script[] {
   return rows.map(rowToScript);
 }
 
-export function count(): number {
-  const row = getDatabase().prepare(scriptsSql.count).get() as { n: number };
-  return row.n;
-}
-
 export function recordUse(name: string, when: number): void {
   getDatabase().prepare(scriptsSql.recordUse).run(when, name);
 }

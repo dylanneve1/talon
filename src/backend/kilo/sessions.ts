@@ -13,7 +13,6 @@
 
 import type { KiloClient } from "@kilocode/sdk/v2";
 import {
-  REMOTE_SESSION_MESSAGE_LIMIT,
   extractPartsSummary as extractPartsSummaryShared,
   extractAssistantUsage as extractAssistantUsageShared,
   summarizeAssistantMessages,
@@ -28,8 +27,6 @@ import {
 import { ensureServer } from "./server.js";
 
 // ── Constants / type aliases (Kilo-named surface) ──────────────────────────
-
-export const KILO_SESSION_MESSAGE_LIMIT = REMOTE_SESSION_MESSAGE_LIMIT;
 
 /** Subset of Kilo's `Message.info` used by Talon for usage accounting. */
 export type KiloAssistantInfo = RemoteAssistantInfo;

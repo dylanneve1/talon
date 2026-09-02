@@ -70,7 +70,7 @@ const FIRE_PREFIX = "TALON_FIRE:";
  * Throws on Lua errors (message shaped `<file>:<line>: <msg>` plus
  * traceback). Restores process.stdout.write before returning.
  */
-export async function runLuaScript(scriptPath: string): Promise<void> {
+async function runLuaScript(scriptPath: string): Promise<void> {
   const source = readFileSync(scriptPath, "utf-8");
 
   const originalWrite = process.stdout.write;

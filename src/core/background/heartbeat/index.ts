@@ -13,7 +13,6 @@
  * Re-exports the same public surface the old single-file module exposed.
  */
 
-export type { HeartbeatState } from "./state.js";
 export {
   initHeartbeat,
   startHeartbeatTimer,
@@ -22,4 +21,4 @@ export {
   forceHeartbeat,
   getHeartbeatStatus,
 } from "./scheduler.js";
-export { buildHeartbeatSystemPrompt, renderGoalsBlock } from "./agent.js";
+export { buildHeartbeatSystemPrompt } from "./agent.js";

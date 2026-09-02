@@ -62,10 +62,7 @@ export type CommandContext = {
   backend?: Backend | null;
 };
 
-export type CommandHandler = (
-  args: string,
-  ctx: CommandContext,
-) => Promise<void>;
+type CommandHandler = (args: string, ctx: CommandContext) => Promise<void>;
 
 export type Command = {
   name: string;

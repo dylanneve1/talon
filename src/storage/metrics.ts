@@ -24,11 +24,6 @@ export function incrementCounter(name: string, amount = 1): void {
   legacyCounters.set(name, (legacyCounters.get(name) ?? 0) + amount);
 }
 
-export function recordHistogram(_name: string, _value: number): void {
-  // The old global histogram ring is intentionally gone. Chat-turn
-  // histograms are now latency aggregates on SessionMetrics.
-}
-
 function addCounter(
   counters: Record<string, number>,
   name: string,

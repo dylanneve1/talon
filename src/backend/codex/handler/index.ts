@@ -12,4 +12,3 @@
 
 export { handleMessage } from "./message.js";
 export { getActiveAbort } from "./state.js";
-export { CodexUsageExhaustedError } from "./usage.js";

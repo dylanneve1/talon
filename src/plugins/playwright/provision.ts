@@ -57,7 +57,7 @@ export interface PlaywrightProvisionDeps {
 }
 
 /** One entry of playwright-core's browsers.json. */
-export interface BrowserDescriptor {
+interface BrowserDescriptor {
   name: string;
   revision: string;
   /** Per-host-platform revisions (e.g. webkit on older macOS). */

@@ -13,7 +13,7 @@
  */
 
 /** Which unit of agent work a task represents. */
-export type TaskKind = "turn" | "heartbeat" | "dream" | "cron" | "trigger";
+type TaskKind = "turn" | "heartbeat" | "dream" | "cron" | "trigger";
 
 /** Task lifecycle. `done`, `failed`, and `killed` are terminal. */
 export type TaskState = "queued" | "running" | "done" | "failed" | "killed";

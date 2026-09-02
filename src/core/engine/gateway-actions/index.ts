@@ -100,6 +100,3 @@ export async function handleChatFreeAction(
   if (!handler) return null;
   return handler(body, 0);
 }
-
-export { chatFreeActions };
-export type { SharedActionHandler, SharedActionHandlers } from "./types.js";

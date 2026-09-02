@@ -19,7 +19,7 @@ import { commandForLanguage } from "../background/triggers/index.js";
 import type { Script } from "../../storage/script-store.js";
 
 export const DEFAULT_SCRIPT_TIMEOUT_SECONDS = 60;
-export const MAX_SCRIPT_TIMEOUT_SECONDS = 300;
+const MAX_SCRIPT_TIMEOUT_SECONDS = 300;
 
 /** Cap on captured stdout/stderr — keeps tool results context-friendly. */
 const OUTPUT_CAP_CHARS = 16_000;

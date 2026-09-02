@@ -20,7 +20,7 @@ import type { FrontendName } from "../../core/agent-runtime/backend-registry.js"
  * window, description); the api-key path (`/v1/models`) is sparse and
  * leaves these fields undefined.
  */
-export interface DiscoveredModelMetadata {
+interface DiscoveredModelMetadata {
   displayName?: string;
   contextWindow?: number;
   description?: string;

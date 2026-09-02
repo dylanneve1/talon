@@ -214,7 +214,7 @@ export function processStreamDelta(
 }
 
 /** A tool call extracted from an assistant message. */
-export type ToolCall = {
+type ToolCall = {
   /** The SDK's tool_use block id — matches the later tool_result. */
   id: string;
   name: string;

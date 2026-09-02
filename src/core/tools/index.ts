@@ -241,9 +241,4 @@ export function composeTools(options: ComposeOptions = {}): ToolDefinition[] {
 }
 
 // Re-export types for convenience
-export type {
-  ToolDefinition,
-  ToolFrontend,
-  ToolTag,
-  BridgeFunction,
-} from "./types.js";
+export type { ToolDefinition } from "./types.js";

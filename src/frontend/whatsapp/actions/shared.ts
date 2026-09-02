@@ -177,7 +177,7 @@ function outboundTextMarker(content: AnyMessageContent): string {
 const SEND_TIMEOUT_MS = 60_000;
 let sendTail: Promise<unknown> = Promise.resolve();
 
-export class WhatsAppSendTimeoutError extends Error {
+class WhatsAppSendTimeoutError extends Error {
   constructor(operation: string) {
     super(
       `WhatsApp ${operation} timed out after ${SEND_TIMEOUT_MS / 1000}s — ` +

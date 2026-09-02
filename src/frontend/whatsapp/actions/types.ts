@@ -25,7 +25,7 @@ export interface WhatsAppActionContext {
   scheduledMessages: Map<string, ReturnType<typeof setTimeout>>;
 }
 
-export type WhatsAppActionHandler = (
+type WhatsAppActionHandler = (
   body: Record<string, unknown>,
   chatId: number,
   ctx: WhatsAppActionContext,

@@ -27,7 +27,7 @@ import { createServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
 
-export interface DummyModel {
+interface DummyModel {
   id: string;
   name?: string;
   context_length?: number;
@@ -35,7 +35,7 @@ export interface DummyModel {
   pricing?: { prompt: string; completion?: string };
 }
 
-export interface ToolCallSpec {
+interface ToolCallSpec {
   name: string;
   /** Arguments — serialised to a JSON string by the server (matches OpenAI's API). */
   arguments: Record<string, unknown>;
@@ -48,7 +48,7 @@ export interface ToolCallSpec {
  * both be present (an assistant chunk that also requests tools); when
  * `toolCalls` is set, `finishReason` defaults to `"tool_calls"`.
  */
-export interface ScriptedResponse {
+interface ScriptedResponse {
   text?: string;
   toolCalls?: ToolCallSpec[];
   finishReason?: "stop" | "tool_calls";
@@ -56,7 +56,7 @@ export interface ScriptedResponse {
   model?: string;
 }
 
-export interface RecordedRequest {
+interface RecordedRequest {
   path: string;
   method: string;
   body: unknown;

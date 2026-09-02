@@ -20,7 +20,7 @@ export interface TelegramActionContext {
   scheduledMessages: Map<string, ReturnType<typeof setTimeout>>;
 }
 
-export type TelegramActionHandler = (
+type TelegramActionHandler = (
   body: Record<string, unknown>,
   chatId: number,
   ctx: TelegramActionContext,

@@ -75,7 +75,7 @@ export interface SettingsPager {
  * callback for disabled-edge buttons (Telegram requires every inline
  * button to carry callback data).
  */
-export function renderModelPickerControlRows(
+function renderModelPickerControlRows(
   pager: SettingsPager,
   navPrefix: string,
   noopData: string,

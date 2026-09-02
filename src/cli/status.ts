@@ -9,7 +9,7 @@ import { findRunningInstance } from "../core/daemon/discovery.js";
 import { printBanner, loadConfig } from "./config.js";
 import { CONFIG_FILE } from "./context.js";
 
-export function formatUptime(seconds: number): string {
+function formatUptime(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;

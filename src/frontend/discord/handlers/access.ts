@@ -19,7 +19,6 @@ import {
   userMessageTimestamps,
   RATE_LIMIT_WINDOW_MS,
   RATE_LIMIT_MAX_MESSAGES,
-  type AccessConfig,
 } from "./state.js";
 
 export function setAccessControl(cfg: {
@@ -40,10 +39,6 @@ export function setAccessControl(cfg: {
 
 export function isAdmin(userId: string): boolean {
   return accessState.access.adminUserIds.has(userId);
-}
-
-export function getAccessSnapshot(): AccessConfig {
-  return accessState.access;
 }
 
 export function trackDmUser(

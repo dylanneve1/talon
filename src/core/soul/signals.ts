@@ -14,7 +14,7 @@
 
 import type { Hash } from "./types.js";
 
-export interface ReactionSignal {
+interface ReactionSignal {
   readonly kind: "reaction";
   readonly at: number;
   readonly emoji: string;
@@ -22,7 +22,7 @@ export interface ReactionSignal {
   readonly activeNodes: readonly Hash[];
 }
 
-export interface EngagementSignal {
+interface EngagementSignal {
   readonly kind: "engagement";
   readonly at: number;
   /** Did the conversation continue after Talon's message, or die? */
@@ -56,14 +56,14 @@ export interface DirectiveSignal {
   readonly ref?: string;
 }
 
-export interface ReflexFireSignal {
+interface ReflexFireSignal {
   readonly kind: "reflex-fire";
   readonly at: number;
   readonly name: string;
   readonly severity: "block" | "warn" | "advise";
 }
 
-export interface ActivationSignal {
+interface ActivationSignal {
   readonly kind: "activation";
   readonly at: number;
   readonly activeNodes: readonly Hash[];

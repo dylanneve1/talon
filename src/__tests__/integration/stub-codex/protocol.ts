@@ -39,18 +39,18 @@ export interface CodexStubTurn {
   fail?: string;
 }
 
-export interface CodexUsage {
+interface CodexUsage {
   input_tokens?: number;
   output_tokens?: number;
   cached_input_tokens?: number;
   reasoning_output_tokens?: number;
 }
 
-export type CodexEmit =
+type CodexEmit =
   CodexAgentMessage | CodexMcpToolCall | CodexReasoning | CodexRawItem;
 
 /** The model's final reply text (Codex coalesces deltas into one block). */
-export interface CodexAgentMessage {
+interface CodexAgentMessage {
   type: "agent_message";
   text: string;
 }
@@ -70,13 +70,13 @@ export interface CodexMcpToolCall {
 }
 
 /** Private reasoning — the handler ignores it, but tests may want to emit it. */
-export interface CodexReasoning {
+interface CodexReasoning {
   type: "reasoning";
   text: string;
 }
 
 /** Escape hatch: emit an arbitrary `ThreadItem` verbatim as `item.completed`. */
-export interface CodexRawItem {
+interface CodexRawItem {
   type: string;
   [key: string]: unknown;
 }

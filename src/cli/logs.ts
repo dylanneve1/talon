@@ -17,7 +17,7 @@ const LEVEL_LABELS: Record<number, string> = {
   60: pc.bgRed(pc.white("FTL")),
 };
 
-export function formatLogLine(line: string): string {
+function formatLogLine(line: string): string {
   try {
     const obj = JSON.parse(line);
     const level = LEVEL_LABELS[obj.level as number] ?? pc.dim("???");

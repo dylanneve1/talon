@@ -20,7 +20,6 @@ export {
   getPlugin,
   getPluginCount,
   destroyPlugins,
-  registerPlugin,
   getPluginPromptAdditions,
 } from "./loader.js";
 export { loadBuiltinPlugins, reloadPlugins } from "./builtins.js";

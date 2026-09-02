@@ -37,12 +37,12 @@ export interface StubScript {
   dispatchMcp?: boolean;
 }
 
-export interface StubTurn {
+interface StubTurn {
   /** Messages to write to stdout when this turn fires, in order. */
   emit?: StubEmit[];
 }
 
-export type StubEmit = StubAssistant | StubResult | StubFireHook | StubRaw;
+type StubEmit = StubAssistant | StubResult | StubFireHook | StubRaw;
 
 /**
  * Pseudo-emit handled by `fake-claude.mjs` — synthesizes a `hook_callback`
@@ -95,7 +95,7 @@ export interface StubResult {
  * Escape hatch for raw protocol messages (e.g. `system`, `stream_event`,
  * arbitrary control responses) that don't fit the high-level helpers.
  */
-export interface StubRaw {
+interface StubRaw {
   type: string;
   [key: string]: unknown;
 }
@@ -116,7 +116,7 @@ export interface ToolUseBlock {
   input: Record<string, unknown>;
 }
 
-export interface ThinkingBlock {
+interface ThinkingBlock {
   type: "thinking";
   thinking: string;
   signature?: string;

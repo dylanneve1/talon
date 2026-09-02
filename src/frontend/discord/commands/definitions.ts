@@ -17,7 +17,7 @@ import type { TalonConfig } from "../../../util/config.js";
 import { log, logError, logWarn } from "../../../util/log.js";
 import { getRepoRoot } from "../../../core/update/self-update.js";
 
-export function buildCommandDefinitions(devBuild = false): unknown[] {
+function buildCommandDefinitions(devBuild = false): unknown[] {
   return [
     new SlashCommandBuilder()
       .setName("start")

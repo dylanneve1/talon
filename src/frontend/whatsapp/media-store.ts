@@ -31,7 +31,7 @@ export type SavedMedia = {
 };
 
 /** The media kind carried by a message, if any. */
-export function mediaKindOf(
+function mediaKindOf(
   message: WAMessage,
 ): (typeof MEDIA_KINDS)[number] | undefined {
   const content = message.message;

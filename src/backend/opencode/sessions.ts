@@ -11,7 +11,6 @@
 
 import type { OpencodeClient } from "@opencode-ai/sdk/v2";
 import {
-  REMOTE_SESSION_MESSAGE_LIMIT,
   extractPartsSummary as extractPartsSummaryShared,
   extractAssistantUsage as extractAssistantUsageShared,
   summarizeAssistantMessages,
@@ -26,8 +25,6 @@ import {
 import { ensureServer } from "./server.js";
 
 // ── Constants / type aliases (OpenCode-named surface) ──────────────────────
-
-export const OPENCODE_SESSION_MESSAGE_LIMIT = REMOTE_SESSION_MESSAGE_LIMIT;
 
 /** Subset of OpenCode's `Message.info` used by Talon for usage accounting. */
 export type OpenCodeAssistantInfo = RemoteAssistantInfo;

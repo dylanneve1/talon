@@ -19,7 +19,7 @@ import type { OneShotAgentParams, OneShotUsage } from "../types.js";
 import { logWarn, logError } from "../../util/log.js";
 
 /** Default bounded grace after an abort before giving up on the backend. */
-export const DEFAULT_ABORT_GRACE_MS = 30 * 1000;
+const DEFAULT_ABORT_GRACE_MS = 30 * 1000;
 
 export interface IsolatedRunOptions {
   readonly background: BackgroundRunner;

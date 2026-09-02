@@ -307,25 +307,6 @@ export async function getActiveModelForChat(
   return model;
 }
 
-/**
- * Convenience: same as `resolveActiveModelForChat` but returns just
- * the `ModelRef` (or `null`). Use when the source tag isn't needed.
- */
-export async function getActiveModelRefForChat(
-  chatId: string,
-  backend: Backend | null,
-  backendId: string | null,
-  config: TalonConfig,
-): Promise<ModelRef | null> {
-  const { ref } = await resolveActiveModelForChat(
-    chatId,
-    backend,
-    backendId,
-    config,
-  );
-  return ref;
-}
-
 // ── ref enrichment ──────────────────────────────────────────────────────────
 
 /**

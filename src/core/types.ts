@@ -202,7 +202,7 @@ export interface ContextManager {
  * oversized-message), and a successful one by returning. This keeps
  * the ack settled even when no `onEvent` is supplied at all.
  */
-export type StreamEventSink = {
+type StreamEventSink = {
   onEvent?: (
     event: import("./agent-runtime/events.js").AgentEvent,
   ) => void | Promise<void>;

@@ -6,8 +6,3 @@
  */
 
 export const activeAborts = new Map<string, AbortController>();
-
-/** Get the in-flight abort controller for a chat, if a turn is running. */
-export function getActiveAbort(chatId: string): AbortController | undefined {
-  return activeAborts.get(chatId);
-}

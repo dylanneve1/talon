@@ -365,7 +365,7 @@ export function maybeFireStreamDelta(
 // ── Sync-response parts backfill ───────────────────────────────────────────
 
 /** Shape returned by a backend's parts-summary extractor. */
-export interface PartsSummary {
+interface PartsSummary {
   text: string;
   toolCalls: number;
   syntheticErrorText?: string;

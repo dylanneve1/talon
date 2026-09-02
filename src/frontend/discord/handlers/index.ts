@@ -15,20 +15,7 @@
  * Re-exports the same public surface the old single-file module exposed.
  */
 
-export type { DiscordChatInfo } from "./registry.js";
-export {
-  registerDiscordChat,
-  lookupDiscordChat,
-  lookupDiscordChatByString,
-} from "./registry.js";
-export {
-  setAccessControl,
-  isAdmin,
-  getAccessSnapshot,
-  isAccessAllowed,
-  isInteractionAllowed,
-  shouldHandleInGuild,
-  isUserRateLimited,
-} from "./access.js";
+export { registerDiscordChat, lookupDiscordChat } from "./registry.js";
+export { setAccessControl, isAdmin, isInteractionAllowed } from "./access.js";
 export { getSenderName, sendChunked } from "./context.js";
 export { handleMessage } from "./messages.js";

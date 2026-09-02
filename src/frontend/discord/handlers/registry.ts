@@ -21,9 +21,3 @@ export function lookupDiscordChat(
 ): DiscordChatInfo | undefined {
   return chatRegistry.get(numericChatId);
 }
-
-export function lookupDiscordChatByString(
-  chatId: string,
-): DiscordChatInfo | undefined {
-  return chatRegistryByString.get(chatId);
-}

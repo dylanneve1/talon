@@ -81,7 +81,7 @@ export interface AgentResult {
  * `core/errors.ts` already produces — keep the values stable so
  * downstream code can pattern-match deterministically.
  */
-export type AgentErrorKind =
+type AgentErrorKind =
   | "context_overflow"
   | "rate_limit"
   | "overload"

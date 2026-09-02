@@ -164,7 +164,7 @@ function extractReasoningLevels(rawModel: RemoteRawModel) {
   ]);
 }
 
-export function buildModelCatalog(
+function buildModelCatalog(
   providersData: RemoteRawProvidersData,
   authMap: Record<string, Array<RemoteAuthMethod>>,
 ): RemoteModelCatalog {

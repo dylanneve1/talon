@@ -17,7 +17,7 @@ import { execFileSync } from "node:child_process";
 import { NATIVE_MODULES } from "../native/registry.js";
 import { dirs } from "../util/paths.js";
 
-export type DoctorStatus = "ok" | "warn" | "fail" | "info";
+type DoctorStatus = "ok" | "warn" | "fail" | "info";
 
 export interface DoctorCheck {
   label: string;

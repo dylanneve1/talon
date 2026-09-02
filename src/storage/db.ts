@@ -37,7 +37,7 @@ import { SCHEMA, dbSql } from "./sql/statements.generated.js";
  * statements with positional params, identical row object shapes,
  * multi-statement exec, FTS5 virtual tables).
  */
-export type SqlStatement = {
+type SqlStatement = {
   get(...params: unknown[]): unknown;
   all(...params: unknown[]): unknown[];
   run(...params: unknown[]): unknown;
