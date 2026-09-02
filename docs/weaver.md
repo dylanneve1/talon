@@ -80,7 +80,7 @@ carries the weft across the warp.**
    messagesSent, numeric/string ids) now lives on the Thread. The Loom carries a
    numeric secondary index; the gateway delegates and owns no per-chat state.
 4. ✅ **Bind the warp**: each Thread records its resolved model + backend id per
-   turn and logs drift; `weaver.snapshot()` / `dispatcher.snapshot()` surface
+   turn and logs drift; `weaver.snapshot()` surfaces
    the live warp for `/status`, drift detection, and remote frontends.
 5. ✅ **Session handle**: `Thread.session` gives chat-scoped access to the
    session store (read handle this PR; see Non-goals).
