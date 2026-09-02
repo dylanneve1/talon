@@ -7,6 +7,11 @@
 
 import type { TextBasedChannel } from "discord.js";
 import type { TalonConfig } from "../../../util/config.js";
+import {
+  createDmUserTracker,
+  createNoticeCooldown,
+  createRateLimiter,
+} from "../../shared/access.js";
 
 // ── Chat registry: numericChatId → Discord channel info ─────────────────────
 // The gateway/dispatcher uses numeric chatIds. Action handlers need to map
@@ -49,20 +54,22 @@ export const accessState: { access: AccessConfig } = {
 
 // ── First-time DM user tracking ──────────────────────────────────────────────
 
-export const knownDmUsers = new Set<string>();
-export const KNOWN_DM_USERS_CAP = 10_000;
+export const dmUsers = createDmUserTracker<string>(10_000);
 
 // ── Unauthorized notification cooldown (10 min) ──────────────────────────────
 
-export const unauthorizedCooldown = new Map<string, number>();
-export const UNAUTHORIZED_COOLDOWN_MS = 10 * 60 * 1000;
-export const MAX_UNAUTHORIZED_COOLDOWNS = 5000;
+export const unauthorizedNotices = createNoticeCooldown({
+  ttlMs: 10 * 60 * 1000,
+  cap: 5000,
+});
 
 // ── Per-user rate limiting ───────────────────────────────────────────────────
 
-export const userMessageTimestamps = new Map<string, number[]>();
-export const RATE_LIMIT_WINDOW_MS = 60_000;
-export const RATE_LIMIT_MAX_MESSAGES = 15;
+/** 15 messages per minute per user. */
+export const rateLimiter = createRateLimiter<string>({
+  windowMs: 60_000,
+  maxMessages: 15,
+});
 
 // ── Message queue (debounce rapid-fire messages per chat) ────────────────────
 

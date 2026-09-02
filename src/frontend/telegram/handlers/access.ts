@@ -8,15 +8,12 @@ import { appendDailyLog } from "../../../storage/daily-log.js";
 import { log, logWarn } from "../../../util/log.js";
 import { getSenderName } from "./context.js";
 import {
-  knownDmUsers,
-  KNOWN_DM_USERS_CAP,
+  dmUsers,
   accessConfig,
   verifiedGroups,
   MAX_VERIFIED_GROUPS,
   VERIFIED_GROUP_TTL_MS,
-  unauthorizedCooldown,
-  UNAUTHORIZED_COOLDOWN_MS,
-  MAX_UNAUTHORIZED_COOLDOWNS,
+  unauthorizedNotices,
 } from "./state.js";
 
 export function trackDmUser(
@@ -24,19 +21,11 @@ export function trackDmUser(
   senderName: string,
   senderUsername?: string,
 ): void {
-  if (knownDmUsers.has(senderId)) return;
-  // Evict oldest 10% when cap reached (Set maintains insertion order)
-  if (knownDmUsers.size >= KNOWN_DM_USERS_CAP) {
-    const evictCount = Math.floor(KNOWN_DM_USERS_CAP * 0.1);
-    const iter = knownDmUsers.values();
-    for (let i = 0; i < evictCount; i++) {
-      knownDmUsers.delete(iter.next().value as number);
-    }
-  }
-  knownDmUsers.add(senderId);
-  const tag = senderUsername ? ` (@${senderUsername})` : "";
-  log("users", `New DM user: ${senderName}${tag} [id:${senderId}]`);
-  appendDailyLog("System", `New DM user: ${senderName}${tag} [id:${senderId}]`);
+  dmUsers.track(
+    senderId,
+    senderName,
+    senderUsername ? `@${senderUsername}` : undefined,
+  );
 }
 
 export function setAccessControl(cfg: {
@@ -274,13 +263,7 @@ async function notifyUnauthorized(
   }
 
   const key = type === "dm" ? `dm:${ctx.from?.id}` : `group:${ctx.chat?.id}`;
-  const now = Date.now();
-  const lastWarned = unauthorizedCooldown.get(key);
-  if (lastWarned && now - lastWarned < UNAUTHORIZED_COOLDOWN_MS) return;
-  if (unauthorizedCooldown.size >= MAX_UNAUTHORIZED_COOLDOWNS) {
-    unauthorizedCooldown.clear();
-  }
-  unauthorizedCooldown.set(key, now);
+  if (!unauthorizedNotices.shouldNotify(key)) return;
 
   // Warn the user
   try {

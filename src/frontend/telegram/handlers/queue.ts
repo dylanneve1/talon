@@ -24,52 +24,20 @@ import {
   recordMessageReceived,
   recordError,
 } from "../../../util/watchdog.js";
-import { log, logError, logWarn, logDebug } from "../../../util/log.js";
+import { log, logError, logWarn } from "../../../util/log.js";
 import { appendDailyLog } from "../../../storage/daily-log.js";
 import { processAndReply, sendHtml } from "./delivery.js";
 import {
   messageQueues,
   lastHandledMessageIdByChat,
-  userMessageTimestamps,
+  rateLimiter,
   DEBOUNCE_MS,
   MAX_QUEUED_PER_CHAT,
-  RATE_LIMIT_WINDOW_MS,
-  RATE_LIMIT_MAX_MESSAGES,
   type QueuedMessage,
 } from "./state.js";
 
 export function isUserRateLimited(senderId: number): boolean {
-  const now = Date.now();
-  let timestamps = userMessageTimestamps.get(senderId);
-  if (!timestamps) {
-    timestamps = [];
-    userMessageTimestamps.set(senderId, timestamps);
-  }
-
-  // Remove old entries outside the window
-  while (timestamps.length > 0 && timestamps[0] < now - RATE_LIMIT_WINDOW_MS) {
-    timestamps.shift();
-  }
-
-  if (timestamps.length >= RATE_LIMIT_MAX_MESSAGES) {
-    logDebug("bot", `Rate-limited user ${senderId}`);
-    return true;
-  }
-
-  timestamps.push(now);
-
-  // Evict stale entries — remove users who haven't messaged in 10+ minutes
-  if (userMessageTimestamps.size > 5_000) {
-    const cutoff = now - 10 * 60_000;
-    for (const [userId, ts] of userMessageTimestamps) {
-      if (ts.length === 0 || ts[ts.length - 1] < cutoff) {
-        userMessageTimestamps.delete(userId);
-      }
-      if (userMessageTimestamps.size <= 2_500) break; // evict down to half
-    }
-  }
-
-  return false;
+  return rateLimiter.isLimited(senderId);
 }
 
 /**
