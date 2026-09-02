@@ -11,9 +11,14 @@ name: Native Provisioning
 #    the chromium build and drives @playwright/mcp through a navigation;
 #    a Linux job pulls the pinned github-mcp-server image and reads a file
 #    through it with the workflow token. Every runtime is exercised the
-#    way Talon spawns it (the plugin's own command/args/env), not just
-#    installed. Runs on PRs that touch provisioning code, and daily (the
-#    pins don't move, but their unpinned transitive deps do — this
+#    way Talon spawns it: the plugin's own command/args/env, under
+#    Talon's `_mcp-launch` supervisor re-invoked from src/cli.ts — not
+#    just installed. The whole suite runs twice per OS: on node (tsx),
+#    and on bun, which executes TypeScript natively and therefore
+#    produces a different supervisor chain, a different
+#    `process.execPath` for the playwright CLI, and bun's own
+#    child_process. Runs on PRs that touch provisioning code, and daily
+#    (the pins don't move, but their unpinned transitive deps do — this
 #    catches that).
 #
 #  - detect → canary → autobump (daily + manual dispatch): detect reads
@@ -41,6 +46,8 @@ on:
       - "src/__tests__/native-provision.test.ts"
       - "src/__tests__/integration/provision-real.test.ts"
       - "src/__tests__/integration/mcp-stdio-probe.ts"
+      - "src/util/mcp-launcher.ts"
+      - "src/util/runtime.ts"
       - ".github/workflows/native-provision.yml"
   schedule:
     - cron: "23 5 * * *"
@@ -80,7 +87,44 @@ jobs:
         env:
           TALON_PROVISION_REAL: "1"
           TALON_PROVISION_REAL_PLAYWRIGHT: "1"
+          TALON_EXPECT_RUNTIME: node
         run: npx vitest run src/__tests__/integration/provision-real.test.ts --reporter=verbose
+
+  # Same suite, same pins, bun as the parent runtime — `bun test` runs the
+  # vitest-style file natively. TALON_EXPECT_RUNTIME makes the job fail
+  # loudly if it ever silently ran on node.
+  provision-real-bun:
+    name: Pinned bun (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - run: npm ci
+
+      - name: Provisioning suite against pinned versions (bun)
+        env:
+          TALON_PROVISION_REAL: "1"
+          TALON_PROVISION_REAL_PLAYWRIGHT: "1"
+          TALON_EXPECT_RUNTIME: bun
+        run: bun test src/__tests__/integration/provision-real.test.ts
 
   provision-docker:
     name: Pinned github-mcp-server
@@ -99,8 +143,34 @@ jobs:
       - name: Image pull + MCP session against the pinned tag
         env:
           TALON_PROVISION_REAL_DOCKER: "1"
+          TALON_EXPECT_RUNTIME: node
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx vitest run src/__tests__/integration/provision-real.test.ts --reporter=verbose
+
+  provision-docker-bun:
+    name: Pinned github-mcp-server (bun)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: npm ci
+
+      - name: Image pull + MCP session against the pinned tag (bun)
+        env:
+          TALON_PROVISION_REAL_DOCKER: "1"
+          TALON_EXPECT_RUNTIME: bun
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bun test src/__tests__/integration/provision-real.test.ts
 
   detect:
     name: Detect upstream versions

@@ -4,11 +4,52 @@
  * what the plugin declares (`mcpServer.command/args` + `getEnvVars()`),
  * so a test here proves the runtime a provisioner installed answers the
  * protocol the way Talon will actually drive it.
+ *
+ * With `supervise`, the server runs under Talon's own `_mcp-launch`
+ * supervisor (util/mcp-launcher.ts), re-invoked from this repo's
+ * src/cli.ts on the current runtime — bun natively, node via tsx —
+ * exactly the chain a source run produces. That is what makes the same
+ * test meaningful under both runtimes: the supervisor is the part that
+ * differs.
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { TalonPlugin } from "../../core/plugin/types.js";
+import { SUPERVISOR_CMD_ENV, wrapMcpServer } from "../../util/mcp-launcher.js";
+import { isBunRuntime } from "../../util/runtime.js";
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+
+/** Runtime label for assertions that a CI job ran on what it claims. */
+export function currentRuntime(): "bun" | "node" {
+  return isBunRuntime() ? "bun" : "node";
+}
+
+/**
+ * How to re-invoke this repo's Talon CLI on the current runtime, as the
+ * `TALON_MCP_SUPERVISOR_CMD` override expects it: `[command, ...args]`
+ * with the subcommand appended by the launcher. Under a test runner
+ * `process.argv[1]` is the runner, not Talon, so the launcher's default
+ * self-invocation cannot be used here.
+ */
+export function talonSelfInvocation(): string[] {
+  const cli = resolve(REPO_ROOT, "src/cli.ts");
+  if (isBunRuntime()) return [process.execPath, cli];
+  // `--import` takes a module specifier, not a path: on Windows a bare
+  // `D:\...` is parsed as URL scheme `d:` and rejected
+  // (ERR_UNSUPPORTED_ESM_URL_SCHEME), so hand it a file:// URL — the same
+  // shape the launcher's own absoluteTsxImport() produces.
+  return [
+    process.execPath,
+    "--import",
+    pathToFileURL(resolve(REPO_ROOT, "node_modules/tsx/dist/esm/index.mjs"))
+      .href,
+    cli,
+  ];
+}
 
 export interface McpProbeSession {
   client: Client;
@@ -28,10 +69,20 @@ export interface McpProbeSession {
 export async function withPluginMcp<T>(
   plugin: TalonPlugin,
   fn: (session: McpProbeSession) => Promise<T>,
-  opts: { extraEnv?: Record<string, string>; timeoutMs?: number } = {},
+  opts: {
+    extraEnv?: Record<string, string>;
+    timeoutMs?: number;
+    /** Run under Talon's `_mcp-launch` supervisor on the current runtime. */
+    supervise?: boolean;
+  } = {},
 ): Promise<T> {
-  const server = plugin.mcpServer;
-  if (!server) throw new Error(`${plugin.name} declares no mcpServer`);
+  const declared = plugin.mcpServer;
+  if (!declared) throw new Error(`${plugin.name} declares no mcpServer`);
+  const server = opts.supervise
+    ? withSupervisorOverride(() =>
+        wrapMcpServer({ command: declared.command, args: [...declared.args] }),
+      )
+    : { command: declared.command, args: [...declared.args] };
   const env: Record<string, string> = {
     ...(Object.fromEntries(
       Object.entries(process.env).filter(
@@ -123,5 +174,17 @@ export async function withPluginMcp<T>(
     return await fn(session);
   } finally {
     await client.close().catch(() => {});
+  }
+}
+
+/** Run `fn` with the launcher's self-invocation pointed at this repo's CLI. */
+function withSupervisorOverride<T>(fn: () => T): T {
+  const previous = process.env[SUPERVISOR_CMD_ENV];
+  process.env[SUPERVISOR_CMD_ENV] = JSON.stringify(talonSelfInvocation());
+  try {
+    return fn();
+  } finally {
+    if (previous === undefined) delete process.env[SUPERVISOR_CMD_ENV];
+    else process.env[SUPERVISOR_CMD_ENV] = previous;
   }
 }
