@@ -11,11 +11,7 @@ import { randomUUID } from "node:crypto";
 import { proto } from "baileys";
 import { log } from "../../../util/log.js";
 import { toWhatsAppText } from "../formatting.js";
-import {
-  lookupMessage,
-  rememberMessage,
-  resolveKey,
-} from "../message-store.js";
+import { lookupMessage, resolveKey } from "../message-store.js";
 import { recordPin, listPins, forgetPin } from "../pins.js";
 import {
   resolveQuoted,
@@ -293,5 +289,3 @@ export const messagingHandlers: WhatsAppActionHandlers = {
     };
   },
 };
-
-export { rememberMessage };

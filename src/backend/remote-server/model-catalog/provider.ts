@@ -12,7 +12,6 @@ import type {
   UnifiedModelInfo,
   UnifiedModelResolution,
   UnifiedProviderInfo,
-  ModelButton,
 } from "../../../core/types.js";
 import type {
   RemoteModelCatalog,

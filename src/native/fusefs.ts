@@ -20,7 +20,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 /** One root symlink entry the mount serves (a file-backed mount). */
-export interface FuseSymlinkSpec {
+interface FuseSymlinkSpec {
   name: string;
   target: string;
 }
@@ -32,7 +32,7 @@ export interface FuseSymlinkSpec {
  * namespace-relative ("proc/tasks/7"). The reply JSON shapes are
  * defined by `serveNamespaceRequest` in core/vfs/fusefs.ts.
  */
-export type FuseBridgeHandler = (id: number, op: string, path: string) => void;
+type FuseBridgeHandler = (id: number, op: string, path: string) => void;
 
 /** The N-API surface exported by native/talon-fusefs. */
 export interface NativeFuseFs {
@@ -92,6 +92,6 @@ function loadNativeFuseFs(): NativeFuseFs | null {
 }
 
 /** Tests swap addons via TALON_FUSEFS_NODE and need the memo dropped. */
-export function _resetNativeFuseFsForTesting(): void {
+function _resetNativeFuseFsForTesting(): void {
   addon = undefined;
 }

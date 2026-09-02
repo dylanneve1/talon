@@ -9,10 +9,6 @@
  */
 
 export {
-  type OpenCodeModelCatalogEntry,
-  type OpenCodeModelCatalog,
-  type OpenCodeModelResolution,
-  type ModelButton,
   getOpenCodeModelSelectionValue,
   resolveOpenCodeModelInput,
   formatOpenCodeSelectionError,

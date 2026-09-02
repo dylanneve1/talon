@@ -6,7 +6,6 @@
  * assembled from the registry and the profile endpoints.
  */
 
-import { downloadMediaMessage } from "baileys";
 import { lookupMessage } from "../message-store.js";
 import { toUserJid, tryAction } from "./shared.js";
 import type { WhatsAppActionHandlers } from "./types.js";
@@ -224,5 +223,3 @@ export const chatInfoHandlers: WhatsAppActionHandlers = {
           };
     }),
 };
-
-export { downloadMediaMessage };

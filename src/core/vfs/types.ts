@@ -22,7 +22,7 @@
  */
 
 /** What a path points at. */
-export type VfsNodeKind = "dir" | "file";
+type VfsNodeKind = "dir" | "file";
 
 /** Errno-style failure vocabulary — every operation fails with one of these. */
 export type VfsErrorCode =

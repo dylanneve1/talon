@@ -20,7 +20,7 @@
  */
 
 /** Minimal MCP server config shapes both SDKs accept on `mcp.add`. */
-export type RemoteMcpServerConfig =
+type RemoteMcpServerConfig =
   | {
       type: "local";
       command: string[];

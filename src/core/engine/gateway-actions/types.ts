@@ -9,7 +9,7 @@
 import type { ActionResult } from "../../types.js";
 import type { Backend } from "../../agent-runtime/capabilities.js";
 
-export type SharedActionHandler = (
+type SharedActionHandler = (
   body: Record<string, unknown>,
   chatId: number,
   backend?: Backend | null,

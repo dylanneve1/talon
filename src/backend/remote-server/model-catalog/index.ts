@@ -25,20 +25,13 @@ import type {
 
 export type {
   ModelButton,
-  RemoteAuthMethod,
   RemoteModelCatalog,
   RemoteModelCatalogEntry,
   RemoteModelResolution,
-  RemoteProviderCatalogEntry,
-  RemoteProviderClient,
-  RemoteRawModel,
-  RemoteRawProvider,
-  RemoteRawProvidersData,
 } from "./types.js";
-export { buildModelCatalog, sortCatalogModels } from "./catalog.js";
+export { sortCatalogModels } from "./catalog.js";
 export {
   getBucketPriority,
-  getRemoteModelInfo,
   getRemoteModelSelectionValue,
   guessProviderID,
   normalizeModelLookup,
@@ -46,14 +39,7 @@ export {
   resolveRemoteModelInput,
 } from "./resolve.js";
 export { formatRemoteUnavailableModel } from "./presentation.js";
-export type { RemoteModelPresentation } from "./presentation.js";
 export { createRemoteModelProvider } from "./provider.js";
-export type {
-  RemoteModelProvider,
-  RemoteModelProviderDeps,
-} from "./provider.js";
-export type { RemoteModelCatalogStore } from "./catalog.js";
-
 export interface RemoteModelCatalogModuleOptions {
   /** Human label — "OpenCode" / "Kilo" — used in headers and errors. */
   label: string;

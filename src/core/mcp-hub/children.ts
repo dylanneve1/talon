@@ -82,11 +82,6 @@ function failureBackoffMs(count: number): number {
   );
 }
 
-/** Test seam: forget recorded spawn failures. */
-export function resetSpawnFailures(): void {
-  spawnFailures.clear();
-}
-
 /** Idle TTL for hub children; tunable for tests / tight deployments. */
 function idleTtlMs(): number {
   const raw = Number(process.env.TALON_MCP_HUB_IDLE_MS);

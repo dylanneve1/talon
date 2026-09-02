@@ -36,7 +36,7 @@ import type { BackendHolder, BackendRole, RebindResult } from "./types.js";
  *
  * Use `rebindRole` / `rebindChat` for typed wrappers.
  */
-export async function rebindHolder(
+async function rebindHolder(
   holder: BackendHolder,
   newId: string,
   config: TalonConfig,
@@ -113,7 +113,7 @@ export async function rebindHolder(
  * No-op when the holder isn't bound — useful for "clear my override"
  * flows that don't want to care whether the override was ever set.
  */
-export async function releaseHolder(holder: BackendHolder): Promise<void> {
+async function releaseHolder(holder: BackendHolder): Promise<void> {
   const id = bindings.get(holder);
   if (!id) return;
   bindings.delete(holder);

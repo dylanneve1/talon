@@ -34,11 +34,7 @@ export const GOAL_STATUSES: readonly GoalStatus[] = [
   "completed",
   "abandoned",
 ];
-export const GOAL_PRIORITIES: readonly GoalPriority[] = [
-  "low",
-  "normal",
-  "high",
-];
+const GOAL_PRIORITIES: readonly GoalPriority[] = ["low", "normal", "high"];
 
 /** Statuses that count as "open" — shown to the heartbeat and listings. */
 export const OPEN_GOAL_STATUSES: readonly GoalStatus[] = ["active", "paused"];

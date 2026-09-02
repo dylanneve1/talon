@@ -12,7 +12,7 @@
 
 import type { FrontendActionHandler, ActionResult } from "../../core/types.js";
 
-export interface CapturedAction {
+interface CapturedAction {
   body: Record<string, unknown>;
   chatId: number;
   /** Sequence number — first capture is 0, second is 1, etc. */

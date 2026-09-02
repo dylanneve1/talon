@@ -45,7 +45,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** Detected auth mode. */
-export type CodexAuthMode = "api-key" | "chatgpt" | "none";
+type CodexAuthMode = "api-key" | "chatgpt" | "none";
 
 export type CodexApiKeySource =
   | "env:CODEX_API_KEY"
@@ -80,7 +80,7 @@ export interface DetectCodexAuthInput {
   env?: NodeJS.ProcessEnv;
 }
 
-export function normalizeCodexBaseUrl(
+function normalizeCodexBaseUrl(
   baseUrl: string | undefined,
 ): string | undefined {
   const trimmed = baseUrl?.trim();

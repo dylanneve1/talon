@@ -14,6 +14,22 @@
     "native/scheduler-core/embed.mjs",
     ".github/scripts/**"
   ],
-  "project": ["src/**/*.ts", "scripts/**/*.ts"],
-  "ignoreDependencies": ["@playwright/mcp", "@brave/brave-search-mcp-server"]
+  "project": [
+    "src/**/*.ts",
+    "scripts/**/*.ts"
+  ],
+  "ignoreDependencies": [
+    "@brave/brave-search-mcp-server",
+    "@playwright/mcp",
+    "@swc/core"
+  ],
+  "ignoreBinaries": [
+    "gleam",
+    "gofmt",
+    "talon",
+    "taskkill.exe",
+    "umount",
+    "where.exe",
+    "zig"
+  ]
 }

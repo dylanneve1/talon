@@ -47,7 +47,7 @@ export interface CodexLastTokenUsage {
  * want per-turn usage must snapshot before the turn and diff after
  * (see the terminator-abort fallback in `handler.ts`).
  */
-export interface CodexTokenTotals {
+interface CodexTokenTotals {
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;

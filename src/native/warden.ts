@@ -28,13 +28,13 @@ import { accessSync, constants } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
-export interface WardenStartEvent {
+interface WardenStartEvent {
   pid: number;
   /** Linux /proc/<pid>/stat field 22 (jiffies since boot); null off-Linux. */
   pidStarttime: number | null;
 }
 
-export interface WardenLineEvent {
+interface WardenLineEvent {
   stream: "stdout" | "stderr";
   text: string;
   /** True when the line exceeded the byte cap and its tail was dropped. */

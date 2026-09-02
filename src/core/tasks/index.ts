@@ -10,11 +10,7 @@
 export { TaskTable, taskTable } from "./table.js";
 export type {
   KillOutcome,
-  TaskBinding,
   TaskHandle,
-  TaskKind,
   TaskRecord,
-  TaskSpec,
   TaskState,
-  TaskUsage,
 } from "./types.js";

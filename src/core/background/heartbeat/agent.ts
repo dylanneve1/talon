@@ -83,7 +83,7 @@ export function buildHeartbeatSystemPrompt(): string {
  * the heartbeat is a global agent, so it sees every chat's open goals (with
  * chat ids for routing updates back). Exported for tests.
  */
-export function renderGoalsBlock(): { text: string; count: number } {
+function renderGoalsBlock(): { text: string; count: number } {
   let text = "(no open goals)";
   let count = 0;
   try {

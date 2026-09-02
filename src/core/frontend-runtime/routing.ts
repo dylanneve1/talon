@@ -12,5 +12,4 @@ export {
   getFrontendDescriptor,
   resolveFrontendIdAmong,
   resolveOwnerFrontendId,
-  type FrontendDescriptor,
 } from "./registry.js";

@@ -28,7 +28,7 @@
  */
 
 export * from "./types.js";
-export { roleHolder, chatHolder } from "./holders.js";
+export { roleHolder } from "./holders.js";
 export {
   initBackendPool,
   hasBackendPool,
@@ -48,8 +48,6 @@ export {
   clearBackendChangeListenersForTest,
 } from "./pool.js";
 export {
-  rebindHolder,
-  releaseHolder,
   rebindRole,
   rebindChat,
   releaseChat,

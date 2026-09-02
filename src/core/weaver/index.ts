@@ -1,4 +1,4 @@
-export { Thread, type ThreadSnapshot } from "./thread.js";
+export { Thread } from "./thread.js";
 
 export { Loom, type ContextRegistry } from "./loom.js";
 export { carryTurnEvents } from "./shuttle.js";

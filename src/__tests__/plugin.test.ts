@@ -72,8 +72,11 @@ describe("plugin system", () => {
   async function setup(plugin: ReturnType<typeof createMockPlugin>) {
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
     const mod = await import("../core/plugin/index.js");
+    // registerPlugin is loader-internal (builtins call it); the barrel no
+    // longer re-exports it, so reach it on the same module instance directly.
+    const { registerPlugin } = await import("../core/plugin/loader.js");
     mod._deps.importModule = async () => ({ default: plugin });
-    return mod;
+    return { ...mod, registerPlugin };
   }
 
   describe("PluginRegistry", () => {

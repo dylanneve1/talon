@@ -292,7 +292,7 @@ export function buildCacheDisplay(input: {
 /** Figures older than this are labelled with their age in /status. */
 const PLAN_STALE_AFTER_MS = 5 * 60_000;
 
-export interface PlanWindowDisplay {
+interface PlanWindowDisplay {
   label: string;
   percent: number;
   bar: string;

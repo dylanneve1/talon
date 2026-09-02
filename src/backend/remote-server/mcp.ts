@@ -92,10 +92,7 @@ export function safeMcpNamePart(value: string, fallback: string): string {
 }
 
 /** Per-chat registration name for a plugin-provided MCP server. */
-export function getPluginMcpServerName(
-  pluginName: string,
-  chatId: string,
-): string {
+function getPluginMcpServerName(pluginName: string, chatId: string): string {
   return `${TALON_PLUGIN_MCP_SERVER_NAME}-${safeMcpNamePart(chatId, "chat")}-${safeMcpNamePart(pluginName, "plugin")}`;
 }
 

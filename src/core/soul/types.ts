@@ -45,7 +45,7 @@ export type NodeKind =
  * Where a piece of ground truth came from. Provenance is content, not metadata:
  * an evidence node's identity includes *who said it, when, and where*.
  */
-export interface EvidenceSource {
+interface EvidenceSource {
   /** Origin channel: a chat correction, a logged event, a diary line, etc. */
   readonly origin:
     | "correction" // someone (usually Dylan) corrected behavior

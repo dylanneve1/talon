@@ -37,7 +37,7 @@ export function backoffDelayMs(
 
 // ── Circuit breaker ─────────────────────────────────────────────────────────
 
-export type BreakerState = "closed" | "open" | "half-open";
+type BreakerState = "closed" | "open" | "half-open";
 
 export type Breaker = {
   state: BreakerState;

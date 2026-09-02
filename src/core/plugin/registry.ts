@@ -11,7 +11,7 @@ import { pathToFileURL } from "node:url";
 import { logError, logWarn } from "../../util/log.js";
 import type { LoadedPlugin, PluginMcpEntry } from "./types.js";
 
-export class PluginRegistry {
+class PluginRegistry {
   private readonly plugins: LoadedPlugin[] = [];
   private readonly standaloneMcpServers: PluginMcpEntry[] = [];
 

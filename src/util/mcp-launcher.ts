@@ -83,6 +83,9 @@ export const MCP_LAUNCH_SUBCOMMAND = "_mcp-launch";
  * `[command, ...argsPrefix]` that launches an entry which DOES dispatch
  * (e.g. `["node", "--import", "<tsx esm url>",
  * "<abs path to src/cli.ts>"]`).
+ *
+ * @public — consumed by embedders (and the integration probe), not by
+ * Talon's own graph, so knip must not report it.
  */
 export const SUPERVISOR_CMD_ENV = "TALON_MCP_SUPERVISOR_CMD";
 

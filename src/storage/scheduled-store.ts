@@ -24,7 +24,7 @@ const KEY = "scheduled.messages";
  * "dinner in an hour" reminder is noise, not delivery. */
 export const MAX_OVERDUE_MS = 24 * 60 * 60 * 1000;
 
-export type ScheduledButtonRow = Array<{
+type ScheduledButtonRow = Array<{
   text: string;
   url?: string;
   callback_data?: string;
@@ -65,10 +65,6 @@ export function deleteScheduled(id: string): boolean {
   delete all[id];
   kvSet(KEY, all);
   return true;
-}
-
-export function getScheduled(id: string): ScheduledMessage | undefined {
-  return readAll()[id];
 }
 
 /** All pending entries for a frontend, soonest first. */

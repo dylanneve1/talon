@@ -49,7 +49,7 @@ import { frontendsForChat } from "../shared/frontends.js";
  *                 short-circuits to `true` for this server. Equivalent
  *                 to saying "Talon trusts this server, don't ask."
  */
-export type CodexToolApprovalMode = "auto" | "prompt" | "approve";
+type CodexToolApprovalMode = "auto" | "prompt" | "approve";
 
 /** TOML-compatible record shape Codex's CLI accepts (HTTP transport). */
 export interface CodexMcpServer {
@@ -100,7 +100,7 @@ export function asCodexConfig(
  * reasoning. Exposed as a module-level constant rather than a
  * literal-everywhere so behaviour changes happen in exactly one place.
  */
-export const TALON_MCP_DEFAULT_APPROVAL: CodexToolApprovalMode = "approve";
+const TALON_MCP_DEFAULT_APPROVAL: CodexToolApprovalMode = "approve";
 
 /**
  * Build the Codex `mcp_servers` config map for a given chat.

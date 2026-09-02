@@ -28,11 +28,8 @@ export type {
   MetricsCounterSet,
   MetricsGrain,
   MetricsLatencyAgg,
-  SessionMetrics,
   SessionState,
-  SessionUsage,
 } from "./session-record.js";
-export { emptyMetrics, normaliseMetrics } from "./session-record.js";
 import {
   emptyCounters,
   emptyGrain,

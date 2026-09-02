@@ -18,7 +18,7 @@ import { randomUUID } from "node:crypto";
 import { hashPayload } from "./hash.js";
 import type { NodePayload } from "./types.js";
 
-export type ProposalStatus = "pending" | "approved" | "rejected";
+type ProposalStatus = "pending" | "approved" | "rejected";
 
 export interface Proposal {
   readonly id: string;

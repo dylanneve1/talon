@@ -32,7 +32,7 @@ export interface RetrievalWeights {
   readonly relevance: number;
 }
 
-export const DEFAULT_RETRIEVAL_WEIGHTS: RetrievalWeights = {
+const DEFAULT_RETRIEVAL_WEIGHTS: RetrievalWeights = {
   recency: 1,
   importance: 1,
   relevance: 1,

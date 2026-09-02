@@ -32,7 +32,7 @@ export interface TaskSettledEvent {
 }
 
 /** A chat turn bound its warp and is about to run on the backend. */
-export interface TurnStartedEvent {
+interface TurnStartedEvent {
   readonly type: "turn.started";
   readonly chatId: string;
   readonly source: string;
@@ -41,7 +41,7 @@ export interface TurnStartedEvent {
 }
 
 /** A chat turn finished successfully (refusals and failures never emit this). */
-export interface TurnCompletedEvent {
+interface TurnCompletedEvent {
   readonly type: "turn.completed";
   readonly chatId: string;
   readonly source: string;

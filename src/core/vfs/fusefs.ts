@@ -91,7 +91,7 @@ export function namespaceFsStatus(): FuseStatus {
 }
 
 /** Test seam — force a status without a real mount. */
-export function _setNamespaceFsStatusForTesting(next: FuseStatus): void {
+function _setNamespaceFsStatusForTesting(next: FuseStatus): void {
   status = next;
 }
 

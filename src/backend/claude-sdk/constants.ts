@@ -6,14 +6,9 @@
  * additions live next to the rest of the chat-handler config).
  */
 
-import {
-  ALLOWED_TOOLS_CORE,
-  ALLOWED_TOOLS_BACKGROUND,
-} from "../../core/constants.js";
+import { ALLOWED_TOOLS_CORE } from "../../core/constants.js";
 
 // Re-export so existing backend imports keep working
-export { ALLOWED_TOOLS_CORE, ALLOWED_TOOLS_BACKGROUND };
-
 /**
  * Whitelist of built-in tools available to the main chat handler.
  *

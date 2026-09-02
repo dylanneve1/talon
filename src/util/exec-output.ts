@@ -11,7 +11,7 @@
  */
 
 /** In-memory cap while capturing one child-process output stream. */
-export const MAX_EXEC_CAPTURE_BYTES = 4 * 1024 * 1024;
+const MAX_EXEC_CAPTURE_BYTES = 4 * 1024 * 1024;
 
 /** Ceiling on each rendered exec stream (stdout, stderr independently). */
 export const MAX_EXEC_RENDER_CHARS = 30_000;

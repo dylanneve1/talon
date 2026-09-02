@@ -47,27 +47,6 @@ export const CODEX_DEFAULT_MODEL = "gpt-5-codex";
 export const CODEX_CHATGPT_DEFAULT_MODEL = "gpt-5.5";
 
 /**
- * Set of Codex models that require an API key (i.e. won't work under
- * ChatGPT OAuth). Used by the handler's recovery ladder to detect a
- * model-not-supported error and automatically fall back to a
- * chatgpt-compatible model on retry.
- *
- * Keep this list in sync with `CODEX_MODELS` in `models.ts` — every
- * entry there with `apiKeyOnly: true` should appear here.
- */
-export const CODEX_API_KEY_ONLY_MODELS: ReadonlySet<string> = new Set([
-  "gpt-5-codex",
-]);
-
-/**
- * Default working directory for thread runs. Codex enforces a git-repo
- * check by default; we set `skipGitRepoCheck: true` and use a known
- * directory under the user's Talon workspace.
- */
-export const CODEX_DEFAULT_WORKING_DIRECTORY =
-  process.env.HOME ?? process.cwd();
-
-/**
  * ThreadOptions permission settings shared by both the chat handler and
  * the heartbeat/dream one-shot path.
  *

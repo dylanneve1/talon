@@ -25,11 +25,7 @@ import * as repo from "./repositories/scripts-repo.js";
 export type { Script, ScriptLanguage } from "./repositories/scripts-repo.js";
 import type { Script, ScriptLanguage } from "./repositories/scripts-repo.js";
 
-export const SCRIPT_LANGUAGES: readonly ScriptLanguage[] = [
-  "bash",
-  "python",
-  "node",
-];
+const SCRIPT_LANGUAGES: readonly ScriptLanguage[] = ["bash", "python", "node"];
 
 /**
  * Stricter than the trigger name rule: a script name doubles as its
@@ -81,16 +77,16 @@ export function validateScriptDescription(description: string): string | null {
 
 // ── Script files ────────────────────────────────────────────────────────────
 
-export function scriptsDir(): string {
+function scriptsDir(): string {
   return dirs.scripts;
 }
 
-export function scriptFilePath(name: string, lang: ScriptLanguage): string {
+function scriptFilePath(name: string, lang: ScriptLanguage): string {
   return resolve(scriptsDir(), `${name}.${EXTENSIONS[lang]}`);
 }
 
 /** Write a script's body, creating the scripts dir as needed. */
-export function writeScriptFile(
+function writeScriptFile(
   name: string,
   lang: ScriptLanguage,
   body: string,
@@ -104,7 +100,7 @@ export function writeScriptFile(
 
 // ── CRUD ────────────────────────────────────────────────────────────────────
 
-export function generateScriptId(): string {
+function generateScriptId(): string {
   return `script_${randomUUID()}`;
 }
 
@@ -150,10 +146,6 @@ export function getScript(name: string): Script | undefined {
 
 export function getAllScripts(): Script[] {
   return repo.all();
-}
-
-export function countScripts(): number {
-  return repo.count();
 }
 
 export function recordScriptUse(name: string): void {

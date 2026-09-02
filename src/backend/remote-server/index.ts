@@ -30,31 +30,19 @@
  *     agnostic and live in `core/` and `backend/shared/`.
  */
 
-export type {
-  RemoteAgentClient,
-  RemoteMcpServerConfig,
-  RemotePermissionRule,
-} from "./client.js";
+export type { RemoteAgentClient } from "./client.js";
 
 export {
   type RemoteServerState,
-  type RemoteServerStateInputs,
   createRemoteServerState,
   errMsg,
 } from "./state.js";
 
-export {
-  type EnsureRemoteServerInputs,
-  ensureRemoteServer,
-  stopRemoteServer,
-} from "./lifecycle.js";
+export { ensureRemoteServer, stopRemoteServer } from "./lifecycle.js";
 
 export {
   TALON_MCP_SERVER_NAME,
-  TALON_PLUGIN_MCP_SERVER_NAME,
   getChatMcpServerName,
-  getPluginMcpServerName,
-  safeMcpNamePart,
   isTalonToolID,
   ensureChatMcpServer,
   ensurePluginMcpServers,
@@ -64,17 +52,6 @@ export {
   getRegisteredMcpServerNames,
 } from "./mcp.js";
 
-export {
-  buildPermissionRuleset,
-  ensureRemoteSession,
-  warmRemoteSession,
-  type RemoteWarmDeps,
-} from "./sessions.js";
+export { ensureRemoteSession, warmRemoteSession } from "./sessions.js";
 
-export { type ProviderResolverHooks, resolveProviderID } from "./providers.js";
-
-export {
-  RemoteTurnTimeoutError,
-  remoteTurnTimeoutMs,
-  awaitRemoteTurn,
-} from "./turn-timeout.js";
+export { resolveProviderID } from "./providers.js";

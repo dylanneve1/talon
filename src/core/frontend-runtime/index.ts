@@ -9,12 +9,7 @@
 
 import "./builtins.js";
 
-export type {
-  Frontend,
-  FrontendCreate,
-  FrontendDescriptor,
-  FrontendFactory,
-} from "./capabilities.js";
+export type { Frontend } from "./capabilities.js";
 export {
   getFrontendDescriptor,
   hasFrontend,

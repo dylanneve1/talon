@@ -24,7 +24,7 @@ export interface DiscordActionContext {
   channel: TextBasedChannel | null;
 }
 
-export type DiscordActionHandler = (
+type DiscordActionHandler = (
   body: Record<string, unknown>,
   chatId: number,
   ctx: DiscordActionContext,

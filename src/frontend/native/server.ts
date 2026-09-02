@@ -48,7 +48,7 @@ import {
 import type { ConfigSnapshot } from "./settings.js";
 
 /** Optional attachment references carried alongside a sent message. */
-export type SendOptions = {
+type SendOptions = {
   /** Relative bridge path to render inline (e.g. `/media?id=…`). */
   imagePath?: string;
   /** Absolute on-disk path handed to the model so it can read the file. */

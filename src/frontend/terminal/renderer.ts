@@ -11,7 +11,7 @@ import { formatUsd } from "../shared/format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type StatusBarInfo = {
+type StatusBarInfo = {
   model: string;
   sessionName?: string;
   turns: number;

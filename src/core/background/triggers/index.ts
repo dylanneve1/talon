@@ -19,7 +19,7 @@ import { commandForLanguage } from "./command.js";
 import { handleStdoutLine } from "./output.js";
 import { handleTimeout, finalizeExit } from "./exit.js";
 
-export { initTriggers, getRunningCount, type TriggerDeps } from "./state.js";
+export { initTriggers, getRunningCount } from "./state.js";
 export { commandForLanguage } from "./command.js";
 export { spawnTrigger } from "./spawn.js";
 export { cancelTrigger, shutdownTriggers } from "./exit.js";

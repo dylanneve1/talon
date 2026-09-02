@@ -8,7 +8,7 @@
 import { logWarn } from "../../util/log.js";
 
 /** Platforms expire typing indicators after ~5s; refresh under that. */
-export const TYPING_REFRESH_MS = 4000;
+const TYPING_REFRESH_MS = 4000;
 
 export type SendTyping = (
   numericChatId: number,

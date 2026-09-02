@@ -58,7 +58,7 @@ export interface BackendInitContext {
 }
 
 /** Result returned by a backend factory's `init` step. */
-export interface BackendInstance {
+interface BackendInstance {
   /** The fully-wired `Backend` the dispatcher will route to. */
   backend: Backend;
   /**

@@ -17,7 +17,7 @@
 
 import { estimateTokens } from "./projector.js";
 
-export type FailureMode = "wall-of-text" | "sycophancy" | "emoji-overload";
+type FailureMode = "wall-of-text" | "sycophancy" | "emoji-overload";
 
 export interface CritiqueFeatures {
   readonly tokens: number;

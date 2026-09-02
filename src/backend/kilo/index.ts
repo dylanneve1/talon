@@ -22,10 +22,6 @@
 
 // ── Models ─────────────────────────────────────────────────────────────────
 export {
-  type OpenCodeModelCatalogEntry,
-  type OpenCodeModelCatalog,
-  type OpenCodeModelResolution,
-  type ModelButton,
   getOpenCodeModelSelectionValue,
   resolveOpenCodeModelInput,
   getOpenCodeQuickPickModels,
@@ -36,8 +32,6 @@ export {
 export {
   summarizeKiloAssistantMessages,
   getKiloSessionSnapshot,
-  type KiloAssistantInfo,
-  type KiloSessionSnapshot,
 } from "./sessions.js";
 
 // ── Server / lifecycle ─────────────────────────────────────────────────────

@@ -79,7 +79,7 @@ export async function shutdownTriggers(): Promise<void> {
   await new Promise((r) => setTimeout(r, 250));
 }
 
-export function killChild(id: string, child: ChildProcess): void {
+function killChild(id: string, child: ChildProcess): void {
   try {
     child.kill("SIGTERM");
   } catch {

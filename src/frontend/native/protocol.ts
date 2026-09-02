@@ -26,7 +26,7 @@ export const BOT_SENDER_ID = 0;
 /** History sender id used for the human on the other end of a native chat. */
 export const USER_SENDER_ID = 1;
 
-export type ClientRole = "user" | "assistant" | "system";
+type ClientRole = "user" | "assistant" | "system";
 
 /** An inline button. `url` opens a link; `data` is an opaque callback token. */
 export type ClientButton = { text: string; url?: string; data?: string };
@@ -238,7 +238,6 @@ export type {
   DeviceCommandResult,
   DeviceInfo,
   DeviceLocation,
-  DevicePlatform,
 } from "../../core/mesh/types.js";
 import type { DeviceCommand as MeshDeviceCommand } from "../../core/mesh/types.js";
 
@@ -323,5 +322,3 @@ export function historyToClientMessage(
     ts: m.timestamp,
   };
 }
-
-export { toDeviceInfo, toDeviceLocation } from "../../core/mesh/types.js";

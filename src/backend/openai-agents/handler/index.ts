@@ -10,4 +10,3 @@
  */
 
 export { handleMessage } from "./message.js";
-export { getActiveAbort } from "./state.js";

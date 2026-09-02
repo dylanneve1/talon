@@ -25,7 +25,7 @@ import { createHash } from "node:crypto";
 
 export type Hypervector = Int8Array;
 
-export const DEFAULT_HD_DIM = 4096;
+const DEFAULT_HD_DIM = 4096;
 
 /** Deterministic ±1 hypervector for a symbol — the same token always maps here. */
 export function symbolVector(token: string, dim = DEFAULT_HD_DIM): Hypervector {

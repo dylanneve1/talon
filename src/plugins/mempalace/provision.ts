@@ -148,11 +148,7 @@ export function classifyExternalInstall(pythonPath: string): string {
  * version, per flavor. Works in both directions (a newer-than-pin
  * install reconciles down), hence the neutral name.
  */
-export function reconcileHint(
-  kind: string,
-  python: string,
-  target: string,
-): string {
+function reconcileHint(kind: string, python: string, target: string): string {
   if (kind === "uv-tool") {
     return `uv tool install --force 'mempalace==${target}'`;
   }

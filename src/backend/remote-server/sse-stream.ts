@@ -68,9 +68,7 @@ export async function subscribeSseStream(
  * Pull the iterable `stream` field out of a `global.event()` response.
  * Exported for tests; production code should call `subscribeSseStream`.
  */
-export function narrowSseResult(
-  result: unknown,
-): AsyncIterable<unknown> | undefined {
+function narrowSseResult(result: unknown): AsyncIterable<unknown> | undefined {
   if (!result || typeof result !== "object") return undefined;
   const stream = (result as { stream?: unknown }).stream;
   if (!stream || typeof stream !== "object") return undefined;

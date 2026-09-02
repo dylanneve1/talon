@@ -117,8 +117,3 @@ export function loadSystemTemplate(
   }
   return liquid.renderSync(parsed, vars) as string;
 }
-
-/** Test seam: drop the parse cache (e.g. after writing fixture templates). */
-export function clearTemplateCache(): void {
-  parseCache.clear();
-}

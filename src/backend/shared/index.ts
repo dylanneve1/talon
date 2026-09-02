@@ -32,41 +32,26 @@
  *     (the spawn/env contract they share is `core/tools/mcp-env.ts`).
  */
 
-export {
-  normalizeForDedupe,
-  isDuplicateOfDelivered,
-  captureDeliveredText,
-} from "./delivered-text.js";
+export { captureDeliveredText } from "./delivered-text.js";
 
 export {
-  FLOW_VIOLATION_REMINDER,
   FLOW_VIOLATION_MAX_RETRIES,
   detectFlowViolation,
-  type FlowViolationInputs,
-  type FlowViolationResult,
 } from "./flow-violation.js";
 
-export { registerTurnInterrupt, interruptChatTurn } from "./turn-interrupt.js";
+export { registerTurnInterrupt } from "./turn-interrupt.js";
 
-export { formatUserPrompt, type PromptFormatInputs } from "./prompt-format.js";
+export { formatUserPrompt } from "./prompt-format.js";
 
 export {
   buildDeliveryContract,
   buildFlowViolationReminder,
   buildFirstTurnReminder,
-  deliveryToolsForFrontend,
-  registerFrontendDeliveryTools,
-  type DeliveryMode,
-  type DeliveryToolNames,
 } from "./delivery-contract.js";
 
 export { extractSessionName } from "../../util/session-name.js";
 
-export {
-  cacheHitPercent,
-  summarizeUsage,
-  type TokenUsageSnapshot,
-} from "./usage.js";
+export { summarizeUsage } from "./usage.js";
 
 // Only what is consumed THROUGH the barrel. Everything else in
 // cache-telemetry.ts is imported from the module directly, matching the
@@ -79,26 +64,15 @@ export {
   CACHE_LOOKBACK_BLOCKS,
 } from "./cache-telemetry.js";
 
-export {
-  prepareSystemPrompt,
-  appendBackendSuffix,
-  clearSystemPromptSnapshots,
-  type PrepareSystemPromptInputs,
-  type PreparedSystemPrompt,
-} from "./system-prompt.js";
+export { prepareSystemPrompt, appendBackendSuffix } from "./system-prompt.js";
 
-export {
-  classifyRetry,
-  type RetryDecision,
-  type ClassifyRetryInputs,
-} from "./model-retry.js";
+export { classifyRetry } from "./model-retry.js";
 
 export {
   createStreamState,
   appendText,
   closeCurrentSegment,
   markProgressDelivered,
-  undeliveredResponseText,
   recordToolUse,
   recordTokens,
   pushLiveUsage,
@@ -110,25 +84,15 @@ export {
   routeDelivery,
   buildDeliveryFailureReminder,
   TextBlockDeliveryError,
-  type DeliveryRoute,
-  type DeliveryDecision,
-  type RouteDeliveryInputs,
 } from "./delivery.js";
 
 export { sleep } from "./sleep.js";
-
-export { nonTerminalFrontends } from "./frontends.js";
 
 export {
   recordToolCall,
   recordTurnMetrics,
   recordFailedTurnAccounting,
   recordFlowViolation,
-  type TurnMetricInputs,
 } from "./metrics.js";
 
-export {
-  applyRetryDecision,
-  type ApplyRetryDecisionInputs,
-  type ApplyRetryDecisionResult,
-} from "./handle-retry.js";
+export { applyRetryDecision } from "./handle-retry.js";
