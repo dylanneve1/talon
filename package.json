@@ -81,7 +81,7 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src/",
-    "depcruise": "depcruise src",
+    "depcruise": "node scripts/check-architecture.mjs",
     "ratchets": "node scripts/check-ratchets.mjs",
     "knip": "knip",
     "format": "prettier --write src/ prompts/",
@@ -138,6 +138,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@swc/core": "^1.16.1",
     "@types/node": "^26.0.0",
     "@types/qrcode-terminal": "^0.12.2",
     "@types/write-file-atomic": "^4.0.3",
