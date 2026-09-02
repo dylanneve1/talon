@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.33.1](https://github.com/dylanneve1/talon/compare/v3.33.0...v3.33.1) (2026-09-02)
+
+
+### Code Refactoring
+
+* **backend:** make Kilo and OpenCode profiles of one remote-server backend ([#825](https://github.com/dylanneve1/talon/issues/825)) ([ea4eeb4](https://github.com/dylanneve1/talon/commit/ea4eeb4ec4c1a0e05dbac2a3c2d44d53ca329fa1))
+* **frontend:** share the access-gate primitives across frontends ([#826](https://github.com/dylanneve1/talon/issues/826)) ([9927b56](https://github.com/dylanneve1/talon/commit/9927b5618a142eec7f382b57b25af45326bf2b7a))
+* **mesh:** split file transfer and bridge links out of MeshService ([#827](https://github.com/dylanneve1/talon/issues/827)) ([2ed648f](https://github.com/dylanneve1/talon/commit/2ed648fed2cca9dd58db01c45bcb736c493c614a))
+* **native:** declare the bridge's routes and their auth tier in one table ([#824](https://github.com/dylanneve1/talon/issues/824)) ([7a6f634](https://github.com/dylanneve1/talon/commit/7a6f6349d517786615c3942b770ef727854bcbba))
+
 ## [3.33.0](https://github.com/dylanneve1/talon/compare/v3.32.1...v3.33.0) (2026-09-02)
 
 
