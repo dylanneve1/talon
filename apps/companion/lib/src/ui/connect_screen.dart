@@ -436,16 +436,23 @@ class _ConnectScreenState extends State<ConnectScreen> {
     String? errorText,
     ValueChanged<String>? onChanged,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: TextStyle(
-                fontSize: 12,
-                color: TalonColors.textDim,
-                fontWeight: FontWeight.w600)),
-        const SizedBox(height: 6),
-        TextField(
+    // The caption above the box IS the field's name, but visually — nothing
+    // ties the two nodes together, so a screen reader lands on the input and
+    // announces a bare "edit box". On the connect screen that leaves Host,
+    // Port and Token indistinguishable on the very first screen of the app.
+    // MergeSemantics folds the caption into the field's own node ("Host, edit
+    // box, …") without touching the layout.
+    return MergeSemantics(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style: TextStyle(
+                  fontSize: 12,
+                  color: TalonColors.textDim,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          TextField(
           controller: c,
           onChanged: onChanged,
           obscureText: obscure,
@@ -474,9 +481,10 @@ class _ConnectScreenState extends State<ConnectScreen> {
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(color: TalonColors.accent),
             ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
