@@ -102,10 +102,29 @@ function runNpm(
   });
 }
 
+/**
+ * Node process warnings are environment, not output: `NODE_USE_ENV_PROXY`
+ * makes undici print an experimental-agent notice on any machine that
+ * routes through a proxy, and Node adds its `--trace-warnings` hint under
+ * it. Neither says anything about the CLI, so they are stripped before
+ * the "stderr is empty" assertion — which otherwise fails on a developer
+ * box while CI (no proxy) stays green.
+ */
+function withoutNodeWarnings(stderr: string): string {
+  return stderr
+    .split("\n")
+    .filter(
+      (line) =>
+        !/^\(node:\d+\) /.test(line) &&
+        !line.startsWith("(Use `node --trace-warnings"),
+    )
+    .join("\n");
+}
+
 function expectOk(result: RunResult): void {
   expectExitOk(result);
   expect(
-    result.stderr,
+    withoutNodeWarnings(result.stderr),
     `process exited with ${result.code}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
   ).toBe("");
 }
