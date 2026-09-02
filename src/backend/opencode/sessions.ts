@@ -1,113 +1,35 @@
 /**
- * OpenCode session helpers — thin wrapper around
- * `backend/remote-server/session-helpers.ts`.
- *
- * Kilo is a fork of OpenCode that exposes the same session message shape
- * and question API, so the parsing / summarisation / snapshot logic
- * lives in the shared module. This file binds the OpenCode backend label
- * and re-exports under OpenCode-named symbols for back-compat with the
- * handler and the public OpenCode barrel.
+ * OpenCode session helpers — the shared `remote-server/session-helpers.ts`
+ * bound to the OpenCode client, re-exported under OpenCode-named symbols
+ * for the handler / index / test imports.
  */
 
 import type { OpencodeClient } from "@opencode-ai/sdk/v2";
 import {
   extractPartsSummary as extractPartsSummaryShared,
-  extractAssistantUsage as extractAssistantUsageShared,
   summarizeAssistantMessages,
-  getTurnSummary,
   getSessionSnapshot,
-  rejectPendingQuestions as rejectPendingQuestionsShared,
-  approvePendingPermissions as approvePendingPermissionsShared,
-  type RemoteAssistantInfo,
   type RemoteSessionSnapshot,
   type RemoteSessionClient,
 } from "../remote-server/session-helpers.js";
 import { ensureServer } from "./server.js";
 
-// ── Constants / type aliases (OpenCode-named surface) ──────────────────────
-
-/** Subset of OpenCode's `Message.info` used by Talon for usage accounting. */
-export type OpenCodeAssistantInfo = RemoteAssistantInfo;
-
 /** Snapshot of an OpenCode session's lifetime + last-turn assistant info. */
 export type OpenCodeSessionSnapshot = RemoteSessionSnapshot;
 
-// ── Re-exports of pure helpers ─────────────────────────────────────────────
-
 export const extractPartsSummary = extractPartsSummaryShared;
-export const extractAssistantUsage = extractAssistantUsageShared;
 
-/**
- * Summarise a batch of session messages into per-turn usage totals.
- * Re-exported under the OpenCode-prefixed name for back-compat with
- * existing imports.
- */
+/** Summarise a batch of session messages into per-turn usage totals. */
 export const summarizeOpenCodeAssistantMessages = summarizeAssistantMessages;
-
-// ── Session-messages aggregators ──────────────────────────────────────────
-
-/**
- * Aggregate the most recent turn's assistant messages into a usage
- * summary. Delegates to the shared helper with an OpenCode-typed client.
- */
-export function getOpenCodeTurnSummary(
-  oc: OpencodeClient,
-  sessionId: string,
-  minCreatedAt: number,
-): Promise<ReturnType<typeof summarizeAssistantMessages>> {
-  return getTurnSummary(
-    oc as unknown as RemoteSessionClient,
-    sessionId,
-    minCreatedAt,
-  );
-}
 
 /**
  * Build an {@link OpenCodeSessionSnapshot} for the given session id.
- *
  * Returns `undefined` if no session id was provided.
  */
 export async function getOpenCodeSessionSnapshot(
   sessionId: string | undefined,
 ): Promise<OpenCodeSessionSnapshot | undefined> {
   if (!sessionId) return undefined;
-  const oc = await ensureServer();
+  const oc: OpencodeClient = await ensureServer();
   return getSessionSnapshot(oc as unknown as RemoteSessionClient, sessionId);
-}
-
-// ── Pending-question guard ─────────────────────────────────────────────────
-
-/**
- * Auto-respond to pending OpenCode questions for this session. Delegates
- * to the shared helper with the OpenCode backend label.
- */
-export function rejectPendingQuestions(
-  oc: OpencodeClient,
-  sessionId: string,
-  chatId: string,
-  seenQuestionIds: Set<string>,
-): Promise<void> {
-  return rejectPendingQuestionsShared(
-    oc as unknown as RemoteSessionClient,
-    sessionId,
-    chatId,
-    seenQuestionIds,
-    "OpenCode",
-  );
-}
-
-/** Auto-approve pending OpenCode permissions for this headless session. */
-export function approvePendingPermissions(
-  oc: OpencodeClient,
-  sessionId: string,
-  chatId: string,
-  seenPermissionIds: Set<string>,
-): Promise<void> {
-  return approvePendingPermissionsShared(
-    oc as unknown as RemoteSessionClient,
-    sessionId,
-    chatId,
-    seenPermissionIds,
-    "OpenCode",
-  );
 }
