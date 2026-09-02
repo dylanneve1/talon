@@ -20,6 +20,10 @@ export async function runDoctor(): Promise<void> {
   printBanner();
   console.log(`  ${pc.bold("Environment check")}\n`);
   const { collectDoctorReport } = await import("../core/doctor.js");
+  // Doctor composes each backend's own checks off the registry, and the
+  // CLI runs standalone — nothing else has registered them yet.
+  const { loadBuiltinBackends } = await import("../backend/builtins.js");
+  await loadBuiltinBackends();
   const hasConfigFile = existsSync(CONFIG_FILE);
   const report = await collectDoctorReport({
     config: hasConfigFile ? loadConfig() : undefined,

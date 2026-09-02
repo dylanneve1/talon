@@ -43,6 +43,7 @@ import {
 import { waitForMcpServersReady } from "./mcp-ready.js";
 
 import * as modelProvider from "./model-provider.js";
+import { claudeDoctorChecks } from "./doctor.js";
 
 const claudeSdkFactory: BackendFactory = {
   // The config schema uses `"claude"` for backward compatibility with
@@ -50,6 +51,7 @@ const claudeSdkFactory: BackendFactory = {
   // no migration is needed.
   id: "claude",
   label: "Anthropic",
+  doctor: (config, isActive) => claudeDoctorChecks(config, isActive),
 
   async init(config, ctx) {
     await initClaudeAgent(config, ctx.getBridgePort);
