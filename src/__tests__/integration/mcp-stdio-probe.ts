@@ -16,7 +16,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { TalonPlugin } from "../../core/plugin/types.js";
 import { SUPERVISOR_CMD_ENV, wrapMcpServer } from "../../util/mcp-launcher.js";
 import { isBunRuntime } from "../../util/runtime.js";
@@ -38,10 +38,15 @@ export function currentRuntime(): "bun" | "node" {
 export function talonSelfInvocation(): string[] {
   const cli = resolve(REPO_ROOT, "src/cli.ts");
   if (isBunRuntime()) return [process.execPath, cli];
+  // `--import` takes a module specifier, not a path: on Windows a bare
+  // `D:\...` is parsed as URL scheme `d:` and rejected
+  // (ERR_UNSUPPORTED_ESM_URL_SCHEME), so hand it a file:// URL — the same
+  // shape the launcher's own absoluteTsxImport() produces.
   return [
     process.execPath,
     "--import",
-    resolve(REPO_ROOT, "node_modules/tsx/dist/esm/index.mjs"),
+    pathToFileURL(resolve(REPO_ROOT, "node_modules/tsx/dist/esm/index.mjs"))
+      .href,
     cli,
   ];
 }
