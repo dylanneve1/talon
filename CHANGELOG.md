@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.32.1](https://github.com/dylanneve1/talon/compare/v3.32.0...v3.32.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **ci:** make the architecture gate actually cruise the codebase ([#817](https://github.com/dylanneve1/talon/issues/817)) ([18290d5](https://github.com/dylanneve1/talon/commit/18290d5b2f3cd3f7b08c2b94d5f1820c204e9f16))
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump the production-dependencies group with 2 updates ([#818](https://github.com/dylanneve1/talon/issues/818)) ([b625f32](https://github.com/dylanneve1/talon/commit/b625f32f3fb79b44b444307bd0e5086bf6cceeb7))
+
 ## [3.32.0](https://github.com/dylanneve1/talon/compare/v3.31.0...v3.32.0) (2026-09-01)
 
 
