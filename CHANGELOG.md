@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.33.0](https://github.com/dylanneve1/talon/compare/v3.32.1...v3.33.0) (2026-09-02)
+
+
+### Features
+
+* **companion:** name the connect fields and status pill for screen readers ([#759](https://github.com/dylanneve1/talon/issues/759)) ([dcb3fec](https://github.com/dylanneve1/talon/commit/dcb3fec290ddf41a57687ed51c4552ae8e34c9e5))
+
+
+### Miscellaneous Chores
+
+* **quality:** sweep 255 dead exports and gate knip in CI ([#820](https://github.com/dylanneve1/talon/issues/820)) ([517ade3](https://github.com/dylanneve1/talon/commit/517ade3e9659ebe5295947ae4a0676f0fb7eaf9a))
+
+
+### Tests
+
+* **plugins:** run the native-runtime suite under bun on every OS, through the MCP supervisor ([#801](https://github.com/dylanneve1/talon/issues/801)) ([5ffdf3d](https://github.com/dylanneve1/talon/commit/5ffdf3d4991b548aed529e2814eb1d23d31e62e3))
+
 ## [3.32.1](https://github.com/dylanneve1/talon/compare/v3.32.0...v3.32.1) (2026-09-02)
 
 
