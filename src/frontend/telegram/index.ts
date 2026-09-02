@@ -87,6 +87,7 @@ export function createTelegramFrontend(
       setAdminUserId(config.adminUserId);
       setAccessControl({
         allowedUsers: config.allowedUsers,
+        blockedUsers: config.blockedUsers,
         adminUserId: config.adminUserId,
       });
 

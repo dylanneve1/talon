@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/bridge_models.dart';
 import '../services/autostart.dart';
+import '../services/device_exec.dart';
 import '../services/dynamic_accent.dart';
 import '../services/haptics.dart';
 import '../services/message_notifications.dart';
@@ -122,6 +123,20 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _voicesLoading = false;
   int _voicePreviewSeq = 0;
 
+  /// Android's execution-privilege ladder for device control (root → Shizuku →
+  /// app UID). Read from the platform bridges, not from prefs — the tier is a
+  /// property of the device, not a setting. Its own executor rather than the
+  /// mesh service's: the channels are process-wide, so a grant obtained here
+  /// is the same grant the background mesh isolate then uses.
+  final DeviceExec _exec = DeviceExec();
+  Map<String, dynamic>? _rootInfo;
+  Map<String, String>? _privilege;
+  bool _rootBusy = false;
+
+  /// Android only — every other platform runs commands as the logged-in user
+  /// and has no ladder to show.
+  bool get _showsPrivilege => defaultTargetPlatform == TargetPlatform.android;
+
   @override
   void initState() {
     super.initState();
@@ -152,6 +167,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       _refreshAssistantStatus();
       _loadVoices();
     }
+    if (_showsPrivilege) unawaited(_refreshPrivilege());
   }
 
   @override
@@ -321,6 +337,79 @@ class _SettingsScreenState extends State<SettingsScreen>
       // the platform query fails; the config UI must remain usable.
       AppLog.warn('settings', 'mesh status refresh failed', e);
     }
+  }
+
+  /// Re-read the privilege ladder. [probe] `true` actually *tries* to take
+  /// root (spawning `su`, which raises the root manager's grant dialog), so it
+  /// is only ever passed from the explicit button — opening Settings must not
+  /// pop a root prompt.
+  Future<void> _refreshPrivilege({bool probe = false}) async {
+    if (!_showsPrivilege) return;
+    if (probe) setState(() => _rootBusy = true);
+    try {
+      final root = await _exec.rootStatus(probe: probe);
+      final privilege = await _exec.privilegeStatus();
+      if (!mounted) return;
+      setState(() {
+        _rootInfo = root;
+        _privilege = privilege;
+      });
+    } catch (e) {
+      AppLog.warn('settings', 'privilege refresh failed', e);
+    } finally {
+      if (mounted && probe) setState(() => _rootBusy = false);
+    }
+  }
+
+  /// The adb-root path: write the agent script, then show the one-liner to run
+  /// from a computer. This is the tier for a `userdebug` phone where `adb root`
+  /// works but no `su` will serve an app uid.
+  Future<void> _showRootAgentSetup() async {
+    final info = await _exec.installRootAgent();
+    if (!mounted) return;
+    final command = '${info?['command'] ?? _rootInfo?['agentCommand'] ?? ''}';
+    if (command.isEmpty) {
+      _toast('Could not prepare the root agent on this device.');
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Root via adb'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'On a userdebug build, run this once from a computer with the '
+              'device connected. Talon picks the agent up within 30 seconds.\n\n'
+              'It stops at the next reboot — for a device that power-cycles '
+              'on its own, flash Magisk instead and use Request root.',
+              style: TextStyle(fontSize: 13, color: TalonColors.textDim),
+            ),
+            const SizedBox(height: 12),
+            SelectableText(
+              command,
+              style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: command));
+              _toast('Command copied');
+            },
+            child: const Text('Copy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+    await _refreshPrivilege();
   }
 
   Future<void> _apply(Map<String, dynamic> update) async {
@@ -1272,12 +1361,14 @@ class _SettingsScreenState extends State<SettingsScreen>
           _switchRow(
             'Device control',
             'Let Talon run shell + file commands on this device (teleport). '
-                'Uses app permissions, or Shizuku if available for elevated access.',
+                'Runs at the highest privilege available: root, else Shizuku, '
+                'else the app itself.',
             prefs.meshDeviceControl,
             prefs.meshSharing
                 ? (v) => widget.state.setMeshDeviceControl(v)
                 : null,
           ),
+          if (_showsPrivilege && prefs.meshDeviceControl) _privilegeRow(),
           const Divider(height: 22),
           Row(
             children: [
@@ -1317,6 +1408,58 @@ class _SettingsScreenState extends State<SettingsScreen>
       case MeshForegroundHealthKind.stale:
         return _Health.bad;
     }
+  }
+
+  /// The live privilege tier for device control, plus the two ways to raise
+  /// it. Read-only status by design — the tier is what the device grants, not
+  /// something a switch here can turn on.
+  Widget _privilegeRow() {
+    final tier = _privilege?['execPrivilege'];
+    final (label, health) = switch (tier) {
+      'root' => ('Root', _Health.ok),
+      'system' => ('System (uid 1000)', _Health.ok),
+      'shizuku' => ('Shizuku (shell)', _Health.ok),
+      'app' => ('App only', _Health.warn),
+      _ => ('Checking…', _Health.info),
+    };
+    final detail = _privilege?['root'] ?? 'reading privilege…';
+    // The adb agent is only worth offering where `adb root` can actually
+    // work — a user build has no root adbd to start it with.
+    final debuggable = _rootInfo?['debuggable'] == true;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _check(health, label, detail),
+          Row(
+            children: [
+              TextButton.icon(
+                onPressed: _rootBusy
+                    ? null
+                    : () => _refreshPrivilege(probe: tier != 'root'),
+                icon: _rootBusy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.shield_outlined, size: 16),
+                // Probing when we already have root is just a refresh; when we
+                // don't, it is the request that raises the su grant dialog.
+                label: Text(tier == 'root' ? 'Recheck' : 'Request root'),
+              ),
+              if (debuggable && tier != 'root')
+                TextButton.icon(
+                  onPressed: _rootBusy ? null : _showRootAgentSetup,
+                  icon: const Icon(Icons.usb, size: 16),
+                  label: const Text('Root via adb'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _meshDeviceRow(DeviceInfo device, DeviceLocation? loc) {

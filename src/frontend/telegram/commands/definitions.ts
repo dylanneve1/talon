@@ -22,7 +22,10 @@ export const TELEGRAM_COMMANDS: ReadonlyArray<{
   },
   { command: "status", description: "Session info, usage, and stats" },
   { command: "ping", description: "Health check with latency" },
-  { command: "mesh", description: "Ping and list mesh devices" },
+  {
+    command: "mesh",
+    description: "Mesh devices; /mesh link pairs a new one",
+  },
   { command: "model", description: "Show or change model" },
   { command: "effort", description: "Set thinking effort level" },
   { command: "pulse", description: "Conversation engagement settings" },

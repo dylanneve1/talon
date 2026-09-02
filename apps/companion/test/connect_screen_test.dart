@@ -12,6 +12,7 @@ import 'package:talon_companion/src/ui/connect_screen.dart';
 /// host or a nonsense port used to surface only as an opaque socket failure
 /// after the dial timed out. These tests pin the pre-flight check.
 void main() {
+  _pairLinkTests();
   Future<_RecordingState> pumpConnect(WidgetTester tester) async {
     // Tall surface: the whole card must be on screen for Connect to hit-test.
     await tester.binding.setSurfaceSize(const Size(800, 1200));
@@ -168,4 +169,68 @@ class _RecordingState extends AppState {
 
   @override
   Future<void> refreshMeshBackgroundHealth() async {}
+}
+
+void _pairLinkTests() {
+  group('talon://pair links', () {
+    test('builds a remote profile from the daemon link', () {
+      final c = ConnectionConfig.fromPairLink(
+        'talon://pair?u=https%3A%2F%2F192.168.1.20%3A19880&t=s3cr3t&f=AABB&n=Talon',
+      );
+
+      expect(c, isNotNull);
+      expect(c!.host, '192.168.1.20');
+      expect(c.port, 19880);
+      expect(c.token, 's3cr3t');
+      expect(c.tls, isTrue);
+      expect(c.fingerprint, 'AABB');
+      // A paired bridge lives somewhere else: never adopt it as a daemon this
+      // device is supposed to launch and supervise.
+      expect(c.manageLocalDaemon, isFalse);
+      expect(c.localAutoDiscover, isFalse);
+    });
+
+    test('falls back to the scheme port when the link omits one', () {
+      final c = ConnectionConfig.fromPairLink(
+        'talon://pair?u=https%3A%2F%2Fmesh.example.org&t=x',
+      );
+
+      expect(c!.port, 443);
+      expect(c.tls, isTrue);
+    });
+
+    test('carries no fingerprint over plain HTTP', () {
+      final c = ConnectionConfig.fromPairLink(
+        'talon://pair?u=http%3A%2F%2F10.0.0.5%3A19880&t=x',
+      );
+
+      expect(c!.tls, isFalse);
+      expect(c.fingerprint, isNull);
+    });
+
+    test('refuses anything that is not a usable pairing link', () {
+      // A clipboard full of something else must be a quiet no, not a wrong
+      // profile replacing a working one.
+      for (final raw in [
+        '',
+        'hello',
+        'https://example.org/pair?grant=abc',
+        'talon://other?u=http%3A%2F%2Fh%3A1',
+        'talon://pair?t=token-but-no-url',
+      ]) {
+        expect(ConnectionConfig.fromPairLink(raw), isNull, reason: raw);
+      }
+    });
+
+    test('reads the suggested display name', () {
+      expect(
+        ConnectionConfig.pairLinkLabel('talon://pair?u=http%3A%2F%2Fh%3A1&n=Car'),
+        'Car',
+      );
+      expect(
+        ConnectionConfig.pairLinkLabel('talon://pair?u=http%3A%2F%2Fh%3A1'),
+        isNull,
+      );
+    });
+  });
 }

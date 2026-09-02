@@ -1,6 +1,6 @@
 {
   "name": "talon-agent",
-  "version": "3.28.1",
+  "version": "3.32.0",
   "description": "Multi-frontend AI agent with full tool access, streaming, cron jobs, and plugin system",
   "author": "Dylan Neve",
   "license": "MIT",
@@ -106,7 +106,7 @@
     "@kilocode/sdk": "^7.2.22",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@openai/agents": "^0.17.0",
-    "@openai/codex-sdk": "^0.149.0",
+    "@openai/codex-sdk": "^0.151.0",
     "@opencode-ai/sdk": "^1.17.4",
     "@playwright/mcp": "0.0.79",
     "@types/cross-spawn": "^6.0.6",

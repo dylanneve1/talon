@@ -124,8 +124,136 @@ void main() {
     expect(result.data!['via'], 'app');
     // The fallback warning surfaces the actual Shizuku state (why it wasn't
     // used) so a remote caller can diagnose without adb.
-    expect(result.data!['privilegeWarning'], contains('state=not-running'));
+    expect(result.data!['privilegeWarning'], contains('shizuku=not-running'));
     expect(result.data!['privilegeWarning'], contains('app UID'));
+  });
+
+  test('root outranks Shizuku and never falls through to it', () async {
+    const root = MethodChannel('talon/root-test-ready');
+    const shizuku = MethodChannel('talon/shizuku-test-outranked');
+    var shizukuCalls = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(root, (call) async {
+      switch (call.method) {
+        case 'getStatus':
+          return {'tier': 'root', 'method': 'su', 'state': 'root via su', 'uid': 10123};
+        case 'exec':
+          return {
+            'stdout': 'uid=0',
+            'stderr': '',
+            'exitCode': 0,
+            'via': 'su',
+          };
+      }
+      return null;
+    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(shizuku, (call) async {
+      shizukuCalls++;
+      return null;
+    });
+    addTearDown(() {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(root, null);
+      messenger.setMockMethodCallHandler(shizuku, null);
+    });
+
+    final elevated = DeviceExec(
+      rootChannel: root,
+      shizukuChannel: shizuku,
+      isAndroid: () => true,
+    );
+    final result = await elevated.exec('id -u');
+
+    expect(shizukuCalls, 0);
+    expect(result.ok, isTrue);
+    expect(result.data!['via'], 'root');
+    // How root was reached travels with the result, so a mesh reply
+    // distinguishes a Magisk grant from the adb agent without another probe.
+    expect(result.data!['rootMethod'], 'su');
+    expect(result.data!['stdout'], 'uid=0');
+  });
+
+  test('a failing root path degrades to Shizuku for the same command',
+      () async {
+    const root = MethodChannel('talon/root-test-broken');
+    const shizuku = MethodChannel('talon/shizuku-test-rescue');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(root, (call) async {
+      if (call.method == 'getStatus') {
+        return {'tier': 'root', 'method': 'agent', 'state': 'root via the adb agent'};
+      }
+      // The agent died between the probe and the command.
+      throw PlatformException(code: 'root_unavailable');
+    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(shizuku, (call) async {
+      switch (call.method) {
+        case 'getStatus':
+          return {'ready': true, 'state': 'ready', 'uid': 2000};
+        case 'exec':
+          return {'stdout': 'shell', 'stderr': '', 'exitCode': 0};
+      }
+      return null;
+    });
+    addTearDown(() {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(root, null);
+      messenger.setMockMethodCallHandler(shizuku, null);
+    });
+
+    final dev = DeviceExec(
+      rootChannel: root,
+      shizukuChannel: shizuku,
+      isAndroid: () => true,
+    );
+    final result = await dev.exec('id -u');
+
+    expect(result.ok, isTrue);
+    expect(result.data!['via'], 'shizuku');
+    // Root was demoted, so the tier reported afterwards matches what actually
+    // ran rather than the stale probe.
+    expect((await dev.privilegeStatus())['execPrivilege'], 'shizuku');
+  });
+
+  test('a Shizuku server started as root is reported as root, not shell',
+      () async {
+    const root = MethodChannel('talon/root-test-absent');
+    const shizuku = MethodChannel('talon/shizuku-test-uid0');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(root, (call) async {
+      if (call.method == 'getStatus') {
+        return {'tier': 'app', 'method': 'none', 'state': 'no root'};
+      }
+      return null;
+    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(shizuku, (call) async {
+      if (call.method == 'getStatus') {
+        // uid 0 = Shizuku's own server was started from a root adb shell.
+        return {'ready': true, 'state': 'ready', 'uid': 0};
+      }
+      return null;
+    });
+    addTearDown(() {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(root, null);
+      messenger.setMockMethodCallHandler(shizuku, null);
+    });
+
+    final dev = DeviceExec(
+      rootChannel: root,
+      shizukuChannel: shizuku,
+      isAndroid: () => true,
+    );
+    final privilege = await dev.privilegeStatus();
+
+    expect(privilege['execPrivilege'], 'root');
+    expect(privilege['execVia'], 'shizuku');
+    expect(privilege['shizuku'], contains('uid 0'));
   });
 
   test('caps runaway exec output but keeps the tail (cwd marker survives)',

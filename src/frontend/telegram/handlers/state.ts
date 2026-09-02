@@ -20,9 +20,11 @@ export const KNOWN_DM_USERS_CAP = 10_000;
 /** Reassignable access config — holder object so setAccessControl can mutate. */
 export const accessConfig: {
   allowedUserIds: Set<number> | null; // null = no whitelist (allow all)
+  blockedUserIds: Set<number> | null; // null = no denylist
   adminId: number;
 } = {
   allowedUserIds: null,
+  blockedUserIds: null,
   adminId: 0,
 };
 

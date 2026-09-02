@@ -41,5 +41,24 @@ export function classifyClose(
   }
 }
 
+/**
+ * Has this auth state ever completed a login?
+ *
+ * `creds.registered` looks like the obvious test and is a trap: Baileys only
+ * sets it on the pairing-CODE path. A session linked by scanning the QR stays
+ * `registered: false` forever while being completely authenticated — it has
+ * `me`, `account`, app-state keys, and it sends and receives normally.
+ *
+ * Reading the flag alone therefore cannot tell a live QR session apart from a
+ * pairing window that expired without anyone scanning it, which is the
+ * distinction the reconnect loop actually needs.
+ */
+export function isPaired(creds: {
+  registered?: boolean;
+  me?: { id?: string } | null;
+}): boolean {
+  return Boolean(creds.registered || creds.me?.id);
+}
+
 /** How long to sit out after a 440 — another client owns the session. */
 export const REPLACED_BACKOFF_MS = 60_000;
