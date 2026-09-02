@@ -185,6 +185,87 @@ const AUTH_LOCKOUT_MAX_TRACKED = 10_000;
  */
 type AuthState = "ok" | "anonymous" | "bad";
 
+/**
+ * "public": served without a bearer token. Every entry is gated some other
+ * way — a single-use grant minted by the daemon, or (for /health) by
+ * answering only what pairing needs until a token is presented.
+ * "bearer": the request must carry the bridge token.
+ */
+export type BridgeRouteAuth = "public" | "bearer";
+
+/**
+ * The bridge's routes and the auth tier of each — declared once, here,
+ * rather than implied by where an `if` sits relative to the auth check.
+ * The security posture of the transport is this table: a route is
+ * pre-auth only by appearing in it as "public", and the route test walks
+ * every entry and proves the tier holds on the wire. Adding a route
+ * without an entry is a type error (`buildRoutes` is exhaustive over
+ * these keys); adding one as "public" is a diff a reviewer sees.
+ */
+export const BRIDGE_ROUTE_AUTH = {
+  // Pre-auth by design. /health serves pairing data (identity, protocol,
+  // fingerprint) to anyone and the operational view only to a token
+  // holder. /pair, /node/install and /node/binary hand over a credential
+  // to a device that holds none yet; the single-use grant in the query is
+  // the entire authorization.
+  "GET /health": "public",
+  "GET /pair": "public",
+  "GET /node/install": "public",
+  "GET /node/binary": "public",
+
+  // Everything a client can do once paired.
+  "GET /events": "bearer",
+  "GET /chats": "bearer",
+  "POST /chats": "bearer",
+  "POST /chats/rename": "bearer",
+  "POST /chats/delete": "bearer",
+  "POST /chats/reset": "bearer",
+  "POST /chats/interrupt": "bearer",
+  "POST /chats/pulse": "bearer",
+  "POST /queue": "bearer",
+  "GET /history": "bearer",
+  "GET /search": "bearer",
+  "POST /send": "bearer",
+  "POST /upload": "bearer",
+  "GET /media": "bearer",
+  "GET /models": "bearer",
+  "POST /model": "bearer",
+  "GET /backends": "bearer",
+  "POST /backend": "bearer",
+  "GET /effort": "bearer",
+  "POST /effort": "bearer",
+  "GET /logs": "bearer",
+  "GET /plugins": "bearer",
+  "POST /plugins/toggle": "bearer",
+  "GET /skills": "bearer",
+  "POST /skills/toggle": "bearer",
+  "GET /config": "bearer",
+  "POST /config": "bearer",
+  "POST /control": "bearer",
+
+  // Mesh. The one-time `transfer` token on /devices/file authorizes one
+  // direction+path, but the route still sits behind the bearer like every
+  // device route — the token is a scope, not a credential.
+  "POST /devices/register": "bearer",
+  "POST /location": "bearer",
+  "GET /devices": "bearer",
+  "POST /devices/command-result": "bearer",
+  "POST /devices/file": "bearer",
+  "GET /devices/file": "bearer",
+} as const satisfies Record<string, BridgeRouteAuth>;
+
+export type BridgeRouteKey = keyof typeof BRIDGE_ROUTE_AUTH;
+
+/** What a route handler receives; `auth` is already evaluated. */
+type RouteContext = {
+  req: IncomingMessage;
+  res: ServerResponse;
+  url: URL;
+  auth: AuthState;
+};
+
+type RouteHandler = (ctx: RouteContext) => void | Promise<void>;
+
 export class BridgeServer {
   private server: Server | null = null;
   /**
@@ -199,6 +280,8 @@ export class BridgeServer {
   private tlsIdentity: BridgeTlsIdentity | null = null;
   /** Wrong-token counts per remote address (behind a proxy: per proxy). */
   private authFailures = new Map<string, { count: number; resetAt: number }>();
+  /** `METHOD /path` → handler; a Map so lookups only ever hit own entries. */
+  private readonly routes: ReadonlyMap<BridgeRouteKey, RouteHandler>;
 
   constructor(
     private readonly opts: {
@@ -217,7 +300,11 @@ export class BridgeServer {
       tls?: () => Promise<BridgeTlsIdentity>;
     },
     private readonly handlers: BridgeServerHandlers,
-  ) {}
+  ) {
+    this.routes = new Map(
+      Object.entries(this.buildRoutes()) as [BridgeRouteKey, RouteHandler][],
+    );
+  }
 
   getPort(): number {
     return this.port;
@@ -410,8 +497,8 @@ export class BridgeServer {
     }
     // Set once here rather than in corsHeaders(): setHeader values survive
     // every later writeHead(code, {...}) that does not name the same key,
-    // so each of the ~8 response sites keeps the grant without threading
-    // the origin through all of them.
+    // so each of the response sites keeps the grant without threading the
+    // origin through all of them.
     if (origin !== undefined && this.isAllowedOrigin(origin)) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
@@ -439,384 +526,365 @@ export class BridgeServer {
     if (auth === "bad") this.recordAuthFailure(remote);
     else if (auth === "ok") this.authFailures.delete(remote);
 
-    // /health is unauthenticated so clients can discover/ping the bridge
-    // before they hold a token. Pre-auth it serves only what pairing needs
-    // (identity, protocol, fingerprint) — operational details like bot name,
-    // backend, and chat count are not for internet scanners to enumerate.
-    if (method === "GET" && path === "/health") {
-      const base = {
-        app: "talon-bridge",
-        ok: true,
-        protocol: BRIDGE_PROTOCOL_VERSION,
-        port: this.port,
-        scheme: this.getScheme(),
-        // The certificate's own hash — public by definition (any TLS client
-        // sees the certificate), surfaced so pairing UIs can display it.
-        fingerprint: this.getFingerprint(),
-        authRequired: Boolean(this.opts.token),
-      };
-      if (auth !== "ok") return this.json(res, 200, base);
-      const s = this.handlers.status();
-      return this.json(res, 200, {
-        ...base,
-        host: this.opts.host,
-        startedAt: this.opts.startedAt,
-        botName: s.botName,
-        backend: s.backend,
-        model: s.model,
-        activeChats: s.activeChats,
-        capabilities: ["mesh", "mesh-commands", "mesh-file-stream"],
-      });
-    }
+    const key = `${method} ${path}` as BridgeRouteKey;
+    const route = this.routes.get(key);
+    const ctx: RouteContext = { req, res, url, auth };
 
-    // Companion pairing is PRE-AUTH for the same reason as node
-    // provisioning below: the phone holds no bridge credential yet, and the
-    // single-use grant is what it comes to collect. Serving the page IS the
-    // handover, so the grant is spent whichever leg is hit.
-    if (method === "GET" && path === "/pair") {
-      const token = url.searchParams.get("grant") ?? "";
-      const wantsJson =
-        url.searchParams.get("format") === "json" ||
-        (req.headers.accept ?? "").includes("application/json");
-      const served = token
-        ? this.handlers.openCompanionPair(token, wantsJson ? "json" : "html")
-        : null;
-      if (!served) {
-        return this.json(res, 404, {
-          ok: false,
-          error: "Unknown, expired, or already-used pairing link",
-        });
-      }
-      res.writeHead(200, {
-        "Content-Type": served.contentType,
-        // A pairing payload is a credential; nothing may keep a copy.
-        "Cache-Control": "no-store",
-        ...this.corsHeaders(),
-      });
-      res.end(served.body);
+    if (route && BRIDGE_ROUTE_AUTH[key] === "public") {
+      await route(ctx);
       return;
     }
+    // Unknown routes are 401 before they are 404: an unauthenticated caller
+    // learns nothing about the route map.
+    if (auth !== "ok") {
+      return this.json(res, 401, { ok: false, error: "Unauthorized" });
+    }
+    if (!route) return this.json(res, 404, { ok: false, error: "Not found" });
 
-    // Node provisioning runs PRE-AUTH by design: the target host holds no
-    // bridge credential yet — the single-use grant token (minted by
-    // make_node_install_link, expiring, one serve per leg) is the entire
-    // authorization, the same trust model as streamed-transfer tokens.
-    if (
-      method === "GET" &&
-      (path === "/node/install" || path === "/node/binary")
-    ) {
-      const token = url.searchParams.get("provision") ?? "";
-      const unknown = () =>
-        this.json(res, 404, {
-          ok: false,
-          error: "Unknown, expired, or already-used provisioning token",
+    try {
+      await route(ctx);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return this.json(res, 400, { ok: false, error: msg });
+    }
+  }
+
+  /**
+   * One handler per BRIDGE_ROUTE_AUTH key. The return type makes the
+   * object exhaustive: a route declared in the table without a handler
+   * here, or vice versa, does not compile.
+   */
+  private buildRoutes(): Record<BridgeRouteKey, RouteHandler> {
+    const h = this.handlers;
+    const json = (res: ServerResponse, code: number, body: unknown) =>
+      this.json(res, code, body);
+    const readJson = (req: IncomingMessage) => this.readJson(req);
+
+    // Streamed device file transfers (see core/mesh/transfers.ts). The
+    // one-time `transfer` token authorizes exactly one direction+path; the
+    // caller names itself so the token's device binding can be checked.
+    const transferToken = (url: URL, res: ServerResponse): string | null => {
+      const token = url.searchParams.get("transfer") ?? "";
+      if (!token) {
+        json(res, 400, { ok: false, error: "transfer required" });
+        return null;
+      }
+      return token;
+    };
+
+    return {
+      // ── Pre-auth ───────────────────────────────────────────────────────
+
+      // Unauthenticated so clients can discover/ping the bridge before they
+      // hold a token. Pre-auth it serves only what pairing needs (identity,
+      // protocol, fingerprint) — operational details like bot name,
+      // backend, and chat count are not for internet scanners to enumerate.
+      "GET /health": ({ res, auth }) => {
+        const base = {
+          app: "talon-bridge",
+          ok: true,
+          protocol: BRIDGE_PROTOCOL_VERSION,
+          port: this.port,
+          scheme: this.getScheme(),
+          // The certificate's own hash — public by definition (any TLS
+          // client sees the certificate), surfaced so pairing UIs can
+          // display it.
+          fingerprint: this.getFingerprint(),
+          authRequired: Boolean(this.opts.token),
+        };
+        if (auth !== "ok") return json(res, 200, base);
+        const s = h.status();
+        return json(res, 200, {
+          ...base,
+          host: this.opts.host,
+          startedAt: this.opts.startedAt,
+          botName: s.botName,
+          backend: s.backend,
+          model: s.model,
+          activeChats: s.activeChats,
+          capabilities: ["mesh", "mesh-commands", "mesh-file-stream"],
         });
-      if (!token) return unknown();
-      if (path === "/node/install") {
-        const install = this.handlers.openNodeInstall(token);
-        if (!install) return unknown();
+      },
+
+      // Companion pairing: the phone holds no bridge credential yet, and
+      // the single-use grant is what it comes to collect. Serving the page
+      // IS the handover, so the grant is spent whichever leg is hit.
+      "GET /pair": ({ req, res, url }) => {
+        const token = url.searchParams.get("grant") ?? "";
+        const wantsJson =
+          url.searchParams.get("format") === "json" ||
+          (req.headers.accept ?? "").includes("application/json");
+        const served = token
+          ? h.openCompanionPair(token, wantsJson ? "json" : "html")
+          : null;
+        if (!served) {
+          return json(res, 404, {
+            ok: false,
+            error: "Unknown, expired, or already-used pairing link",
+          });
+        }
+        res.writeHead(200, {
+          "Content-Type": served.contentType,
+          // A pairing payload is a credential; nothing may keep a copy.
+          "Cache-Control": "no-store",
+          ...this.corsHeaders(),
+        });
+        res.end(served.body);
+      },
+
+      // Node provisioning: the target host holds no bridge credential yet —
+      // the single-use grant token (minted by make_node_install_link,
+      // expiring, one serve per leg) is the entire authorization, the same
+      // trust model as streamed-transfer tokens.
+      "GET /node/install": ({ res, url }) => {
+        const token = url.searchParams.get("provision") ?? "";
+        const install = token ? h.openNodeInstall(token) : null;
+        if (!install) return this.unknownProvision(res);
         res.writeHead(200, {
           "Content-Type": "text/plain; charset=utf-8",
           "Content-Disposition": `attachment; filename="${install.filename}"`,
           ...this.corsHeaders(),
         });
         res.end(install.script);
-        return;
-      }
-      const binary = this.handlers.openNodeBinary(token);
-      if (!binary) return unknown();
-      res.writeHead(200, {
-        "Content-Type": "application/octet-stream",
-        "Content-Length": String(binary.size),
-        ...this.corsHeaders(),
-      });
-      const stream = createReadStream(binary.path);
-      stream.on("error", () => res.destroy());
-      stream.pipe(res);
-      return;
-    }
+      },
+      "GET /node/binary": ({ res, url }) => {
+        const token = url.searchParams.get("provision") ?? "";
+        const binary = token ? h.openNodeBinary(token) : null;
+        if (!binary) return this.unknownProvision(res);
+        this.streamFile(res, binary);
+      },
 
-    if (auth !== "ok") {
-      return this.json(res, 401, { ok: false, error: "Unauthorized" });
-    }
+      // ── Chats ──────────────────────────────────────────────────────────
 
-    try {
-      // A mesh client names itself here so device-addressed events reach it
-      // alone (see sendToDevice); UI clients simply omit it.
-      if (method === "GET" && path === "/events")
-        return this.openStream(res, deviceIdParam(url));
-
-      if (method === "GET" && path === "/chats")
-        return this.json(res, 200, { chats: this.handlers.listChats() });
-
-      if (method === "POST" && path === "/chats") {
-        const body = await this.readJson(req);
-        const chat = this.handlers.createChat(asString(body.title));
-        return this.json(res, 200, { chat });
-      }
-
-      if (method === "POST" && path === "/chats/rename") {
-        const body = await this.readJson(req);
-        const chat = this.handlers.renameChat(
+      // A mesh client names itself here so device-addressed events reach
+      // it alone (see sendToDevice); UI clients simply omit it.
+      "GET /events": ({ res, url }) => this.openStream(res, deviceIdParam(url)),
+      "GET /chats": ({ res }) => json(res, 200, { chats: h.listChats() }),
+      "POST /chats": async ({ req, res }) => {
+        const body = await readJson(req);
+        json(res, 200, { chat: h.createChat(asString(body.title)) });
+      },
+      "POST /chats/rename": async ({ req, res }) => {
+        const body = await readJson(req);
+        const chat = h.renameChat(
           asString(body.chatId) ?? "",
           asString(body.title) ?? "",
         );
         return chat
-          ? this.json(res, 200, { chat })
-          : this.json(res, 404, { ok: false, error: "No such chat" });
-      }
-
-      if (method === "POST" && path === "/chats/delete") {
-        const body = await this.readJson(req);
-        const ok = this.handlers.deleteChat(asString(body.chatId) ?? "");
-        return this.json(res, 200, { ok });
-      }
-
-      if (method === "POST" && path === "/chats/reset") {
-        const body = await this.readJson(req);
-        const ok = this.handlers.resetChat(asString(body.chatId) ?? "");
-        return this.json(res, 200, { ok });
-      }
-
-      if (method === "POST" && path === "/chats/interrupt") {
-        const body = await this.readJson(req);
-        const ok = await this.handlers.interruptTurn(
-          asString(body.chatId) ?? "",
-        );
-        return this.json(res, 200, { ok });
-      }
-
-      if (method === "POST" && path === "/chats/pulse") {
-        const body = await this.readJson(req);
-        this.handlers.setPulse(asString(body.chatId) ?? "", body.on === true);
-        return this.json(res, 200, { ok: true });
-      }
-
-      if (method === "POST" && path === "/queue") {
-        const body = await this.readJson(req);
-        this.handlers.queueMessage(
-          asString(body.chatId) ?? "",
-          asString(body.text) ?? "",
-        );
-        return this.json(res, 200, { ok: true });
-      }
-
-      if (method === "GET" && path === "/history") {
+          ? json(res, 200, { chat })
+          : json(res, 404, { ok: false, error: "No such chat" });
+      },
+      "POST /chats/delete": async ({ req, res }) => {
+        const body = await readJson(req);
+        json(res, 200, { ok: h.deleteChat(asString(body.chatId) ?? "") });
+      },
+      "POST /chats/reset": async ({ req, res }) => {
+        const body = await readJson(req);
+        json(res, 200, { ok: h.resetChat(asString(body.chatId) ?? "") });
+      },
+      "POST /chats/interrupt": async ({ req, res }) => {
+        const body = await readJson(req);
+        const ok = await h.interruptTurn(asString(body.chatId) ?? "");
+        json(res, 200, { ok });
+      },
+      "POST /chats/pulse": async ({ req, res }) => {
+        const body = await readJson(req);
+        h.setPulse(asString(body.chatId) ?? "", body.on === true);
+        json(res, 200, { ok: true });
+      },
+      "POST /queue": async ({ req, res }) => {
+        const body = await readJson(req);
+        h.queueMessage(asString(body.chatId) ?? "", asString(body.text) ?? "");
+        json(res, 200, { ok: true });
+      },
+      "GET /history": ({ res, url }) => {
         const id = url.searchParams.get("chatId") ?? "";
         const before = asPositiveInt(url.searchParams.get("before"));
         const limit = asPositiveInt(url.searchParams.get("limit"));
-        return this.json(res, 200, {
+        json(res, 200, {
           chatId: id,
-          messages: this.handlers.history(id, { before, limit }),
+          messages: h.history(id, { before, limit }),
         });
-      }
-
-      if (method === "GET" && path === "/search") {
+      },
+      "GET /search": ({ res, url }) => {
         const q = (url.searchParams.get("q") ?? "").trim();
-        if (!q) return this.json(res, 400, { ok: false, error: "q required" });
+        if (!q) return json(res, 400, { ok: false, error: "q required" });
         const chatId = url.searchParams.get("chatId") ?? undefined;
-        return this.json(res, 200, {
-          results: this.handlers.search(q, chatId),
-        });
-      }
-
-      if (method === "POST" && path === "/send") {
-        const body = await this.readJson(req);
+        json(res, 200, { results: h.search(q, chatId) });
+      },
+      "POST /send": async ({ req, res }) => {
+        const body = await readJson(req);
         const id = asString(body.chatId) ?? "";
         const text = asString(body.text) ?? "";
         const imagePath = asString(body.imagePath);
         const attachmentPath = asString(body.attachmentPath);
-        // Text may be empty when an image is attached; require one or the other.
+        // Text may be empty when an image is attached; require one or the
+        // other.
         if (!id || (!text.trim() && !attachmentPath))
-          return this.json(res, 400, {
+          return json(res, 400, {
             ok: false,
             error: "chatId and text (or an attachment) required",
           });
-        this.handlers.send(id, text, { imagePath, attachmentPath });
-        return this.json(res, 202, { ok: true });
-      }
-
-      if (method === "POST" && path === "/devices/register") {
-        const body = await this.readJson(req);
-        const device = await this.handlers.registerDevice(body);
-        return this.json(res, 200, { ok: true, deviceId: device.id });
-      }
-
-      if (method === "POST" && path === "/location") {
-        const body = await this.readJson(req);
-        await this.handlers.storeLocation(body);
-        return this.json(res, 200, { ok: true });
-      }
-
-      if (method === "GET" && path === "/devices") {
-        return this.json(res, 200, await this.handlers.listDevices());
-      }
-
-      if (method === "POST" && path === "/devices/command-result") {
-        const body = await this.readJson(req);
-        // ok:false for a late/unknown correlation id — not an HTTP error,
-        // the device's POST was well-formed; nothing was waiting anymore.
-        return this.json(res, 200, {
-          ok: this.handlers.completeCommand(body),
-        });
-      }
-
-      // Streamed device file transfers (see core/mesh/transfers.ts). The
-      // one-time `transfer` token authorizes exactly one direction+path;
-      // these sit behind the bridge bearer auth like every device route.
-      if (path === "/devices/file") {
-        const token = url.searchParams.get("transfer") ?? "";
-        if (!token)
-          return this.json(res, 400, { ok: false, error: "transfer required" });
-        // The caller names itself so the token's device binding can be
-        // checked (see core/mesh/transfers.ts take()).
-        const from = deviceIdParam(url);
-        if (method === "POST") {
-          const result = await this.handlers.acceptFileUpload(token, req, from);
-          return this.json(res, result.ok ? 200 : 409, result);
-        }
-        if (method === "GET") {
-          const file = await this.handlers.openFileDownload(token, from);
-          if (!file)
-            return this.json(res, 404, {
-              ok: false,
-              error: "Unknown or already-used transfer token",
-            });
-          res.writeHead(200, {
-            "Content-Type": "application/octet-stream",
-            "Content-Length": String(file.size),
-            ...this.corsHeaders(),
-          });
-          const stream = createReadStream(file.path);
-          stream.on("error", () => res.destroy());
-          stream.pipe(res);
-          return;
-        }
-      }
-
-      if (method === "POST" && path === "/upload") {
+        h.send(id, text, { imagePath, attachmentPath });
+        json(res, 202, { ok: true });
+      },
+      "POST /upload": async ({ req, res, url }) => {
         const filename = url.searchParams.get("filename") ?? "upload";
         const contentType =
           req.headers["content-type"] ?? "application/octet-stream";
         const bytes = await this.readRaw(req, MAX_UPLOAD_BYTES);
         if (!bytes.length)
-          return this.json(res, 400, { ok: false, error: "Empty upload" });
-        const result = await this.handlers.upload(filename, contentType, bytes);
-        return this.json(res, 200, { ok: true, ...result });
-      }
+          return json(res, 400, { ok: false, error: "Empty upload" });
+        const result = await h.upload(filename, contentType, bytes);
+        json(res, 200, { ok: true, ...result });
+      },
+      "GET /media": ({ res, url }) =>
+        this.serveMedia(res, url.searchParams.get("id") ?? ""),
 
-      if (method === "GET" && path === "/models") {
+      // ── Models / backends / effort ─────────────────────────────────────
+
+      "GET /models": async ({ res, url }) => {
         const id = url.searchParams.get("chatId") ?? undefined;
-        return this.json(res, 200, await this.handlers.listModels(id));
-      }
-
-      if (method === "POST" && path === "/model") {
-        const body = await this.readJson(req);
-        this.handlers.setModel(
-          asString(body.chatId) ?? "",
-          asString(body.model) ?? "",
-        );
-        return this.json(res, 200, { ok: true });
-      }
-
-      if (method === "GET" && path === "/backends") {
-        const id = url.searchParams.get("chatId") ?? "";
-        return this.json(res, 200, this.handlers.listBackends(id));
-      }
-
-      if (method === "POST" && path === "/backend") {
-        const body = await this.readJson(req);
+        json(res, 200, await h.listModels(id));
+      },
+      "POST /model": async ({ req, res }) => {
+        const body = await readJson(req);
+        h.setModel(asString(body.chatId) ?? "", asString(body.model) ?? "");
+        json(res, 200, { ok: true });
+      },
+      "GET /backends": ({ res, url }) =>
+        json(res, 200, h.listBackends(url.searchParams.get("chatId") ?? "")),
+      "POST /backend": async ({ req, res }) => {
+        const body = await readJson(req);
         // Always 200: ok/error is an application result the client renders,
-        // not an HTTP-level failure (the client's decoder drops >=400 bodies).
-        const result = await this.handlers.setBackend(
+        // not an HTTP-level failure (the client's decoder drops >=400
+        // bodies).
+        const result = await h.setBackend(
           asString(body.chatId) ?? "",
           asString(body.backend) ?? "",
         );
-        return this.json(res, 200, result);
-      }
+        json(res, 200, result);
+      },
+      "GET /effort": async ({ res, url }) =>
+        json(
+          res,
+          200,
+          await h.effortLevels(url.searchParams.get("chatId") ?? ""),
+        ),
+      "POST /effort": async ({ req, res }) => {
+        const body = await readJson(req);
+        h.setEffort(asString(body.chatId) ?? "", asString(body.effort) ?? "");
+        json(res, 200, { ok: true });
+      },
 
-      if (method === "GET" && path === "/effort") {
-        const id = url.searchParams.get("chatId") ?? "";
-        return this.json(res, 200, await this.handlers.effortLevels(id));
-      }
+      // ── Daemon ─────────────────────────────────────────────────────────
 
-      if (method === "POST" && path === "/effort") {
-        const body = await this.readJson(req);
-        this.handlers.setEffort(
-          asString(body.chatId) ?? "",
-          asString(body.effort) ?? "",
-        );
-        return this.json(res, 200, { ok: true });
-      }
-
-      if (method === "GET" && path === "/media") {
-        const id = url.searchParams.get("id") ?? "";
-        return await this.serveMedia(res, id);
-      }
-
-      if (method === "GET" && path === "/logs") {
+      "GET /logs": ({ res, url }) => {
         const lines = Math.min(
           asPositiveInt(url.searchParams.get("lines")) ?? 200,
           1000,
         );
         const level = url.searchParams.get("level") ?? "";
         const component = url.searchParams.get("component") ?? undefined;
-        return this.json(res, 200, {
-          entries: this.handlers.logs({
+        json(res, 200, {
+          entries: h.logs({
             lines,
             minLevel: isLogLevel(level) ? level : undefined,
             component,
           }),
         });
-      }
-
-      if (method === "GET" && path === "/plugins")
-        return this.json(res, 200, { plugins: this.handlers.listPlugins() });
-
-      if (method === "POST" && path === "/plugins/toggle") {
-        const body = await this.readJson(req);
-        // Always 200: ok/error is an application result the client renders,
-        // not an HTTP-level failure (mirrors /backend).
-        const result = await this.handlers.setPluginEnabled(
+      },
+      "GET /plugins": ({ res }) => json(res, 200, { plugins: h.listPlugins() }),
+      "POST /plugins/toggle": async ({ req, res }) => {
+        const body = await readJson(req);
+        // Always 200: ok/error is an application result the client renders
+        // (mirrors /backend).
+        const result = await h.setPluginEnabled(
           asString(body.name) ?? "",
           body.enabled === true,
         );
-        return this.json(res, 200, result);
-      }
-
-      if (method === "GET" && path === "/skills")
-        return this.json(res, 200, { skills: this.handlers.listSkills() });
-
-      if (method === "POST" && path === "/skills/toggle") {
-        const body = await this.readJson(req);
-        const result = this.handlers.setSkillEnabled(
-          asString(body.name) ?? "",
-          body.enabled === true,
+        json(res, 200, result);
+      },
+      "GET /skills": ({ res }) => json(res, 200, { skills: h.listSkills() }),
+      "POST /skills/toggle": async ({ req, res }) => {
+        const body = await readJson(req);
+        json(
+          res,
+          200,
+          h.setSkillEnabled(asString(body.name) ?? "", body.enabled === true),
         );
-        return this.json(res, 200, result);
-      }
+      },
+      "GET /config": ({ res }) => json(res, 200, h.getConfig()),
+      "POST /config": async ({ req, res }) => {
+        const body = await readJson(req);
+        json(res, 200, h.setConfig(body));
+      },
+      "POST /control": async ({ req, res }) => {
+        const body = await readJson(req);
+        // Always 200: ok/message is an application result the client
+        // renders (mirrors /backend).
+        json(res, 200, await h.control(asString(body.action) ?? ""));
+      },
 
-      if (method === "GET" && path === "/config")
-        return this.json(res, 200, this.handlers.getConfig());
+      // ── Mesh ───────────────────────────────────────────────────────────
 
-      if (method === "POST" && path === "/config") {
-        const body = await this.readJson(req);
-        return this.json(res, 200, this.handlers.setConfig(body));
-      }
+      "POST /devices/register": async ({ req, res }) => {
+        const body = await readJson(req);
+        const device = await h.registerDevice(body);
+        json(res, 200, { ok: true, deviceId: device.id });
+      },
+      "POST /location": async ({ req, res }) => {
+        const body = await readJson(req);
+        await h.storeLocation(body);
+        json(res, 200, { ok: true });
+      },
+      "GET /devices": async ({ res }) => json(res, 200, await h.listDevices()),
+      "POST /devices/command-result": async ({ req, res }) => {
+        const body = await readJson(req);
+        // ok:false for a late/unknown correlation id — not an HTTP error,
+        // the device's POST was well-formed; nothing was waiting anymore.
+        json(res, 200, { ok: h.completeCommand(body) });
+      },
+      "POST /devices/file": async ({ req, res, url }) => {
+        const token = transferToken(url, res);
+        if (token === null) return;
+        const result = await h.acceptFileUpload(token, req, deviceIdParam(url));
+        json(res, result.ok ? 200 : 409, result);
+      },
+      "GET /devices/file": async ({ res, url }) => {
+        const token = transferToken(url, res);
+        if (token === null) return;
+        const file = await h.openFileDownload(token, deviceIdParam(url));
+        if (!file)
+          return json(res, 404, {
+            ok: false,
+            error: "Unknown or already-used transfer token",
+          });
+        this.streamFile(res, file);
+      },
+    };
+  }
 
-      if (method === "POST" && path === "/control") {
-        const body = await this.readJson(req);
-        // Always 200: ok/message is an application result the client renders,
-        // not an HTTP-level failure (mirrors /backend).
-        const result = await this.handlers.control(asString(body.action) ?? "");
-        return this.json(res, 200, result);
-      }
+  private unknownProvision(res: ServerResponse): void {
+    this.json(res, 404, {
+      ok: false,
+      error: "Unknown, expired, or already-used provisioning token",
+    });
+  }
 
-      return this.json(res, 404, { ok: false, error: "Not found" });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return this.json(res, 400, { ok: false, error: msg });
-    }
+  /** Stream a file whose size is already known as an octet-stream body. */
+  private streamFile(
+    res: ServerResponse,
+    file: { path: string; size: number },
+  ): void {
+    res.writeHead(200, {
+      "Content-Type": "application/octet-stream",
+      "Content-Length": String(file.size),
+      ...this.corsHeaders(),
+    });
+    const stream = createReadStream(file.path);
+    stream.on("error", () => res.destroy());
+    stream.pipe(res);
   }
 
   /** Stream an attached image by id. Auth is already enforced by `handle`. */

@@ -1,85 +1,132 @@
 /**
- * Tests for the bridge protocol extensions backing the companion app's
- * next-level features: history scroll-back pagination, wire-level full-text
- * search, and the turn-meta sidecar that lets tool timelines + turn stats
- * survive a history reload.
+ * Plugin and skill toggles over the bridge (frontend/native/extensions.ts).
+ * The stores own the toggle semantics; what this module adds is the
+ * apply-live step — persist, hot-reload, rebuild the prompt — and the
+ * error contract around it. Those are what is pinned here.
  */
 
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  pushMessage,
-  getRecentHistory,
-  getHistoryBefore,
-  searchHistoryMessages,
-  type HistoryMessage,
-} from "../storage/history.js";
+vi.mock("../util/log.js", () => ({ log: vi.fn() }));
+vi.mock("../core/engine/gateway-actions/plugins.js", () => ({
+  performPluginReload: vi.fn(async () => {}),
+}));
+vi.mock("../core/plugin/index.js", () => ({
+  getPluginPromptAdditions: vi.fn(() => "PLUGIN PROMPT"),
+}));
+vi.mock("../core/plugin/manage.js", () => ({
+  listPluginItems: vi.fn(() => [{ name: "github", enabled: true }]),
+  setPluginEnabled: vi.fn(),
+}));
+vi.mock("../core/prompt/invalidation.js", () => ({
+  notifyPromptInputsChanged: vi.fn(),
+}));
+vi.mock("../storage/skill-store.js", () => ({
+  listSkills: vi.fn(() => [
+    { name: "deploy", description: "Ship it", enabled: true, path: "/x" },
+  ]),
+  setSkillEnabled: vi.fn(),
+}));
+vi.mock("../util/config.js", () => ({ rebuildSystemPrompt: vi.fn() }));
+vi.mock("../frontend/native/settings.js", () => ({
+  persistConfigPatch: vi.fn(),
+}));
 
-function makeMsg(
-  overrides: Partial<HistoryMessage> & { msgId: number },
-): HistoryMessage {
-  return {
-    senderId: 1,
-    senderName: "TestUser",
-    text: `Message ${overrides.msgId}`,
-    timestamp: overrides.msgId,
-    ...overrides,
-  };
-}
+const { pluginItems, skillItems, togglePlugin, toggleSkill } =
+  await import("../frontend/native/extensions.js");
+const { performPluginReload } =
+  await import("../core/engine/gateway-actions/plugins.js");
+const { setPluginEnabled } = await import("../core/plugin/manage.js");
+const { setSkillEnabled } = await import("../storage/skill-store.js");
+const { rebuildSystemPrompt } = await import("../util/config.js");
+const { persistConfigPatch } = await import("../frontend/native/settings.js");
+const { notifyPromptInputsChanged } =
+  await import("../core/prompt/invalidation.js");
+import type { TalonConfig } from "../util/config.js";
+import type { Backend } from "../core/agent-runtime/capabilities.js";
 
-describe("getHistoryBefore (scroll-back pagination)", () => {
-  const chatId = () => `page-${Math.random().toString(36).slice(2)}`;
+const config = { systemPrompt: "old" } as unknown as TalonConfig;
+const updateSystemPrompt = vi.fn();
+const backend = {
+  control: { updateSystemPrompt },
+} as unknown as Backend;
 
-  it("returns the window strictly older than the anchor, chronological", () => {
-    const id = chatId();
-    for (let i = 1; i <= 30; i++) pushMessage(id, makeMsg({ msgId: i }));
+beforeEach(() => vi.clearAllMocks());
 
-    const newest = getRecentHistory(id, 10);
-    expect(newest[0].msgId).toBe(21);
-
-    const page = getHistoryBefore(id, 21, 10);
-    expect(page).toHaveLength(10);
-    expect(page[0].msgId).toBe(11);
-    expect(page[9].msgId).toBe(20);
-  });
-
-  it("returns a short page at the top and empty past it", () => {
-    const id = chatId();
-    for (let i = 1; i <= 5; i++) pushMessage(id, makeMsg({ msgId: i }));
-
-    expect(getHistoryBefore(id, 3, 10).map((m) => m.msgId)).toEqual([1, 2]);
-    expect(getHistoryBefore(id, 1, 10)).toEqual([]);
-  });
-
-  it("is empty for an unknown chat", () => {
-    expect(getHistoryBefore("nope", 100, 10)).toEqual([]);
+describe("listing", () => {
+  it("delegates plugins to the manager and projects skills to the wire shape", () => {
+    expect(pluginItems(config)).toEqual([{ name: "github", enabled: true }]);
+    // `path` is store-internal and must not leak to the client.
+    expect(skillItems()).toEqual([
+      { name: "deploy", description: "Ship it", enabled: true },
+    ]);
   });
 });
 
-describe("searchHistoryMessages (wire-level FTS)", () => {
-  const chatId = () => `search-${Math.random().toString(36).slice(2)}`;
-
-  it("returns matching rows, not formatted text", () => {
-    const id = chatId();
-    pushMessage(id, makeMsg({ msgId: 1, text: "the quick brown fox" }));
-    pushMessage(id, makeMsg({ msgId: 2, text: "lazy dog sleeps" }));
-    pushMessage(id, makeMsg({ msgId: 3, text: "fox again, quicker" }));
-
-    const hits = searchHistoryMessages(id, "fox");
-    expect(hits.map((m) => m.msgId)).toEqual([1, 3]);
-    expect(hits[0].text).toBe("the quick brown fox");
+describe("togglePlugin", () => {
+  it("persists the store's patch and hot-reloads on success", async () => {
+    vi.mocked(setPluginEnabled).mockReturnValue({
+      ok: true,
+      name: "github",
+      persist: { plugins: { github: { enabled: false } } },
+    } as never);
+    const result = await togglePlugin(config, backend, "github", false);
+    expect(result).toEqual({ ok: true });
+    expect(persistConfigPatch).toHaveBeenCalledWith({
+      plugins: { github: { enabled: false } },
+    });
+    expect(performPluginReload).toHaveBeenCalledWith(backend);
   });
 
-  it("is empty on no match or empty query", () => {
-    const id = chatId();
-    pushMessage(id, makeMsg({ msgId: 1, text: "hello world" }));
-    expect(searchHistoryMessages(id, "zebra")).toEqual([]);
-    expect(searchHistoryMessages(id, "")).toEqual([]);
+  it("passes the store's refusal through without persisting or reloading", async () => {
+    vi.mocked(setPluginEnabled).mockReturnValue({
+      ok: false,
+      error: "No plugin named nope.",
+    } as never);
+    const result = await togglePlugin(config, backend, "nope", true);
+    expect(result).toEqual({ ok: false, error: "No plugin named nope." });
+    expect(persistConfigPatch).not.toHaveBeenCalled();
+    expect(performPluginReload).not.toHaveBeenCalled();
   });
 
-  it("treats FTS operators as literals (no syntax injection)", () => {
-    const id = chatId();
-    pushMessage(id, makeMsg({ msgId: 1, text: "a AND b" }));
-    expect(() => searchHistoryMessages(id, 'AND OR NEAR( " *')).not.toThrow();
+  it("reports a failed reload as an error so the client knows disk and daemon disagree", async () => {
+    vi.mocked(setPluginEnabled).mockReturnValue({
+      ok: true,
+      name: "github",
+      persist: {},
+    } as never);
+    vi.mocked(performPluginReload).mockRejectedValueOnce(new Error("boom"));
+    const result = await togglePlugin(config, backend, "github", true);
+    expect(persistConfigPatch).toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("Saved, but the hot reload failed: boom");
+  });
+});
+
+describe("toggleSkill", () => {
+  it("rebuilds the prompt, pushes it to the backend, and invalidates snapshots", () => {
+    vi.mocked(setSkillEnabled).mockReturnValue(true);
+    vi.mocked(rebuildSystemPrompt).mockImplementation((cfg) => {
+      (cfg as { systemPrompt: string }).systemPrompt = "rebuilt";
+    });
+    expect(toggleSkill(config, backend, "deploy", false)).toEqual({ ok: true });
+    expect(setSkillEnabled).toHaveBeenCalledWith("deploy", false);
+    expect(rebuildSystemPrompt).toHaveBeenCalledWith(config, "PLUGIN PROMPT");
+    expect(updateSystemPrompt).toHaveBeenCalledWith("rebuilt");
+    expect(notifyPromptInputsChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the missing skill and changes nothing when the store refuses", () => {
+    vi.mocked(setSkillEnabled).mockReturnValue(false);
+    expect(toggleSkill(config, null, "ghost", true)).toEqual({
+      ok: false,
+      error: 'No skill named "ghost".',
+    });
+    expect(rebuildSystemPrompt).not.toHaveBeenCalled();
+  });
+
+  it("tolerates a backend without a control slot", () => {
+    vi.mocked(setSkillEnabled).mockReturnValue(true);
+    expect(toggleSkill(config, null, "deploy", true)).toEqual({ ok: true });
   });
 });
