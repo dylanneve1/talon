@@ -3,7 +3,9 @@
 A static + dynamic analysis pass over the tree (2026-09-01, v3.31.0), the
 findings it produced, and which are fixed.
 
-Read this as a worklist, not a scorecard. The headline is that the codebase is
+Read this as a worklist, not a scorecard. The structural companion —
+the dependency map and the consolidation order — is
+[consolidation-plan.md](consolidation-plan.md). The headline is that the codebase is
 in good shape — the problems below are specific and bounded, and the largest
 one was a gate that had stopped working rather than anything wrong with the
 code it was guarding.
