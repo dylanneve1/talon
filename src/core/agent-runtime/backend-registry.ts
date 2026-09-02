@@ -30,6 +30,7 @@
  */
 
 import type { Backend } from "./capabilities.js";
+import type { DoctorCheck, DoctorConfigSlice } from "../doctor-types.js";
 import type { TalonConfig } from "../../util/config.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -77,6 +78,17 @@ export interface BackendFactory {
   label: string;
   /** Initialise the backend; called exactly once per Talon process. */
   init(config: TalonConfig, ctx: BackendInitContext): Promise<BackendInstance>;
+  /**
+   * `talon doctor` checks for this backend — binary, auth, catalog probes.
+   * `isActive` is true for the backend serving chats; probes that cost a
+   * process spawn (model resolution) should run only then. Doctor composes
+   * whatever is registered, so a backend without this slot is reported as
+   * having nothing to check rather than silently skipped.
+   */
+  doctor?(
+    config: DoctorConfigSlice | undefined,
+    isActive: boolean,
+  ): Promise<DoctorCheck[]>;
 }
 
 // ── State ───────────────────────────────────────────────────────────────────

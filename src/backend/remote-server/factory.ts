@@ -26,6 +26,7 @@ import {
 } from "../../core/agent-runtime/capabilities.js";
 import type { OneShotAgentParams, OneShotUsage } from "../../core/types.js";
 import type { TalonConfig } from "../../util/config.js";
+import { binaryOnPath } from "../../util/binary-on-path.js";
 import { log } from "../../util/log.js";
 import { handlerToEvents } from "../shared/handler-to-events.js";
 import type { QueryParams, QueryResult } from "../shared/handler-types.js";
@@ -64,6 +65,22 @@ export function createRemoteBackendFactory(
   return {
     id,
     label,
+    // The SDK ships as an npm dep but only talks to a server it spawns from
+    // the CLI of the same name (`cross-spawn` → PATH lookup). A present
+    // package with an absent binary fails at the first turn with a bare
+    // ENOENT, so doctor checks what actually gets executed.
+    async doctor() {
+      return [
+        binaryOnPath(id)
+          ? { label: `${label} CLI installed`, status: "ok" }
+          : {
+              label: `${label} CLI not found`,
+              status: "fail",
+              detail: `the ${label} SDK spawns \`${id}\` — install it or this backend cannot start`,
+              issue: true,
+            },
+      ];
+    },
     async init(config, ctx) {
       inputs.init(config, ctx.getBridgePort, ctx.frontendName);
       log("bot", `Backend: ${label} (${inputs.sdkPackage})`);

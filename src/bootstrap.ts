@@ -171,14 +171,11 @@ export async function initBackendAndDispatcher(
 ): Promise<BackendAndDispatcherResult> {
   const frontends = normalizeFrontends(frontend);
 
-  // Register all built-in backends via side-effect import. Adding a new
-  // backend is now strictly additive: drop a `factory.ts` under the new
-  // backend dir and import it here. No conditionals here change.
-  await import("./backend/claude-sdk/factory.js");
-  await import("./backend/opencode/factory.js");
-  await import("./backend/kilo/factory.js");
-  await import("./backend/codex/factory.js");
-  await import("./backend/openai-agents/factory.js");
+  // Register all built-in backends. Adding a new backend is strictly
+  // additive: drop a `factory.ts` under the new backend dir and list it in
+  // backend/builtins.ts. No conditionals here change.
+  const { loadBuiltinBackends } = await import("./backend/builtins.js");
+  await loadBuiltinBackends();
 
   const {
     initBackendPool,

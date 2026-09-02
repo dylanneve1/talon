@@ -141,18 +141,13 @@ module.exports = {
     {
       name: "doctor-probes-move-behind-registry",
       comment:
-        "TARGET: doctor.ts hardcodes which backends exist and reaches into " +
-        "them for health probes. The observable symptom is uneven coverage " +
-        "— only claude-sdk and codex are probed, so kilo, opencode, and " +
-        "openai-agents get no doctor checks at all. Ratchets to error when " +
-        "backends contribute their own checks through the registry and " +
-        "doctor composes whatever is bound. NOTE: every violating edge is " +
-        "an `await import()` inside a try block, so there is no load-order " +
-        "or bundle coupling here and nothing is paid when doctor is not " +
-        "run; the cost is purely that adding a backend does not add its " +
-        "checks. Kept visible rather than silenced with dependencyTypesNot " +
-        "for exactly that reason. Do not add new probes. ",
-      severity: "warn",
+        "DONE, now enforced: backends contribute their own checks through " +
+        "`BackendFactory.doctor` and doctor.ts composes whatever the " +
+        "registry holds — it names no backend and imports none. The rule " +
+        "stays as an error so a probe can't creep back into core: a new " +
+        "backend gets doctor coverage by implementing the slot, not by " +
+        "teaching doctor about itself.",
+      severity: "error",
       from: { path: "^src/core/doctor\\.ts$" },
       to: { path: "^src/backend/" },
     },
