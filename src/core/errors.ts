@@ -18,6 +18,10 @@ type ErrorReason =
   | "bad_request"
   | "forbidden"
   | "telegram_api"
+  // The user stopped the turn (/stop, talon kill). Not a fault: the
+  // frontends deliver nothing for it — the stop acknowledgement already
+  // told the user what happened.
+  | "stopped"
   | "unknown";
 
 /**
@@ -32,6 +36,17 @@ type ErrorReason =
  */
 const USAGE_LIMIT_RE =
   /you['’]ve hit your .{0,40}limit|you['’]re out of extra usage|claude ai usage limit reached|usage limit reached/i;
+
+/**
+ * Ceiling on how long a failed attempt may have run and still earn the
+ * frontend queues' blind retry. `retryable` means "a short pause may clear
+ * it", which holds for a 429 or a dropped socket but not for an attempt
+ * that already burned minutes before failing (e.g. the 600s remote turn
+ * deadline — its rejection is `name: "TimeoutError"`, classified as
+ * transient network). Turns serialize per chat, so retrying such an
+ * attempt doubles the stall for every message queued behind it.
+ */
+export const RETRY_ELAPSED_CAP_MS = 120_000;
 
 // ── TalonError class ────────────────────────────────────────────────────────
 
@@ -331,6 +346,7 @@ const FRIENDLY_MESSAGES: Record<ErrorReason, string> = {
   bad_request: "Something went wrong. Try /reset if this keeps happening.",
   forbidden: "Permission denied for this action.",
   telegram_api: "Telegram API error. Try again.",
+  stopped: "⏹ Stopped.",
   unknown: "Something went wrong. Try again or /reset.",
 };
 

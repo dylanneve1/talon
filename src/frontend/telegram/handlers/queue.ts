@@ -9,13 +9,18 @@
 import type { Bot } from "grammy";
 import type { TalonConfig } from "../../../util/config.js";
 import { escapeHtml } from "../formatting.js";
-import { classify, friendlyMessage } from "../../../core/errors.js";
+import {
+  classify,
+  friendlyMessage,
+  RETRY_ELAPSED_CAP_MS,
+} from "../../../core/errors.js";
 import {
   getRecentHistory,
   type HistoryMessage,
 } from "../../../storage/history.js";
 import {
   recordMessageProcessed,
+  recordMessageSettled,
   recordMessageReceived,
   recordError,
 } from "../../../util/watchdog.js";
@@ -176,12 +181,22 @@ async function flushQueue(chatId: string): Promise<void> {
       chatTitle: last.chatTitle,
     });
 
+  const startedAt = Date.now();
   try {
     await runTurn();
     lastHandledMessageIdByChat.set(chatId, last.messageId);
     recordMessageProcessed();
   } catch (err) {
     const classified = classify(err);
+    // A user-initiated /stop is an outcome, not a fault: the stop command
+    // already acknowledged it, so delivering the unwound turn's error here
+    // would just contradict that with noise.
+    if (classified.reason === "stopped") {
+      log("bot", `[${chatId}] turn stopped by user`);
+      lastHandledMessageIdByChat.set(chatId, last.messageId);
+      recordMessageSettled();
+      return;
+    }
     const chatType = last.isGroup ? "group" : "DM";
     const promptPreview = promptWithContext.slice(0, 100).replace(/\n/g, " ");
     logError(
@@ -190,8 +205,20 @@ async function flushQueue(chatId: string): Promise<void> {
     );
     recordError(classified.message);
 
-    // Retry once for transient errors (rate_limit, overloaded, network)
-    if (classified.retryable) {
+    // Retry once for transient errors (rate_limit, overloaded, network) —
+    // but only when the failed attempt was actually brief. An attempt that
+    // already ran for minutes (a remote turn deadline, a slow collapse)
+    // won't be saved by a 2s pause, and turns serialize per chat, so the
+    // blind retry used to double a 10-minute stall for everything queued
+    // behind it.
+    const attemptMs = Date.now() - startedAt;
+    if (classified.retryable && attemptMs >= RETRY_ELAPSED_CAP_MS) {
+      log(
+        "bot",
+        `[${chatId}] Not retrying ${classified.reason}: the attempt already ran ${Math.round(attemptMs / 1000)}s`,
+      );
+    }
+    if (classified.retryable && attemptMs < RETRY_ELAPSED_CAP_MS) {
       const delayMs = classified.retryAfterMs ?? 2000;
       log(
         "bot",
@@ -209,6 +236,7 @@ async function flushQueue(chatId: string): Promise<void> {
           "bot",
           `[${chatId}] [${chatType}] Retry failed: ${retryClassified.message}`,
         );
+        recordMessageSettled();
         await sendHtml(
           bot,
           numericChatId,
@@ -219,6 +247,7 @@ async function flushQueue(chatId: string): Promise<void> {
       }
     }
 
+    recordMessageSettled();
     await sendHtml(
       bot,
       numericChatId,

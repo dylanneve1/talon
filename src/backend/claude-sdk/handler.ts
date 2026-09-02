@@ -67,8 +67,9 @@ import {
   recordFailedTurnAccounting,
   recordFlowViolation,
   formatTurnCache,
-  exceedsLookbackWindow,
-  estimateTurnBlocks,
+  crossTurnVerdict,
+  priorLookbackOverflow,
+  noteLookbackRisk,
   CACHE_LOOKBACK_BLOCKS,
 } from "../shared/index.js";
 
@@ -594,16 +595,24 @@ export async function* runChatTurn(
 
   // The aggregate `cache=NN%` can't distinguish a turn that reused the
   // previous turn's prefix from one that re-wrote it — see
-  // shared/cache-telemetry.ts. Append the cross-turn verdict when the
-  // provider gave us per-request usage to derive it from.
-  if (state.cacheStats && exceedsLookbackWindow(state.toolCalls)) {
-    logWarn(
-      "agent",
-      `[${chatId}] turn emitted ~${estimateTurnBlocks(state.toolCalls)} content ` +
-        `blocks (> ${CACHE_LOOKBACK_BLOCKS} lookback) — the next turn's cache ` +
-        `breakpoint may not find this turn's prefix`,
-    );
+  // shared/cache-telemetry.ts. A lookback overflow only *predicts* a miss,
+  // so warn when this turn's verdict proves the previous turn's overflow
+  // cost a prefix re-write, then record this turn's overflow for the next.
+  if (state.cacheStats) {
+    const overflow = priorLookbackOverflow(chatId);
+    if (
+      overflow !== undefined &&
+      crossTurnVerdict(state.cacheStats) === "miss"
+    ) {
+      logWarn(
+        "agent",
+        `[${chatId}] previous turn emitted ~${overflow} content blocks ` +
+          `(> ${CACHE_LOOKBACK_BLOCKS} lookback) and this turn's prefix ` +
+          `missed — that turn's cache write was likely never read`,
+      );
+    }
   }
+  noteLookbackRisk(chatId, state.toolCalls);
 
   log(
     "agent",

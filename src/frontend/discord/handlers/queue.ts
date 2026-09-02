@@ -4,10 +4,15 @@
  * notification.
  */
 
-import { classify, friendlyMessage } from "../../../core/errors.js";
+import {
+  classify,
+  friendlyMessage,
+  RETRY_ELAPSED_CAP_MS,
+} from "../../../core/errors.js";
 import {
   recordMessageProcessed,
   recordMessageReceived,
+  recordMessageSettled,
   recordError,
 } from "../../../util/watchdog.js";
 import { appendDailyLog } from "../../../storage/daily-log.js";
@@ -82,11 +87,19 @@ async function flushQueue(chatId: string): Promise<void> {
       chatTitle: last.chatTitle,
     });
 
+  const startedAt = Date.now();
   try {
     await runTurn();
     recordMessageProcessed();
   } catch (err) {
     const classified = classify(err);
+    // A user-initiated /stop is an outcome, not a fault — the stop command
+    // already acknowledged it; don't re-report it as an error.
+    if (classified.reason === "stopped") {
+      log("bot", `[${chatId}] turn stopped by user`);
+      recordMessageSettled();
+      return;
+    }
     const promptPreview = combinedPrompt.slice(0, 100).replace(/\n/g, " ");
     logError(
       "bot",
@@ -94,7 +107,19 @@ async function flushQueue(chatId: string): Promise<void> {
     );
     recordError(classified.message);
 
-    if (classified.retryable) {
+    // Retry once for transient errors — but only when the failed attempt
+    // was actually brief. An attempt that already ran for minutes (a remote
+    // turn deadline) won't be saved by a 2s pause, and turns serialize per
+    // chat, so the blind retry used to double a 10-minute stall for
+    // everything queued behind it.
+    const attemptMs = Date.now() - startedAt;
+    if (classified.retryable && attemptMs >= RETRY_ELAPSED_CAP_MS) {
+      log(
+        "bot",
+        `[${chatId}] Not retrying ${classified.reason}: the attempt already ran ${Math.round(attemptMs / 1000)}s`,
+      );
+    }
+    if (classified.retryable && attemptMs < RETRY_ELAPSED_CAP_MS) {
       const delayMs = classified.retryAfterMs ?? 2000;
       log(
         "bot",
@@ -108,6 +133,7 @@ async function flushQueue(chatId: string): Promise<void> {
       } catch (retryErr) {
         const retryClassified = classify(retryErr);
         logError("bot", `[${chatId}] Retry failed: ${retryClassified.message}`);
+        recordMessageSettled();
         // Error-recovery send must never throw — if the network is fully down
         // the queue handler would otherwise propagate up and stall future
         // messages. Best-effort: notify if we can, log + move on otherwise.
@@ -126,6 +152,7 @@ async function flushQueue(chatId: string): Promise<void> {
         return;
       }
     }
+    recordMessageSettled();
     try {
       await sendChunked(
         last.channel,

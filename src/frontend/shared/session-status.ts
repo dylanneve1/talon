@@ -44,6 +44,7 @@ import { formatDuration } from "./format.js";
 export async function performSessionReset(
   chatId: string,
   backend: Backend | null | undefined,
+  opts: { keepHistory?: boolean } = {},
 ): Promise<void> {
   const info = getSessionInfo(chatId);
   if (info.turns > 0) {
@@ -59,7 +60,12 @@ export async function performSessionReset(
     );
   }
   resetSession(chatId);
-  clearHistory(chatId);
+  // Frontends whose platform keeps the real chat record (Telegram,
+  // Discord) clear the local mirror too — the platform still has
+  // everything. WhatsApp passes keepHistory: the local store is the ONLY
+  // record there, and wiping it on /reset would destroy exactly what the
+  // continuity tools (read/search_chat_history) exist to recover.
+  if (!opts.keepHistory) clearHistory(chatId);
   resetPulseCheckpoint(chatId);
   backend?.sessions?.resetChat?.(chatId);
   await backend?.sessions?.warmSession?.(chatId);
@@ -88,6 +94,10 @@ export interface SessionStatusData {
   sessionId: string | undefined;
   uptime: string;
   activeSessionCount: number;
+  /** Runtime name + version, e.g. "Bun 1.3.9" or "Node 24.4.0". */
+  runtime: string;
+  /** Daemon resident set size, in bytes. */
+  rssBytes: number;
 }
 
 /**
@@ -202,5 +212,9 @@ export async function collectSessionStatus(
     sessionId: info.sessionId,
     uptime: formatDuration(process.uptime() * 1000),
     activeSessionCount: getActiveSessionCount(),
+    runtime: process.versions.bun
+      ? `Bun ${process.versions.bun}`
+      : `Node ${process.versions.node}`,
+    rssBytes: process.memoryUsage().rss,
   };
 }

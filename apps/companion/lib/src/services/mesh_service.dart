@@ -137,6 +137,21 @@ class MeshService {
     // file bodies) to the claiming client only, and checks transfer tokens
     // against the device they were minted for.
     client.meshDeviceId = await deviceId();
+    // Warm the privilege ladder now rather than on the first command. On a
+    // device that reboots constantly (a car head unit powering up with the
+    // ignition) the root grant would otherwise be acquired mid-command, with
+    // the root manager's dialog appearing while someone is driving and the
+    // command blocked behind it. Fire-and-forget: nothing here gates the mesh.
+    if (prefs.meshDeviceControl) {
+      unawaited(
+        _exec.ensureRootReady().catchError(
+          (Object e) {
+            AppLog.debug('mesh', 'root warm-up failed', e);
+            return false;
+          },
+        ),
+      );
+    }
     await _foregroundStarter();
     try {
       await register();

@@ -35,6 +35,7 @@ import asset21 from "../../../prompts/system/workspace.md" with { type: "file" }
 import asset22 from "../../../prompts/teams.md" with { type: "file" };
 import asset23 from "../../../prompts/telegram.md" with { type: "file" };
 import asset24 from "../../../prompts/terminal.md" with { type: "file" };
+import asset25 from "../../../prompts/whatsapp.md" with { type: "file" };
 
 /** rel path (posix, under prompts/) → embedded file path (/$bunfs/… when compiled). */
 const ASSETS: Record<string, string> = {
@@ -63,6 +64,7 @@ const ASSETS: Record<string, string> = {
   "teams.md": asset22,
   "telegram.md": asset23,
   "terminal.md": asset24,
+  "whatsapp.md": asset25,
 };
 
 /** Read an embedded prompt by its rel path (e.g. "system/cron.md"). */

@@ -4,14 +4,16 @@
 
 # Talon
 
-[![Node.js](https://img.shields.io/badge/node-%3E%3D22-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D24-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![Bun](https://img.shields.io/badge/bun-1.3%2B-000000?logo=bun&logoColor=white)](https://bun.sh)
+[![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Frontends](https://img.shields.io/badge/frontends-Telegram_%7C_WhatsApp_%7C_Discord_%7C_Teams_%7C_Terminal_%7C_App-25D366)](#frontends)
 [![Backends](https://img.shields.io/badge/backends-Claude_%7C_Kilo_%7C_OpenCode_%7C_Codex_%7C_OpenAI_Agents-D97706)](#backends)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/dylanneve1/talon/actions/workflows/ci.yml/badge.svg)](https://github.com/dylanneve1/talon/actions/workflows/ci.yml)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/dylanneve1)
 
-Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsoft Teams**, the **Terminal**, and a **cross-platform Desktop/Mobile companion app** (Flutter), with a pluggable backend (**Claude Agent SDK**, **Kilo**, **OpenCode**, **Codex**, or **OpenAI Agents**) and full tool access through MCP.
+Multi-platform agentic AI harness. Runs on **Telegram**, **WhatsApp**, **Discord**, **Microsoft Teams**, the **Terminal**, and a **cross-platform Desktop/Mobile companion app** (Flutter), with a pluggable backend (**Claude Agent SDK**, **Kilo**, **OpenCode**, **Codex**, or **OpenAI Agents**) and full tool access through MCP.
 
 ---
 
@@ -19,7 +21,7 @@ Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsof
 
 |                       |                                                                                                                                              |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Multi-frontend**    | Telegram (Grammy + GramJS userbot), Discord (discord.js), Microsoft Teams (Bot Framework), Terminal with live tool visibility, and a **Desktop/Mobile app** (Flutter) over a local/remote bridge |
+| **Multi-frontend**    | Telegram (grammY + GramJS userbot), WhatsApp (Baileys multi-device), Discord (discord.js), Microsoft Teams (Bot Framework), Terminal with live tool visibility, and a **Desktop/Mobile app** (Flutter) over a local/remote bridge — one or several at once, see [Frontends](#frontends) |
 | **Pluggable backend** | Claude Agent SDK, Kilo, OpenCode, Codex, OpenAI Agents — selectable per-process via `backend` config. Streaming, model fallback, context-overflow recovery. |
 | **MCP tools**         | Messaging, media, history, search, web fetch, cron jobs, triggers, goals, stickers, file system, admin controls                              |
 | **Plugins**           | Hot-reloadable plugin system with `talon plugin install/enable/disable` (npm, git, or local sources). Built-in: GitHub, MemPalace, Playwright, Brave Search |
@@ -51,7 +53,12 @@ npx talon chat        # terminal chat mode
 
 **Prerequisites:**
 
-- [Node.js 24+](https://nodejs.org/)
+- [Bun 1.3+](https://bun.sh) **or** [Node.js 24+](https://nodejs.org/). Talon ships as
+  TypeScript sources and runs them directly: Bun executes them natively, Node goes
+  through a `tsx` loader. The `talon` launcher detects which runtime started it, so
+  either works with no configuration — `npm start` / `npm run dev` take the Bun path,
+  `npm run start:node` / `npm run dev:node` the Node one. Bun is what the release
+  binaries and the maintained deployment run on; Node stays supported.
 - Backend-specific:
   - `claude` backend: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (`claude` CLI on PATH).
   - `kilo` backend: nothing extra — `@kilocode/sdk` spawns a local server. Free models are accessible without auth; routed models use Kilo's own credentials.
@@ -81,9 +88,11 @@ Verify a direct download against the release `SHA256SUMS`:
 `sha256sum -c SHA256SUMS --ignore-missing`.
 
 > The binary runs the full interactive/agent CLI (`setup`, `start`, `chat`,
-> `doctor`, …). Hosting Talon's _own_ MCP server (`talon` as an MCP stdio
-> server for another client) still needs the npm/Node install — it spawns a
-> `tsx` loader that isn't present in a compiled binary.
+> `doctor`, …) and supervises MCP children like any other install shape. The one
+> gap: a plugin shipping its MCP server as TypeScript source (`mcpServerPath`)
+> needs a runtime that can execute TS, which a compiled binary is not — those
+> want the npm install. Plugins declaring an explicit `mcpServer` command work
+> everywhere.
 
 ---
 
@@ -93,17 +102,30 @@ Verify a direct download against the release `SHA256SUMS`:
 index.ts                    Composition root
   |
   +-- core/                 Platform-agnostic engine
-  |   +-- agent-runtime/    Backend capability interfaces, events, stores
+  |   +-- agent-runtime/    Backend capability interface, events, stores
+  |   +-- frontend-runtime/ Frontend capability interface + descriptor registry
   |   +-- models/           Model layer: catalog, per-chat active model,
   |   |                     reasoning-effort vocabulary
   |   +-- prompt/           System-prompt assembly + prompts/system templates
   |   +-- background/       Agents that run without a user message:
   |   |                     heartbeat, dream, pulse, cron, triggers
   |   +-- tools/            MCP tool definitions + spawn/env contract
+  |   +-- mcp-hub/          Daemon-hosted MCP over streamable HTTP; supervises
+  |   |                     stdio children with respawn-and-backoff
   |   +-- engine/           Message flow: dispatcher (per-chat serial,
   |   |                     cross-chat parallel), HTTP gateway for MCP
   |   |                     tool calls, backend lifecycle controller
-  |   +-- plugin.ts         Plugin loader, registry, hot-reload
+  |   +-- weaver/           Per-chat live state: a Weaver owns Looms own Threads
+  |   +-- tasks/            Task table — the process table for agent work
+  |   +-- bus/              Typed pub-sub spine + event journal
+  |   +-- vfs/              The talon:// namespace (~/.talon/ns), FUSE-backed
+  |   +-- mesh/             Device mesh: presence, exec/fs channel, teleport
+  |   +-- soul/             Soul kernel — associative recall over memory
+  |   +-- scripts/          Run-to-completion execution of saved scripts
+  |   +-- scripting/        WASM-sandboxed Lua runner for trigger scripts
+  |   +-- daemon/           Start / stop / restart, pidfile, discovery
+  |   +-- plugin/           Plugin loader, registry, hot-reload
+  |   +-- update/           Self-update for git-checkout deployments
   |
   +-- backend/
   |   +-- registry.ts       Bootstrap-decoupled backend lookup
@@ -119,21 +141,74 @@ index.ts                    Composition root
   |   +-- openai-agents/    OpenAI Agents SDK backend (Responses API)
   |
   +-- frontend/
+  |   +-- factories.ts      Attaches each built-in's lazy `create`
   |   +-- shared/           Cross-frontend presentation helpers
-  |   +-- telegram/         Grammy bot + GramJS userbot
+  |   +-- telegram/         grammY bot + GramJS userbot
+  |   +-- whatsapp/         Baileys multi-device socket
   |   +-- discord/          discord.js v14
   |   +-- teams/            Bot Framework + Graph API
   |   +-- terminal/         Readline CLI with tool call visibility
-  |   +-- desktop/          Client bridge (HTTP + SSE) for the companion app
+  |   +-- native/           Client bridge (HTTP + SSE) for the companion app
   |
-  +-- storage/              Sessions, history, chat settings,
-  |                         cron jobs, media index, daily logs
-  +-- util/                 Config, logging, workspace, paths, time
+  +-- native/               WASM + napi cores (blake3, strsim, textops, sqlguard,
+  |                         htmlents, scheduler, fusefs, warden), each with a
+  |                         pure-TS or wasm fallback
+  +-- storage/              SQLite layer: sessions, history, chat settings, cron,
+  |                         media index, metrics, goals, skills, kv, daily logs
+  +-- util/                 Config, logging, workspace, paths, time, runtime
 ```
 
 **Dependency rule:** `core/` imports nothing from `frontend/` or `backend/`. Frontends and backends depend on core types, never on each other. All five backends (Claude SDK, Kilo, OpenCode, Codex, OpenAI Agents) implement the same `Backend` capability interface from `core/agent-runtime/capabilities.ts`. Frontends mirror this: each implements the `Frontend` contract from `core/frontend-runtime/capabilities.ts` and self-registers in the frontend registry (identity + chat-id routing in a descriptor, lazy `create` in a per-frontend `factory.ts`) — see [docs/frontends.md](docs/frontends.md). Kilo and OpenCode additionally share the `remote-server/` infrastructure because they wrap forks of the same upstream HTTP agent server.
 
 **Prompts:** everything the model reads at session start is assembled by `core/prompt/` from the files in `prompts/` — see [prompts/README.md](prompts/README.md) for the assembly order, file ownership (user-editable vs package-owned templates), and the per-backend delivery contracts.
+
+---
+
+## Frontends
+
+Select via the `frontend` field in `~/.talon/config.json` — one id, or an array to run several at once. Every frontend implements the same `Frontend` contract and registers a descriptor (identity + which chat ids it owns) in the frontend registry, so a chat id routes to its owning frontend with no central switch — see [docs/frontends.md](docs/frontends.md).
+
+| Frontend   | `frontend` value | Transport                                    | Notes                                                                                                                                            |
+| ---------- | ---------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Telegram   | `"telegram"`     | grammY long-poll (+ optional GramJS userbot) | The widest surface: inline keyboards, reactions, media groups, stickers, polls, admin commands. `apiId` / `apiHash` add userbot history access.  |
+| WhatsApp   | `"whatsapp"`     | Baileys multi-device (WebSocket)             | Drives a real WhatsApp account, paired by phone code or QR. Media, reactions, edits, deletes, forwards, polls, locations, contacts, group admin. |
+| Discord    | `"discord"`      | discord.js v14 gateway                       | Slash commands, guild / channel allowlists, presence text.                                                                                       |
+| Teams      | `"teams"`        | Bot Framework + Graph API                    | Inbound over a Power Automate webhook, outbound over Graph.                                                                                      |
+| Terminal   | `"terminal"`     | Local readline                               | Always available via `talon chat`, even when another frontend is configured. Live tool-call visibility.                                          |
+| Native     | `"native"`       | HTTP + Server-Sent Events bridge             | The protocol the Flutter companion app speaks — see [Desktop & mobile app](#desktop--mobile-app).                                                |
+
+Running several is just an array; each chat id keeps its own session and the frontend that owns it answers:
+
+```jsonc
+{ "frontend": ["telegram", "whatsapp", "native"] }
+```
+
+### WhatsApp
+
+The WhatsApp frontend drives a real WhatsApp account over Baileys multi-device — the same mechanism as WhatsApp Web, so no Business API account is involved.
+
+```jsonc
+// ~/.talon/config.json
+{
+  "frontend": "whatsapp",
+  "whatsapp": {
+    // The bot account's own number, E.164 digits, no "+". Omit for QR pairing.
+    "pairingNumber": "353871234567",
+    // Who may DM it — bare numbers or full JIDs. Empty disables DMs.
+    "allowedJids": ["353834733284"],
+    // Which groups it serves: "listed" | "with-allowed-user" | "all"
+    "groupPolicy": "with-allowed-user",
+    // In groups: reply only when mentioned/quoted, or to everything
+    "respondMode": "mention"
+  }
+}
+```
+
+First start prints a pairing code (or a QR when `pairingNumber` is omitted) — enter it under **WhatsApp → Linked devices → Link with phone number**. Credentials persist in `~/.talon/whatsapp-auth/`, so later starts reconnect on their own, with backoff across drops.
+
+`groupPolicy: "with-allowed-user"` is the useful middle setting: the bot serves any group containing someone from `allowedJids` — "the groups I'm in" — without listing group JIDs by hand.
+
+Markdown from the model is translated into WhatsApp's own dialect (`*bold*`, `_italic_`, `~strike~`, monospace blocks) by walking the parsed token tree rather than by regex, and long replies split on message boundaries instead of truncating.
 
 ---
 
@@ -155,20 +230,23 @@ The Kilo and OpenCode backends share infrastructure (`backend/remote-server/`) s
 
 ## Desktop & mobile app
 
-The `desktop` frontend turns the daemon into a **client bridge** — a versioned HTTP + Server-Sent-Events JSON API (the _Talon Client Bridge Protocol_, `src/frontend/native/protocol.ts`) that any GUI client can speak. The reference client is **[Talon Companion](apps/companion/)**, a single Flutter codebase that runs on **Windows, macOS, Linux, and Android**. The protocol has three independent implementations (daemon, companion, [talon-node](apps/node/)); shared wire fixtures in [protocol/](protocol/) are replayed by all three test suites so a drift on any side fails its CI — see [protocol/README.md](protocol/README.md).
+The `native` frontend turns the daemon into a **client bridge** — a versioned HTTP + Server-Sent-Events JSON API (the _Talon Client Bridge Protocol_, `src/frontend/native/protocol.ts`) that any GUI client can speak. The reference client is **[Talon Companion](apps/companion/)**, a single Flutter codebase that runs on **Windows, macOS, Linux, and Android**. The protocol has three independent implementations (daemon, companion, [talon-node](apps/node/)); shared wire fixtures in [protocol/](protocol/) are replayed by all three test suites so a drift on any side fails its CI — see [protocol/README.md](protocol/README.md).
 
 ```jsonc
 // ~/.talon/config.json
 {
-  "frontend": "desktop",
-  "desktop": { "host": "127.0.0.1", "port": 19880 }
+  "frontend": "native",
+  "native": { "host": "127.0.0.1", "port": 19880 }
   // For remote (e.g. a phone): "host": "0.0.0.0", "token": "your-secret"
 }
 ```
 
+> The old `"desktop"` spelling still loads — config normalization rewrites it to
+> `"native"` and logs a deprecation — but new configs should say `native`.
+
 - **Local (desktop):** the app connects to a Talon on the same machine and launches one if needed (`TALON_FRONTEND_OVERRIDE=desktop`).
 - **Remote (mobile/LAN):** point the app at `host:port` + token; the bridge requires `Authorization: Bearer …` (or `?token=` on the SSE stream) whenever a token is set.
-- **Encryption:** off-loopback binds serve **HTTPS by default** with a persistent self-signed certificate (`~/.talon/keys/`); the companion pins its SHA-256 fingerprint on first connect and refuses any change afterwards. The daemon logs the fingerprint at startup and `/health` advertises it. Opt out (or in, on loopback) with `"tls": false` / `true` in the `desktop` section.
+- **Encryption:** off-loopback binds serve **HTTPS by default** with a persistent self-signed certificate (`~/.talon/keys/`); the companion pins its SHA-256 fingerprint on first connect and refuses any change afterwards. The daemon logs the fingerprint at startup and `/health` advertises it. Opt out (or in, on loopback) with `"tls": false` / `true` in the `native` section.
 
 The app provides multi-chat history, live streaming with reasoning + tool-call visibility, per-chat model/effort/reset, and **settings sync** — read and change the daemon's own config (default model, display name, timezone, pulse/heartbeat/dream) and restart it. See [apps/companion/README.md](apps/companion/README.md).
 
@@ -219,6 +297,8 @@ GitHub API access via the official GitHub MCP server. Gives the agent access to 
 
 The token is optional --- defaults to the output of `gh auth token` if the GitHub CLI is authenticated.
 
+The server image is pinned to a known-good tag and pulled in the background at boot when absent (docker still pulls on first use as the fallback). Override with `"imageTag"` (`"latest"` opts out of pinning); `"autoProvision": false` disables the pre-pull.
+
 ### Long-term Memory
 
 Talon supports two long-term memory backends, selected via the unified `memory` section:
@@ -238,14 +318,9 @@ Set `"backend"` to `"mempalace"` (local, vector search + knowledge graph) or `"m
 
 Structured long-term memory with vector search. The agent can store, search, and retrieve memories semantically. Integrates with Dream mode for automatic memory consolidation and personal diary entries.
 
-**Requirements:** Python 3.10+ with the `mempalace` package.
+**Requirements:** Python 3.10+ on PATH. Nothing else — Talon provisions its own environment.
 
-```bash
-# Set up a Python environment
-python -m venv ~/.talon/mempalace-venv
-~/.talon/mempalace-venv/bin/pip install mempalace    # Unix
-# or: ~/.talon/mempalace-venv/Scripts/pip install mempalace   # Windows
-```
+On first boot Talon creates a venv at `~/.talon/mempalace-venv` and installs the pinned `mempalace` version into it. From then on the venv is **self-maintaining**: version drift against the pin reconciles automatically in the background, a broken install (half-written site-packages, a gutted venv) self-heals at the next start, and one-time palace data migrations (e.g. the ≥3.4 wing-name normalization) are applied exactly once, safely and idempotently. Failed upgrades never take the working install down — the current version keeps serving and the retry backs off.
 
 ```json
 {
@@ -254,13 +329,17 @@ python -m venv ~/.talon/mempalace-venv
     "backend": "mempalace",
     "mempalace": {
       "palacePath": "~/.talon/workspace/palace",
-      "pythonPath": "~/.talon/mempalace-venv/bin/python"
+      "version": "3.9.0",
+      "autoUpdate": true,
+      "autoProvision": true
     }
   }
 }
 ```
 
-Both paths are optional --- defaults to `~/.talon/workspace/palace/` and the venv Python respectively.
+Everything is optional --- `palacePath` defaults to `~/.talon/workspace/palace/`, `version` defaults to the built-in pin, and both `auto*` flags default to `true`. Leave `pythonPath` unset to use the managed venv --- its interpreter is `~/.talon/mempalace-venv/bin/python` on Linux/macOS and `~/.talon/mempalace-venv/Scripts/python.exe` on Windows; any other value is treated as operator-managed (see below). `autoProvision` governs creating and healing the venv; `autoUpdate` governs reconciling a working venv to the pin --- they are independent.
+
+**Bring your own environment:** point `pythonPath` at any interpreter — a `uv tool` install, pipx, conda, or your own venv — and Talon treats it as operator-managed: it is probed and reported on (`talon doctor` shows the exact upgrade command for your install flavor) but never mutated.
 
 #### mem0 backend
 
@@ -300,6 +379,8 @@ Headless browser automation via the Playwright MCP server. The agent can browse 
 ```
 
 Supported browsers: `chromium` (default), `chrome`, `firefox`, `webkit`, `msedge`.
+
+For Playwright-managed engines (`chromium`, `firefox`, `webkit`) the browser build is downloaded automatically at boot when missing — version-matched to the bundled `@playwright/mcp`. System channels (`chrome`, `msedge`) and endpoint mode are never touched. `"autoProvision": false` disables the download.
 
 ### Brave Search
 
@@ -358,11 +439,19 @@ Plugins support hot-reload via the `reload_plugins` MCP tool --- no restart requ
 ## CLI
 
 ```
-talon setup     Interactive setup wizard
+talon           Interactive menu (runs setup on first launch)
+talon setup     Guided setup wizard
 talon start     Start as a background daemon
 talon stop      Stop the daemon
+talon restart   Restart the daemon
+talon run       Run in the foreground, attached
 talon chat      Terminal chat mode (always available)
-talon status    Health, sessions, plugins, disk usage
+talon status    Health, sessions, plugins, runtime, disk usage
+talon ps        List agent tasks (--all includes journal history)
+talon kill      Abort a killable task by id
+talon events    Tail the event bus (-f follows, --history [N] reads the journal)
+talon plugin    Manage plugins (install / enable / disable / remove)
+talon skill     Manage skills (install / enable / disable / remove)
 talon config    View or edit configuration
 talon logs      Tail structured log file
 talon doctor    Validate environment and dependencies
@@ -376,7 +465,7 @@ Config file: `~/.talon/config.json`
 
 | Field                      | Default      | Description                                                                                                             |
 | -------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `frontend`                 | `"telegram"` | `"telegram"`, `"discord"`, `"teams"`, `"terminal"`, or an array                                                         |
+| `frontend`                 | `"telegram"` | `"telegram"`, `"whatsapp"`, `"discord"`, `"teams"`, `"terminal"`, `"native"`, or an array ([Frontends](#frontends))      |
 | `backend`                  | `"claude"`   | `"claude"`, `"kilo"`, `"opencode"`, `"codex"`, or `"openai-agents"`                                                     |
 | `botToken`                 | ---          | Telegram bot token                                                                                                      |
 | `model`                    | `"default"`  | Default model. Interpretation depends on the active backend.                                                            |
@@ -397,6 +486,11 @@ Config file: `~/.talon/config.json`
 | `adminUserId`              | ---          | Telegram user ID for `/admin` commands                                                                                  |
 | `allowedUsers`             | ---          | Whitelist of Telegram user IDs                                                                                          |
 | `apiId` / `apiHash`        | ---          | Telegram API credentials for full message history                                                                       |
+| `whatsapp`                 | ---          | WhatsApp frontend: pairing, allowlists, group policy ([above](#whatsapp))                                               |
+| `discord`                  | ---          | Discord frontend: bot token, application ID, guild / channel allowlists                                                 |
+| `native`                   | ---          | Client bridge: host, port, token, TLS ([above](#desktop--mobile-app))                                                   |
+| `nativeTools`              | `false`      | Swap the SDK's built-in Read/Write/Edit/Bash/Glob/Grep for Talon's own — these also route to a teleported device        |
+| `fuse`                     | `"auto"`     | Mount the `talon://` namespace with FUSE live views; falls back to a symlink farm where the host can't                  |
 | `github`                   | ---          | GitHub plugin config (see above)                                                                                        |
 | `memory`                   | ---          | Long-term memory backend selection: `mempalace` or `mem0` (see above)                                                   |
 | `mempalace`                | ---          | Legacy MemPalace plugin config (prefer `memory`)                                                                        |
@@ -424,7 +518,7 @@ npx talon chat
 
 Tool calls shown in real-time with parameters. Streaming phase indicators (thinking / responding / using tools). Per-turn stats: duration, tokens, cache hit rate, tool count.
 
-Commands: `/model`, `/effort`, `/reset`, `/status`, `/help`
+Commands: `/model`, `/effort`, `/context`, `/status`, `/reset`, `/rename`, `/resume`, `/help`, `/quit`
 
 ---
 
@@ -449,13 +543,20 @@ docker compose up -d
 ## Development
 
 ```bash
-npm run dev              # watch mode
-npm test                 # 2300+ tests across unit / SDK-stub / MCP-functional / integration tiers
+npm run dev              # watch mode (Bun)
+npm run dev:node         # watch mode (Node + tsx)
+npm test                 # 4500+ tests across unit / SDK-stub / MCP-functional / integration tiers
 npm run test:coverage    # with coverage report
 npm run typecheck        # tsc --noEmit
 npm run lint             # oxlint
 npm run format           # prettier --write
+npm run depcruise        # dependency-cruiser — enforces the core/ import rule
+npm run knip             # unused files, exports, and dependencies
 ```
+
+CI runs the full suite on Node 24 across Linux, macOS, and Windows; a separate
+job compiles the standalone `bun build --compile` binary on all three and
+smoke-tests the CLI and the MCP supervisor from it.
 
 ---
 

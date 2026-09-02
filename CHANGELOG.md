@@ -1,5 +1,175 @@
 # Changelog
 
+## [3.32.0](https://github.com/dylanneve1/talon/compare/v3.31.0...v3.32.0) (2026-09-01)
+
+
+### Features
+
+* **mesh:** one-tap device pairing via /mesh link ([#815](https://github.com/dylanneve1/talon/issues/815)) ([3b18c34](https://github.com/dylanneve1/talon/commit/3b18c34278112d17e1596aab6d79a58d6ee79523))
+
+## [3.31.0](https://github.com/dylanneve1/talon/compare/v3.30.0...v3.31.0) (2026-09-01)
+
+
+### Features
+
+* **companion:** root execution tier for device control ([#812](https://github.com/dylanneve1/talon/issues/812)) ([c00a169](https://github.com/dylanneve1/talon/commit/c00a169b6341ecdf99c4c7dbed7e96a8f97672ae))
+
+
+### Bug Fixes
+
+* **plugins:** bump native runtime pins (mempalace 3.9.0) ([#808](https://github.com/dylanneve1/talon/issues/808)) ([f538646](https://github.com/dylanneve1/talon/commit/f538646235857487dc6bc3051c2b2a33267daa16))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump the dev-dependencies group with 2 updates ([#809](https://github.com/dylanneve1/talon/issues/809)) ([4088006](https://github.com/dylanneve1/talon/commit/4088006e82c22964d00f6b769bbc51b4dfbd6ee8))
+* **deps:** Bump actions/setup-python from 6 to 7 ([754082c](https://github.com/dylanneve1/talon/commit/754082c149e2bf57f5b562d9741b880957f9e3a8))
+* **deps:** Bump github/codeql-action from 4.37.8 to 4.37.9 ([#810](https://github.com/dylanneve1/talon/issues/810)) ([25688de](https://github.com/dylanneve1/talon/commit/25688de6891aefdc5f987ba2dac1af1775467766))
+* **deps:** Bump the production-dependencies group with 7 updates ([#811](https://github.com/dylanneve1/talon/issues/811)) ([361b002](https://github.com/dylanneve1/talon/commit/361b0024be83ab1e35e1b8d0f322c7200374c8e1))
+
+## [3.30.0](https://github.com/dylanneve1/talon/compare/v3.29.0...v3.30.0) (2026-08-30)
+
+
+### Features
+
+* **telegram:** blockedUsers denylist, dropped in silence ([#805](https://github.com/dylanneve1/talon/issues/805)) ([dbaf892](https://github.com/dylanneve1/talon/commit/dbaf8926fe32f7647f3081149a7de2727b9739bf))
+
+
+### Bug Fixes
+
+* **whatsapp:** a QR-linked session is not an unpaired one ([#806](https://github.com/dylanneve1/talon/issues/806)) ([364ab80](https://github.com/dylanneve1/talon/commit/364ab80ddb06494a88b26e2896a1350cb58b47b6))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump @types/node in the dev-dependencies group ([#802](https://github.com/dylanneve1/talon/issues/802)) ([1498178](https://github.com/dylanneve1/talon/commit/1498178e2f387984ff595190c07b1f70045e4c47))
+* **deps:** Bump the production-dependencies group with 2 updates ([#803](https://github.com/dylanneve1/talon/issues/803)) ([667d8e1](https://github.com/dylanneve1/talon/commit/667d8e1ceb88e6fdcaaf0f104de41e7f9a96fc57))
+
+## [3.29.0](https://github.com/dylanneve1/talon/compare/v3.28.1...v3.29.0) (2026-08-28)
+
+
+### Features
+
+* **plugins:** self-installing, self-healing native plugin runtimes ([#793](https://github.com/dylanneve1/talon/issues/793)) ([7bdc301](https://github.com/dylanneve1/talon/commit/7bdc30111d35dec318c469d93f1f2c10f8f013ad))
+
+## [3.28.1](https://github.com/dylanneve1/talon/compare/v3.28.0...v3.28.1) (2026-08-28)
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump oxlint in the dev-dependencies group ([#796](https://github.com/dylanneve1/talon/issues/796)) ([b292196](https://github.com/dylanneve1/talon/commit/b292196f6f33ad0d2c288332a324e5f36515702a))
+* **deps:** Bump @anthropic-ai/claude-agent-sdk ([#794](https://github.com/dylanneve1/talon/issues/794)) ([64fd394](https://github.com/dylanneve1/talon/commit/64fd394e58b1930979bb024da856a9ead9a3ebe9))
+* **deps:** Bump @anthropic-ai/claude-agent-sdk ([#795](https://github.com/dylanneve1/talon/issues/795)) ([8a939bd](https://github.com/dylanneve1/talon/commit/8a939bdb78946f131f04a081700a0aab2de7b95b))
+* **deps:** Bump actions/setup-java from 5 to 6 ([bb990b8](https://github.com/dylanneve1/talon/commit/bb990b89089706fe96ae5aa6f750d9d45a195ab6))
+* **deps:** Bump actions/setup-java from 5 to 6 ([16983a5](https://github.com/dylanneve1/talon/commit/16983a546d133433944637714efab0697ead84b4))
+* **deps:** Bump github/codeql-action from 4.37.7 to 4.37.8 ([#792](https://github.com/dylanneve1/talon/issues/792)) ([41e2027](https://github.com/dylanneve1/talon/commit/41e2027471e77c92a1dfef64c1a5f94792aa2dd0))
+* **deps:** Bump the production-dependencies group with 4 updates ([#798](https://github.com/dylanneve1/talon/issues/798)) ([59683b9](https://github.com/dylanneve1/talon/commit/59683b9f49a1d3f928abc7bfe0ead22352ef22f9))
+* **deps:** Bump the production-dependencies group with 6 updates ([#791](https://github.com/dylanneve1/talon/issues/791)) ([9779b38](https://github.com/dylanneve1/talon/commit/9779b38f92367be71f1fdf4c93295ff995ac39c3))
+
+## [3.28.0](https://github.com/dylanneve1/talon/compare/v3.27.0...v3.28.0) (2026-08-23)
+
+
+### Features
+
+* **tools:** cross-frontend send — message any enabled frontend from any session ([#789](https://github.com/dylanneve1/talon/issues/789)) ([2a25fd7](https://github.com/dylanneve1/talon/commit/2a25fd7b82dd0c7f2739e050cc76dd58d2703399))
+
+
+### Continuous Integration
+
+* stop lockfile drift at its source — engine floors and a canonical-lock gate ([#787](https://github.com/dylanneve1/talon/issues/787)) ([fa47cde](https://github.com/dylanneve1/talon/commit/fa47cde9fd4f8e0f93966de5d1b6115bdce6d84c))
+
+## [3.27.0](https://github.com/dylanneve1/talon/compare/v3.26.0...v3.27.0) (2026-08-23)
+
+
+### Features
+
+* **whatsapp:** pair on demand from Telegram — /whatsapp sends the QR and code ([#786](https://github.com/dylanneve1/talon/issues/786)) ([618ded2](https://github.com/dylanneve1/talon/commit/618ded26faa6219d99bcb3c8d4c62def612a44ad))
+
+## [3.26.0](https://github.com/dylanneve1/talon/compare/v3.25.3...v3.26.0) (2026-08-23)
+
+
+### Features
+
+* **whatsapp:** harden the socket layer along OpenClaw's patterns ([#784](https://github.com/dylanneve1/talon/issues/784)) ([783fc5b](https://github.com/dylanneve1/talon/commit/783fc5b779b3f542b71ba9b7e0506f077d311406))
+
+## [3.25.3](https://github.com/dylanneve1/talon/compare/v3.25.2...v3.25.3) (2026-08-23)
+
+
+### Bug Fixes
+
+* **whatsapp:** continuous sessions — two-sided history, stable ids, offline catch-up, visible errors ([#781](https://github.com/dylanneve1/talon/issues/781)) ([f6d5e65](https://github.com/dylanneve1/talon/commit/f6d5e65f97f2d33bdccecf85147eca94a27ec0f0))
+* **whatsapp:** stop the re-pairing loop burning a code every 2 minutes, and tell the admin ([#783](https://github.com/dylanneve1/talon/issues/783)) ([cc6a949](https://github.com/dylanneve1/talon/commit/cc6a949032f8cd290b1afe3cc72398ac496b49d7))
+
+## [3.25.2](https://github.com/dylanneve1/talon/compare/v3.25.1...v3.25.2) (2026-08-23)
+
+
+### Bug Fixes
+
+* **cli:** stop `talon setup` destroying config it never prompts for ([#779](https://github.com/dylanneve1/talon/issues/779)) ([7f396aa](https://github.com/dylanneve1/talon/commit/7f396aad629193048185e67528f0f15903c07dbe))
+
+## [3.25.1](https://github.com/dylanneve1/talon/compare/v3.25.0...v3.25.1) (2026-08-23)
+
+
+### Miscellaneous Chores
+
+* refresh README and remove files added by accident ([#777](https://github.com/dylanneve1/talon/issues/777)) ([607502a](https://github.com/dylanneve1/talon/commit/607502a2fbddda4051ba2a83e5c9d001e5ce4f0c))
+
+## [3.25.0](https://github.com/dylanneve1/talon/compare/v3.24.1...v3.25.0) (2026-08-22)
+
+
+### Features
+
+* **whatsapp:** WhatsApp frontend via Baileys multi-device ([#773](https://github.com/dylanneve1/talon/issues/773)) ([a663223](https://github.com/dylanneve1/talon/commit/a6632231a9c5506999d2d21c93b88613089fa675))
+
+## [3.24.1](https://github.com/dylanneve1/talon/compare/v3.24.0...v3.24.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* **telegram:** stop a redelivered /restart from looping the daemon ([#774](https://github.com/dylanneve1/talon/issues/774)) ([cf715f0](https://github.com/dylanneve1/talon/commit/cf715f0bd17004b817d1ae44ba03a88b850399a3))
+
+## [3.24.0](https://github.com/dylanneve1/talon/compare/v3.23.1...v3.24.0) (2026-08-22)
+
+
+### Features
+
+* **status:** runtime info in /status, and a clean /stop ([#771](https://github.com/dylanneve1/talon/issues/771)) ([cb65d95](https://github.com/dylanneve1/talon/commit/cb65d95e6a21db5f112b0cbeaff5b5c3a0cf6c2a))
+
+## [3.23.1](https://github.com/dylanneve1/talon/compare/v3.23.0...v3.23.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* **runtime:** make the test suite and runtime seams bun-clean ([#769](https://github.com/dylanneve1/talon/issues/769)) ([7fd2236](https://github.com/dylanneve1/talon/commit/7fd2236a01a5a1d276942f98227c88af03397181))
+
+## [3.23.0](https://github.com/dylanneve1/talon/compare/v3.22.1...v3.23.0) (2026-08-22)
+
+
+### Features
+
+* **runtime:** run source installs under Bun ([#767](https://github.com/dylanneve1/talon/issues/767)) ([4a81e34](https://github.com/dylanneve1/talon/commit/4a81e34f09690d4cdc28152e3f0d7382ed711d73))
+
+## [3.22.1](https://github.com/dylanneve1/talon/compare/v3.22.0...v3.22.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* **companion:** treat a missing port as the scheme default, not 19880 ([768c9ea](https://github.com/dylanneve1/talon/commit/768c9ea07209b17008cf0393ae409ee7c3709d5b))
+* **companion:** treat a missing port as the scheme default, not 19880 ([4886e5c](https://github.com/dylanneve1/talon/commit/4886e5cdc48ab0af1ff77445cd1f1813b4d4deda))
+* harden runtime paths flagged by an all-time log audit ([#764](https://github.com/dylanneve1/talon/issues/764)) ([f1d8370](https://github.com/dylanneve1/talon/commit/f1d837009b5462d9f44f35b19c677cbab69819bf))
+
+
+### Documentation
+
+* long-term plan for migrating off TypeScript ([#765](https://github.com/dylanneve1/talon/issues/765)) ([8f1860c](https://github.com/dylanneve1/talon/commit/8f1860cd6508a802f60433e2aa79b0407f92897e))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump the dev-dependencies group with 3 updates ([#762](https://github.com/dylanneve1/talon/issues/762)) ([36a7ae2](https://github.com/dylanneve1/talon/commit/36a7ae2b3f22041115a294abd29c709d812b1f1d))
+* **deps:** Bump the production-dependencies group with 2 updates ([#761](https://github.com/dylanneve1/talon/issues/761)) ([377dc15](https://github.com/dylanneve1/talon/commit/377dc15abb390634d5ef23e99c3685968c39739a))
+* **deps:** Bump the production-dependencies group with 2 updates ([#763](https://github.com/dylanneve1/talon/issues/763)) ([2489ac9](https://github.com/dylanneve1/talon/commit/2489ac96b7d2a9f035e4b14d4565b57f0ec50ed4))
+
 ## [3.22.0](https://github.com/dylanneve1/talon/compare/v3.21.0...v3.22.0) (2026-08-19)
 
 

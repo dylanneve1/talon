@@ -7,6 +7,14 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { printBanner, loadConfig, saveConfig, type Config } from "./config.js";
 
+/** "353871234567, +44 7700 900000" → ["353871234567", "447700900000"]. */
+function parseNumberList(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((entry) => entry.replace(/[\s+()-]/g, ""))
+    .filter((entry) => entry.length > 0);
+}
+
 export async function runSetup(): Promise<void> {
   printBanner();
   p.intro(pc.inverse(" Setup Wizard "));
@@ -25,6 +33,10 @@ export async function runSetup(): Promise<void> {
         label: `Telegram  ${pc.dim("— bot via @BotFather")}`,
       },
       {
+        value: "whatsapp",
+        label: `WhatsApp  ${pc.dim("— a real account via Baileys multi-device")}`,
+      },
+      {
         value: "discord",
         label: `Discord   ${pc.dim("— bot via Developer Portal (discord.js v14)")}`,
       },
@@ -35,6 +47,10 @@ export async function runSetup(): Promise<void> {
       {
         value: "terminal",
         label: `Terminal  ${pc.dim("— local CLI chat")}`,
+      },
+      {
+        value: "native",
+        label: `Native    ${pc.dim("— HTTP+SSE bridge for the companion app")}`,
       },
     ],
     required: true,
@@ -227,6 +243,75 @@ export async function runSetup(): Promise<void> {
     discordApplicationId = appId as string;
   }
 
+  let whatsapp: Config["whatsapp"] | undefined;
+
+  if (selectedFrontends.includes("whatsapp")) {
+    p.note(
+      "Talon drives a real WhatsApp account over Baileys multi-device —\n" +
+        "the same mechanism as WhatsApp Web. On first start you'll pair it\n" +
+        "under WhatsApp → Linked devices.",
+      "WhatsApp Setup",
+    );
+
+    const pairing = (await p.text({
+      message: "The bot account's own number (E.164 digits, no +)",
+      placeholder: "leave blank to pair by QR code instead",
+      initialValue: config.whatsapp?.pairingNumber || "",
+      validate: (v) => {
+        if (v && !/^\d{7,15}$/.test(v.replace(/[\s+()-]/g, "")))
+          return "Digits only, country code included — e.g. 353871234567";
+      },
+    })) as string;
+    if (p.isCancel(pairing)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+
+    const allowed = (await p.text({
+      message: "Numbers allowed to DM the bot (comma-separated)",
+      placeholder: "353871234567, 447700900000 — blank disables DMs",
+      initialValue: (config.whatsapp?.allowedJids ?? []).join(", "),
+    })) as string;
+    if (p.isCancel(allowed)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+
+    const groupPolicy = await p.select({
+      message: "Which groups should the bot serve?",
+      initialValue: config.whatsapp?.groupPolicy ?? "listed",
+      options: [
+        {
+          value: "listed",
+          label: `Listed only     ${pc.dim("— groups you name in allowedGroups")}`,
+        },
+        {
+          value: "with-allowed-user",
+          label: `Groups I'm in   ${pc.dim("— any group containing an allowed number")}`,
+        },
+        {
+          value: "all",
+          label: `All             ${pc.dim("— every group the account belongs to")}`,
+        },
+      ],
+    });
+    if (p.isCancel(groupPolicy)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+
+    whatsapp = {
+      // Preserve allowedGroups / respondMode / sendReadReceipts — the
+      // wizard doesn't prompt for them but must not drop them.
+      ...config.whatsapp,
+      allowedJids: parseNumberList(allowed),
+      groupPolicy: groupPolicy as "listed" | "with-allowed-user" | "all",
+      ...(pairing.replace(/[\s+()-]/g, "")
+        ? { pairingNumber: pairing.replace(/[\s+()-]/g, "") }
+        : {}),
+    };
+  }
+
   // Discover models from SDK; fall back to static list if SDK isn't available
   const {
     registerClaudeModels,
@@ -393,52 +478,28 @@ export async function runSetup(): Promise<void> {
   // creds configured separately (kilo via `kilo login`, opencode via
   // its own auth flow).
 
-  const newConfig: Config = {
-    frontend:
-      selectedFrontends.length === 1 ? selectedFrontends[0] : selectedFrontends,
+  const newConfig = buildSetupConfig(config, {
+    selectedFrontends,
     backend,
-    botToken: selectedFrontends.includes("telegram") ? botToken : undefined,
+    botToken,
     claudeBinary,
     codexApiKey,
     openaiApiKey,
     openaiBaseUrl,
     openaiApiMode,
     model: model as string,
-    concurrency: config.concurrency,
     pulse: pulse as boolean,
-    pulseIntervalMs: config.pulseIntervalMs,
-    adminUserId: adminId ? parseInt(adminId, 10) || undefined : undefined,
+    adminId,
     apiId,
     apiHash,
-    maxMessageLength: config.maxMessageLength,
-    plugins: config.plugins,
-    // Teams
-    teamsWebhookUrl: selectedFrontends.includes("teams")
-      ? teamsWebhookUrl
-      : undefined,
-    teamsWebhookSecret: selectedFrontends.includes("teams")
-      ? teamsWebhookSecret
-      : undefined,
-    teamsWebhookPort: selectedFrontends.includes("teams")
-      ? teamsWebhookPort
-      : undefined,
-    teamsBotDisplayName: selectedFrontends.includes("teams")
-      ? teamsBotDisplayName
-      : undefined,
-    // Discord — bot token + applicationId. Allowlists / admin IDs /
-    // mention vs channel-wide reply behaviour are left as defaults in
-    // the wizard; advanced users hand-edit talon.json.
-    discord:
-      selectedFrontends.includes("discord") &&
-      discordBotToken &&
-      discordApplicationId
-        ? {
-            ...config.discord,
-            botToken: discordBotToken,
-            applicationId: discordApplicationId,
-          }
-        : config.discord,
-  };
+    teamsWebhookUrl,
+    teamsWebhookSecret,
+    teamsWebhookPort,
+    teamsBotDisplayName,
+    discordBotToken,
+    discordApplicationId,
+    whatsapp,
+  });
 
   const s = p.spinner();
   s.start("Saving configuration");
@@ -452,4 +513,115 @@ export async function runSetup(): Promise<void> {
       `  ${pc.yellow("!")} Run ${pc.cyan("npx tsx src/login.ts")} to authenticate the userbot first.\n`,
     );
   }
+}
+
+/** Everything the wizard's prompts collected, in one bag. */
+export type SetupAnswers = {
+  selectedFrontends: string[];
+  backend: Config["backend"];
+  botToken?: string;
+  claudeBinary?: string;
+  codexApiKey?: string;
+  openaiApiKey?: string;
+  openaiBaseUrl?: string;
+  openaiApiMode?: Config["openaiApiMode"];
+  model: string;
+  pulse: boolean;
+  adminId?: string;
+  apiId?: number;
+  apiHash?: string;
+  teamsWebhookUrl?: string;
+  teamsWebhookSecret?: string;
+  teamsWebhookPort?: number;
+  teamsBotDisplayName?: string;
+  discordBotToken?: string;
+  discordApplicationId?: string;
+  whatsapp?: Config["whatsapp"];
+};
+
+/**
+ * Fold the wizard's answers onto the existing config.
+ *
+ * Extracted from `runSetup` so the merge is testable without driving the
+ * prompts — the behaviour that matters here is what it *doesn't* touch.
+ * The wizard models roughly half of ~/.talon/config.json; it used to
+ * rebuild the file from its own named fields alone, which silently
+ * deleted every other key (whatsapp, native, soul, memory, github,
+ * heartbeat/dream, allowlists, plugin blocks…). Spreading `existing`
+ * first keeps them. Fields below still override, and an explicit
+ * `undefined` still deletes, because `saveConfig` strips undefined.
+ */
+export function buildSetupConfig(
+  existing: Config,
+  answers: SetupAnswers,
+): Config {
+  const on = (id: string) => answers.selectedFrontends.includes(id);
+  /** Did the chosen backend's credential prompt actually run? */
+  const ownsCredential = (backend: Config["backend"]) =>
+    answers.backend === backend;
+  return {
+    ...existing,
+    frontend:
+      answers.selectedFrontends.length === 1
+        ? answers.selectedFrontends[0]
+        : answers.selectedFrontends,
+    backend: answers.backend,
+    botToken: on("telegram") ? answers.botToken : undefined,
+    // Backend credentials: the wizard prompts for exactly one backend's
+    // (an if/else-if chain on the chosen backend), so taking the answer
+    // unconditionally deleted every other backend's — picking `claude`
+    // wiped a stored openaiApiKey/openaiBaseUrl even though the account
+    // stays reachable via enabledBackends and per-chat overrides. Each
+    // credential is now overwritten only by the prompt that owns it, and
+    // left alone otherwise. Blanking a shown prompt still clears it.
+    claudeBinary: ownsCredential("claude")
+      ? answers.claudeBinary
+      : existing.claudeBinary,
+    codexApiKey: ownsCredential("codex")
+      ? answers.codexApiKey
+      : existing.codexApiKey,
+    openaiApiKey: ownsCredential("openai-agents")
+      ? answers.openaiApiKey
+      : existing.openaiApiKey,
+    openaiBaseUrl: ownsCredential("openai-agents")
+      ? answers.openaiBaseUrl
+      : existing.openaiBaseUrl,
+    openaiApiMode: ownsCredential("openai-agents")
+      ? answers.openaiApiMode
+      : existing.openaiApiMode,
+    model: answers.model,
+    concurrency: existing.concurrency,
+    pulse: answers.pulse,
+    pulseIntervalMs: existing.pulseIntervalMs,
+    adminUserId: answers.adminId
+      ? parseInt(answers.adminId, 10) || undefined
+      : undefined,
+    apiId: answers.apiId,
+    apiHash: answers.apiHash,
+    maxMessageLength: existing.maxMessageLength,
+    plugins: existing.plugins,
+    // Teams
+    teamsWebhookUrl: on("teams") ? answers.teamsWebhookUrl : undefined,
+    teamsWebhookSecret: on("teams") ? answers.teamsWebhookSecret : undefined,
+    teamsWebhookPort: on("teams") ? answers.teamsWebhookPort : undefined,
+    teamsBotDisplayName: on("teams") ? answers.teamsBotDisplayName : undefined,
+    // Discord — bot token + applicationId. Allowlists / admin IDs /
+    // mention vs channel-wide reply behaviour are left as defaults in
+    // the wizard; advanced users hand-edit talon.json.
+    discord:
+      on("discord") && answers.discordBotToken && answers.discordApplicationId
+        ? {
+            ...existing.discord,
+            botToken: answers.discordBotToken,
+            applicationId: answers.discordApplicationId,
+          }
+        : existing.discord,
+    // Never dropped. Deselecting WhatsApp shouldn't throw away its
+    // pairing setup, and dropping it while `frontend` still lists
+    // whatsapp produces a config util/config.ts refuses to load at all
+    // ("WhatsApp frontend requires a whatsapp config block") — a daemon
+    // that won't start. The `??` keeps that impossible even if the
+    // branch that collects the answer is ever skipped.
+    whatsapp: answers.whatsapp ?? existing.whatsapp,
+  };
 }

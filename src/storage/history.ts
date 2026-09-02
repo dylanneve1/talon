@@ -81,6 +81,11 @@ export function pushMessage(chatId: string, msg: HistoryMessage): void {
   }
 }
 
+/** See repositories/history-repo.ts `maxMsgIdForPrefix`. */
+export function maxMsgIdForChatPrefix(prefix: string): number | undefined {
+  return repo.maxMsgIdForPrefix(prefix);
+}
+
 export function getRecentHistory(chatId: string, limit = 50): HistoryMessage[] {
   return repo.recent(chatId, limit);
 }
@@ -96,6 +101,28 @@ export function getHistoryBefore(
   limit = 50,
 ): HistoryMessage[] {
   return repo.recentBefore(chatId, beforeMsgId, limit);
+}
+
+/** Formatted page of the messages strictly older than `beforeMsgId`. */
+export function getFormattedBefore(
+  chatId: string,
+  beforeMsgId: number,
+  limit = 30,
+): string {
+  const messages = repo.recentBefore(chatId, beforeMsgId, limit);
+  if (messages.length === 0) return "No messages before that point.";
+  return messages.map(formatMessage).join("\n");
+}
+
+/** Formatted page of the messages strictly older than a timestamp (ms). */
+export function getFormattedBeforeTime(
+  chatId: string,
+  beforeTs: number,
+  limit = 30,
+): string {
+  const messages = repo.recentBeforeTime(chatId, beforeTs, limit);
+  if (messages.length === 0) return "No messages before that date.";
+  return messages.map(formatMessage).join("\n");
 }
 
 /**

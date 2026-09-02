@@ -22,13 +22,17 @@ export const TELEGRAM_COMMANDS: ReadonlyArray<{
   },
   { command: "status", description: "Session info, usage, and stats" },
   { command: "ping", description: "Health check with latency" },
-  { command: "mesh", description: "Ping and list mesh devices" },
+  {
+    command: "mesh",
+    description: "Mesh devices; /mesh link pairs a new one",
+  },
   { command: "model", description: "Show or change model" },
   { command: "effort", description: "Set thinking effort level" },
   { command: "pulse", description: "Conversation engagement settings" },
   { command: "stop", description: "Stop the current response" },
   { command: "reset", description: "Clear session and start fresh" },
   { command: "restart", description: "Restart the bot (admin)" },
+  { command: "whatsapp", description: "WhatsApp link status / pair (admin)" },
   { command: "usage", description: "Plan limits across every backend" },
   { command: "metrics", description: "Aggregate performance metrics" },
   {

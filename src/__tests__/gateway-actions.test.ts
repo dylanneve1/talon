@@ -105,8 +105,10 @@ vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
 }));
 
-const { handleSharedAction } =
+const { handleSharedAction, handleChatFreeAction, isChatFreeAction } =
   await import("../core/engine/gateway-actions/index.js");
+const { registerCrossSendTarget } =
+  await import("../core/engine/gateway-actions/cross-send.js");
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -2334,6 +2336,114 @@ describe("per-job model override + discovery actions", () => {
         { id: "codex", label: "Codex", current: true },
       ]);
       expect(result?.text).toContain("current");
+    });
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // send_via — cross-frontend send
+  // ════════════════════════════════════════════════════════════════════════
+
+  describe("send_via (cross-frontend send)", () => {
+    afterEach(() => {
+      registerCrossSendTarget("whatsapp", null);
+      registerCrossSendTarget("telegram", null);
+      registerCrossSendTarget("teams", null);
+    });
+
+    it("is a chat-free action, reachable before chat resolution", () => {
+      expect(isChatFreeAction("send_via")).toBe(true);
+      // The chat-addressed sends stay chat-bound.
+      expect(isChatFreeAction("send_message")).toBe(false);
+    });
+
+    it("dispatches send_message to the named frontend's registered handler", async () => {
+      const handler = vi.fn(async () => ({ ok: true, message_id: 7 }));
+      registerCrossSendTarget("whatsapp", handler);
+      const result = await handleChatFreeAction({
+        action: "send_via",
+        frontend: "whatsapp",
+        target: "+353871234567",
+        text: "hi there",
+      });
+      expect(result).toEqual({ ok: true, message_id: 7 });
+      // Non-numeric target rides in body.target; chatId stays the 0 sentinel.
+      expect(handler).toHaveBeenCalledWith(
+        { action: "send_message", text: "hi there", target: "+353871234567" },
+        0,
+      );
+    });
+
+    it("promotes a numeric target to the handler's chatId key", async () => {
+      const handler = vi.fn(async () => ({ ok: true, message_id: 9 }));
+      registerCrossSendTarget("telegram", handler);
+      await handleChatFreeAction({
+        action: "send_via",
+        frontend: "telegram",
+        target: "-1001426819337",
+        text: "build is green",
+      });
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "send_message" }),
+        -1001426819337,
+      );
+    });
+
+    it("errors cleanly when the named frontend is not enabled", async () => {
+      registerCrossSendTarget(
+        "telegram",
+        vi.fn(async () => ({ ok: true })),
+      );
+      const result = await handleChatFreeAction({
+        action: "send_via",
+        frontend: "whatsapp",
+        target: "+353871234567",
+        text: "hi",
+      });
+      expect(result?.ok).toBe(false);
+      expect(String(result?.error)).toContain(
+        "whatsapp frontend is not enabled",
+      );
+      expect(String(result?.error)).toContain("telegram");
+    });
+
+    it("requires frontend, target, and text", async () => {
+      const missingFrontend = await handleChatFreeAction({
+        action: "send_via",
+        target: "123",
+        text: "hi",
+      });
+      expect(missingFrontend?.error).toContain("frontend is required");
+
+      const missingTarget = await handleChatFreeAction({
+        action: "send_via",
+        frontend: "telegram",
+        text: "hi",
+      });
+      expect(missingTarget?.error).toContain("target is required");
+
+      const missingText = await handleChatFreeAction({
+        action: "send_via",
+        frontend: "telegram",
+        target: "123",
+      });
+      expect(missingText?.error).toContain("text is required");
+    });
+
+    it("surfaces a handler that does not implement send_message", async () => {
+      registerCrossSendTarget(
+        "teams",
+        vi.fn(async () => null),
+      );
+      const result = await handleChatFreeAction({
+        action: "send_via",
+        frontend: "teams",
+        target: "42",
+        text: "hi",
+      });
+      expect(result?.ok).toBe(false);
+      expect(String(result?.error)).toContain(
+        "does not implement send_message",
+      );
     });
   });
 });

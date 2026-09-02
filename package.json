@@ -1,6 +1,6 @@
 {
   "name": "talon-agent",
-  "version": "3.22.0",
+  "version": "3.32.0",
   "description": "Multi-frontend AI agent with full tool access, streaming, cron jobs, and plugin system",
   "author": "Dylan Neve",
   "license": "MIT",
@@ -18,7 +18,7 @@
     "chatbot"
   ],
   "engines": {
-    "node": ">=24"
+    "node": ">=24.15"
   },
   "type": "module",
   "main": "./src/index.ts",
@@ -55,10 +55,13 @@
     "tsconfig.json"
   ],
   "scripts": {
-    "start": "tsx src/index.ts",
-    "cli": "tsx src/cli.ts",
-    "setup": "tsx src/cli.ts setup",
-    "dev": "tsx --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "start:node": "tsx src/index.ts",
+    "cli": "bun src/cli.ts",
+    "cli:node": "tsx src/cli.ts",
+    "setup": "bun src/cli.ts setup",
+    "dev": "bun --watch src/index.ts",
+    "dev:node": "tsx --watch src/index.ts",
     "test": "vitest run",
     "test:ci": "vitest run --reporter=verbose --reporter=json --outputFile=test-results.json",
     "test:functional": "vitest run --reporter=verbose --reporter=json --outputFile=functional-results.json src/__tests__/package.functional.test.ts src/__tests__/tool-functional.test.ts src/__tests__/mcp-launcher.test.ts src/__tests__/mcp-launcher-functional.test.ts src/__tests__/integration/sdk-stub.test.ts src/__tests__/integration/talon-functional.test.ts",
@@ -78,7 +81,7 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src/",
-    "depcruise": "depcruise src",
+    "depcruise": "node scripts/check-architecture.mjs",
     "ratchets": "node scripts/check-ratchets.mjs",
     "knip": "knip",
     "format": "prettier --write src/ prompts/",
@@ -102,11 +105,13 @@
     "@grammyjs/transformer-throttler": "^1.2.1",
     "@kilocode/sdk": "^7.2.22",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@openai/agents": "^0.16.0",
-    "@openai/codex-sdk": "^0.147.0",
+    "@openai/agents": "^0.17.0",
+    "@openai/codex-sdk": "^0.151.0",
     "@opencode-ai/sdk": "^1.17.4",
     "@playwright/mcp": "0.0.79",
     "@types/cross-spawn": "^6.0.6",
+    "@types/qrcode": "^1.5.6",
+    "baileys": "^7.0.0-rc14",
     "big-integer": "^1.6.52",
     "cheerio": "^1.2.0",
     "croner": "^10.0.1",
@@ -122,6 +127,8 @@
     "picocolors": "^1.1.1",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
     "telegram": "^2.26.22",
     "tsx": "^4.21.0",
     "undici": "^8.0.2",
@@ -131,7 +138,9 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@swc/core": "^1.16.1",
     "@types/node": "^26.0.0",
+    "@types/qrcode-terminal": "^0.12.2",
     "@types/write-file-atomic": "^4.0.3",
     "@vitest/coverage-v8": "^4.1.3",
     "dependency-cruiser": "^18.1.0",

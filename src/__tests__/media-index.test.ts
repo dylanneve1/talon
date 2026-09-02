@@ -27,6 +27,7 @@ vi.mock("../util/log.js", () => ({
 }));
 
 let originalHome: string | undefined;
+let originalTalonHome: string | undefined;
 let originalUserProfile: string | undefined;
 const envBackup = process.env.TALON_DB_PATH;
 let tempHome: string;
@@ -57,9 +58,13 @@ beforeEach(() => {
   delete process.env.TALON_DISABLE_LEGACY_IMPORT;
   originalHome = process.env.HOME;
   originalUserProfile = process.env.USERPROFILE;
+  originalTalonHome = process.env.TALON_HOME;
   tempHome = mkdtempSync(join(tmpdir(), "talon-media-"));
   process.env.HOME = tempHome;
   process.env.USERPROFILE = tempHome;
+  // Bun's os.homedir() ignores $HOME, so pin the Talon root explicitly
+  // via the first-class override paths.ts already honors.
+  process.env.TALON_HOME = join(tempHome, ".talon");
   process.env.TALON_DB_PATH = join(tempHome, "talon.db");
 });
 
@@ -70,6 +75,9 @@ afterEach(() => {
   else process.env.TALON_DB_PATH = envBackup;
   if (originalHome !== undefined) process.env.HOME = originalHome;
   else delete process.env.HOME;
+  if (originalTalonHome !== undefined)
+    process.env.TALON_HOME = originalTalonHome;
+  else delete process.env.TALON_HOME;
   if (originalUserProfile !== undefined) {
     process.env.USERPROFILE = originalUserProfile;
   } else {

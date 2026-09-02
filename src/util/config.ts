@@ -142,6 +142,7 @@ const frontendEnum = z.enum([
   "teams",
   "discord",
   "native",
+  "whatsapp",
 ]);
 
 /**
@@ -226,10 +227,53 @@ const discordConfigSchema = z
   })
   .strict();
 
+const whatsappConfigSchema = z
+  .object({
+    /**
+     * JIDs or bare phone numbers (digits only, country code included)
+     * allowed to DM the bot. Empty array disables DM access.
+     */
+    allowedJids: z.array(z.string()).default([]),
+    /** Group JIDs (…@g.us) the bot may always respond in. */
+    allowedGroups: z.array(z.string()).default([]),
+    /**
+     * Which groups the bot serves beyond `allowedGroups`:
+     *   - "listed"            only the groups named above (default)
+     *   - "with-allowed-user" any group containing someone from
+     *                         `allowedJids` — "the groups I'm in"
+     *   - "all"               every group the account belongs to
+     */
+    groupPolicy: z
+      .enum(["listed", "with-allowed-user", "all"])
+      .default("listed"),
+    /**
+     * In groups, when does the bot reply?
+     *   - "mention"  reply only when @mentioned or quoted (default)
+     *   - "all"      reply to every message in allowedGroups
+     */
+    respondMode: z.enum(["mention", "all"]).default("mention"),
+    /**
+     * The account's own number in E.164 digits without the plus (e.g.
+     * "353871234567"). When set, on-demand pairing (/whatsapp pair)
+     * offers a phone-number code alongside the QR.
+     */
+    pairingNumber: z.string().optional(),
+    /** Mark handled inbound messages as read (blue ticks). */
+    sendReadReceipts: z.boolean().default(true),
+  })
+  .strict();
+
 const playwrightConfigSchema = z.object({
   enabled: z.boolean().default(false),
   /** Browser engine: chromium (default), chrome, firefox, webkit, msedge */
   browser: z.string().optional(),
+  /**
+   * Download the browser build automatically when missing (default
+   * true). Applies to Playwright-managed engines (chromium, firefox,
+   * webkit); system channels (chrome, msedge) and endpoint mode are
+   * never touched.
+   */
+  autoProvision: z.boolean().optional(),
   /** Run headless (default: true) */
   headless: z.boolean().default(true),
   /** Connect to an existing browser websocket endpoint. */
@@ -252,6 +296,19 @@ const mempalaceSettingsSchema = z.object({
   entityLanguages: z.array(z.string().min(2)).nonempty().optional(),
   /** Enable mempalace diagnostic diaries (sets MEMPAL_VERBOSE=1). */
   verbose: z.boolean().optional(),
+  /**
+   * Exact mempalace version for the Talon-managed venv (default: the
+   * built-in pin). Ignored for operator-managed installs (custom
+   * pythonPath) — those only get an advisory when they drift.
+   */
+  version: z
+    .string()
+    .regex(/^\d+\.\d+\.\d+$/, "exact version, e.g. 3.8.0")
+    .optional(),
+  /** Reconcile the managed venv to the pinned version (default true). */
+  autoUpdate: z.boolean().optional(),
+  /** Create/heal the managed venv automatically (default true). */
+  autoProvision: z.boolean().optional(),
 });
 
 /** mem0 backend settings, shared by `memory.mem0` and the top-level `mem0` section. */
@@ -338,6 +395,10 @@ const configSchema = z.object({
   apiHash: z.string().optional(),
   adminUserId: z.number().int().optional(),
   allowedUsers: z.array(z.number().int()).optional(), // Whitelist of user IDs allowed to DM the bot
+  // Denylist of user IDs dropped in silence — no warning reply, no admin
+  // notification. For spam and prompt-injection senders, where the warning
+  // itself is the reward: it confirms a live bot is reading.
+  blockedUsers: z.array(z.number().int()).optional(),
   pulse: z.boolean().default(true),
   pulseIntervalMs: z.number().int().min(60000).default(300000),
   /**
@@ -459,6 +520,13 @@ const configSchema = z.object({
       enabled: z.boolean().default(false),
       /** GitHub personal access token (default: from `gh auth token`) */
       token: z.string().min(1).optional(),
+      /**
+       * github-mcp-server image tag (default: the built-in pin).
+       * "latest" opts out of pinning.
+       */
+      imageTag: z.string().min(1).optional(),
+      /** Pull the pinned Docker image automatically (default true). */
+      autoProvision: z.boolean().optional(),
     })
     .optional(),
 
@@ -502,6 +570,7 @@ const configSchema = z.object({
 
   // Discord — discord.js v14-based frontend
   discord: discordConfigSchema.optional(),
+  whatsapp: whatsappConfigSchema.optional(),
 
   // Native — local bridge for the Electron companion app (apps/desktop)
   native: nativeConfigSchema.optional(),
@@ -707,6 +776,12 @@ export function loadConfig(): TalonConfig {
     if (fe === "teams" && !parsed.teamsWebhookUrl) {
       throw new Error(
         `Teams frontend requires "teamsWebhookUrl" in ${CONFIG_FILE}. Run "talon setup" to configure.`,
+      );
+    }
+    if (fe === "whatsapp" && !parsed.whatsapp) {
+      throw new Error(
+        `WhatsApp frontend requires a "whatsapp" config block in ${CONFIG_FILE} ` +
+          `(set allowedJids / allowedGroups; pairing happens interactively on first start).`,
       );
     }
   }

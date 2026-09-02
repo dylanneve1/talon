@@ -44,6 +44,7 @@ vi.mock("../storage/chat-settings.js", () => ({
 }));
 vi.mock("../core/errors.js", () => ({
   classify: vi.fn(),
+  RETRY_ELAPSED_CAP_MS: 120_000,
 }));
 vi.mock("../core/models/catalog.js", () => ({
   getFallbackModel: vi.fn(),

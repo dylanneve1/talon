@@ -31,6 +31,18 @@ export function recordMessageProcessed(): void {
 }
 
 /**
+ * Record that a message's turn settled in failure. The loop is moving —
+ * the error was reported and the queue slot freed — so advance the stuck
+ * clock without counting a success. Without this, one failed turn leaves
+ * `lastProcessedAt` stale forever and the watchdog reports a wedged loop
+ * (and an unhealthy bridge) on a bot that is actually idle.
+ */
+export function recordMessageSettled(): void {
+  lastProcessedAt = Date.now();
+  resetStuckWarnBackoff();
+}
+
+/**
  * Test-only: reset the activity clocks to "just processed, nothing pending"
  * at the CURRENT Date.now(). Fake-timer suites need this because each test
  * restarts its fake clock at the real now, while timestamps recorded by an

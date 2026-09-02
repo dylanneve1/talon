@@ -34,13 +34,14 @@ import type { Gateway } from "../core/engine/gateway.js";
 afterEach(() => resetFrontendRegistry());
 
 describe("built-in descriptors", () => {
-  it("registers all five built-ins on import", () => {
+  it("registers all six built-ins on import", () => {
     expect(listFrontends().map((f) => f.id)).toEqual([
       "discord",
       "native",
       "teams",
       "telegram",
       "terminal",
+      "whatsapp",
     ]);
   });
 
@@ -146,7 +147,7 @@ describe("create seam", () => {
 
   it("rejects unknown ids with the known list", async () => {
     await expect(createFrontendById("slack", config, gateway)).rejects.toThrow(
-      /Unknown frontend "slack".*discord, native, teams, telegram, terminal/,
+      /Unknown frontend "slack".*discord, native, teams, telegram, terminal, whatsapp/,
     );
   });
 

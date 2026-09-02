@@ -12,25 +12,38 @@ import 'log.dart';
 /// `stat`/`delete`/`mkdir`/`move` commands over the mesh; this runs them here
 /// and returns a structured payload.
 ///
-/// Two privilege tiers:
-///   - app-UID (default): commands run as the app's own user via the
-///     platform shell (see [DeviceExec.shellInvocation]), and file IO uses
-///     dart:io. This can reach shared storage (Downloads,
-///     DCIM, …) when the app holds All-files access (MANAGE_EXTERNAL_STORAGE),
-///     but not other apps' private data.
+/// Three privilege tiers, each tried in turn and each degrading into the next:
+///   - root (Android, best): uid 0 via the `talon/root` channel — a `su`
+///     binary (Magisk/KernelSU/APatch), a process that already runs as root,
+///     or the adb-root agent for a `userdebug` device whose `su` refuses app
+///     uids. Also reached when Shizuku itself was started as root (`adb root`
+///     before Shizuku's start script), in which case the Shizuku path below
+///     already IS root and is reported as such.
 ///   - Shizuku (optional, Android): when Shizuku is installed, running, and
 ///     has granted permission, commands run at shell (ADB) privilege via the
 ///     `talon/shizuku` platform channel — enough to reach far more of the
 ///     system without root. Falls back to app-UID whenever Shizuku is absent
 ///     or denied.
+///   - app-UID (default, always available): commands run as the app's own
+///     user via the platform shell (see [DeviceExec.shellInvocation]), and
+///     file IO uses dart:io. This can reach shared storage (Downloads, DCIM,
+///     …) when the app holds All-files access (MANAGE_EXTERNAL_STORAGE), but
+///     not other apps' private data.
+///
+/// A platform-signed system build (uid 1000) is a fourth tier that needs no
+/// wrapper — plain `sh -c` already runs at uid 1000 there — so it uses the
+/// app-UID path and is only *reported* differently. See docs/companion-root.md.
 class DeviceExec {
   DeviceExec({
     MethodChannel? shizukuChannel,
+    MethodChannel? rootChannel,
     bool Function()? isAndroid,
   })  : _shizuku = shizukuChannel ?? const MethodChannel('talon/shizuku'),
+        _root = rootChannel ?? const MethodChannel('talon/root'),
         _isAndroid = isAndroid ?? (() => !kIsWeb && Platform.isAndroid);
 
   final MethodChannel _shizuku;
+  final MethodChannel _root;
   final bool Function() _isAndroid;
   Future<bool>? _pendingShizukuPermission;
 
@@ -39,6 +52,22 @@ class DeviceExec {
   /// readiness probe so an app-UID fallback can say *why* Shizuku wasn't used,
   /// in the command result that travels back over the mesh — no adb needed.
   String? _lastShizukuState;
+
+  /// Last root-tier snapshot from the `talon/root` bridge, and when it was
+  /// taken. Probing costs a `su` spawn (and, the first time, a grant dialog),
+  /// so the answer is reused for [_rootProbeTtl] rather than re-derived on
+  /// every mesh command.
+  Map<String, dynamic>? _lastRoot;
+  DateTime? _rootProbedAt;
+  Future<Map<String, dynamic>?>? _pendingRootProbe;
+
+  /// Why the root path was last abandoned mid-command, and when. Held apart
+  /// from [_lastRoot] because the bridge's own snapshot is refreshed on every
+  /// status read and would otherwise wipe the demotion the moment anything
+  /// asked for the tier — leaving the executor retrying a path it has already
+  /// watched fail.
+  String? _rootFailure;
+  DateTime? _rootFailedAt;
 
   /// Commands this executor can answer — merged into the device's advertised
   /// mesh capabilities so the daemon gates cleanly.
@@ -51,9 +80,9 @@ class DeviceExec {
     'delete',
     'mkdir',
     'move',
-    // Silent self-update: install a pushed APK via Shizuku. Advertised
-    // everywhere device control is on; answers with a clear "only on
-    // Android / needs Shizuku" when it can't actually run.
+    // Silent self-update: install a pushed APK at an elevated tier (root or
+    // Shizuku). Advertised everywhere device control is on; answers with a
+    // clear "only on Android / needs elevation" when it can't actually run.
     'install_apk',
   ];
 
@@ -86,6 +115,12 @@ class DeviceExec {
   static const int _maxChunkBytes = 256 * 1024;
   static const Duration _shizukuPermissionWait = Duration(seconds: 12);
 
+  /// How long a root probe's answer is trusted before asking the bridge again.
+  /// Short enough that starting the adb agent (or granting su) takes effect
+  /// without restarting the app, long enough that a stock phone with no root
+  /// isn't re-probed on every single command.
+  static const Duration _rootProbeTtl = Duration(seconds: 30);
+
   /// How long to wait for stdout/stderr to close after the shell itself has
   /// exited. A backgrounded child holding the inherited pipes must not pin
   /// the exec call open past this.
@@ -95,6 +130,92 @@ class DeviceExec {
   /// the very END of stdout, and losing it would break cwd tracking.
   static const int _execOutputHeadBytes = 192 * 1024;
   static const int _execOutputTailBytes = 64 * 1024;
+
+  /// The root bridge's view of this device: tier, how root was reached (or
+  /// why it wasn't), the adb-agent one-liner, and the build's own properties.
+  /// `null` off Android.
+  ///
+  /// [probe] `false` (the default) never spawns `su`, so it can't raise a
+  /// grant dialog — that's the mode status payloads and the settings screen
+  /// use. [probe] `true` actually tries to acquire root.
+  Future<Map<String, dynamic>?> rootStatus({bool probe = false}) async {
+    if (!_isAndroid()) return null;
+    try {
+      final status = await _root.invokeMapMethod<String, dynamic>(
+        'getStatus',
+        {'probe': probe},
+      );
+      if (status != null) {
+        _lastRoot = status;
+        AppLog.info(
+          'root',
+          'getStatus tier=${status['tier']} method=${status['method']} '
+              'uid=${status['uid']}',
+        );
+      }
+      return status;
+    } catch (e) {
+      // No bridge at all (older build, non-Android engine): not an error, just
+      // the absence of the root tier.
+      _lastRoot = {'tier': 'app', 'method': 'none', 'state': 'unavailable: $e'};
+      return _lastRoot;
+    }
+  }
+
+  /// Write the adb-root agent script to disk and return the one-liner that
+  /// starts it. Android only; `null` elsewhere.
+  Future<Map<String, dynamic>?> installRootAgent() async {
+    if (!_isAndroid()) return null;
+    try {
+      return await _root.invokeMapMethod<String, dynamic>('installAgent');
+    } catch (e) {
+      AppLog.warn('root', 'installAgent failed', e);
+      return null;
+    }
+  }
+
+  /// True when a root path is available now, acquiring one if needed. The
+  /// answer is cached for [_rootProbeTtl] and concurrent callers share one
+  /// probe, so a burst of mesh commands can't stack up `su` spawns (or grant
+  /// dialogs) on top of each other.
+  Future<bool> ensureRootReady() async {
+    if (!_isAndroid()) return false;
+    if (_rootDemoted) return false;
+    final cached = _lastRoot;
+    final probedAt = _rootProbedAt;
+    if (cached != null &&
+        probedAt != null &&
+        DateTime.now().difference(probedAt) < _rootProbeTtl) {
+      return cached['tier'] == 'root';
+    }
+    final probe = _pendingRootProbe ??=
+        rootStatus(probe: true).whenComplete(() {
+      _pendingRootProbe = null;
+      _rootProbedAt = DateTime.now();
+    });
+    final status = await probe;
+    return status?['tier'] == 'root';
+  }
+
+  /// Stop trusting the cached "root is available" answer after the root path
+  /// itself failed, so the next command falls straight through to Shizuku
+  /// instead of paying for a doomed elevation attempt each time.
+  void _demoteRoot(String why) {
+    _rootFailure = why;
+    _rootFailedAt = DateTime.now();
+  }
+
+  /// Whether a recent root failure still stands. Expires with the same TTL as
+  /// a probe, so genuinely transient breakage (an agent restarted, a revoked
+  /// grant re-granted) heals without an app restart.
+  bool get _rootDemoted {
+    final at = _rootFailedAt;
+    if (at == null) return false;
+    if (DateTime.now().difference(at) < _rootProbeTtl) return true;
+    _rootFailure = null;
+    _rootFailedAt = null;
+    return false;
+  }
 
   /// True when Shizuku is available AND has granted permission right now.
   Future<bool> shizukuReady() async {
@@ -158,22 +279,56 @@ class DeviceExec {
     return requestShizuku();
   }
 
+  /// The tier this device would execute at right now, for the mesh `status`
+  /// payload and the settings screen. Never prompts: it reports what is
+  /// already available rather than trying to acquire anything.
   Future<Map<String, String>> privilegeStatus() async {
     // Desktop platforms run commands as the logged-in OS user; the
-    // shizuku/app distinction is Android-only.
+    // root/shizuku/app distinction is Android-only.
     if (!_isAndroid()) return const {'execPrivilege': 'user'};
+    Map<String, dynamic>? shizuku;
     try {
-      final status =
-          await _shizuku.invokeMapMethod<String, dynamic>('getStatus');
-      final ready = status?['ready'] == true;
-      final state = status?['state'];
-      return {
-        'execPrivilege': ready ? 'shizuku' : 'app',
-        'shizuku': state is String ? state : 'unavailable',
-      };
+      shizuku = await _shizuku.invokeMapMethod<String, dynamic>('getStatus');
     } catch (_) {
-      return const {'execPrivilege': 'app', 'shizuku': 'unavailable'};
+      shizuku = null;
     }
+    final root = await rootStatus();
+    final shizukuReady = shizuku?['ready'] == true;
+    // A Shizuku server started while adbd was root runs at uid 0, so this
+    // "shell" path is really root. Report the privilege the commands actually
+    // get, not the mechanism that carries them.
+    final shizukuUid = (shizuku?['uid'] as num?)?.toInt();
+    final shizukuIsRoot = shizukuReady && shizukuUid == 0;
+    final rootMethod = root?['method'];
+    // A root path that failed mid-command is not the tier this device runs at,
+    // however healthy the bridge's own snapshot looks.
+    final rootTier = _rootDemoted ? 'app' : root?['tier'];
+    final (privilege, method) = switch ((rootTier, shizukuIsRoot)) {
+      ('root', _) => ('root', rootMethod is String ? rootMethod : 'root'),
+      (_, true) => ('root', 'shizuku'),
+      _ when shizukuReady => ('shizuku', 'shizuku'),
+      ('system', _) => ('system', 'system-uid'),
+      _ => ('app', 'none'),
+    };
+    return {
+      'execPrivilege': privilege,
+      'execVia': method,
+      'shizuku': shizuku?['state'] is String
+          ? '${shizuku!['state']}${shizukuIsRoot ? ' (uid 0)' : ''}'
+          : 'unavailable',
+      if (_rootStateLabel() != null) 'root': _rootStateLabel()!,
+    };
+  }
+
+  /// Human description of the root tier for status payloads and the settings
+  /// row — the bridge's own words, or the failure that overrode them.
+  String? _rootStateLabel() {
+    final failure = _rootDemoted ? _rootFailure : null;
+    final state = _lastRoot?['state'];
+    if (failure != null) {
+      return state is String ? '$state, then $failure' : failure;
+    }
+    return state is String ? state : null;
   }
 
   /// Dispatch a mesh command by name; returns `null` for names this executor
@@ -235,7 +390,23 @@ class DeviceExec {
     }
     final budget =
         Duration(milliseconds: (timeoutMs ?? 60000).clamp(1000, 300000));
-    // Prefer Shizuku (shell UID). If it is installed but permission has not
+    // Root first — it is the only tier that reaches other apps' data, /data,
+    // and the whole system, so anything the daemon asks for lands where the
+    // operator expects rather than inside a scoped-storage view.
+    if (await ensureRootReady()) {
+      try {
+        final res = await _root.invokeMapMethod<String, dynamic>('exec', {
+          'cmd': cmd,
+          if (cwd != null) 'cwd': cwd,
+          'timeoutMs': budget.inMilliseconds,
+        });
+        if (res != null) return _nativeOutcome(res, 'root');
+      } catch (e) {
+        AppLog.warn('exec', 'root exec failed, falling back', e);
+        _demoteRoot('exec failed: $e');
+      }
+    }
+    // Then Shizuku (shell UID). If it is installed but permission has not
     // been granted yet, ask once; otherwise a remote filesystem command can
     // silently run as the app UID and return a misleading scoped-storage view.
     if (await ensureShizukuReady()) {
@@ -245,17 +416,7 @@ class DeviceExec {
           if (cwd != null) 'cwd': cwd,
           'timeoutMs': budget.inMilliseconds,
         });
-        if (res != null) {
-          return CommandOutcome(
-            ok: (res['exitCode'] as num?)?.toInt() == 0,
-            data: {
-              'stdout': _CappedOutput.clamp('${res['stdout'] ?? ''}'),
-              'stderr': _CappedOutput.clamp('${res['stderr'] ?? ''}'),
-              'exitCode': (res['exitCode'] as num?)?.toInt() ?? -1,
-              'via': 'shizuku',
-            },
-          );
-        }
+        if (res != null) return _nativeOutcome(res, 'shizuku');
       } catch (e) {
         AppLog.warn('exec', 'shizuku exec failed, falling back', e);
         return _execAppUid(
@@ -271,9 +432,26 @@ class DeviceExec {
       cwd: cwd,
       budget: budget,
       privilegeWarning: _isAndroid()
-          ? 'Shizuku not used (state=${_lastShizukuState ?? 'unknown'}); '
-              'ran as app UID.'
+          ? 'Elevation not used (root=${_rootStateLabel() ?? 'unknown'}, '
+              'shizuku=${_lastShizukuState ?? 'unknown'}); ran as app UID.'
           : null,
+    );
+  }
+
+  /// One elevated result (root or Shizuku bridge) as a [CommandOutcome].
+  /// `via` names the tier; `rootMethod` (su / agent / uid0) is carried through
+  /// so a mesh reply says *how* root was reached, not merely that it was.
+  CommandOutcome _nativeOutcome(Map<String, dynamic> res, String via) {
+    final exit = (res['exitCode'] as num?)?.toInt();
+    return CommandOutcome(
+      ok: exit == 0,
+      data: {
+        'stdout': _CappedOutput.clamp('${res['stdout'] ?? ''}'),
+        'stderr': _CappedOutput.clamp('${res['stderr'] ?? ''}'),
+        'exitCode': exit ?? -1,
+        'via': via,
+        if (via == 'root' && res['via'] is String) 'rootMethod': res['via'],
+      },
     );
   }
 
@@ -350,9 +528,9 @@ class DeviceExec {
   /// is being swapped, with no manual reopen.
   ///
   /// Three things make it robust:
-  ///   1. It requires Shizuku (shell/ADB UID). The app UID cannot install a
-  ///      package without a user tapping through PackageInstaller, which a
-  ///      headless mesh command can't do.
+  ///   1. It requires an elevated tier — root, or Shizuku's shell/ADB UID. The
+  ///      app UID cannot install a package without a user tapping through
+  ///      PackageInstaller, which a headless mesh command can't do.
   ///   2. The APK is RE-STAGED into /data/local/tmp before `pm install`. The
   ///      daemon pushes to app storage (/sdcard/Download), which the shell can
   ///      read but the system installer cannot — `pm install` straight off an
@@ -376,10 +554,13 @@ class DeviceExec {
       return CommandOutcome.fail('install_apk is only supported on Android.');
     }
     if (path.isEmpty) return CommandOutcome.fail('No APK path given.');
-    if (!await ensureShizukuReady()) {
+    final elevated = await ensureRootReady() || await ensureShizukuReady();
+    if (!elevated) {
       return CommandOutcome.fail(
-        'Silent install needs Shizuku (state=${_lastShizukuState ?? 'unavailable'}). '
-        'Install Shizuku, grant Talon permission, and retry.',
+        'Silent install needs root or Shizuku '
+        '(root=${_rootStateLabel() ?? 'unavailable'}, '
+        'shizuku=${_lastShizukuState ?? 'unavailable'}). '
+        'Grant root, or install Shizuku and grant Talon permission, then retry.',
       );
     }
     // Existence is probed through the elevated shell, not dart:io — the shell
@@ -387,7 +568,7 @@ class DeviceExec {
     // shell-owned locations like /data/local/tmp at all.
     try {
       final probe =
-          await _shizukuExec('test -f ${_shQuote(path)} && echo ok', 15000);
+          await _elevatedExec('test -f ${_shQuote(path)} && echo ok', 15000);
       if ('${probe?['stdout'] ?? ''}'.trim() != 'ok') {
         return CommandOutcome.fail('No such APK on device: $path');
       }
@@ -401,7 +582,7 @@ class DeviceExec {
     if (!path.startsWith('$stageDir/')) {
       staged = '$stageDir/talon-companion-update.apk';
       try {
-        final cp = await _shizukuExec(
+        final cp = await _elevatedExec(
           'cp -f ${_shQuote(path)} ${_shQuote(staged)}',
           120000,
         );
@@ -423,7 +604,7 @@ class DeviceExec {
     if (sha256 != null && sha256.isNotEmpty) {
       try {
         final check =
-            await _shizukuExec('sha256sum ${_shQuote(staged)}', 30000);
+            await _elevatedExec('sha256sum ${_shQuote(staged)}', 30000);
         final line = '${check?['stdout'] ?? ''}'.trim();
         final digest = line.isEmpty ? '' : line.split(RegExp(r'\s+')).first;
         if (digest.isEmpty) {
@@ -451,7 +632,7 @@ class DeviceExec {
         'echo "exit=\$?" >> ${_shQuote(logPath)}'
         '${copied ? '; rm -f ${_shQuote(staged)}' : ''}';
     try {
-      await _shizukuExec(
+      await _elevatedExec(
         'setsid sh -c ${_shQuote(worker)} >/dev/null 2>&1 &',
         5000,
       );
@@ -467,16 +648,33 @@ class DeviceExec {
         'stagedPath': staged,
         'delayMs': delay,
         'log': logPath,
-        'via': 'shizuku',
+        'via': (!_rootDemoted && _lastRoot?['tier'] == 'root')
+            ? 'root'
+            : 'shizuku',
       },
     );
   }
 
-  Future<Map<String, dynamic>?> _shizukuExec(String cmd, int timeoutMs) =>
-      _shizuku.invokeMapMethod<String, dynamic>('exec', {
-        'cmd': cmd,
-        'timeoutMs': timeoutMs,
-      });
+  /// Run one command at the highest tier available, for the install pipeline's
+  /// own staging steps. Root when we have it, Shizuku otherwise — the caller
+  /// has already established that one of the two is available.
+  Future<Map<String, dynamic>?> _elevatedExec(String cmd, int timeoutMs) async {
+    if (await ensureRootReady()) {
+      try {
+        return await _root.invokeMapMethod<String, dynamic>('exec', {
+          'cmd': cmd,
+          'timeoutMs': timeoutMs,
+        });
+      } catch (e) {
+        AppLog.warn('exec', 'root exec failed, falling back', e);
+        _demoteRoot('exec failed: $e');
+      }
+    }
+    return _shizuku.invokeMapMethod<String, dynamic>('exec', {
+      'cmd': cmd,
+      'timeoutMs': timeoutMs,
+    });
+  }
 
   /// POSIX single-quote a string for safe interpolation into a shell command.
   static String _shQuote(String s) => "'${s.replaceAll("'", "'\\''")}'";

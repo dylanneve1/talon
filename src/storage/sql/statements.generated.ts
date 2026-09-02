@@ -346,6 +346,12 @@ SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
        timestamp, media_type, sticker_file_id, file_path
 FROM history_messages
 WHERE chat_id = ? AND msg_id < ? ORDER BY id DESC LIMIT ?`,
+  recentBeforeTime: `-- Time-cursor variant of recentBefore for the read_history \`before\` date
+-- parameter: the newest \`limit\` messages strictly older than a timestamp.
+SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
+       timestamp, media_type, sticker_file_id, file_path
+FROM history_messages
+WHERE chat_id = ? AND timestamp < ? ORDER BY id DESC LIMIT ?`,
   setFilePath: `UPDATE history_messages SET file_path = ? WHERE chat_id = ? AND msg_id = ?`,
   deleteChat: `DELETE FROM history_messages WHERE chat_id = ?`,
   searchFts: `-- The match param must already be a valid FTS5 expression
@@ -371,6 +377,10 @@ WHERE chat_id = ? AND msg_id = ? ORDER BY id DESC LIMIT 1`,
 FROM history_messages
 WHERE chat_id = ? AND sender_id = ? ORDER BY id DESC LIMIT ?`,
   latestMsgId: `SELECT msg_id FROM history_messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1`,
+  maxMsgIdForPrefix: `-- Highest msg_id across every chat whose id starts with a prefix
+-- (parameter is a LIKE pattern with \\ escapes). Seeds the WhatsApp
+-- frontend's in-memory id counter past what history already holds.
+SELECT MAX(msg_id) AS max_id FROM history_messages WHERE chat_id LIKE ? ESCAPE '\\'`,
   knownUsers: `SELECT sender_id,
        MAX(timestamp) AS last_seen,
        COUNT(*) AS message_count,

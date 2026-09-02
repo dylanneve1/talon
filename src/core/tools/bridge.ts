@@ -6,6 +6,7 @@
  */
 
 import { Agent, fetch as undiciFetch } from "undici";
+import { isBunRuntime } from "../../util/runtime.js";
 import type { BridgeFunction } from "./types.js";
 
 /** Default wall-clock budget for a bridge action. */
@@ -95,8 +96,13 @@ export function createBridge(
       json(): Promise<unknown>;
     };
     try {
+      // Bun has no 300s header watchdog and aliases the npm undici
+      // module to its own internals (so the Agent knobs do nothing
+      // there anyway) — its global fetch serves long-haul calls fine,
+      // governed by the AbortSignal alone. The undici detour is a
+      // Node-only workaround.
       resp =
-        timeoutMs > BUILTIN_FETCH_HEADERS_CEILING_MS
+        timeoutMs > BUILTIN_FETCH_HEADERS_CEILING_MS && !isBunRuntime()
           ? await undiciFetch(`${bridgeUrl}/action`, {
               ...init,
               dispatcher: dispatcher(),

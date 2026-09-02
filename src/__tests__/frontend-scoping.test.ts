@@ -16,7 +16,7 @@ import {
   nonTerminalFrontends,
 } from "../backend/shared/frontends.js";
 
-const ALL = ["telegram", "discord", "teams", "native"] as const;
+const ALL = ["telegram", "discord", "teams", "native", "whatsapp"] as const;
 
 describe("frontendForChatId", () => {
   it("classifies each frontend's chat-id shape", () => {

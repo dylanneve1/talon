@@ -145,6 +145,11 @@ export type BridgeServerHandlers = {
     token: string,
     fromDeviceId?: string,
   ): Promise<{ path: string; size: number } | null>;
+  /** Resolve a companion-pairing grant to its page/payload, or null. */
+  openCompanionPair(
+    token: string,
+    format: "html" | "json",
+  ): { contentType: string; body: string } | null;
   /** Resolve a node-provisioning token to its installer script, or null. */
   openNodeInstall(token: string): { script: string; filename: string } | null;
   /** Resolve a node-provisioning token to the binary to stream, or null. */
@@ -462,6 +467,34 @@ export class BridgeServer {
         activeChats: s.activeChats,
         capabilities: ["mesh", "mesh-commands", "mesh-file-stream"],
       });
+    }
+
+    // Companion pairing is PRE-AUTH for the same reason as node
+    // provisioning below: the phone holds no bridge credential yet, and the
+    // single-use grant is what it comes to collect. Serving the page IS the
+    // handover, so the grant is spent whichever leg is hit.
+    if (method === "GET" && path === "/pair") {
+      const token = url.searchParams.get("grant") ?? "";
+      const wantsJson =
+        url.searchParams.get("format") === "json" ||
+        (req.headers.accept ?? "").includes("application/json");
+      const served = token
+        ? this.handlers.openCompanionPair(token, wantsJson ? "json" : "html")
+        : null;
+      if (!served) {
+        return this.json(res, 404, {
+          ok: false,
+          error: "Unknown, expired, or already-used pairing link",
+        });
+      }
+      res.writeHead(200, {
+        "Content-Type": served.contentType,
+        // A pairing payload is a credential; nothing may keep a copy.
+        "Cache-Control": "no-store",
+        ...this.corsHeaders(),
+      });
+      res.end(served.body);
+      return;
     }
 
     // Node provisioning runs PRE-AUTH by design: the target host holds no

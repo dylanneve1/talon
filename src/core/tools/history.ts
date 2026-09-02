@@ -30,7 +30,7 @@ export const historyTools: ToolDefinition[] = [
         before: params.before,
         offset_id: params.offset_id,
       }),
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "whatsapp"],
     tag: "history",
   },
 
@@ -42,7 +42,7 @@ export const historyTools: ToolDefinition[] = [
       limit: z.number().optional(),
     },
     execute: (params, bridge) => bridge("search_history", params),
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "whatsapp"],
     tag: "history",
   },
 
@@ -54,7 +54,7 @@ export const historyTools: ToolDefinition[] = [
       limit: z.number().optional(),
     },
     execute: (params, bridge) => bridge("get_user_messages", params),
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "whatsapp"],
     tag: "history",
   },
 
@@ -63,7 +63,7 @@ export const historyTools: ToolDefinition[] = [
     description: "Get a specific message by ID.",
     schema: { message_id: snowflakeOrIdSchema },
     execute: (params, bridge) => bridge("get_message_by_id", params),
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "whatsapp"],
     tag: "history",
   },
 
@@ -77,7 +77,7 @@ export const historyTools: ToolDefinition[] = [
       ),
     },
     execute: (params, bridge) => bridge("download_media", params),
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "whatsapp"],
     tag: "history",
   },
 ];

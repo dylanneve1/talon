@@ -24,6 +24,7 @@ import {
   isTeamsChatId,
   isTelegramChatId,
   isTerminalChatId,
+  isWhatsAppChatId,
 } from "../../util/chat-id.js";
 
 function registerBuiltinFrontends(): void {
@@ -54,6 +55,13 @@ function registerBuiltinFrontends(): void {
     label: "Discord",
     ownsChatId: isDiscordChatId,
     routePriority: 40,
+    messaging: true,
+  });
+  registerFrontend({
+    id: "whatsapp",
+    label: "WhatsApp",
+    ownsChatId: isWhatsAppChatId,
+    routePriority: 50,
     messaging: true,
   });
   registerFrontend({

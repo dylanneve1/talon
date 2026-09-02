@@ -25,6 +25,7 @@ import {
   handleChatFreeAction,
   isChatFreeAction,
 } from "./gateway-actions/index.js";
+import { registerCrossSendTarget } from "./gateway-actions/cross-send.js";
 import {
   handleHubRequest,
   getHubSessionCount,
@@ -154,6 +155,9 @@ export class Gateway {
     name: string,
     handler: FrontendActionHandler | null,
   ): void {
+    // Mirror into the cross-send broker so the chat-free `send_via`
+    // action can dispatch to any enabled frontend by explicit name.
+    registerCrossSendTarget(name, handler);
     if (handler === null) {
       this.frontendHandlers.delete(name);
       return;
@@ -596,16 +600,28 @@ export class Gateway {
         resolve();
         return;
       }
-      this.server.close(() => {
+      const server = this.server;
+      const settle = (): void => {
         this.server = null;
         this.port = 0;
         resolve();
+      };
+      // Bun's closeAllConnections() (≤1.3.x) doesn't sever live SSE
+      // streams, so close()'s callback can never fire there and stop()
+      // would hang shutdown (and every test teardown). Resolve on a
+      // deadline either way: by then no new connections are accepted,
+      // and the process this runs in is exiting anyway.
+      const deadline = setTimeout(settle, 2_000);
+      deadline.unref?.();
+      server.close(() => {
+        clearTimeout(deadline);
+        settle();
       });
       // `close()` only stops NEW connections; MCP hub sessions hold
       // long-lived SSE streams that would keep the close callback from
       // ever firing. Terminate them — everything on this server is
       // localhost request/response or SSE, safe to drop at stop time.
-      this.server.closeAllConnections();
+      server.closeAllConnections();
     });
   }
 }

@@ -69,7 +69,19 @@ class ConnectionConfig {
 
   String get scheme => tls ? 'https' : 'http';
 
-  String get baseUrl => '$scheme://$host:$port';
+  /// The port a URL of this scheme implies when none is written down: 443 for
+  /// https, 80 for http. A bridge behind a reverse proxy lives on one of these,
+  /// so "no port" has to mean the scheme default rather than the daemon's own
+  /// 19880 — otherwise pasting `https://mesh.example.org` silently dials the
+  /// wrong port and connects only while the direct port is still open.
+  static int defaultPortFor(bool tls) => tls ? 443 : 80;
+
+  /// True when [port] is the one [scheme] already implies, so it can be left
+  /// out of a URL.
+  bool get usesDefaultPort => port == defaultPortFor(tls);
+
+  String get baseUrl =>
+      usesDefaultPort ? '$scheme://$host' : '$scheme://$host:$port';
 
   /// Resolve a relative bridge media path (e.g. `/media?id=…`) to a full URL,
   /// appending the auth token as a query param (Image.network can't set an
@@ -195,6 +207,53 @@ class ConnectionConfig {
       }
     }
     return HostInput(host: s.trim(), port: port, tls: tls);
+  }
+
+  /// Build a profile from a `talon://pair` link — the payload behind the
+  /// daemon's `/mesh link`, opened from the pairing page or pasted in.
+  ///
+  /// The link carries the credentials themselves (`u` bridge URL, `t` token,
+  /// `f` certificate fingerprint, `n` a display name) rather than a grant to
+  /// redeem: by the time it reaches the phone the daemon's single-use grant is
+  /// already spent, and a link that needed one more round trip would fail on
+  /// exactly the flaky first connection it exists to make painless.
+  ///
+  /// Returns null for anything that isn't a usable pairing link, so a
+  /// clipboard full of something else is a quiet no rather than a wrong
+  /// profile silently replacing a working one.
+  static ConnectionConfig? fromPairLink(String raw) {
+    final uri = Uri.tryParse(raw.trim());
+    if (uri == null) return null;
+    if (uri.scheme.toLowerCase() != 'talon' ) return null;
+    // Both `talon://pair?…` (host = pair) and `talon:pair?…` (path = pair)
+    // reach here depending on which side built the link.
+    final target = uri.host.isNotEmpty ? uri.host : uri.path;
+    if (target.replaceAll('/', '') != 'pair') return null;
+    final bridge = uri.queryParameters['u']?.trim() ?? '';
+    if (bridge.isEmpty) return null;
+    final parsed = parseHostInput(bridge);
+    if (parsed.host.isEmpty) return null;
+    final token = uri.queryParameters['t']?.trim() ?? '';
+    final fingerprint = uri.queryParameters['f']?.trim() ?? '';
+    final tls = parsed.tls ?? false;
+    return ConnectionConfig(
+      host: parsed.host,
+      port: parsed.port ?? defaultPortFor(tls),
+      token: token.isEmpty ? null : token,
+      tls: tls,
+      fingerprint: fingerprint.isEmpty ? null : fingerprint,
+      // A paired bridge is somewhere else by definition; never adopt it as a
+      // daemon this device is supposed to launch and supervise.
+      manageLocalDaemon: false,
+      localAutoDiscover: false,
+    );
+  }
+
+  /// The display name a pairing link suggests for the daemon, if any.
+  static String? pairLinkLabel(String raw) {
+    final uri = Uri.tryParse(raw.trim());
+    final name = uri?.queryParameters['n']?.trim();
+    return (name == null || name.isEmpty) ? null : name;
   }
 
   /// First-run default tuned to the platform: desktop discovers local Talon;

@@ -1,6 +1,12 @@
 import type { TalonConfig } from "../util/config.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// This suite asserts the Node/tsx spawn recipes; pin the runtime
+// predicate so the assertions hold when the suite itself runs under bun.
+vi.mock("../util/runtime.js", () => ({
+  isBunRuntime: () => false,
+}));
+
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),
   logError: vi.fn(),
@@ -483,6 +489,22 @@ describe("plugin system", () => {
 
       vi.doMock("../plugins/github/index.js", () => ({
         createGitHubPlugin: () => githubPlugin,
+      }));
+      // loadBuiltinPlugins provisions enabled native runtimes first; the
+      // real github provisioner shells out to docker, which a unit test
+      // must never do (and which blows the test timeout on runners
+      // where the daemon is slow to answer).
+      vi.doMock("../plugins/github/provision.js", () => ({
+        provisionGithubMcp: async () => ({
+          status: "skipped",
+          kind: "docker",
+          actions: [],
+          warnings: [],
+        }),
+        inspectGithub: async () => [],
+        githubMcpImageRef: (tag?: string) =>
+          `ghcr.io/github/github-mcp-server:${tag ?? "test"}`,
+        GITHUB_MCP_PINNED_TAG: "test",
       }));
 
       const mod = await import("../core/plugin/index.js");

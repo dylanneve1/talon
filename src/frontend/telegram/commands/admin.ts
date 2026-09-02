@@ -8,6 +8,7 @@
 
 import type { Bot } from "grammy";
 import { respawnSelf } from "../../../util/respawn.js";
+import { isStaleCommand } from "../stale-command.js";
 import {
   getRepoRoot,
   runSelfUpdate,
@@ -154,6 +155,10 @@ export function registerAdminCommands(
       await ctx.reply("Not authorized.");
       return;
     }
+    // A restart that predates this process is a redelivery (or an order
+    // aimed at a daemon that is already gone) — obeying it would restart
+    // us again, and again, on every boot.
+    if (isStaleCommand(ctx.message?.date, "/restart")) return;
     await ctx.reply("♻️ Restarting...");
     respawnSelf("telegram /restart");
   });
@@ -169,6 +174,8 @@ export function registerAdminCommands(
         await ctx.reply("Not authorized.");
         return;
       }
+      // Same redelivery hazard as /restart — it also ends the process.
+      if (isStaleCommand(ctx.message?.date, "/update")) return;
       const remote = config.update?.remote ?? "origin";
       const branch = config.update?.branch ?? "main";
       const sent = await ctx.reply(
@@ -207,6 +214,11 @@ export function registerAdminCommands(
           await edit(
             `✅ Updated <code>${escapeHtml(res.before ?? "?")}</code> → <code>${escapeHtml(res.after ?? "?")}</code>. ♻️ Restarting…`,
           );
+          // The successor documents any provisioning changes (plugin
+          // runtime upgrades, migrations) back to this chat once it's up.
+          const { armProvisionReport } =
+            await import("../../../core/plugin/provision-journal.js");
+          armProvisionReport("telegram", String(ctx.chat.id));
           respawnSelf("telegram /update");
         })
         .catch(async (err: unknown) => {

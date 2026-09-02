@@ -112,7 +112,7 @@ Forum topics (supergroups with topics):
         .describe("Target chat ID. Omit for the current chat."),
     },
     execute: (params, bridge) => bridge("moderate", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "whatsapp"],
     tag: "moderation",
   },
 
@@ -125,7 +125,7 @@ Forum topics (supergroups with topics):
       limit: z.number().optional().describe("Max photos to return (default 5)"),
     },
     execute: (params, bridge) => bridge("get_user_profile_photos", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "whatsapp"],
     tag: "moderation",
   },
 ];

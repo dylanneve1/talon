@@ -12,6 +12,7 @@ vi.mock("../storage/daily-log.js", () => ({
 vi.mock("../util/watchdog.js", () => ({
   recordMessageProcessed: vi.fn(),
   recordMessageReceived: vi.fn(),
+  recordMessageSettled: vi.fn(),
   recordError: vi.fn(),
 }));
 vi.mock("../util/log.js", () => ({
@@ -27,6 +28,7 @@ vi.mock("../core/errors.js", () => ({
     retryable: false,
   })),
   friendlyMessage: vi.fn(() => "An error occurred"),
+  RETRY_ELAPSED_CAP_MS: 120_000,
 }));
 
 vi.mock("../storage/history.js", () => ({
@@ -1487,6 +1489,34 @@ describe("flushQueue — retryable error path", () => {
     expect(mockBot.api.sendMessage.mock.calls.length).toBeGreaterThan(
       sendMsgCalls,
     );
+  }, 3000);
+});
+
+describe("flushQueue — user-stopped turn", () => {
+  it("stays silent when the turn unwound because of /stop", async () => {
+    const { classify } = await import("../core/errors.js");
+
+    executeMock.mockRejectedValueOnce(new Error("Turn stopped by user"));
+    (classify as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      reason: "stopped",
+      message: "Turn stopped by user",
+      retryable: false,
+    });
+
+    const chatId = 95003;
+    const ctx = {
+      chat: { id: chatId, type: "private" },
+      message: { text: "stop me", message_id: 902, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 92, first_name: "Nadia" },
+    } as any;
+
+    const sendMsgCalls = mockBot.api.sendMessage.mock.calls.length;
+    await handleTextMessage(ctx, mockBot, mockConfig);
+    await new Promise((r) => setTimeout(r, 700));
+
+    // No retry, no error message — the /stop ack already covered it.
+    expect(mockBot.api.sendMessage.mock.calls.length).toBe(sendMsgCalls);
   }, 3000);
 });
 

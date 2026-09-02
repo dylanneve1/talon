@@ -67,14 +67,23 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  */
 function ensureMcpSupervisorCmd(): void {
   if (process.env.TALON_MCP_SUPERVISOR_CMD) return;
-  process.env.TALON_MCP_SUPERVISOR_CMD = JSON.stringify([
-    process.execPath,
-    "--import",
-    pathToFileURL(
-      resolve(__dirname, "../../../../node_modules/tsx/dist/esm/index.mjs"),
-    ).href,
-    resolve(__dirname, "../../../cli.ts"),
-  ]);
+  // Bun runs the TS entry natively; node needs the tsx loader (and would
+  // hang on bun's execPath being handed node loader flags, and vice versa).
+  const cmd =
+    typeof process.versions.bun === "string"
+      ? [process.execPath, resolve(__dirname, "../../../cli.ts")]
+      : [
+          process.execPath,
+          "--import",
+          pathToFileURL(
+            resolve(
+              __dirname,
+              "../../../../node_modules/tsx/dist/esm/index.mjs",
+            ),
+          ).href,
+          resolve(__dirname, "../../../cli.ts"),
+        ];
+  process.env.TALON_MCP_SUPERVISOR_CMD = JSON.stringify(cmd);
 }
 
 export function createStubHarness<Turn>(

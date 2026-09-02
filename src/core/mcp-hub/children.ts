@@ -62,6 +62,31 @@ type ChildEntry = {
 const children = new Map<string, ChildEntry>();
 const inflight = new Map<string, Promise<ChildHandle>>();
 
+/**
+ * Negative cache for spawn failures. A child whose backing service is down
+ * (e.g. playwright-tools with its browser endpoint offline) dies at the
+ * connect handshake, and without this every single turn re-paid the
+ * spawn+handshake (~600ms) and re-logged the failure for the whole outage.
+ * Failures back off exponentially; the first attempt after the window
+ * clears the entry on success, so recovery costs one turn.
+ */
+type SpawnFailure = { at: number; count: number; error: unknown };
+const spawnFailures = new Map<string, SpawnFailure>();
+const FAILURE_BACKOFF_BASE_MS = 30_000;
+const FAILURE_BACKOFF_MAX_MS = 10 * 60_000;
+
+function failureBackoffMs(count: number): number {
+  return Math.min(
+    FAILURE_BACKOFF_BASE_MS * 2 ** (count - 1),
+    FAILURE_BACKOFF_MAX_MS,
+  );
+}
+
+/** Test seam: forget recorded spawn failures. */
+export function resetSpawnFailures(): void {
+  spawnFailures.clear();
+}
+
 /** Idle TTL for hub children; tunable for tests / tight deployments. */
 function idleTtlMs(): number {
   const raw = Number(process.env.TALON_MCP_HUB_IDLE_MS);
@@ -168,9 +193,28 @@ export function acquireChild(
   const pending = inflight.get(key);
   if (pending) return pending;
 
+  const failure = spawnFailures.get(key);
+  if (failure && Date.now() - failure.at < failureBackoffMs(failure.count)) {
+    return Promise.reject(
+      failure.error instanceof Error
+        ? failure.error
+        : new Error(String(failure.error)),
+    );
+  }
+
   const promise = (async () => {
     try {
-      return await spawnChild(key, spec());
+      const handle = await spawnChild(key, spec());
+      spawnFailures.delete(key);
+      return handle;
+    } catch (err) {
+      const prior = spawnFailures.get(key);
+      spawnFailures.set(key, {
+        at: Date.now(),
+        count: (prior?.count ?? 0) + 1,
+        error: err,
+      });
+      throw err;
     } finally {
       inflight.delete(key);
     }

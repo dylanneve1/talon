@@ -184,6 +184,10 @@ vi.mock("../backend/shared/index.js", () => ({
   // catch block when it fires). Stub returns the no-retry shape so the
   // handler's `if (outcome.retry) return outcome.retry` falls through to
   // the throw — preserving error visibility if a test ever triggers it.
+  crossTurnVerdict: () => "none",
+  priorLookbackOverflow: () => undefined,
+  noteLookbackRisk: vi.fn(),
+  CACHE_LOOKBACK_BLOCKS: 20,
   applyRetryDecision: async ({ err }: { err: unknown }) => ({
     retry: undefined,
     classified: err instanceof Error ? err : new Error(String(err)),

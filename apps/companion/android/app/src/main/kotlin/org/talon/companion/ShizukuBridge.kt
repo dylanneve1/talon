@@ -200,8 +200,17 @@ class ShizukuBridge(
             } catch (_: Throwable) {
                 "unavailable"
             }
-            Log.i(TAG, "getStatus -> ready=$granted state=$state uid=${shizukuUid()}")
-            replySuccess(result, mapOf("ready" to granted, "state" to state))
+            val uid = shizukuUid()
+            Log.i(TAG, "getStatus -> ready=$granted state=$state uid=$uid")
+            // The uid is the difference between "shell privilege" and actual
+            // root: a Shizuku server started while adbd itself was root (the
+            // `adb root` path on a userdebug device) runs at uid 0, and every
+            // command through this bridge is then a ROOT command. Reporting it
+            // lets Dart advertise the real tier instead of always saying shell.
+            replySuccess(
+                result,
+                mapOf("ready" to granted, "state" to state, "uid" to uid),
+            )
         }.start()
     }
 

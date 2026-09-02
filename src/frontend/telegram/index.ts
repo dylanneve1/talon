@@ -23,6 +23,7 @@ import {
 } from "./commands/index.js";
 import { setAccessControl } from "./handlers/index.js";
 import { registerMiddleware } from "./middleware.js";
+import { confirmUpdates } from "./update-offset.js";
 import { registerCallbacks } from "./callbacks/index.js";
 import { log, logError } from "../../util/log.js";
 
@@ -86,6 +87,7 @@ export function createTelegramFrontend(
       setAdminUserId(config.adminUserId);
       setAccessControl({
         allowedUsers: config.allowedUsers,
+        blockedUsers: config.blockedUsers,
         adminUserId: config.adminUserId,
       });
 
@@ -142,6 +144,10 @@ export function createTelegramFrontend(
     async stop() {
       try {
         await bot.stop();
+        // grammY advances the update offset on its NEXT poll, which never
+        // comes once we are shutting down — so confirm it explicitly or
+        // Telegram redelivers the command that triggered this shutdown.
+        await confirmUpdates(bot);
         log("shutdown", "Bot disconnected");
       } catch (err) {
         logError("shutdown", "Bot stop error", err);
