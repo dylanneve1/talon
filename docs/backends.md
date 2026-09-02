@@ -67,6 +67,22 @@ server, so their MCP / session / provider plumbing is shared:
   `finalizePartsIntoState`).
 - `one-shot.ts` — shared heartbeat/dream runner; each backend binds
   its server bootstrap, model-selection parser, and delivery suffix.
+- `server-bindings.ts` — `bindRemoteServer(profile)`: the helpers above
+  closed over one backend's state. A `RemoteBackendProfile` is the whole
+  per-backend seam: SDK client/server constructors, loopback port (and
+  its override env var), delivery contract, and the stored-model parser.
+- `turn.ts` — `runRemoteTurn`: the SSE-first turn driver (subscribe,
+  `promptAsync`, await close, read the authoritative parts list).
+- `chat-turn.ts` — `runRemoteChatTurn`: the chat-turn orchestration
+  (model/provider resolution, session + MCP setup, prompt pair, turn,
+  post-turn accounting, delivery routing).
+- `factory.ts` — `createRemoteBackendFactory`: the registry factory
+  composition shared by every member of the family.
+
+A concrete backend directory (`kilo/`, `opencode/`) is therefore just the
+profile in `server.ts`, the presentation knobs in `models/`, and thin
+re-exports under the historical names. There is no per-backend turn or
+handler logic left to drift.
 
 Codex and Claude SDK don't use this — they wrap different transport
 shapes.
@@ -147,8 +163,12 @@ own credentials.
 
 Same shape as Kilo (Kilo is a fork). One long-lived `opencode serve`
 HTTP server (default port 4096) via `@opencode-ai/sdk`. Same MCP
-wiring, same SSE event loop, same session lifecycle. The two
-backends share `backend/remote-server/` infrastructure.
+wiring, same SSE event loop, same session lifecycle — literally the
+same code: both are `bindRemoteServer` profiles. What differs is the
+SDK package, the port, the delivery contract (Kilo: text-or-tools;
+OpenCode: text-preferred), the stored-model parser (Kilo honours a
+`kilo/` prefix; OpenCode splits `provider/model` fuzzily), and the
+model-picker presentation knobs in `models/index.ts`.
 
 ### Codex
 
@@ -187,8 +207,10 @@ keep OpenAI-compatible endpoint credentials without hijacking Codex.
    `src/util/config.ts` so config validation accepts it.
 
 5. Wire shared infrastructure where it helps. If your backend wraps
-   an HTTP server, you probably want to use `remote-server/`. If it
-   spawns a subprocess, study the Codex pattern in `backend/codex/`.
+   an OpenCode-shaped HTTP server, it is a `RemoteBackendProfile`:
+   copy `backend/opencode/` and change the profile fields — nothing
+   else in that directory is backend-specific. If it spawns a
+   subprocess, study the Codex pattern in `backend/codex/`.
 
 6. Update the README's Backends section + this doc.
 

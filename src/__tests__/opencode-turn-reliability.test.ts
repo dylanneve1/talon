@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runOpenCodeTurn } from "../backend/opencode/handler/turn.js";
+import { runRemoteTurn } from "../backend/remote-server/turn.js";
 import { createStreamState } from "../backend/shared/index.js";
 import {
   awaitRemoteTurn,
@@ -57,7 +57,8 @@ describe("OpenCode turn reliability", () => {
       "talon-tools-chat-2_end_turn": false,
     };
 
-    await runOpenCodeTurn({
+    await runRemoteTurn({
+      label: "OpenCode",
       oc: oc as never,
       sessionId: "sess-1",
       prompt: "hello",

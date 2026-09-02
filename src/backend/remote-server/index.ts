@@ -6,7 +6,7 @@
  * for MCP registration, session lifecycle, tool listing, and provider
  * resolution).
  *
- * Architecture in three layers:
+ * Architecture in four layers:
  *
  *   - {@link RemoteServerState} (state.ts) — per-backend mutable container.
  *     Each concrete backend owns one instance, holding the cached client,
@@ -16,29 +16,29 @@
  *   - Lifecycle / MCP / sessions / providers — pure helpers that take a
  *     `RemoteAgentClient` + `RemoteServerState` and act on them.
  *
- *   - Concrete backends (`backend/opencode`, `backend/kilo`) — supply
- *     the SDK-specific client and server factories, the prompt /
- *     promptAsync drivers, and the system-prompt suffix.
+ *   - Bindings (server-bindings.ts, chat-turn.ts, turn.ts, factory.ts) —
+ *     the helpers closed over one backend's state, the SSE-driven turn,
+ *     the chat-turn orchestration, and the registry factory composition.
+ *     This is where the code that used to be copied per backend lives.
+ *
+ *   - Concrete backends (`backend/opencode`, `backend/kilo`) — a
+ *     `RemoteBackendProfile` (SDK constructors, port, delivery contract,
+ *     model-selection parser) plus re-exports under historical names.
  *
  * What's NOT here (intentionally):
  *
- *   - SDK-specific event types (Kilo's SSE events, OpenCode's sync
- *     `prompt` parts list) — those stay in each backend.
- *   - Per-backend model catalog logic (`models.ts`) — Kilo and OpenCode
- *     have different bucket priorities, fuzzy-match weights, etc.
  *   - Tool definitions, frontend prompt format — those are backend-
  *     agnostic and live in `core/` and `backend/shared/`.
+ *
+ * This barrel exposes the helper layer for tests and the conformance
+ * suite; the bindings modules import from the concrete files directly.
  */
 
 export type { RemoteAgentClient } from "./client.js";
 
-export {
-  type RemoteServerState,
-  createRemoteServerState,
-  errMsg,
-} from "./state.js";
+export { type RemoteServerState, createRemoteServerState } from "./state.js";
 
-export { ensureRemoteServer, stopRemoteServer } from "./lifecycle.js";
+export { stopRemoteServer } from "./lifecycle.js";
 
 export {
   TALON_MCP_SERVER_NAME,
@@ -48,10 +48,5 @@ export {
   ensurePluginMcpServers,
   buildToolOverrides,
   disconnectChatMcpServer,
-  refreshPluginMcpServers,
   getRegisteredMcpServerNames,
 } from "./mcp.js";
-
-export { ensureRemoteSession, warmRemoteSession } from "./sessions.js";
-
-export { resolveProviderID } from "./providers.js";
