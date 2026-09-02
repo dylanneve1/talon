@@ -24,34 +24,29 @@
  * With no transport registered (daemon running without the native bridge),
  * everything degrades gracefully: locate answers from the last persisted
  * fix immediately, and commands fail fast with a clear explanation.
+ *
+ * The service keeps the registry, the transport fan-out, the command
+ * channel, device resolution, and the model-facing summaries. Two
+ * collaborators own the rest and are reached through thin delegations so
+ * the public surface stays one object: {@link DeviceFiles} (chunked and
+ * streamed file transfer, the companion/node self-update flows) and
+ * {@link BridgeLinks} (node provisioning, companion pairing, reachability).
  */
 
 import { randomUUID } from "node:crypto";
-import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { networkInterfaces, tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { clampExecOutput } from "../../util/exec-output.js";
-import { dirs } from "../../util/paths.js";
+import { BridgeLinks, type MeshBridgeInfo } from "./bridge-links.js";
 import {
-  NODE_TARGETS,
-  normalizeGoarch,
-  normalizeGoos,
-  platformToGoos,
-  resolveNodeBinary,
-  type NodeBinaryResolver,
-} from "./node-binaries.js";
-import {
-  CompanionPairStore,
-  pairLink,
-  pairPage,
-  type CompanionPairPayload,
-} from "./companion-pairing.js";
-import { installOneLiner, NodeProvisionStore } from "./node-provision.js";
+  age,
+  formatBytes,
+  FS_COMMAND_TIMEOUT_MS,
+  requirePath,
+  type MeshToolResult,
+} from "./common.js";
+import { DeviceFiles } from "./device-files.js";
+import { resolveNodeBinary, type NodeBinaryResolver } from "./node-binaries.js";
 import { MeshRegistry } from "./registry.js";
-import { TransferStore } from "./transfers.js";
 import type {
   DeviceCommand,
   DeviceCommandResult,
@@ -67,7 +62,7 @@ export type MeshTransport = {
   command(command: DeviceCommand): void;
 };
 
-export type MeshToolResult = { ok: boolean; text: string };
+export type { MeshToolResult } from "./common.js";
 
 /** Outcome of pinging one device (see {@link MeshService.pingAll}). */
 export type MeshPingResult = {
@@ -91,22 +86,7 @@ export type MeshServiceOptions = {
   nodeBinaryResolver?: NodeBinaryResolver;
 };
 
-/**
- * What the native bridge tells the mesh about itself once it's listening —
- * everything a generated node installer needs to point a fresh host here.
- * Registered by the native frontend after server start; null when the
- * bridge isn't running (provisioning tools then fail with a clear reason).
- */
-export type MeshBridgeInfo = {
-  scheme: "http" | "https";
-  /** The bind host from config — may be a wildcard (0.0.0.0/::). */
-  host: string;
-  port: number;
-  /** Bearer token clients authenticate with (absent on open loopback). */
-  token?: string;
-  /** TLS certificate SHA-256 (absent over plain HTTP). */
-  fingerprint?: string;
-};
+export type { MeshBridgeInfo } from "./bridge-links.js";
 
 const DEFAULT_FRESH_FIX_TIMEOUT_MS = 8_000;
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
@@ -120,44 +100,6 @@ const MAX_HISTORY_LINES = 24;
 const DEFAULT_EXEC_TIMEOUT_MS = 60_000;
 /** Hard ceiling on a caller-requested exec timeout. */
 const MAX_EXEC_TIMEOUT_MS = 300_000;
-/** Timeout for a single filesystem command (list/stat/one chunk/etc.). */
-const FS_COMMAND_TIMEOUT_MS = 30_000;
-/**
- * Bytes of file payload per FALLBACK transfer chunk (base64 on the wire).
- * The chunked command channel costs one full mesh round trip per chunk, so
- * it's only used for app builds that don't advertise the streaming commands
- * (`upload_file`/`download_file`) — modern builds move file bodies as a
- * single raw HTTP stream instead (see TransferStore). 1MB keeps even the
- * fallback tolerable without bloating a single SSE frame too far.
- */
-const FILE_CHUNK_BYTES = 1024 * 1024;
-/** Wall-clock budget for one streamed transfer (command dispatch → done). */
-const STREAM_TRANSFER_TIMEOUT_MS = 60 * 60 * 1000;
-/** readFileBytes switches to the streaming path above this size. */
-const STREAM_READ_THRESHOLD_BYTES = 4 * 1024 * 1024;
-/**
- * Hard ceiling on a chunked (command-channel) transfer. The chunked path
- * assembles the whole file in daemon memory one mesh round trip at a time —
- * past this size it's both a memory hazard and unusably slow, so fail with
- * a pointer to the streaming path instead of grinding on.
- */
-const MAX_CHUNKED_TRANSFER_BYTES = 64 * 1024 * 1024;
-/**
- * No policy size cap on transfers — a transfer is attempted whatever the
- * size and fails with a concrete error when a real limit bites (device read
- * error, stream timeout, disk). The streamed paths are disk-to-disk and
- * never hold the file in daemon memory; only the chunked FALLBACK and
- * readFileBytes (whose callers need a Buffer) are memory-bound.
- */
-/**
- * Where pulled device files land on the daemon host when no dest is given.
- * Resolved lazily (not at module load) so a test that mocks `util/paths`
- * doesn't hit its workspace binding before initialization.
- */
-function pullDir(): string {
-  return resolve(dirs.workspace, "mesh-pull");
-}
-
 export class MeshService {
   private readonly waiters = new Set<() => void>();
   private readonly transports = new Set<MeshTransport>();
@@ -176,14 +118,11 @@ export class MeshService {
    * and one running ahead would have stale fixes accepted as fresh.
    */
   private readonly receivedAt = new Map<string, number>();
-  /** One-time tokens arranging streamed (single-HTTP-request) transfers. */
-  private readonly transfers = new TransferStore();
-  /** One-time grants for bridge-served node installers. */
-  private readonly provision = new NodeProvisionStore();
-  /** One-time grants that hand a phone this bridge's connection details. */
-  private readonly companionPairs = new CompanionPairStore();
   private readonly resolveNode: NodeBinaryResolver;
-  private bridgeInfo: MeshBridgeInfo | null = null;
+  /** Chunked + streamed file transfer and the self-update flows. */
+  private readonly files: DeviceFiles;
+  /** Node provisioning, companion pairing, and bridge reachability. */
+  private readonly links: BridgeLinks;
   private readonly freshFixTimeoutMs: number;
   private readonly pollIntervalMs: number;
   private readonly commandTimeoutMs: number;
@@ -199,11 +138,20 @@ export class MeshService {
     this.commandTimeoutMs =
       options.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
     this.resolveNode = options.nodeBinaryResolver ?? resolveNodeBinary;
+    this.files = new DeviceFiles({
+      load: () => this.load(),
+      resolveDevice: (query) => this.resolveDevice(query),
+      dispatchCommand: (query, name, params, timeoutMs) =>
+        this.dispatchCommand(query, name, params, timeoutMs),
+      commandTimeoutMs: this.commandTimeoutMs,
+      resolveNode: this.resolveNode,
+    });
+    this.links = new BridgeLinks(this.resolveNode);
   }
 
   /** The native bridge reports its reachable identity here (null on stop). */
   setBridgeInfo(info: MeshBridgeInfo | null): void {
-    this.bridgeInfo = info;
+    this.links.setBridgeInfo(info);
   }
 
   /** Hydrate persisted devices/locations. Idempotent — safe to await from
@@ -604,11 +552,7 @@ export class MeshService {
     return { ok: true, text: `${p} — ${fields.join(" · ")}` };
   }
 
-  // ── Streaming transfer bridge surface ─────────────────────────────────────
-  // The HTTP routes on the native bridge delegate here; the token is the
-  // entire authorization (single-use, device- and path-bound). `fromDeviceId`
-  // is the caller's self-declared identity — checked against the device the
-  // token was minted for, so a leaked token can't be redeemed by a peer.
+  // ── File transfer + self-update (see device-files.ts) ─────────────────────
 
   /** POST /devices/file — a device streams a pull's file body up. */
   acceptFileUpload(
@@ -616,7 +560,7 @@ export class MeshService {
     body: Readable,
     fromDeviceId?: string,
   ): Promise<{ ok: true; bytes: number } | { ok: false; error: string }> {
-    return this.transfers.acceptUpload(token, body, fromDeviceId);
+    return this.files.acceptFileUpload(token, body, fromDeviceId);
   }
 
   /** GET /devices/file — a device asks for a push's file body. */
@@ -624,815 +568,113 @@ export class MeshService {
     token: string,
     fromDeviceId?: string,
   ): Promise<{ path: string; size: number } | null> {
-    return this.transfers.openDownload(token, fromDeviceId);
+    return this.files.openFileDownload(token, fromDeviceId);
   }
 
-  /** Streaming is per-command capability — old app builds fall back. */
-  private canStream(
-    target: DeviceInfo,
-    command: "upload_file" | "download_file",
-  ): boolean {
-    return target.capabilities?.includes(command) ?? false;
-  }
-
-  /**
-   * Streamed device→daemon transfer: one command round trip to arrange it,
-   * then the file body arrives as a single raw HTTP request, written
-   * atomically to `dest`. Resolves with the byte count.
-   */
-  private async pullViaStream(
-    target: DeviceInfo,
-    remote: string,
-    dest: string,
-  ): Promise<{ bytes: number } | { error: string }> {
-    const { token, done } = this.transfers.createPull(target.id, dest);
-    const dispatched = await this.dispatchCommand(
-      target.id,
-      "upload_file",
-      { token, path: remote },
-      STREAM_TRANSFER_TIMEOUT_MS,
-    );
-    if ("error" in dispatched) {
-      this.transfers.cancel(token);
-      return { error: dispatched.error };
-    }
-    if (!dispatched.result.ok) {
-      this.transfers.cancel(token);
-      return {
-        error:
-          dispatched.result.message ??
-          `${target.name} could not upload ${remote}.`,
-      };
-    }
-    // The device answers the command AFTER its upload completes, so `done`
-    // is normally already resolved — the grace window only catches a device
-    // that claims success without having streamed anything.
-    try {
-      const bytes = await Promise.race([
-        done,
-        new Promise<never>((_, rej) =>
-          setTimeout(
-            () =>
-              rej(
-                new Error(
-                  `${target.name} reported success but no upload arrived.`,
-                ),
-              ),
-            15_000,
-          ).unref?.(),
-        ),
-      ]);
-      return { bytes };
-    } catch (err) {
-      this.transfers.cancel(token);
-      return { error: (err as Error).message };
-    }
-  }
-
-  /**
-   * Raw file bytes off a device — the structured primitive under both the
-   * human-readable tool below and the native read/edit path (which must not
-   * have to parse a display envelope to recover the content).
-   *
-   * Small files ride the chunked command channel (one round trip). Files
-   * over the streaming threshold are pulled via the streaming path into a
-   * temp file first — the chunked channel pays a full mesh round trip per
-   * chunk and is far too slow for big payloads.
-   */
-  async readFileBytes(
+  /** Raw file bytes off a device — the primitive under the read tools. */
+  readFileBytes(
     query: unknown,
     path: unknown,
   ): Promise<{ data: Buffer; deviceName: string } | { error: string }> {
-    const p = requirePath(path);
-    if (!p) return { error: "A file path is required." };
-    await this.load();
-    const resolved = this.resolveDevice(query);
-    if ("error" in resolved) return { error: resolved.error };
-    const target = resolved.target;
-    if (this.canStream(target, "upload_file")) {
-      const size = await this.statSize(target.id, p);
-      if (size !== undefined && size > STREAM_READ_THRESHOLD_BYTES) {
-        const tmp = join(tmpdir(), `talon-pull-${randomUUID()}-${basename(p)}`);
-        const pulled = await this.pullViaStream(target, p, tmp);
-        if ("error" in pulled) return { error: pulled.error };
-        try {
-          const data = await readFile(tmp);
-          return { data, deviceName: target.name };
-        } catch (err) {
-          return {
-            error: `Pulled ${p} but could not read the temp copy: ${(err as Error).message}`,
-          };
-        } finally {
-          await rm(tmp, { force: true }).catch(() => {});
-        }
-      }
-    }
-    return this.pullBytes(target.id, p);
+    return this.files.readFileBytes(query, path);
   }
 
-  /** Size of a device path via the `stat` command, if the device can. */
-  private async statSize(
-    deviceId: string,
-    path: string,
-  ): Promise<number | undefined> {
-    const dispatched = await this.dispatchCommand(
-      deviceId,
-      "stat",
-      { path },
-      FS_COMMAND_TIMEOUT_MS,
-    );
-    if ("error" in dispatched || !dispatched.result.ok) return undefined;
-    const size = dispatched.result.data?.size;
-    return typeof size === "number" ? size : undefined;
-  }
-
-  /** `device_read_file`: read a (text) file off the device, chunked. */
-  async readFileFromDevice(
-    query: unknown,
-    path: unknown,
-  ): Promise<MeshToolResult> {
-    const p = requirePath(path);
-    if (!p) return { ok: false, text: "A file path is required." };
-    const buf = await this.readFileBytes(query, p);
-    if ("error" in buf) return { ok: false, text: buf.error };
-    return {
-      ok: true,
-      text: `${p} on ${buf.deviceName} (${formatBytes(buf.data.length)}):\n\n${buf.data.toString("utf8")}`,
-    };
+  /** `device_read_file`: read a (text) file off the device. */
+  readFileFromDevice(query: unknown, path: unknown): Promise<MeshToolResult> {
+    return this.files.readFileFromDevice(query, path);
   }
 
   /** `device_write_file`: write text content to a file on the device. */
-  async writeFileToDevice(
+  writeFileToDevice(
     query: unknown,
     path: unknown,
     content: unknown,
   ): Promise<MeshToolResult> {
-    const p = requirePath(path);
-    if (!p) return { ok: false, text: "A file path is required." };
-    // A non-string body must fail, not silently truncate the target to an
-    // empty file (an empty string is a legitimate truncate-to-zero).
-    if (typeof content !== "string") {
-      return { ok: false, text: "File content must be a string." };
-    }
-    const written = await this.pushBytes(
-      query,
-      p,
-      Buffer.from(content, "utf8"),
-    );
-    if ("error" in written) return { ok: false, text: written.error };
-    return {
-      ok: true,
-      text: `Wrote ${formatBytes(written.bytes)} to ${p} on ${written.deviceName}.`,
-    };
+    return this.files.writeFileToDevice(query, path, content);
   }
 
-  /** `device_pull_file`: copy a device file to the daemon host — streamed
-   *  (single HTTP request, disk-to-disk) when the app supports it, chunked
-   *  command-channel fallback otherwise. */
-  async pullFileFromDevice(
+  /** `device_pull_file`: copy a device file to the daemon host. */
+  pullFileFromDevice(
     query: unknown,
     remotePath: unknown,
     localPath?: unknown,
   ): Promise<MeshToolResult> {
-    const remote = requirePath(remotePath);
-    if (!remote) return { ok: false, text: "A remote file path is required." };
-    await this.load();
-    const resolved = this.resolveDevice(query);
-    if ("error" in resolved) return { ok: false, text: resolved.error };
-    const target = resolved.target;
-    const dest =
-      typeof localPath === "string" && localPath.trim()
-        ? resolve(dirs.workspace, localPath.trim())
-        : resolve(
-            pullDir(),
-            `${target.name.replace(/\W+/g, "_")}-${basename(remote)}`,
-          );
-    if (this.canStream(target, "upload_file")) {
-      const started = Date.now();
-      const pulled = await this.pullViaStream(target, remote, dest);
-      if ("error" in pulled) return { ok: false, text: pulled.error };
-      return {
-        ok: true,
-        text: `Pulled ${formatBytes(pulled.bytes)} from ${remote} on ${target.name} → ${dest} (streamed, ${transferRate(pulled.bytes, started)})`,
-      };
-    }
-    const buf = await this.pullBytes(target.id, remote);
-    if ("error" in buf) return { ok: false, text: buf.error };
-    await mkdir(dirname(dest), { recursive: true });
-    await writeFile(dest, buf.data);
-    return {
-      ok: true,
-      text: `Pulled ${formatBytes(buf.data.length)} from ${remote} on ${buf.deviceName} → ${dest} (chunked fallback — update the companion app for streamed transfers)`,
-    };
+    return this.files.pullFileFromDevice(query, remotePath, localPath);
   }
 
-  /** `device_push_file`: copy a daemon-host file to the device — streamed
-   *  when the app supports it (never buffers the file in daemon memory),
-   *  chunked command-channel fallback otherwise. */
-  async pushFileToDevice(
+  /** `device_push_file`: copy a daemon-host file to the device. */
+  pushFileToDevice(
     query: unknown,
     localPath: unknown,
     remotePath: unknown,
   ): Promise<MeshToolResult> {
-    const remote = requirePath(remotePath);
-    if (!remote)
-      return { ok: false, text: "A remote destination path is required." };
-    const local =
-      typeof localPath === "string" && localPath.trim()
-        ? resolve(dirs.workspace, localPath.trim())
-        : "";
-    if (!local) return { ok: false, text: "A local source path is required." };
-    await this.load();
-    const resolved = this.resolveDevice(query);
-    if ("error" in resolved) return { ok: false, text: resolved.error };
-    const target = resolved.target;
-    if (this.canStream(target, "download_file")) {
-      const started = Date.now();
-      const { token } = this.transfers.createPush(target.id, local);
-      const dispatched = await this.dispatchCommand(
-        target.id,
-        "download_file",
-        { token, path: remote },
-        STREAM_TRANSFER_TIMEOUT_MS,
-      );
-      if ("error" in dispatched) {
-        this.transfers.cancel(token);
-        return { ok: false, text: dispatched.error };
-      }
-      if (!dispatched.result.ok) {
-        this.transfers.cancel(token);
-        return {
-          ok: false,
-          text:
-            dispatched.result.message ??
-            `${target.name} could not download ${local}.`,
-        };
-      }
-      const bytes = dispatched.result.data?.bytesWritten;
-      const size = typeof bytes === "number" ? bytes : 0;
-      return {
-        ok: true,
-        text: `Pushed ${formatBytes(size)} to ${remote} on ${target.name} (streamed, ${transferRate(size, started)})`,
-      };
-    }
-    let data: Buffer;
-    try {
-      data = await readFile(local);
-    } catch (err) {
-      // Includes Node's buffer-size ceiling (ERR_FS_FILE_TOO_LARGE) for
-      // files too big to hold in memory — surface the real reason.
-      return {
-        ok: false,
-        text: `Cannot read local file ${local}: ${(err as Error).message}`,
-      };
-    }
-    const written = await this.pushBytes(target.id, remote, data);
-    if ("error" in written) return { ok: false, text: written.error };
-    return {
-      ok: true,
-      text: `Pushed ${formatBytes(written.bytes)} to ${remote} on ${written.deviceName} (chunked fallback — update the companion app for streamed transfers).`,
-    };
+    return this.files.pushFileToDevice(query, localPath, remotePath);
   }
 
-  /**
-   * `update_device`: remote self-update for the companion. Streams a new APK
-   * to the device, then tells it to silently install (root or Shizuku) and
-   * restart. The mesh foreground service's autoRunOnMyPackageReplaced brings
-   * the connection back on its own — the link drops only for the seconds the
-   * process is swapped, no manual reopen.
-   *
-   * The APK is hashed here and the digest travels with the install command;
-   * the device re-hashes the pushed file and refuses to install on a
-   * mismatch, so a truncated transfer can never be installed.
-   */
-  async updateDeviceApp(
+  /** `update_device`: remote self-update for the companion app. */
+  updateDeviceApp(
     query: unknown,
     localApkPath: unknown,
     remotePath?: unknown,
   ): Promise<MeshToolResult> {
-    const local =
-      typeof localApkPath === "string" && localApkPath.trim()
-        ? resolve(dirs.workspace, localApkPath.trim())
-        : "";
-    if (!local) return { ok: false, text: "A local APK path is required." };
-    await this.load();
-    const resolved = this.resolveDevice(query);
-    if ("error" in resolved) return { ok: false, text: resolved.error };
-    const target = resolved.target;
-    if (target.capabilities && !target.capabilities.includes("install_apk")) {
-      return {
-        ok: false,
-        text: `${target.name} can't self-update — it needs a companion build with the install_apk capability and root or Shizuku enabled (device control on).`,
-      };
-    }
-
-    let sha256: string;
-    let size: number;
-    try {
-      ({ sha256, size } = await hashFile(local));
-    } catch (err) {
-      return {
-        ok: false,
-        text: `Cannot read APK ${local}: ${(err as Error).message}`,
-      };
-    }
-    if (size === 0) {
-      return { ok: false, text: `APK ${local} is empty.` };
-    }
-
-    const remote =
-      typeof remotePath === "string" && remotePath.trim()
-        ? remotePath.trim()
-        : "/sdcard/Download/talon-companion-update.apk";
-
-    // 1. Stream the APK to the device.
-    const push = await this.pushFileToDevice(target.id, local, remote);
-    if (!push.ok) {
-      return { ok: false, text: `Update aborted — push failed: ${push.text}` };
-    }
-
-    // 2. Trigger the silent install (device verifies the digest first).
-    const dispatched = await this.dispatchCommand(
-      target.id,
-      "install_apk",
-      { path: remote, sha256 },
-      this.commandTimeoutMs,
-    );
-    if ("error" in dispatched) return { ok: false, text: dispatched.error };
-    if (!dispatched.result.ok) {
-      return {
-        ok: false,
-        text:
-          dispatched.result.message ?? `${target.name} refused the install.`,
-      };
-    }
-    return {
-      ok: true,
-      text:
-        `Pushed ${formatBytes(size)} and staged the update on ${target.name}. ` +
-        `${dispatched.result.message ?? "Installing now."} ` +
-        `Confirm with get_device_status once it reconnects (appVersion should change).`,
-    };
+    return this.files.updateDeviceApp(query, localApkPath, remotePath);
   }
 
-  /**
-   * `update_node`: remote self-update for a headless talon-node. Streams a
-   * replacement binary to the node, then sends `update_node` so the node
-   * verifies the digest, atomically swaps its own binary, and restarts into
-   * it (an in-place execve under systemd/launchd, so the mesh connection
-   * returns on its own within seconds — the same UX as the Android path).
-   *
-   * The binary is hashed here and the digest travels with the command; the
-   * node re-hashes the pushed file and refuses to swap on a mismatch, so a
-   * truncated transfer can never be installed.
-   *
-   * With no binary_path, the replacement is auto-resolved for the node's
-   * registered platform/arch (source build in a dev checkout, else the
-   * version-matched release download — see node-binaries.ts).
-   */
-  async updateNodeBinary(
+  /** `update_node`: remote self-update for a headless talon-node. */
+  updateNodeBinary(
     query: unknown,
     localBinaryPath?: unknown,
     remotePath?: unknown,
   ): Promise<MeshToolResult> {
-    await this.load();
-    const resolved = this.resolveDevice(query);
-    if ("error" in resolved) return { ok: false, text: resolved.error };
-    const target = resolved.target;
-    if (target.capabilities && !target.capabilities.includes("update_node")) {
-      return {
-        ok: false,
-        text: `${target.name} can't self-update — it needs the update_node capability (a talon-node headless device).`,
-      };
-    }
-
-    let local: string;
-    let provenance = "";
-    if (typeof localBinaryPath === "string" && localBinaryPath.trim()) {
-      local = resolve(dirs.workspace, localBinaryPath.trim());
-    } else {
-      const goos = platformToGoos(target.platform);
-      if (!goos) {
-        return {
-          ok: false,
-          text: `${target.name} is a ${target.platform} device — update_node targets headless nodes only.`,
-        };
-      }
-      const goarch = normalizeGoarch(target.arch);
-      if (!goarch) {
-        return {
-          ok: false,
-          text: `${target.name} has not advertised its CPU architecture (a node build from before arch reporting). Pass binary_path explicitly for this update — after it, the node advertises arch and future updates auto-resolve.`,
-        };
-      }
-      try {
-        const bin = await this.resolveNode(goos, goarch);
-        local = bin.path;
-        provenance = ` (auto-resolved ${bin.version} for ${goos}/${goarch} via ${bin.source})`;
-      } catch (err) {
-        return { ok: false, text: (err as Error).message };
-      }
-    }
-
-    let sha256: string;
-    let size: number;
-    try {
-      ({ sha256, size } = await hashFile(local));
-    } catch (err) {
-      return {
-        ok: false,
-        text: `Cannot read binary ${local}: ${(err as Error).message}`,
-      };
-    }
-    if (size === 0) return { ok: false, text: `Binary ${local} is empty.` };
-
-    // Default staging path is /tmp on unix nodes (the node re-stages next to
-    // its own executable before the atomic swap, so this is only transient).
-    const remote =
-      typeof remotePath === "string" && remotePath.trim()
-        ? remotePath.trim()
-        : "/tmp/talon-node.update";
-
-    // 1. Stream the new binary to the node.
-    const push = await this.pushFileToDevice(target.id, local, remote);
-    if (!push.ok) {
-      return { ok: false, text: `Update aborted — push failed: ${push.text}` };
-    }
-
-    // 2. Trigger the swap + restart (node verifies the digest first).
-    const dispatched = await this.dispatchCommand(
-      target.id,
-      "update_node",
-      { path: remote, sha256 },
-      this.commandTimeoutMs,
-    );
-    if ("error" in dispatched) return { ok: false, text: dispatched.error };
-    if (!dispatched.result.ok) {
-      return {
-        ok: false,
-        text: dispatched.result.message ?? `${target.name} refused the update.`,
-      };
-    }
-    return {
-      ok: true,
-      text:
-        `Pushed ${formatBytes(size)}${provenance} and staged the update on ${target.name}. ` +
-        `${dispatched.result.message ?? "Restarting now."} ` +
-        `Confirm with get_device_status once it reconnects (appVersion should change).`,
-    };
+    return this.files.updateNodeBinary(query, localBinaryPath, remotePath);
   }
 
-  // ── Node provisioning ──────────────────────────────────────────────────────
+  // ── Provisioning + pairing (see bridge-links.ts) ──────────────────────────
 
-  /**
-   * `get_node_binary`: materialize a talon-node binary for any supported
-   * platform/arch on the daemon host — source build in a dev checkout, else
-   * the digest-verified release download (cached under ~/.talon/node-bin).
-   */
-  async getNodeBinary(os: unknown, arch: unknown): Promise<MeshToolResult> {
-    const goos = normalizeGoos(os);
-    const goarch = normalizeGoarch(arch);
-    if (!goos || !goarch) {
-      return { ok: false, text: unknownTargetText(os, arch) };
-    }
-    try {
-      const bin = await this.resolveNode(goos, goarch);
-      return {
-        ok: true,
-        text: `talon-node ${bin.version} for ${goos}/${goarch}: ${bin.path} (${formatBytes(bin.size)}, sha256 ${bin.sha256}, via ${bin.source})`,
-      };
-    } catch (err) {
-      return { ok: false, text: (err as Error).message };
-    }
+  /** `get_node_binary`: materialize a talon-node binary on the daemon host. */
+  getNodeBinary(os: unknown, arch: unknown): Promise<MeshToolResult> {
+    return this.links.getNodeBinary(os, arch);
   }
 
-  /**
-   * `make_node_install_link`: mint a single-use provisioning URL on the
-   * bridge and return the one command that turns a fresh host into a mesh
-   * node — it fetches the installer script, which downloads the (digest-
-   * verified) binary from the same bridge, installs it, pre-pins the bridge
-   * certificate, and registers the boot service.
-   */
-  async makeNodeInstallLink(
+  /** `make_node_install_link`: mint a single-use node provisioning URL. */
+  makeNodeInstallLink(
     os: unknown,
     arch: unknown,
     name?: unknown,
     bridgeUrl?: unknown,
   ): Promise<MeshToolResult> {
-    const goos = normalizeGoos(os);
-    const goarch = normalizeGoarch(arch);
-    if (!goos || !goarch) {
-      return { ok: false, text: unknownTargetText(os, arch) };
-    }
-    const info = this.bridgeInfo;
-    if (!info) {
-      return {
-        ok: false,
-        text: "The native bridge isn't running, so there is nothing for a new node to connect to. Enable the native frontend first.",
-      };
-    }
-    if (!info.token) {
-      return {
-        ok: false,
-        text: "The bridge has no bearer token (loopback-only bind), and nodes authenticate with one. Set native.host to a reachable address (a token is auto-minted) and restart.",
-      };
-    }
-    const base = this.bridgeBaseUrl(info, bridgeUrl);
-    if (typeof base !== "string") return { ok: false, text: base.error };
-    let bin;
-    try {
-      bin = await this.resolveNode(goos, goarch);
-    } catch (err) {
-      return { ok: false, text: (err as Error).message };
-    }
-    const grant = this.provision.create({
-      goos,
-      goarch,
-      ...(typeof name === "string" && name.trim() ? { name: name.trim() } : {}),
-      binaryPath: bin.path,
-      sha256: bin.sha256,
-      size: bin.size,
-      version: bin.version,
-      bridgeUrl: base,
-      bearerToken: info.token,
-      ...(info.fingerprint ? { fingerprint: info.fingerprint } : {}),
-    });
-    return {
-      ok: true,
-      text: [
-        `Run this on the new ${goos}/${goarch} host:`,
-        "",
-        `  ${installOneLiner(grant)}`,
-        "",
-        `It installs talon-node ${bin.version} (sha256-verified against ${grant.sha256.slice(0, 12)}…), pins the bridge certificate, and registers a boot service — the host appears on the mesh within a minute.`,
-        `Single-use link, expires in 30 minutes. The host must be able to reach ${base}.`,
-      ].join("\n"),
-    };
+    return this.links.makeNodeInstallLink(os, arch, name, bridgeUrl);
   }
 
-  /**
-   * Mint a single-use link that connects a phone to this bridge without
-   * anyone typing an address or a token — the companion half of
-   * {@link makeNodeInstallLink}.
-   *
-   * Returns the link plus the values it carries, so a caller (a `/mesh`
-   * reply, say) can print both: the link is the one-tap path, the values are
-   * what someone falls back to when the app isn't installed yet.
-   */
+  /** Mint a single-use link that connects a phone to this bridge. */
   makeCompanionPairLink(
     label?: unknown,
     bridgeUrl?: unknown,
-  ):
-    | {
-        ok: true;
-        link: string;
-        url: string;
-        token: string;
-        fingerprint?: string;
-      }
-    | { ok: false; text: string } {
-    const info = this.bridgeInfo;
-    if (!info) {
-      return {
-        ok: false,
-        text: "The native bridge isn't running, so there is nothing for a phone to connect to. Enable the native frontend first.",
-      };
-    }
-    if (!info.token) {
-      return {
-        ok: false,
-        text: "The bridge has no bearer token (loopback-only bind), and companions authenticate with one. Set native.host to a reachable address (a token is auto-minted) and restart.",
-      };
-    }
-    const base = this.bridgeBaseUrl(info, bridgeUrl);
-    if (typeof base !== "string") return { ok: false, text: base.error };
-    const grant = this.companionPairs.create({
-      bridgeUrl: base,
-      bearerToken: info.token,
-      ...(info.fingerprint ? { fingerprint: info.fingerprint } : {}),
-      ...(typeof label === "string" && label.trim()
-        ? { label: label.trim() }
-        : {}),
-    });
-    return {
-      ok: true,
-      link: pairLink(grant),
-      url: base,
-      token: info.token,
-      ...(info.fingerprint ? { fingerprint: info.fingerprint } : {}),
-    };
+  ): ReturnType<BridgeLinks["makeCompanionPairLink"]> {
+    return this.links.makeCompanionPairLink(label, bridgeUrl);
   }
 
-  /**
-   * GET /pair — serve a pairing grant (single-use), as the landing page or
-   * as the JSON the companion reads.
-   */
+  /** GET /pair — serve a pairing grant (single-use). */
   openCompanionPair(
     token: string,
     format: "html" | "json",
   ): { contentType: string; body: string } | null {
-    const payload = this.companionPairs.claim(token);
-    if (!payload) return null;
-    return format === "json"
-      ? {
-          contentType: "application/json; charset=utf-8",
-          body: JSON.stringify(payload satisfies CompanionPairPayload),
-        }
-      : {
-          contentType: "text/html; charset=utf-8",
-          body: pairPage(payload),
-        };
+    return this.links.openCompanionPair(token, format);
   }
 
-  /**
-   * How this bridge is reachable, for an operator asking "what do I point a
-   * device at?".
-   *
-   * The bearer token comes back with it. Deciding who may see a credential is
-   * the caller's job, not this seam's — the Telegram `/mesh` shows it to the
-   * configured admin and withholds it from everyone else — and an operator who
-   * asked their own daemon for its own connection details should get an
-   * answer, not a lecture.
-   */
-  bridgeReachability():
-    | {
-        ok: true;
-        url: string;
-        authRequired: boolean;
-        token?: string;
-        fingerprint?: string;
-      }
-    | { ok: false; text: string } {
-    const info = this.bridgeInfo;
-    if (!info) return { ok: false, text: "The native bridge isn't running." };
-    const base = this.bridgeBaseUrl(info);
-    if (typeof base !== "string") return { ok: false, text: base.error };
-    return {
-      ok: true,
-      url: base,
-      authRequired: Boolean(info.token),
-      ...(info.token ? { token: info.token } : {}),
-      ...(info.fingerprint ? { fingerprint: info.fingerprint } : {}),
-    };
+  /** How this bridge is reachable, for an operator asking where to point a device. */
+  bridgeReachability(): ReturnType<BridgeLinks["bridgeReachability"]> {
+    return this.links.bridgeReachability();
   }
 
   /** GET /node/install — serve a grant's installer script (single-use). */
   openNodeInstall(token: string): { script: string; filename: string } | null {
-    return this.provision.openScript(token);
+    return this.links.openNodeInstall(token);
   }
 
   /** GET /node/binary — serve a grant's binary (single-use). */
   openNodeBinary(token: string): { path: string; size: number } | null {
-    return this.provision.openBinary(token);
-  }
-
-  /**
-   * The bridge base URL a NEW host should dial: an explicit override wins;
-   * otherwise derive from the bridge's bind. A wildcard bind maps to this
-   * host's first external IPv4; a loopback bind is unreachable from other
-   * machines, so it's an error rather than a link that can't work.
-   */
-  private bridgeBaseUrl(
-    info: MeshBridgeInfo,
-    explicit?: unknown,
-  ): string | { error: string } {
-    if (typeof explicit === "string" && explicit.trim()) {
-      const url = explicit.trim().replace(/\/+$/, "");
-      if (!/^https?:\/\/\S+$/.test(url)) {
-        return { error: `bridge_url must be an http(s) URL, got "${url}".` };
-      }
-      return url;
-    }
-    let host = info.host;
-    if (host === "0.0.0.0" || host === "::") {
-      const external = firstExternalIPv4();
-      if (!external) {
-        return {
-          error:
-            "Could not determine this host's external address — pass bridge_url explicitly (the URL the new node should dial).",
-        };
-      }
-      host = external;
-    } else if (isLoopbackAddress(host)) {
-      return {
-        error: `The bridge is bound to loopback (${host}), which other machines can't reach. Set native.host to a reachable address, or pass bridge_url if a tunnel exposes it.`,
-      };
-    }
-    return `${info.scheme}://${host}:${info.port}`;
-  }
-
-  /**
-   * Chunked read of a remote file into a Buffer. Loops `read_file` with
-   * increasing offsets until the device reports EOF.
-   *
-   * End-of-file is the DEVICE's call (`eof: true`), never inferred from a
-   * short chunk: devices cap their chunk size (the companion serves at most
-   * 256KB per read regardless of the requested length), so a chunk shorter
-   * than the request is normal mid-file and treating it as EOF silently
-   * truncated every chunked read past the device's cap. A zero-length chunk
-   * without `eof` is a stuck transfer and fails loudly instead of looping.
-   */
-  private async pullBytes(
-    query: unknown,
-    path: string,
-  ): Promise<{ data: Buffer; deviceName: string } | { error: string }> {
-    const chunks: Buffer[] = [];
-    let offset = 0;
-    let deviceName = "device";
-    for (;;) {
-      const dispatched = await this.dispatchCommand(
-        query,
-        "read_file",
-        { path, offset, len: FILE_CHUNK_BYTES },
-        FS_COMMAND_TIMEOUT_MS,
-      );
-      if ("error" in dispatched) {
-        return {
-          error:
-            offset > 0
-              ? `${dispatched.error} (transfer of ${path} aborted after ${formatBytes(offset)})`
-              : dispatched.error,
-        };
-      }
-      deviceName = dispatched.target.name;
-      const { result } = dispatched;
-      if (!result.ok) {
-        const reason = result.message ?? `Could not read ${path}.`;
-        return {
-          error:
-            offset > 0
-              ? `${reason} (transfer aborted after ${formatBytes(offset)})`
-              : reason,
-        };
-      }
-      const b64 =
-        typeof result.data?.base64 === "string" ? result.data.base64 : "";
-      const chunk = Buffer.from(b64, "base64");
-      chunks.push(chunk);
-      offset += chunk.length;
-      if (result.data?.eof === true) break;
-      if (chunk.length === 0) {
-        return {
-          error: `${path} transfer stalled: the device returned an empty chunk without reporting end-of-file (after ${formatBytes(offset)}).`,
-        };
-      }
-      if (offset > MAX_CHUNKED_TRANSFER_BYTES) {
-        return {
-          error: `${path} exceeds the ${formatBytes(MAX_CHUNKED_TRANSFER_BYTES)} chunked-transfer limit (device never reported end-of-file after ${formatBytes(offset)}). Use device_pull_file with a streaming-capable companion build for large files.`,
-        };
-      }
-    }
-    try {
-      return { data: Buffer.concat(chunks), deviceName };
-    } catch (err) {
-      // Node buffer ceiling / out of memory — the one real size limit left.
-      return {
-        error: `${path} transferred ${formatBytes(offset)} but is too large to assemble in daemon memory: ${(err as Error).message}`,
-      };
-    }
-  }
-
-  /**
-   * Chunked write of a Buffer to a remote file. The first chunk truncates the
-   * target; subsequent chunks append at their offset.
-   */
-  private async pushBytes(
-    query: unknown,
-    path: string,
-    data: Buffer,
-  ): Promise<{ bytes: number; deviceName: string } | { error: string }> {
-    let offset = 0;
-    let deviceName = "device";
-    // On a mid-transfer failure the device is left with a partial file —
-    // say so, with how far the transfer got, so the state isn't a mystery.
-    const partial = (reason: string): { error: string } => ({
-      error:
-        offset > 0
-          ? `${reason} (upload aborted — ${path} on the device is a ${formatBytes(offset)} partial write of ${formatBytes(data.length)})`
-          : reason,
-    });
-    // A zero-length write still needs one call to create/truncate the file.
-    do {
-      const chunk = data.subarray(offset, offset + FILE_CHUNK_BYTES);
-      const dispatched = await this.dispatchCommand(
-        query,
-        "write_file",
-        {
-          path,
-          base64: chunk.toString("base64"),
-          offset,
-          truncate: offset === 0,
-        },
-        FS_COMMAND_TIMEOUT_MS,
-      );
-      if ("error" in dispatched) return partial(dispatched.error);
-      deviceName = dispatched.target.name;
-      if (!dispatched.result.ok) {
-        return partial(dispatched.result.message ?? `Could not write ${path}.`);
-      }
-      offset += chunk.length;
-    } while (offset < data.length);
-    return { bytes: data.length, deviceName };
+    return this.links.openNodeBinary(token);
   }
 
   /**
@@ -1747,15 +989,6 @@ function sampleEvenly<T>(items: T[], max: number): T[] {
   return out;
 }
 
-function age(ms: number): string {
-  const sec = Math.max(0, Math.round(ms / 1000));
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hrs = Math.round(min / 60);
-  return `${hrs}h ago`;
-}
-
 /** Clamp a caller-supplied exec timeout (seconds) to the allowed window. */
 function clampExecTimeout(value: unknown): number {
   const sec = typeof value === "number" ? value : Number(value);
@@ -1764,33 +997,6 @@ function clampExecTimeout(value: unknown): number {
     MAX_EXEC_TIMEOUT_MS,
     Math.max(1_000, Math.round(sec * 1_000)),
   );
-}
-
-/** Trim a string path param, returning undefined when blank. */
-function requirePath(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-/** Error text for an os/arch pair outside the talon-node build matrix. */
-function unknownTargetText(os: unknown, arch: unknown): string {
-  return `No talon-node target for os="${String(os)}", arch="${String(arch)}". Supported: ${NODE_TARGETS.map(
-    (t) => `${t.goos}/${t.goarch}`,
-  ).join(", ")} (macos ≡ darwin, x86_64 ≡ amd64, aarch64 ≡ arm64).`;
-}
-
-/** First non-internal IPv4 on this host — the wildcard-bind fallback. */
-function firstExternalIPv4(): string | undefined {
-  for (const list of Object.values(networkInterfaces())) {
-    for (const iface of list ?? []) {
-      if (!iface.internal && iface.family === "IPv4") return iface.address;
-    }
-  }
-  return undefined;
-}
-
-function isLoopbackAddress(host: string): boolean {
-  const h = host.toLowerCase();
-  return h === "localhost" || h === "::1" || h.startsWith("127.");
 }
 
 /** Render an exec result: exit code headline + stdout/stderr blocks. */
@@ -1817,34 +1023,6 @@ function formatExecResult(
     );
   if (!stdout.trim() && !stderr.trim()) parts.push("(no output)");
   return parts.join("\n");
-}
-
-/** "12.4 MB/s in 3.2s" — observability for streamed transfers. */
-function transferRate(bytes: number, startedAtMs: number): string {
-  const seconds = Math.max((Date.now() - startedAtMs) / 1000, 0.001);
-  return `${formatBytes(bytes / seconds)}/s over ${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/** Stream a file through SHA-256 without loading it into memory (APKs are big
- *  and Buffer has a hard ceiling). Returns the hex digest and byte size. */
-async function hashFile(
-  path: string,
-): Promise<{ sha256: string; size: number }> {
-  const { size } = await stat(path);
-  const hash = createHash("sha256");
-  await new Promise<void>((resolve, reject) => {
-    createReadStream(path)
-      .on("data", (chunk) => hash.update(chunk))
-      .on("end", () => resolve())
-      .on("error", reject);
-  });
-  return { sha256: hash.digest("hex"), size };
 }
 
 // ── Process-wide instance ─────────────────────────────────────────────────────
