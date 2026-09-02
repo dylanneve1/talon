@@ -1,10 +1,10 @@
 /**
- * Tests for `kilo/events.ts` — the pure SSE event processing helpers.
+ * Tests for `remote-server/events.ts` — the pure SSE event processing
+ * helpers shared by the Kilo and OpenCode backends.
  *
- * These cover the per-event logic that previously lived inline in the
- * Kilo handler's SSE loop. Each test constructs a hand-built event
- * object + state and asserts on the resulting state mutations + callback
- * invocations. No KiloClient or real SDK needed.
+ * Each test constructs a hand-built event object + state and asserts on
+ * the resulting state mutations + callback invocations. No SDK client
+ * needed.
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -13,7 +13,8 @@ import {
   finalizePartsIntoState,
   maybeFireStreamDelta,
   STREAM_INTERVAL_MS,
-} from "../backend/kilo/events.js";
+} from "../backend/remote-server/events.js";
+import { extractPartsSummary } from "../backend/remote-server/session-helpers.js";
 import { createStreamState } from "../backend/shared/index.js";
 
 const SESSION_ID = "sess_abc";
@@ -24,6 +25,7 @@ function baseContext(overrides: Record<string, unknown> = {}) {
     sessionId: SESSION_ID,
     state: createStreamState(),
     seenToolCallIds: new Set<string>(),
+    backendLabel: "Kilo",
     ...overrides,
   };
 }
@@ -392,6 +394,7 @@ describe("finalizePartsIntoState — SSE missed", () => {
     const seen = new Set<string>();
     const onToolUse = vi.fn();
     const { toolsProcessed } = finalizePartsIntoState({
+      extractPartsSummary,
       parts: [
         { type: "text", text: "Hi there" },
         {
@@ -419,6 +422,7 @@ describe("finalizePartsIntoState — SSE missed", () => {
     state.allResponseText = "polluted by reasoning leak";
     const onToolUse = vi.fn();
     finalizePartsIntoState({
+      extractPartsSummary,
       parts: [{ type: "text", text: "actual reply" }],
       state,
       seenToolCallIds: new Set(),
@@ -430,6 +434,7 @@ describe("finalizePartsIntoState — SSE missed", () => {
   it("surfaces synthetic error text parts via state.syntheticError, not as the reply", () => {
     const state = createStreamState();
     finalizePartsIntoState({
+      extractPartsSummary,
       parts: [
         {
           type: "text",
@@ -457,6 +462,7 @@ describe("finalizePartsIntoState — SSE missed", () => {
     // (counterintuitive) deliver-anyway behaviour with a test.
     const state = createStreamState();
     finalizePartsIntoState({
+      extractPartsSummary,
       parts: [{ type: "text", ignored: true, text: "this IS the reply" }],
       state,
       seenToolCallIds: new Set(),
@@ -468,6 +474,7 @@ describe("finalizePartsIntoState — SSE missed", () => {
     const state = createStreamState();
     const onToolUse = vi.fn();
     finalizePartsIntoState({
+      extractPartsSummary,
       parts: [
         { type: "reasoning", text: "thinking out loud about the user" },
         { type: "text", text: "Hi!" },
@@ -483,6 +490,7 @@ describe("finalizePartsIntoState — SSE missed", () => {
     const state = createStreamState();
     state.allResponseText = "leaked from delta";
     finalizePartsIntoState({
+      extractPartsSummary,
       parts: [{ type: "reasoning", text: "thought a lot, said nothing" }],
       state,
       seenToolCallIds: new Set(),
@@ -503,6 +511,7 @@ describe("finalizePartsIntoState — SSE captured tools to skip", () => {
     const onToolUse = vi.fn();
     const seen = new Set(["c1"]);
     const { toolsProcessed } = finalizePartsIntoState({
+      extractPartsSummary,
       parts: [
         {
           type: "tool",
@@ -525,6 +534,7 @@ describe("finalizePartsIntoState — SSE captured tools to skip", () => {
     const onToolUse = vi.fn();
     const seen = new Set(["c1"]);
     finalizePartsIntoState({
+      extractPartsSummary,
       parts: [
         {
           type: "tool",
@@ -546,6 +556,7 @@ describe("finalizePartsIntoState — SSE captured tools to skip", () => {
     const onToolUse = vi.fn();
     const seen = new Set<string>();
     const { toolsProcessed } = finalizePartsIntoState({
+      extractPartsSummary,
       parts: [
         {
           type: "tool",
@@ -579,6 +590,7 @@ describe("finalizePartsIntoState — SSE captured tools to skip", () => {
     });
     expect(() =>
       finalizePartsIntoState({
+        extractPartsSummary,
         parts: [
           {
             type: "tool",

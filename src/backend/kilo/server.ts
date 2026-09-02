@@ -1,19 +1,14 @@
 /**
- * Kilo server lifecycle — thin wrapper around `backend/remote-server/`.
+ * Kilo server lifecycle — the Kilo profile bound through
+ * `backend/remote-server/server-bindings.ts`.
  *
- * The MCP / session / provider plumbing is identical to OpenCode (Kilo
- * is a fork of OpenCode that exposes the same HTTP API), so this module
- * keeps only the Kilo-specific bits:
- *
- *   - Constants (port 4097, system-prompt suffix wording).
- *   - SDK-specific client factory (`createKiloClient` + `createKiloServer`).
- *   - Backend-specific model parser (the `kilo/` prefix hint).
- *   - Pre-warm hook that triggers immediately at init.
- *
- * The shared machinery (server spawn, MCP registration, session creation,
- * provider resolution) lives in `backend/remote-server/`. All the
- * existing exports from this module are preserved for back-compat with
- * the handler / tests / heartbeat code that already imports them.
+ * Kilo is a fork of OpenCode with the same HTTP API, so the server spawn,
+ * MCP registration, session creation, and provider resolution are the
+ * shared family implementation. This module holds only what is Kilo's:
+ * the SDK constructors, port 4097, the text-or-tools delivery contract,
+ * and the `kilo/`-prefix model parser. The exports keep their historical
+ * names — the models module, one-shot runner, tests, and
+ * `vi.mock("../backend/kilo/server.js")` all address them.
  */
 
 import {
@@ -21,243 +16,14 @@ import {
   createKiloServer,
   type KiloClient,
 } from "@kilocode/sdk/v2";
-import type { TalonConfig } from "../../util/config.js";
-import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
-import { buildDeliveryContract } from "../shared/delivery-contract.js";
 import {
-  guessProviderID,
-  getBucketPriority,
-} from "../remote-server/model-catalog/index.js";
-import {
-  createRemoteServerState,
-  ensureRemoteServer as ensureRemoteServerShared,
-  stopRemoteServer,
-  ensureChatMcpServer as ensureChatMcpServerShared,
-  ensurePluginMcpServers as ensurePluginMcpServersShared,
-  buildToolOverrides as buildToolOverridesShared,
-  disconnectChatMcpServer as disconnectChatMcpServerShared,
-  refreshPluginMcpServers as refreshPluginMcpServersShared,
-  ensureRemoteSession,
-  warmRemoteSession,
-  resolveProviderID as resolveProviderIDShared,
-  getRegisteredMcpServerNames as getRegisteredMcpServerNamesShared,
-  errMsg as sharedErrMsg,
-  type RemoteServerState,
-} from "../remote-server/index.js";
-
-// ── Constants ───────────────────────────────────────────────────────────────
-
-/** Loopback hostname Talon binds the Kilo server on — never exposed externally. */
-const KILO_HOSTNAME = "127.0.0.1";
-/** Default TCP port for the local Kilo server. Overridable via `KILO_PORT`
- *  env var so integration tests can spawn an isolated Kilo server alongside
- *  a running production Talon (which holds the default 4097). */
-const KILO_PORT = Number(process.env.KILO_PORT ?? 4097);
-/** Convenience URL composed from KILO_HOSTNAME + KILO_PORT. */
-export const KILO_BASE_URL = `http://${KILO_HOSTNAME}:${KILO_PORT}`;
-/**
- * System-prompt suffix appended to the user-configured system prompt.
- *
- * Kilo delivery model: the model's reply reaches the user via either
- *
- *   1. A `type: "text"` part — what most Kilo-routed models emit by
- *      default (DeepSeek, GLM, openrouter routes). Talon walks the
- *      `parts` list at end of turn and ships text-part content via
- *      `onTextBlock`. Reasoning parts are dropped as scratchpad.
- *
- *   2. A delivery tool — `end_turn` / `send` / `react`. The tool itself
- *      bridges to Telegram, so it's the right path when you need
- *      reply-to targeting, buttons, photos, polls, etc.
- *
- * Both routes work; pick whichever fits the message. The shared
- * text-or-tools contract (prompts/system/contract-text-or-tools.md)
- * documents the choice — the tool descriptions carry the detail.
- * Telegram-shaped tool names: this constant is static and the prior
- * hand-written text hardcoded the same names.
- */
-export function kiloSystemPromptSuffix(frontend: string): string {
-  return `\n\n${buildDeliveryContract("text-or-tools", frontend)}\n`;
-}
-
-/** Telegram-shaped default, kept for one-shot (cross-surface) paths. */
-export const KILO_SYSTEM_PROMPT_SUFFIX = kiloSystemPromptSuffix("telegram");
-
-// ── State ───────────────────────────────────────────────────────────────────
-
-const state: RemoteServerState<KiloClient> =
-  createRemoteServerState<KiloClient>({
-    label: "Kilo",
-    hostname: KILO_HOSTNAME,
-    port: KILO_PORT,
-  });
-
-function createStrictKiloClient(baseUrl: string): KiloClient {
-  return createKiloClient({
-    baseUrl,
-    throwOnError: true,
-  });
-}
-
-// ── Init / teardown ─────────────────────────────────────────────────────────
+  bindRemoteServer,
+  type RemoteModelSelection,
+} from "../remote-server/server-bindings.js";
 
 /**
- * Initialise the Kilo backend.
- *
- * Stores the config + gateway-port resolver + frontend label needed by
- * downstream helpers. Does NOT spawn the Kilo server — that happens
- * lazily on the first `ensureServer()` call (so empty / heartbeat-only
- * Talon installs don't pay the startup cost until they need it).
- */
-export function initKiloAgent(
-  cfg: TalonConfig,
-  getGatewayPort?: () => number,
-  frontend?: FrontendName,
-): void {
-  state.config = cfg;
-  if (getGatewayPort) state.gatewayPortFn = getGatewayPort;
-  if (frontend) state.frontendName = frontend;
-}
-
-/**
- * Callbacks run when the server stops — cache invalidation lives with the
- * caches. The models module registers its clear here at load time, so the
- * server never has to import it (which would be a cycle).
- */
-const stopHooks = new Set<() => void>();
-
-/** Register a callback to run whenever the Kilo server is stopped. */
-export function onServerStop(hook: () => void): void {
-  stopHooks.add(hook);
-}
-
-/**
- * Stop the local Kilo server (if we own it) and clear caches.
- *
- * Idempotent: safe to call multiple times. If we reused a pre-existing
- * server, this leaves it running — we don't own it.
- */
-export function stopKiloServer(): void {
-  stopRemoteServer(state, () => {
-    for (const hook of stopHooks) hook();
-  });
-}
-
-// ── Server lifecycle ────────────────────────────────────────────────────────
-
-/**
- * Lazily start (or reuse) the local Kilo server and return a strict client.
- *
- * Delegates to the shared `ensureRemoteServer` helper which handles the
- * spawn-race, the reuse-existing-server probe (`/global/health`), and
- * the wrap-after-bind fallback.
- */
-export function ensureServer(): Promise<KiloClient> {
-  return ensureRemoteServerShared({
-    state,
-    createClient: createStrictKiloClient,
-    createServer: ({ hostname, port, timeout }) =>
-      createKiloServer({ hostname, port, timeout }),
-  });
-}
-
-// ── MCP server registration ─────────────────────────────────────────────────
-
-/**
- * Ensure the per-chat Talon MCP server is registered with Kilo. See
- * `backend/remote-server/mcp.ts` for the full rationale + visibility-model
- * explanation; this wrapper just passes the Kilo state through.
- */
-export function ensureChatMcpServer(
-  oc: KiloClient,
-  chatId: string,
-): Promise<string> {
-  return ensureChatMcpServerShared(oc, state, chatId);
-}
-
-/** Register all plugin-provided MCP servers with Kilo. */
-export function ensurePluginMcpServers(
-  oc: KiloClient,
-  chatId: string,
-): Promise<string[]> {
-  return ensurePluginMcpServersShared(oc, state, chatId);
-}
-
-/**
- * Build a `tools` override map that enables ONLY this chat's Talon tools.
- *
- * Kilo's session-level `permission` rules cover *execution* hiding; this
- * `tools` map covers *visibility* — necessary because Kilo exposes every
- * registered MCP server's tools to every session by default.
- */
-export function buildToolOverrides(
-  oc: KiloClient,
-  chatServerName: string,
-  pluginServerNames: readonly string[] = [],
-): Promise<Record<string, boolean> | undefined> {
-  return buildToolOverridesShared(oc, state, chatServerName, pluginServerNames);
-}
-
-/** Disconnect a per-chat MCP server (explicit teardown for hot-swap paths). */
-export function disconnectChatMcpServer(
-  oc: KiloClient,
-  serverName: string,
-): Promise<void> {
-  return disconnectChatMcpServerShared(oc, state, serverName);
-}
-
-export async function refreshPluginMcpServers(chatId: string) {
-  const oc = await ensureServer();
-  return refreshPluginMcpServersShared(oc, state, chatId);
-}
-
-export function updateSystemPrompt(prompt: string): void {
-  if (state.config) state.config.systemPrompt = prompt;
-}
-
-// ── Session management ─────────────────────────────────────────────────────
-
-/**
- * Ensure a Kilo session exists for this chat. Resumes the stored session
- * id if `session.get` confirms it's still alive; otherwise resets and
- * creates a fresh session with Talon's standard permission ruleset.
- */
-export function ensureSession(oc: KiloClient, chatId: string): Promise<string> {
-  return ensureRemoteSession(oc, state, chatId);
-}
-
-/**
- * Front-load a chat's cold start after `/reset`. Mirrors the Claude
- * backend's `warmSession` so the `sessions` capability slot behaves the
- * same across backends. Never throws — see `warmRemoteSession`.
- */
-export function warmSession(chatId: string): Promise<void> {
-  return warmRemoteSession(state, chatId, {
-    ensureServer,
-    ensureSession,
-    ensureChatMcpServer,
-    ensurePluginMcpServers,
-  });
-}
-
-// ── Provider resolution ────────────────────────────────────────────────────
-
-/**
- * Resolve a model id to its provider id by querying Kilo's provider list.
- * The Kilo-specific bucket-priority + name-prefix heuristic comes from
- * `./models.ts`.
- */
-export function resolveProviderID(
-  oc: KiloClient,
-  modelID: string,
-): Promise<string> {
-  return resolveProviderIDShared(oc, state, modelID, {
-    guessProviderID,
-    getBucketPriority,
-  });
-}
-
-/**
- * Parse the stored model-selection string into a `{providerID?, modelID}` pair.
+ * Parse the stored model-selection string into a `{providerID?, modelID}`
+ * pair.
  *
  * Kilo model ids frequently contain `/` and `:` inside the model.id itself
  * (e.g. `inclusionai/ling-2.6-1t:free`, `deepseek/deepseek-v4-flash:free`).
@@ -273,10 +39,9 @@ export function resolveProviderID(
  * its own provider in front, producing
  * `Model not found: opencode/kilo/deepseek/deepseek-v4-flash:free`.
  */
-export function parseStoredKiloModelSelection(value: string): {
-  providerID?: string;
-  modelID: string;
-} {
+export function parseStoredKiloModelSelection(
+  value: string,
+): RemoteModelSelection {
   const trimmed = value.trim();
   if (trimmed.startsWith("kilo/")) {
     return {
@@ -290,25 +55,43 @@ export function parseStoredKiloModelSelection(value: string): {
   };
 }
 
-// ── Internal accessors ─────────────────────────────────────────────────────
-
-export function getConfig(): TalonConfig {
-  if (!state.config) {
-    throw new Error("Kilo agent not initialized — call initKiloAgent first");
-  }
-  return state.config;
-}
-
 /**
- * Snapshot of the locally-cached MCP server registrations. Test-only:
- * Kilo's `GET /mcp` returns `{}` regardless of state, so integration
- * tests use this to assert concurrent chat registrations are retained.
+ * Kilo delivery model: the reply reaches the user either as a `text` part
+ * (what most Kilo-routed models emit by default — DeepSeek, GLM,
+ * openrouter routes) or through a delivery tool (`end_turn` / `send` /
+ * `react`) when reply-to targeting, buttons, photos, or polls are needed.
+ * Both routes work; the shared text-or-tools contract documents the
+ * choice.
  */
-export function getRegisteredMcpServerNames(): string[] {
-  return getRegisteredMcpServerNamesShared(state);
-}
+const kilo = bindRemoteServer<KiloClient>({
+  label: "Kilo",
+  defaultPort: 4097,
+  portEnv: "KILO_PORT",
+  deliveryContract: "text-or-tools",
+  createClient: (baseUrl) => createKiloClient({ baseUrl, throwOnError: true }),
+  createServer: ({ hostname, port, timeout }) =>
+    createKiloServer({ hostname, port, timeout }),
+  parseModelSelection: parseStoredKiloModelSelection,
+});
 
-/** Common error→message helper, re-exported for legacy importers. */
-export const errMsg = sharedErrMsg;
-
-// Re-export the model-helper imports for kilo-internal consumers
+export const KILO_BASE_URL = kilo.baseUrl;
+export const kiloSystemPromptSuffix = kilo.systemPromptSuffix;
+export const KILO_SYSTEM_PROMPT_SUFFIX = kilo.defaultSystemPromptSuffix;
+export const initKiloAgent = kilo.init;
+export const stopKiloServer = kilo.stop;
+export const {
+  onServerStop,
+  ensureServer,
+  ensureChatMcpServer,
+  ensurePluginMcpServers,
+  buildToolOverrides,
+  disconnectChatMcpServer,
+  refreshPluginMcpServers,
+  updateSystemPrompt,
+  ensureSession,
+  warmSession,
+  resolveProviderID,
+  getConfig,
+  getRegisteredMcpServerNames,
+  errMsg,
+} = kilo;
