@@ -6,19 +6,13 @@
 
 import type { Client, Message } from "discord.js";
 import { ChannelType } from "discord.js";
-import { appendDailyLog } from "../../../storage/daily-log.js";
-import { log, logWarn, logDebug } from "../../../util/log.js";
+import { logWarn } from "../../../util/log.js";
 import { escapeMarkdown } from "../formatting.js";
 import {
   accessState,
-  knownDmUsers,
-  KNOWN_DM_USERS_CAP,
-  unauthorizedCooldown,
-  UNAUTHORIZED_COOLDOWN_MS,
-  MAX_UNAUTHORIZED_COOLDOWNS,
-  userMessageTimestamps,
-  RATE_LIMIT_WINDOW_MS,
-  RATE_LIMIT_MAX_MESSAGES,
+  dmUsers,
+  unauthorizedNotices,
+  rateLimiter,
 } from "./state.js";
 
 export function setAccessControl(cfg: {
@@ -46,21 +40,7 @@ export function trackDmUser(
   senderName: string,
   tag?: string,
 ): void {
-  if (knownDmUsers.has(senderId)) return;
-  if (knownDmUsers.size >= KNOWN_DM_USERS_CAP) {
-    const evictCount = Math.floor(KNOWN_DM_USERS_CAP * 0.1);
-    const iter = knownDmUsers.values();
-    for (let i = 0; i < evictCount; i++) {
-      knownDmUsers.delete(iter.next().value as string);
-    }
-  }
-  knownDmUsers.add(senderId);
-  const tagStr = tag ? ` (${tag})` : "";
-  log("users", `New DM user: ${senderName}${tagStr} [id:${senderId}]`);
-  appendDailyLog(
-    "System",
-    `New DM user: ${senderName}${tagStr} [id:${senderId}]`,
-  );
+  dmUsers.track(senderId, senderName, tag);
 }
 
 async function notifyUnauthorized(
@@ -77,13 +57,7 @@ async function notifyUnauthorized(
       : type === "guild"
         ? `guild:${guildId}`
         : `channel:${channelId}`;
-  const now = Date.now();
-  const last = unauthorizedCooldown.get(key);
-  if (last && now - last < UNAUTHORIZED_COOLDOWN_MS) return;
-  if (unauthorizedCooldown.size >= MAX_UNAUTHORIZED_COOLDOWNS) {
-    unauthorizedCooldown.clear();
-  }
-  unauthorizedCooldown.set(key, now);
+  if (!unauthorizedNotices.shouldNotify(key)) return;
 
   const senderTag = msg.author.username ? ` (@${msg.author.username})` : "";
   const senderName = msg.author.globalName || msg.author.username || "User";
@@ -216,28 +190,5 @@ export function shouldHandleInGuild(client: Client, msg: Message): boolean {
 }
 
 export function isUserRateLimited(senderId: string): boolean {
-  const now = Date.now();
-  let timestamps = userMessageTimestamps.get(senderId);
-  if (!timestamps) {
-    timestamps = [];
-    userMessageTimestamps.set(senderId, timestamps);
-  }
-  while (timestamps.length > 0 && timestamps[0] < now - RATE_LIMIT_WINDOW_MS) {
-    timestamps.shift();
-  }
-  if (timestamps.length >= RATE_LIMIT_MAX_MESSAGES) {
-    logDebug("bot", `Rate-limited user ${senderId}`);
-    return true;
-  }
-  timestamps.push(now);
-  if (userMessageTimestamps.size > 5_000) {
-    const cutoff = now - 10 * 60_000;
-    for (const [userId, ts] of userMessageTimestamps) {
-      if (ts.length === 0 || ts[ts.length - 1] < cutoff) {
-        userMessageTimestamps.delete(userId);
-      }
-      if (userMessageTimestamps.size <= 2_500) break;
-    }
-  }
-  return false;
+  return rateLimiter.isLimited(senderId);
 }
