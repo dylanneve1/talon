@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.33.2](https://github.com/dylanneve1/talon/compare/v3.33.1...v3.33.2) (2026-09-08)
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump @swc/core in the dev-dependencies group ([#843](https://github.com/dylanneve1/talon/issues/843)) ([5132134](https://github.com/dylanneve1/talon/commit/513213412fb39dac02e1266470a591cd4db0b36a))
+* **deps-dev:** Bump @types/node in the dev-dependencies group ([#839](https://github.com/dylanneve1/talon/issues/839)) ([7cceac8](https://github.com/dylanneve1/talon/commit/7cceac8203339b46d66340eeb2e5504a78b7ae2d))
+* **deps-dev:** Bump the dev-dependencies group with 2 updates ([#837](https://github.com/dylanneve1/talon/issues/837)) ([d2ba54a](https://github.com/dylanneve1/talon/commit/d2ba54affbd18e6a39427316197e64e52a45926d))
+* **deps:** Bump actions/setup-python from 6 to 7 ([#831](https://github.com/dylanneve1/talon/issues/831)) ([91bd862](https://github.com/dylanneve1/talon/commit/91bd8626fdcf8861fcbadfa41cbd1d0f9fbeda9c))
+* **deps:** Bump fast-uri from 3.1.5 to 3.1.7 ([#833](https://github.com/dylanneve1/talon/issues/833)) ([61661b7](https://github.com/dylanneve1/talon/commit/61661b703cdaa833dc6bbc7f028d2dff983b99a0))
+* **deps:** Bump qs from 6.15.3 to 6.16.0 ([#834](https://github.com/dylanneve1/talon/issues/834)) ([27cdc6e](https://github.com/dylanneve1/talon/commit/27cdc6ef4de2586beaefa0b273110c0663e6dc4b))
+* **deps:** Bump the production-dependencies group with 2 updates ([#835](https://github.com/dylanneve1/talon/issues/835)) ([76d5bf2](https://github.com/dylanneve1/talon/commit/76d5bf2d1d794573bf086e5678a9381c7e4aa63f))
+* **deps:** Bump the production-dependencies group with 2 updates ([#844](https://github.com/dylanneve1/talon/issues/844)) ([8e86800](https://github.com/dylanneve1/talon/commit/8e86800ec625a12362a81fe93b99b7e57924df06))
+* **deps:** Bump the production-dependencies group with 4 updates ([#838](https://github.com/dylanneve1/talon/issues/838)) ([1b9cbb4](https://github.com/dylanneve1/talon/commit/1b9cbb4cf8988d9b272e6a385cd35e1e820a7d28))
+* **deps:** Bump the production-dependencies group with 7 updates ([#840](https://github.com/dylanneve1/talon/issues/840)) ([d4076da](https://github.com/dylanneve1/talon/commit/d4076da20444e1e31e901cf775fbf060d1516093))
+* **deps:** Bump tsx in the production-dependencies group ([#832](https://github.com/dylanneve1/talon/issues/832)) ([affc336](https://github.com/dylanneve1/talon/commit/affc3365feba8371e7119bc00fd46493c3d78b2a))
+
+
+### Code Refactoring
+
+* **companion:** split the settings screen into per-card widgets ([#829](https://github.com/dylanneve1/talon/issues/829)) ([f9a9e85](https://github.com/dylanneve1/talon/commit/f9a9e85569075cf081c7cb21a9c9837ae86c4e16))
+
 ## [3.33.1](https://github.com/dylanneve1/talon/compare/v3.33.0...v3.33.1) (2026-09-02)
 
 
