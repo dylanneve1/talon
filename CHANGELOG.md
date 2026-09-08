@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.33.4](https://github.com/dylanneve1/talon/compare/v3.33.3...v3.33.4) (2026-09-08)
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump vitest and @vitest/coverage-v8 to 5.0.0 ([#851](https://github.com/dylanneve1/talon/issues/851)) ([ee19738](https://github.com/dylanneve1/talon/commit/ee19738af3bb8feddfc61b1eadd4788d80347163))
+* **deps:** Bump hono from 4.13.0 to 4.13.7 ([#848](https://github.com/dylanneve1/talon/issues/848)) ([578e369](https://github.com/dylanneve1/talon/commit/578e369f6bb2ca65a54417fe1922c57130ee2451))
+* **deps:** Bump sharp from 0.35.3 to 0.35.4 ([#849](https://github.com/dylanneve1/talon/issues/849)) ([0e5c28b](https://github.com/dylanneve1/talon/commit/0e5c28bb854516bdcb9bb96b1f27104656e2c7f0))
+
+
+### Continuous Integration
+
+* run kilo/opencode real-bootstrap suites in the Backend Live tier ([#852](https://github.com/dylanneve1/talon/issues/852)) ([5832af8](https://github.com/dylanneve1/talon/commit/5832af8aad7960843213e17e475794b6869ea661))
+
 ## [3.33.3](https://github.com/dylanneve1/talon/compare/v3.33.2...v3.33.3) (2026-09-08)
 
 
