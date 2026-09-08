@@ -10,6 +10,7 @@
  */
 
 import { registerBackend } from "../../core/agent-runtime/backend-registry.js";
+import { openAIAgentsDoctorChecks } from "./doctor.js";
 import type { BackendFactory } from "../../core/agent-runtime/backend-registry.js";
 import { log } from "../../util/log.js";
 import { handlerToEvents } from "../shared/handler-to-events.js";
@@ -39,6 +40,7 @@ import {
 const openAIAgentsFactory: BackendFactory = {
   id: "openai-agents",
   label: "OpenAI Agents",
+  doctor: (config) => openAIAgentsDoctorChecks(config),
 
   async init(config, ctx) {
     initOpenAIAgentsAgent(config, ctx.getBridgePort, ctx.frontendName);

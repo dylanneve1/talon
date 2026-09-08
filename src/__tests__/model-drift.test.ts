@@ -10,7 +10,7 @@
  * accounting lines.
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeAll, describe, it, expect, beforeEach, vi } from "vitest";
 
 const logWarnMock = vi.fn();
 vi.mock("../util/log.js", () => ({
@@ -253,6 +253,13 @@ describe("checkModelDrift", () => {
 });
 
 describe("doctor configured-model check (claude static catalog)", () => {
+  // The model probe lives in the claude-sdk factory's doctor slot, so the
+  // registry has to hold the builtins — exactly what `talon doctor` does.
+  beforeAll(async () => {
+    const { loadBuiltinBackends } = await import("../backend/builtins.js");
+    await loadBuiltinBackends();
+  });
+
   it("flags an unselectable pinned model as a warn-with-issue", async () => {
     const { collectDoctorReport } = await import("../core/doctor.js");
     const report = await collectDoctorReport({

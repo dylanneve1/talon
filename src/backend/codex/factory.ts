@@ -7,6 +7,7 @@
  */
 
 import { registerBackend } from "../../core/agent-runtime/backend-registry.js";
+import { codexDoctorChecks } from "./doctor.js";
 import type { BackendFactory } from "../../core/agent-runtime/backend-registry.js";
 import { log } from "../../util/log.js";
 import { handlerToEvents } from "../shared/handler-to-events.js";
@@ -41,6 +42,7 @@ import {
 const codexFactory: BackendFactory = {
   id: "codex",
   label: "Codex",
+  doctor: (config) => codexDoctorChecks(config),
 
   async init(config, ctx) {
     initCodexAgent(config, ctx.getBridgePort, ctx.frontendName);
