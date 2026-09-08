@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.33.3](https://github.com/dylanneve1/talon/compare/v3.33.2...v3.33.3) (2026-09-08)
+
+
+### Code Refactoring
+
+* **doctor:** compose backend checks from the registry ([#830](https://github.com/dylanneve1/talon/issues/830)) ([e156db3](https://github.com/dylanneve1/talon/commit/e156db3908c0ad73da1f43429eb123f67bc009c4))
+
 ## [3.33.2](https://github.com/dylanneve1/talon/compare/v3.33.1...v3.33.2) (2026-09-08)
 
 
