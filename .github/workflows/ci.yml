@@ -700,7 +700,12 @@ jobs:
         include:
           # Live model discovery is primarily a backend/schema contract.
           # Run the full matrix on POSIX where the provider servers are
-          # stable and fast.
+          # stable and fast. This is also the only tier that installs the
+          # backend CLIs, so the real-bootstrap suites (kilo/opencode:
+          # production bootstrap() against a live `serve` process) run
+          # here via `test:<backend>:backend` — in the unit tier they
+          # skip for lack of a CLI. `*_LIVE_REQUIRED=1` below turns that
+          # skip into a failure so a broken install can't pass silently.
           - os: ubuntu-latest
             backend: kilo
           - os: ubuntu-latest
