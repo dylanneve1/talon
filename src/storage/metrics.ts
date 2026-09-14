@@ -9,6 +9,16 @@ import {
   type MetricsGrain,
   type MetricsLatencyAgg,
 } from "./sessions.js";
+import { emptyPhases, TURN_PHASES, type TurnPhase } from "./session-record.js";
+
+/** Snapshot key for each turn phase — same `_ms` suffix the panels key on. */
+const PHASE_HISTOGRAM: Record<TurnPhase, string> = {
+  queueWait: "turn.queue_wait_ms",
+  warpResolve: "turn.warp_resolve_ms",
+  firstToken: "turn.first_token_ms",
+  stream: "turn.stream_ms",
+  delivery: "turn.delivery_ms",
+};
 
 const legacyCounters = new Map<string, number>();
 
@@ -64,8 +74,12 @@ function buildSnapshot(
   const apiCallsPerTurn = emptyAgg();
   const cacheHitPercent = emptyAgg();
   const backendLatency = new Map<string, MetricsLatencyAgg>();
+  const phases = emptyPhases();
 
   for (const grain of grains) {
+    for (const phase of TURN_PHASES) {
+      mergeAgg(phases[phase], grain.phases[phase]);
+    }
     const c = grain.counters;
     addCounter(counters, "queries_total", c.queries);
     addCounter(counters, "turns_with_tools_total", c.turnsWithTools);
@@ -130,6 +144,10 @@ function buildSnapshot(
   for (const [backend, agg] of backendLatency) {
     if (agg.count)
       histograms[`backend.${backend}.response_latency_ms`] = snapshotAgg(agg);
+  }
+  for (const phase of TURN_PHASES) {
+    if (phases[phase].count)
+      histograms[PHASE_HISTOGRAM[phase]] = snapshotAgg(phases[phase]);
   }
 
   return { counters, histograms };

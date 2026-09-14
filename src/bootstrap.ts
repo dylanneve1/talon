@@ -35,6 +35,7 @@ import {
 import { initDream, maybeStartDream } from "./core/background/dream.js";
 import { initHeartbeat } from "./core/background/heartbeat/index.js";
 import { log, logWarn, logDebug } from "./util/log.js";
+import { bootPhase } from "./util/boot-timer.js";
 import type { TalonConfig } from "./util/config.js";
 import { resolveFrontendIdAmong } from "./core/frontend-runtime/routing.js";
 import type { Frontend } from "./core/frontend-runtime/index.js";

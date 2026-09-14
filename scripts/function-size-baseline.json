@@ -48,6 +48,12 @@
     "cx": 29
   },
   {
+    "file": "src/cli/setup.ts",
+    "name": "runSetup",
+    "lines": 501,
+    "cx": 85
+  },
+  {
     "file": "src/core/background/heartbeat/agent.ts",
     "name": "runHeartbeatAgent",
     "lines": 224,
