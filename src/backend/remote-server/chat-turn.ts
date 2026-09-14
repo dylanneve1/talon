@@ -264,38 +264,6 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
 }
 
 /**
- * If the SSE loop missed any usage info, fall back to the session
- * summary endpoint (which always reflects the final server state).
- */
-async function fillUsageFromSummary(
-  oc: RemoteSessionClient,
-  sessionId: string,
-  promptStartedAt: number,
-  state: StreamState,
-): Promise<void> {
-  if (
-    state.sdkInputTokens !== 0 ||
-    state.sdkOutputTokens !== 0 ||
-    state.sdkCacheRead !== 0
-  ) {
-    return;
-  }
-  try {
-    const summary = await getTurnSummary(oc, sessionId, promptStartedAt);
-    if (summary.usage.assistantMessages > 0) {
-      recordTokens(state, {
-        inputTokens: summary.usage.inputTokens,
-        outputTokens: summary.usage.outputTokens,
-        cacheRead: summary.usage.cacheRead,
-        cacheWrite: summary.usage.cacheWrite,
-      });
-    }
-  } catch {
-    // best-effort — session summaries can race on cancellation
-  }
-}
-
-/**
  * If the SSE loop missed the usage info, fall back to the session summary
  * endpoint (which always reflects the final server state). Best-effort:
  * session summaries can race on cancellation, so a failure leaves the
