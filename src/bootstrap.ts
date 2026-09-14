@@ -124,11 +124,11 @@ export async function bootstrap(
       const frontends =
         options.frontendNames ??
         (Array.isArray(config.frontend) ? config.frontend : [config.frontend]);
-      await loadPlugins(config.plugins, frontends);
+      await bootPhase("plugins", () => loadPlugins(config.plugins, frontends));
     }
 
     // Built-in plugins (GitHub, MemPalace, mem0, Playwright) — shared with hot-reload
-    await loadBuiltinPlugins(config);
+    await bootPhase("builtin plugins", () => loadBuiltinPlugins(config));
 
     rebuildSystemPrompt(config, getPluginPromptAdditions());
   }
@@ -145,12 +145,14 @@ export async function bootstrap(
   });
 
   initWorkspace(config.workspace);
-  loadSessions();
-  loadChatSettings();
-  loadCronJobs();
-  loadTriggers();
-  loadHistory();
-  loadMediaIndex();
+  await bootPhase("stores", () => {
+    loadSessions();
+    loadChatSettings();
+    loadCronJobs();
+    loadTriggers();
+    loadHistory();
+    loadMediaIndex();
+  });
   cleanupOldLogs();
 
   return { config };
