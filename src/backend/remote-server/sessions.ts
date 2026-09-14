@@ -21,7 +21,7 @@ import {
   TALON_MCP_SERVER_NAME,
   TALON_PLUGIN_MCP_SERVER_NAME,
   getChatMcpServerName,
-  safeMcpNamePart,
+  getPluginMcpServerPrefix,
 } from "./mcp.js";
 
 /**
@@ -52,7 +52,7 @@ import {
  */
 export function buildPermissionRuleset(chatId: string): RemotePermissionRule[] {
   const ourServerName = getChatMcpServerName(chatId);
-  const ourPluginPrefix = `${TALON_PLUGIN_MCP_SERVER_NAME}-${safeMcpNamePart(chatId, "chat")}-`;
+  const ourPluginPrefix = getPluginMcpServerPrefix(chatId);
   return [
     { permission: "tool", pattern: `${ourServerName}_*`, action: "allow" },
     {
