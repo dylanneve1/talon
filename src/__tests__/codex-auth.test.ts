@@ -14,6 +14,9 @@ import {
   detectCodexAuth,
   resolveCodexApiKey,
   isChatGptModelMismatchError,
+  isCodexRefreshTokenError,
+  isSilentOAuthExitError,
+  codexLoginExpiredError,
 } from "../backend/codex/auth.js";
 import {
   isCodexApiKeyOnlyModel,
@@ -316,6 +319,74 @@ describe("codex / isChatGptModelMismatchError", () => {
     expect(isChatGptModelMismatchError("fetch failed — ECONNRESET")).toBe(
       false,
     );
+  });
+});
+
+/**
+ * Verbatim SDK error from the daemon log (2026-08-24): the CLI banner
+ * followed by the stderr dump of the refresh failure.
+ */
+const REFRESH_FAILURE =
+  "Codex Exec exited with code 1: Reading prompt from stdin...\n" +
+  "2026-08-24T15:54:53.665546Z ERROR codex_login::auth::manager: " +
+  "Failed to refresh token: 401 Unauthorized: {\n" +
+  '  "error": {\n' +
+  '    "message": "Your session has ended. Please log in again.",\n' +
+  '    "type": "invalid_request_error",\n' +
+  '    "param": null,\n' +
+  '    "code": "refresh_token_invalidated"\n' +
+  "  }\n}\n";
+
+const SILENT_EXIT =
+  "Codex Exec exited with code 1: Reading prompt from stdin...\n";
+
+describe("codex / isCodexRefreshTokenError", () => {
+  it("matches the CLI's refresh failure dump", () => {
+    expect(isCodexRefreshTokenError(REFRESH_FAILURE)).toBe(true);
+  });
+
+  it("matches either signal on its own", () => {
+    expect(isCodexRefreshTokenError("Failed to refresh token: 401")).toBe(true);
+    expect(
+      isCodexRefreshTokenError('"code": "refresh_token_invalidated"'),
+    ).toBe(true);
+  });
+
+  it("ignores the bare silent exit and unrelated errors", () => {
+    expect(isCodexRefreshTokenError(SILENT_EXIT)).toBe(false);
+    expect(isCodexRefreshTokenError("fetch failed — ECONNRESET")).toBe(false);
+    expect(isCodexRefreshTokenError("")).toBe(false);
+  });
+});
+
+describe("codex / isSilentOAuthExitError", () => {
+  it("still matches the bare banner exit", () => {
+    expect(isSilentOAuthExitError(SILENT_EXIT)).toBe(true);
+  });
+
+  it("does not treat an expired login as a silent OAuth-incompat exit", () => {
+    expect(isSilentOAuthExitError(REFRESH_FAILURE)).toBe(false);
+  });
+
+  it("defers the explicit mismatch to the other detector", () => {
+    expect(
+      isSilentOAuthExitError(
+        SILENT_EXIT +
+          "The 'gpt-5-codex' model is not supported when using Codex with a ChatGPT account.",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("codex / codexLoginExpiredError", () => {
+  it("is a non-retryable auth error that names the fix", () => {
+    const cause = new Error(REFRESH_FAILURE);
+    const err = codexLoginExpiredError(cause);
+    expect(err.reason).toBe("auth");
+    expect(err.retryable).toBe(false);
+    expect(err.status).toBe(401);
+    expect(err.message).toContain("codex login");
+    expect(err.cause).toBe(cause);
   });
 });
 

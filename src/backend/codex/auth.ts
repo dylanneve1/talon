@@ -43,6 +43,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { TalonError } from "../../core/errors.js";
 
 /** Detected auth mode. */
 type CodexAuthMode = "api-key" | "chatgpt" | "none";
@@ -321,7 +322,9 @@ export function isChatGptModelMismatchError(message: string): boolean {
  *   - Error text contains `"Codex Exec exited"` (SDK's wrapper);
  *   - Error text contains `"Reading prompt from stdin"` (CLI banner);
  *   - Error text does NOT contain the explicit mismatch phrase (the
- *     other detector handles that case).
+ *     other detector handles that case);
+ *   - Error text does NOT carry the OAuth refresh failure (an expired
+ *     login exits with the same banner — `isCodexRefreshTokenError`).
  *
  * Callers MUST additionally check `authInfo.mode === "chatgpt"` and
  * that the model isn't already the OAuth default before falling back —
@@ -334,8 +337,44 @@ export function isChatGptModelMismatchError(message: string): boolean {
 export function isSilentOAuthExitError(message: string): boolean {
   if (!message) return false;
   if (isChatGptModelMismatchError(message)) return false;
+  if (isCodexRefreshTokenError(message)) return false;
   return (
     /Codex\s+Exec\s+exited\s+with\s+code\s+\d+/i.test(message) &&
     /Reading\s+prompt\s+from\s+stdin/i.test(message)
+  );
+}
+
+/**
+ * Detect an expired ChatGPT OAuth login.
+ *
+ * When the stored refresh token has been invalidated (the user logged
+ * out elsewhere, or the session was ended server-side) the Codex CLI
+ * prints its startup banner, logs
+ *
+ *   `ERROR codex_login::auth::manager: Failed to refresh token: 401
+ *    Unauthorized: {"error": {"code": "refresh_token_invalidated", …}}`
+ *
+ * to stderr, and exits 1 before the prompt reaches the model. The SDK
+ * folds that stderr into the same `Codex Exec exited with code 1:
+ * Reading prompt from stdin...` wrapper the silent OAuth-incompat exit
+ * uses, so without this check it is misread as a model mismatch —
+ * resetting the thread and retrying on a fallback model that fails the
+ * same way. Nothing but `codex login` fixes it.
+ */
+export function isCodexRefreshTokenError(message: string): boolean {
+  return /Failed\s+to\s+refresh\s+token|refresh_token_invalidated/i.test(
+    message,
+  );
+}
+
+/**
+ * The error surfaced to the user for an expired Codex login. Typed
+ * `auth` so the shared retry ladder propagates it untouched — no thread
+ * reset, no fallback model — and `friendlyMessage` keeps the detail.
+ */
+export function codexLoginExpiredError(cause: unknown): TalonError {
+  return new TalonError(
+    "Codex login expired — run `codex login` to re-authenticate.",
+    { reason: "auth", retryable: false, status: 401, cause },
   );
 }

@@ -2431,6 +2431,59 @@ describe("codex / handleMessage — silent OAuth exit-1 recovery", () => {
     expect(oauthIncompat.isKnownOAuthIncompat("gpt-5.4-mini")).toBe(false);
   });
 
+  it("surfaces an expired login as an auth error without resetting or retrying", async () => {
+    // Daemon log 2026-08-24: the refresh token was invalidated, the CLI
+    // exited 1 behind the same banner the silent-incompat exit uses, and
+    // the handler reset the thread and retried on gpt-5.5 — which failed
+    // identically. Now the exit is classified as an expired login first.
+    initCodexAgent(
+      {
+        model: "gpt-5.4-mini",
+        workspace: "/tmp",
+        systemPrompt: "Test system prompt.",
+        frontend: "telegram",
+      } as never,
+      () => 19876,
+      "telegram",
+    );
+    sessions.setSessionId("test-chat", "thr_existing");
+
+    MOCK_RUN_STREAMED_THROWS = new Error(
+      "Codex Exec exited with code 1: Reading prompt from stdin...\n" +
+        "2026-08-24T15:54:53.665546Z ERROR codex_login::auth::manager: " +
+        "Failed to refresh token: 401 Unauthorized: {\n" +
+        '  "error": {\n' +
+        '    "message": "Your session has ended. Please log in again.",\n' +
+        '    "type": "invalid_request_error",\n' +
+        '    "param": null,\n' +
+        '    "code": "refresh_token_invalidated"\n' +
+        "  }\n}\n",
+    );
+
+    await expect(
+      handleMessage({
+        chatId: "test-chat",
+        text: "hi",
+        senderName: "Dylan",
+        isGroup: false,
+      }),
+    ).rejects.toMatchObject({
+      name: "TalonError",
+      reason: "auth",
+      retryable: false,
+      message: expect.stringContaining("codex login"),
+    });
+
+    // One attempt, on the requested model — no fallback swap.
+    expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(1);
+    expect(MOCK_THREAD_OPTIONS_SEEN).toHaveLength(1);
+    expect(MOCK_THREAD_OPTIONS_SEEN[0].model).toBe("gpt-5.4-mini");
+    expect(MOCK_RESUME_CALLS).toEqual(["thr_existing"]);
+    // The thread survives: nothing about the conversation was at fault.
+    expect(sessions.getSession("test-chat").sessionId).toBe("thr_existing");
+    expect(getMetrics().counters["errors.auth"]).toBe(1);
+  });
+
   it("DOES persist on explicit mismatch (unambiguous server signal)", async () => {
     // Use a hypothetical future model id that's NOT curated and NOT
     // already in the learned set — so the pre-empt skips and the

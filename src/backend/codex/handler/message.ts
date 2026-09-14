@@ -56,7 +56,9 @@ import {
 import { getState } from "../state.js";
 import { ensureCodex, getCodexAuthInfo } from "../init.js";
 import {
+  codexLoginExpiredError,
   isChatGptModelMismatchError,
+  isCodexRefreshTokenError,
   isSilentOAuthExitError,
 } from "../auth.js";
 import {
@@ -76,6 +78,19 @@ import { handleEvent } from "./events.js";
 
 const errMsg = (e: unknown): string =>
   e instanceof Error ? e.message : String(e);
+
+/**
+ * Swap an expired-login exit for the user-facing auth error before the
+ * shared retry ladder classifies it. The raw SDK text is the CLI banner
+ * plus a stderr dump (see `isCodexRefreshTokenError`); left alone it
+ * reads as an opaque exit-1 and the user never learns that `codex
+ * login` is the fix. Any other error passes through unchanged.
+ */
+function surfaceLoginExpiry(err: unknown, turnFailedError?: string): unknown {
+  return isCodexRefreshTokenError(`${turnFailedError ?? ""} ${errMsg(err)}`)
+    ? codexLoginExpiredError(err)
+    : err;
+}
 
 /**
  * One-shot ChatGPT-OAuth model-mismatch recovery.
@@ -498,7 +513,7 @@ export async function handleMessage(
       if (fallback) return fallback;
 
       const outcome = await applyRetryDecision({
-        err,
+        err: surfaceLoginExpiry(err, turnFailedError),
         chatId,
         activeModel,
         retried: _retried,

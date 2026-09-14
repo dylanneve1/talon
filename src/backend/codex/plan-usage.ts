@@ -11,7 +11,7 @@
  * missing or expired token, or any transport failure.
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { logWarn } from "../../util/log.js";
@@ -26,6 +26,12 @@ const CACHE_TTL_MS = 60_000;
 
 let cache: { value: PlanUsage; fetchedAt: number } | undefined;
 let inFlight: Promise<PlanUsage | undefined> | undefined;
+/**
+ * `auth.json` mtime of a token the endpoint rejected with 401. An
+ * invalidated login stays invalid until `codex login` rewrites the file,
+ * so the poller warns once and stops calling until the mtime moves.
+ */
+let rejectedAuthMtimeMs: number | undefined;
 
 function authPath(): string {
   const home = process.env.CODEX_HOME?.trim();
@@ -37,11 +43,18 @@ function authPath(): string {
 interface CodexAuth {
   accessToken: string;
   accountId?: string;
+  /** `auth.json` mtime — identifies the login the token came from. */
+  mtimeMs: number;
 }
 
 async function readAuth(): Promise<CodexAuth | undefined> {
   try {
-    const parsed = JSON.parse(await readFile(authPath(), "utf8")) as {
+    const path = authPath();
+    const [raw, stats] = await Promise.all([
+      readFile(path, "utf8"),
+      stat(path),
+    ]);
+    const parsed = JSON.parse(raw) as {
       auth_mode?: string;
       tokens?: { access_token?: string; account_id?: string };
     };
@@ -52,6 +65,7 @@ async function readAuth(): Promise<CodexAuth | undefined> {
       ...(parsed.tokens?.account_id
         ? { accountId: parsed.tokens.account_id }
         : {}),
+      mtimeMs: stats.mtimeMs,
     };
   } catch {
     return undefined;
@@ -123,6 +137,8 @@ export function parseCodexUsage(body: unknown): PlanUsage | undefined {
 async function load(): Promise<PlanUsage | undefined> {
   const auth = await readAuth();
   if (!auth) return undefined;
+  if (auth.mtimeMs === rejectedAuthMtimeMs) return undefined;
+  rejectedAuthMtimeMs = undefined;
 
   try {
     const res = await fetch(USAGE_ENDPOINT, {
@@ -133,6 +149,15 @@ async function load(): Promise<PlanUsage | undefined> {
       },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
+    if (res.status === 401) {
+      rejectedAuthMtimeMs = auth.mtimeMs;
+      logWarn(
+        "agent",
+        "codex usage: endpoint returned 401 — Codex login expired; " +
+          "run `codex login` (not retried until auth.json changes)",
+      );
+      return undefined;
+    }
     if (!res.ok) {
       logWarn("agent", `codex usage: endpoint returned ${res.status}`);
       return undefined;
