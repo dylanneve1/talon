@@ -38,9 +38,20 @@ export const historyHandlers: SharedActionHandlers = {
 
   search_history: (body, chatId) => {
     const limit = Math.min(100, Number(body.limit ?? 20));
+    // Optional ISO date bounds; an unparseable one is ignored rather
+    // than silently narrowing the search to nothing.
+    const bound = (value: unknown): number | undefined => {
+      if (value === undefined || value === null || value === "")
+        return undefined;
+      const ts = Date.parse(String(value));
+      return Number.isFinite(ts) ? ts : undefined;
+    };
     return {
       ok: true,
-      text: searchHistory(String(chatId), String(body.query ?? ""), limit),
+      text: searchHistory(String(chatId), String(body.query ?? ""), limit, {
+        after: bound(body.after),
+        before: bound(body.before),
+      }),
     };
   },
 

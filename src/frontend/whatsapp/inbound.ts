@@ -92,8 +92,13 @@ async function admitInbound(
     if (
       runtime.settings.respondMode === "mention" &&
       !isAddressedToSelf(runtime.selfIds, msg)
-    )
+    ) {
+      // Not for us to answer, but still part of the conversation: the
+      // history store is the model's only record of the group, and a
+      // turn that reads it must see the messages around the mention.
+      await recordPassively(runtime, msg, { jid, isGroup, identity });
       return null;
+    }
   } else if (!identityAllowed(identity, runtime.allowedDms)) {
     log(
       "whatsapp",
@@ -102,6 +107,21 @@ async function admitInbound(
     return null;
   }
   return { jid, isGroup, identity };
+}
+
+/** Record a message that gets no turn — group chatter the bot only reads. */
+async function recordPassively(
+  runtime: WhatsAppRuntime,
+  msg: WAMessage,
+  admitted: AdmittedMessage,
+): Promise<void> {
+  const recorded = await recordInbound(runtime, msg, admitted);
+  if (!recorded) return;
+  log(
+    "whatsapp",
+    `[${recorded.chat.chatId}] Recorded group message from ${recorded.senderName} (history only)`,
+  );
+  recordMessageProcessed();
 }
 
 async function recordInbound(

@@ -199,17 +199,30 @@ function chatIsEmpty(chatId: string): boolean {
   return repo.latestMsgId(chatId) === undefined;
 }
 
+/** Optional time window for `searchHistory`, in epoch ms. */
+export type HistoryDateRange = { after?: number; before?: number };
+
 export function searchHistory(
   chatId: string,
   query: string,
   limit = 20,
+  range: HistoryDateRange = {},
 ): string {
   if (chatIsEmpty(chatId)) return "No messages in history.";
   const match = ftsQuery(query);
   if (!match) return `No messages matching "${query}".`;
   let messages: HistoryMessage[];
   try {
-    messages = repo.searchFts(chatId, match, limit);
+    messages =
+      range.after === undefined && range.before === undefined
+        ? repo.searchFts(chatId, match, limit)
+        : repo.searchFtsBetween(
+            chatId,
+            match,
+            range.after ?? 0,
+            range.before ?? Number.MAX_SAFE_INTEGER,
+            limit,
+          );
   } catch (err) {
     logError("history", `FTS search failed for ${JSON.stringify(query)}`, err);
     return `No messages matching "${query}".`;
@@ -227,6 +240,14 @@ export function getMessagesByUser(
   const messages = repo.bySenderName(chatId, userName, limit);
   if (messages.length === 0) return `No messages from "${userName}".`;
   return messages.map(formatMessage).join("\n");
+}
+
+/** The stored row for one message, or undefined. */
+export function getHistoryMessage(
+  chatId: string,
+  msgId: number,
+): HistoryMessage | undefined {
+  return repo.byMsgId(chatId, msgId);
 }
 
 export function getMessageById(chatId: string, msgId: number): string {

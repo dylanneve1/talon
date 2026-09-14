@@ -3,10 +3,10 @@
  *
  * Group data comes from `groupMetadata`, which WhatsApp serves per JID
  * and Baileys caches; DMs have no metadata endpoint, so their answers are
- * assembled from the registry and the profile endpoints.
+ * assembled from the registry and the profile endpoints. Message
+ * retrieval (get_message_by_id, download_media) lives in history.ts.
  */
 
-import { lookupMessage } from "../message-store.js";
 import { toUserJid, tryAction } from "./shared.js";
 import type { WhatsAppActionHandlers } from "./types.js";
 
@@ -187,39 +187,5 @@ export const chatInfoHandlers: WhatsAppActionHandlers = {
         String(body.description ?? ""),
       );
       return { ok: true };
-    }),
-
-  /**
-   * Re-download a message's media on demand. Inbound media is already
-   * saved to the workspace as it arrives; this covers anything the model
-   * wants to pull again by id.
-   */
-  download_media: (body, _chatId, ctx) =>
-    tryAction("download_media", async () => {
-      const raw = body.message_id;
-      const msgId = typeof raw === "number" ? raw : Number(raw);
-      const stored = Number.isFinite(msgId) ? lookupMessage(msgId) : undefined;
-      if (!stored || stored.chatId !== ctx.chat!.chatId) {
-        return { ok: false, error: `Unknown message_id ${String(raw)}` };
-      }
-      if (!stored.message) {
-        return {
-          ok: false,
-          error: `Message ${msgId} is no longer retained in full`,
-        };
-      }
-      const { saveInboundMedia } = await import("../media-store.js");
-      const saved = await saveInboundMedia(
-        stored.message,
-        ctx.chat!.chatId,
-        msgId,
-        stored.senderName,
-      );
-      return saved
-        ? { ok: true, text: saved.filePath, file_path: saved.filePath }
-        : {
-            ok: false,
-            error: `Message ${msgId} carries no downloadable media`,
-          };
     }),
 };

@@ -27,6 +27,10 @@ import { maxMsgIdForChatPrefix } from "../../storage/history.js";
 import { createWhatsAppActionHandler } from "./actions/index.js";
 import { sendText, setWhatsAppBotName } from "./actions/shared.js";
 import { seedMessageStore } from "./message-store.js";
+import {
+  maxWhatsAppMsgId,
+  pruneWhatsAppMessages,
+} from "../../storage/whatsapp-messages.js";
 import { flushAuthWrites } from "./auth-state.js";
 import { registerPairingProvider } from "../../core/pairing-broker.js";
 import { beginPairingAttempt } from "./pairing-service.js";
@@ -112,7 +116,14 @@ export function createWhatsAppFrontend(
       // but history persists — seed it past what the table already holds
       // so post-restart messages don't re-issue ids INSERT OR IGNORE then
       // silently drops (chat ids all start with "wa_").
-      seedMessageStore((maxMsgIdForChatPrefix("wa_") ?? 0) + 1);
+      seedMessageStore(
+        Math.max(maxMsgIdForChatPrefix("wa_") ?? 0, maxWhatsAppMsgId() ?? 0) +
+          1,
+      );
+      const pruned = pruneWhatsAppMessages();
+      if (pruned > 0) {
+        log("whatsapp", `Pruned ${pruned} expired message key(s)`);
+      }
       gateway.registerFrontendHandler(
         "whatsapp",
         createWhatsAppActionHandler(() => runtime.sock, gateway),

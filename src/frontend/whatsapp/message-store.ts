@@ -9,14 +9,22 @@
  * not just the id. So each message Talon sees — inbound or sent — is
  * assigned a monotonic numeric id here and remembered alongside its key.
  *
- * `forward_message` needs the full message, not only its key, so the
- * proto is retained too. The map is bounded and evicts oldest-first: a
- * long-running daemon must not accumulate every message it ever saw, and
- * a model addressing a message thousands of turns back is not a case
- * worth holding memory for.
+ * `forward_message` and media re-downloads need the full message, not
+ * only its key, so the proto is retained too. The in-memory map is a
+ * bounded cache that evicts oldest-first; the record is the
+ * `whatsapp_messages` table (storage/whatsapp-messages.ts), which a miss
+ * falls through to — so an id from before the last restart, or from
+ * thousands of messages back, still resolves.
  */
 
-import type { WAMessage, WAMessageKey } from "baileys";
+import { proto, type WAMessage, type WAMessageKey } from "baileys";
+import {
+  getWhatsAppMessage,
+  getWhatsAppMessageByWaId,
+  saveWhatsAppMessage,
+  clearWhatsAppMessages,
+  type WhatsAppMessageRecord,
+} from "../../storage/whatsapp-messages.js";
 
 export type StoredMessage = {
   /** Talon-facing numeric id. */
@@ -25,7 +33,7 @@ export type StoredMessage = {
   key: WAMessageKey;
   /** Talon chat id (wa_dm_… / wa_group_…). */
   chatId: string;
-  /** Retained for forward_message, which re-sends the whole message. */
+  /** Retained for forward_message and media re-downloads. */
   message?: WAMessage;
   /** Plain text at the time it was stored (copy_message, previews). */
   text: string;
@@ -43,16 +51,15 @@ const MAX_TRACKED = 2_000;
 let nextId = ID_BASE;
 
 /**
- * Raise the id counter past what persistent history already holds.
+ * Raise the id counter past what persistent storage already holds.
  *
  * The counter is in-memory and restarts at ID_BASE every boot, but the
- * ids it hands out are also the `msg_id`s written to the history table,
- * where `INSERT OR IGNORE` + UNIQUE(chat_id, msg_id) dedupes. Without
+ * ids it hands out are also the `msg_id`s written to the history and
+ * whatsapp_messages tables, where `INSERT OR IGNORE` dedupes. Without
  * this seed, the first messages after a daemon restart re-issue ids the
- * previous run already used — the IGNORE then silently drops them from
- * history, and a reaction/reply addressed at an old id from history hits
- * whatever new message reused the number. Called at frontend start with
- * max(msg_id) over wa_* chats + 1.
+ * previous run already used — the IGNORE then silently drops them, and
+ * a reaction/reply addressed at an old id hits whatever new message
+ * reused the number. Called at frontend start with max(msg_id) + 1.
  */
 export function seedMessageStore(floor: number): void {
   if (Number.isFinite(floor)) nextId = Math.max(nextId, Math.floor(floor));
@@ -71,10 +78,74 @@ function evictOldest(): void {
   }
 }
 
+function cache(stored: StoredMessage): void {
+  byMsgId.set(stored.msgId, stored);
+  if (stored.key.id) byWaId.set(stored.key.id, stored.msgId);
+  evictOldest();
+}
+
+/**
+ * Proto ↔ JSON. Byte fields (media keys, hashes) travel as base64:
+ * `toJSON` on a WebMessageInfo instance emits them that way, and
+ * `fromObject` decodes them back, so a rehydrated message downloads.
+ * Normalising through `fromObject` first also covers a plain object
+ * that was never a proto instance (a Uint8Array would otherwise
+ * stringify as `{"0":…}`).
+ */
+function serializeMessage(message: WAMessage): string {
+  return JSON.stringify(proto.WebMessageInfo.fromObject(message).toJSON());
+}
+
+/** Rebuild a stored message from its persisted row. */
+function fromRecord(record: WhatsAppMessageRecord): StoredMessage {
+  const key: WAMessageKey = {
+    id: record.waId,
+    remoteJid: record.remoteJid,
+    fromMe: record.fromMe,
+    ...(record.participant ? { participant: record.participant } : {}),
+  };
+  let message: WAMessage | undefined;
+  if (record.messageJson) {
+    try {
+      message = proto.WebMessageInfo.fromObject(
+        JSON.parse(record.messageJson),
+      ) as WAMessage;
+    } catch {
+      message = undefined; // an undecodable proto loses only forwarding
+    }
+  }
+  return {
+    msgId: record.msgId,
+    key,
+    chatId: record.chatId,
+    text: record.text,
+    senderName: record.senderName,
+    timestamp: record.timestamp,
+    ...(message ? { message } : {}),
+  };
+}
+
+function persist(stored: StoredMessage): void {
+  if (!stored.key.id || !stored.key.remoteJid) return;
+  saveWhatsAppMessage({
+    chatId: stored.chatId,
+    msgId: stored.msgId,
+    waId: stored.key.id,
+    remoteJid: stored.key.remoteJid,
+    fromMe: stored.key.fromMe === true,
+    participant: stored.key.participant ?? undefined,
+    senderName: stored.senderName,
+    text: stored.text,
+    timestamp: stored.timestamp,
+    messageJson: stored.message ? serializeMessage(stored.message) : undefined,
+  });
+}
+
 /**
  * Record a message and return its Talon numeric id. Re-recording a
  * WhatsApp id already seen returns the original number, so the same
- * message never gets two identities (Baileys can re-deliver on reconnect).
+ * message never gets two identities (Baileys can re-deliver on reconnect,
+ * and a restart in between must not change the answer).
  */
 export function rememberMessage(entry: {
   key: WAMessageKey;
@@ -86,7 +157,7 @@ export function rememberMessage(entry: {
 }): number {
   const waId = entry.key.id;
   if (waId) {
-    const existing = byWaId.get(waId);
+    const existing = byWaId.get(waId) ?? getWhatsAppMessageByWaId(waId)?.msgId;
     if (existing !== undefined) return existing;
   }
   const msgId = nextId++;
@@ -99,21 +170,26 @@ export function rememberMessage(entry: {
     timestamp: entry.timestamp ?? Date.now(),
     ...(entry.message ? { message: entry.message } : {}),
   };
-  byMsgId.set(msgId, stored);
-  if (waId) byWaId.set(waId, msgId);
-  evictOldest();
+  cache(stored);
+  persist(stored);
   return msgId;
 }
 
 /** Look up a stored message by its Talon numeric id. */
 export function lookupMessage(msgId: number): StoredMessage | undefined {
-  return byMsgId.get(msgId);
+  const cached = byMsgId.get(msgId);
+  if (cached) return cached;
+  const record = getWhatsAppMessage(msgId);
+  if (!record) return undefined;
+  const stored = fromRecord(record);
+  cache(stored);
+  return stored;
 }
 
 /** Look up by WhatsApp's own id (reply resolution on inbound). */
 export function lookupByWaId(waId: string): StoredMessage | undefined {
-  const msgId = byWaId.get(waId);
-  return msgId === undefined ? undefined : byMsgId.get(msgId);
+  const msgId = byWaId.get(waId) ?? getWhatsAppMessageByWaId(waId)?.msgId;
+  return msgId === undefined ? undefined : lookupMessage(msgId);
 }
 
 /**
@@ -134,12 +210,12 @@ export function resolveKey(
   if (!Number.isFinite(msgId)) {
     return { error: `Invalid message_id: ${String(value)}` };
   }
-  const stored = byMsgId.get(msgId);
+  const stored = lookupMessage(msgId);
   if (!stored) {
     return {
       error:
         `Unknown message_id ${msgId} — WhatsApp message ids are assigned ` +
-        `when Talon sees the message; only recent ones can be acted on.`,
+        `when Talon sees the message; use read_chat_history to find one.`,
     };
   }
   if (stored.chatId !== chatId) {
@@ -152,5 +228,6 @@ export function resolveKey(
 export function resetMessageStore(): void {
   byMsgId.clear();
   byWaId.clear();
+  clearWhatsAppMessages();
   nextId = ID_BASE;
 }

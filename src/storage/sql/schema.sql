@@ -251,3 +251,24 @@ CREATE TABLE IF NOT EXISTS journal (
   payload TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_journal_type ON journal(type, seq);
+
+-- WhatsApp message keys: Talon's numeric message id ↔ WhatsApp's
+-- (id, remoteJid, fromMe, participant) key, plus the full proto as JSON
+-- so react/reply/forward/download keep working on messages from before
+-- a restart and media past the CDN TTL can be re-requested.
+CREATE TABLE IF NOT EXISTS whatsapp_messages (
+  chat_id TEXT NOT NULL,
+  msg_id INTEGER NOT NULL,
+  wa_id TEXT NOT NULL,
+  remote_jid TEXT NOT NULL,
+  from_me INTEGER NOT NULL DEFAULT 0,
+  participant TEXT,
+  sender_name TEXT NOT NULL DEFAULT '',
+  text TEXT NOT NULL DEFAULT '',
+  timestamp INTEGER NOT NULL,
+  message_json TEXT,
+  PRIMARY KEY (chat_id, msg_id)
+);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_msg ON whatsapp_messages(msg_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_wa_id ON whatsapp_messages(wa_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_time ON whatsapp_messages(timestamp);

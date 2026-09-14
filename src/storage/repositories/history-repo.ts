@@ -147,6 +147,20 @@ export function searchFts(
   return rows.reverse().map(rowToMessage);
 }
 
+/** `searchFts` restricted to messages with `after <= timestamp < before`. */
+export function searchFtsBetween(
+  chatId: string,
+  match: string,
+  after: number,
+  before: number,
+  limit: number,
+): HistoryMessage[] {
+  const rows = getDatabase()
+    .prepare(historySql.searchFtsBetween)
+    .all(chatId, match, after, before, limit) as Row[];
+  return rows.reverse().map(rowToMessage);
+}
+
 export function bySenderName(
   chatId: string,
   nameFragment: string,

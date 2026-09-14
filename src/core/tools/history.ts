@@ -36,10 +36,19 @@ export const historyTools: ToolDefinition[] = [
 
   {
     name: "search_chat_history",
-    description: "Search messages by keyword.",
+    description:
+      "Search messages by keyword, optionally within a date range ('after' / 'before', ISO dates).",
     schema: {
       query: z.string(),
       limit: z.number().optional(),
+      after: z
+        .string()
+        .optional()
+        .describe("Only messages on or after this date (ISO format)"),
+      before: z
+        .string()
+        .optional()
+        .describe("Only messages before this date (ISO format)"),
     },
     execute: (params, bridge) => bridge("search_history", params),
     frontends: ["telegram", "discord", "whatsapp"],

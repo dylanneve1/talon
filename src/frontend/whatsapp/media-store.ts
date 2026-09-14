@@ -11,6 +11,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { downloadMediaMessage, type WAMessage } from "baileys";
+import { makeWaLogger } from "./wa-logger.js";
 import { addMedia } from "../../storage/media-index.js";
 import { logWarn } from "../../util/log.js";
 import { dirs } from "../../util/paths.js";
@@ -28,6 +29,16 @@ export type SavedMedia = {
   filePath: string;
   type: "photo" | "video" | "voice" | "document" | "sticker";
   caption?: string;
+};
+
+/**
+ * How to recover media WhatsApp's CDN no longer serves. Media URLs expire
+ * (days to weeks); `reuploadRequest` — the socket's `updateMediaMessage`
+ * — asks the sender's device to upload the file again and returns the
+ * refreshed message, which Baileys then downloads.
+ */
+export type MediaRetrieval = {
+  reuploadRequest: (message: WAMessage) => Promise<WAMessage>;
 };
 
 /** The media kind carried by a message, if any. */
@@ -50,13 +61,21 @@ export async function saveInboundMedia(
   chatId: string,
   msgId: number,
   senderName: string,
+  retrieval?: MediaRetrieval,
 ): Promise<SavedMedia | undefined> {
   const kind = mediaKindOf(message);
   if (!kind) return undefined;
   const [field, type, defaultExt] = kind;
 
   try {
-    const buffer = await downloadMediaMessage(message, "buffer", {});
+    const buffer = await downloadMediaMessage(
+      message,
+      "buffer",
+      {},
+      retrieval
+        ? { reuploadRequest: retrieval.reuploadRequest, logger: makeWaLogger() }
+        : undefined,
+    );
     if (!Buffer.isBuffer(buffer) || buffer.length === 0) return undefined;
 
     const content = message.message?.[field] as

@@ -12,7 +12,8 @@
  *   - shared     — tryAction, media/quote resolution, send helpers
  *   - messaging  — text, replies, reactions, edits, deletes, pins, presence
  *   - media      — images, video, audio, documents, polls, locations, …
- *   - chat-info  — group metadata, members, titles, media download
+ *   - chat-info  — group metadata, members, titles
+ *   - history    — get_message_by_id, download_media (re-upload aware)
  *   - moderation — the `moderate` op switch
  */
 
@@ -25,6 +26,7 @@ import {
   type WhatsAppChatInfo,
 } from "../registry.js";
 import { chatInfoHandlers } from "./chat-info.js";
+import { historyHandlers } from "./history.js";
 import { mediaHandlers } from "./media.js";
 import { messagingHandlers } from "./messaging.js";
 import { moderationHandlers } from "./moderation.js";
@@ -36,6 +38,7 @@ const handlers: WhatsAppActionHandlers = Object.assign(Object.create(null), {
   ...messagingHandlers,
   ...mediaHandlers,
   ...chatInfoHandlers,
+  ...historyHandlers,
   ...moderationHandlers,
 });
 

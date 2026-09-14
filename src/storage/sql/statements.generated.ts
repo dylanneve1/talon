@@ -255,7 +255,28 @@ CREATE TABLE IF NOT EXISTS journal (
   type    TEXT    NOT NULL,
   payload TEXT    NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_journal_type ON journal(type, seq);`;
+CREATE INDEX IF NOT EXISTS idx_journal_type ON journal(type, seq);
+
+-- WhatsApp message keys: Talon's numeric message id ↔ WhatsApp's
+-- (id, remoteJid, fromMe, participant) key, plus the full proto as JSON
+-- so react/reply/forward/download keep working on messages from before
+-- a restart and media past the CDN TTL can be re-requested.
+CREATE TABLE IF NOT EXISTS whatsapp_messages (
+  chat_id TEXT NOT NULL,
+  msg_id INTEGER NOT NULL,
+  wa_id TEXT NOT NULL,
+  remote_jid TEXT NOT NULL,
+  from_me INTEGER NOT NULL DEFAULT 0,
+  participant TEXT,
+  sender_name TEXT NOT NULL DEFAULT '',
+  text TEXT NOT NULL DEFAULT '',
+  timestamp INTEGER NOT NULL,
+  message_json TEXT,
+  PRIMARY KEY (chat_id, msg_id)
+);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_msg ON whatsapp_messages(msg_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_wa_id ON whatsapp_messages(wa_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_time ON whatsapp_messages(timestamp);`;
 
 export const chatSettingsSql = {
   upsert: `INSERT OR REPLACE INTO chat_settings (chat_id, settings) VALUES (?, ?)`,
@@ -361,6 +382,16 @@ SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
 FROM history_messages
 WHERE chat_id = ?
   AND id IN (SELECT rowid FROM history_fts WHERE history_fts MATCH ?)
+ORDER BY id DESC LIMIT ?`,
+  searchFtsBetween: `-- searchFts restricted to a timestamp window [after, before) — the
+-- search_history \`after\` / \`before\` date parameters. Either bound may be
+-- the open end of the range (0 / a far-future value).
+SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
+       timestamp, media_type, sticker_file_id, file_path
+FROM history_messages
+WHERE chat_id = ?
+  AND id IN (SELECT rowid FROM history_fts WHERE history_fts MATCH ?)
+  AND timestamp >= ? AND timestamp < ?
 ORDER BY id DESC LIMIT ?`,
   bySenderName: `-- The fragment param is LIKE-escaped by the repository (backslash escape).
 SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
@@ -547,4 +578,22 @@ WHERE chat_id = ?1
     ORDER BY CAST(msg_id AS INTEGER) DESC
     LIMIT ?2
   )`,
+} as const;
+
+export const whatsappMessagesSql = {
+  insert: `INSERT OR IGNORE INTO whatsapp_messages
+  (chat_id, msg_id, wa_id, remote_jid, from_me, participant, sender_name,
+   text, timestamp, message_json)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  byMsgId: `SELECT chat_id, msg_id, wa_id, remote_jid, from_me, participant, sender_name,
+       text, timestamp, message_json
+FROM whatsapp_messages WHERE msg_id = ? LIMIT 1`,
+  byWaId: `-- Newest first: a WhatsApp id re-delivered on reconnect maps to the row
+-- that already exists for it.
+SELECT chat_id, msg_id, wa_id, remote_jid, from_me, participant, sender_name,
+       text, timestamp, message_json
+FROM whatsapp_messages WHERE wa_id = ? ORDER BY msg_id DESC LIMIT 1`,
+  maxMsgId: `SELECT MAX(msg_id) AS max_id FROM whatsapp_messages`,
+  deleteOlderThan: `DELETE FROM whatsapp_messages WHERE timestamp < ?`,
+  deleteAll: `DELETE FROM whatsapp_messages`,
 } as const;
