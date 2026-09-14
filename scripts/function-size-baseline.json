@@ -84,12 +84,6 @@
     "cx": 31
   },
   {
-    "file": "src/frontend/discord/callbacks/components.ts",
-    "name": "handleComponentInteraction",
-    "lines": 545,
-    "cx": 93
-  },
-  {
     "file": "src/frontend/native/index.ts",
     "name": "createNativeFrontend",
     "lines": 1294,
