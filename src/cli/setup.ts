@@ -25,13 +25,14 @@ const trimmedOrUndefined = (raw: string) => raw.trim() || undefined;
  * Await a clack prompt; on Esc/Ctrl-C say so and leave the wizard.
  *
  * Every prompt used to be followed by the same four-line `isCancel` guard,
- * and because `@clack/core` types `isCancel` as `value is symbol` the
- * unguarded remainder needed an `as string` cast. Narrowing once here
- * removes both.
+ * and because `@clack/core` narrows `isCancel` to its own unique symbol
+ * the unguarded remainder still needed an `as string` cast. clack only
+ * ever resolves a symbol to mean "cancelled", so narrowing on `typeof`
+ * here removes both.
  */
 async function askOrExit<T>(prompt: Promise<T | symbol>): Promise<T> {
   const value = await prompt;
-  if (p.isCancel(value)) {
+  if (typeof value === "symbol") {
     p.cancel("Cancelled.");
     process.exit(0);
   }
