@@ -339,7 +339,7 @@ const FRIENDLY_MESSAGES: Record<ErrorReason, string> = {
   overloaded:
     "Upstream model is busy right now. Retrying with a faster fallback...",
   network: "Connection issue. Retrying shortly.",
-  auth: "API key error. Bot operator: check the backend's credentials.",
+  auth: "API key error. Bot operator: check the backend's credentials (admins: /auth to sign in again).",
   context_length:
     "Conversation too long for the context window. Use /reset to start fresh.",
   session_expired: "Session expired. Retrying automatically...",

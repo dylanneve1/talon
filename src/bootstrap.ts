@@ -28,6 +28,7 @@ import { initPulse, resetPulseTimer } from "./core/background/pulse.js";
 import { initCron } from "./core/background/cron.js";
 import { initPlanAlerts } from "./core/background/plan-alerts.js";
 import { setAdminNotifier } from "./core/notify.js";
+import { startAuthExpiryMonitor } from "./core/auth/expiry-monitor.js";
 import {
   initTriggers,
   resumeAfterRestart as resumeTriggersAfterRestart,
@@ -495,6 +496,10 @@ export async function initBackendAndDispatcher(
         frontends,
       ).sendMessage(adminChatId, text),
     );
+    // Login-expiry alerts ride the same seam: the CLIs' "N days to log in
+    // again" banner, delivered to the admin instead of a terminal nobody
+    // is watching. /auth then completes the sign-in from the chat.
+    startAuthExpiryMonitor();
   }
 
   // Soul — initialize the identity kernel singleton from config so the prompt

@@ -9,6 +9,7 @@
  *   - `effort`   — `effort:*`
  *   - `metrics`  — `metrics:*` (today ↔ all-time panel grain)
  *   - `model`    — `model:*` (menu / backend / browse controller)
+ *   - `auth`     — `auth:*` (backend sign-in panel, admin only)
  *
  * `registerCallbacks` installs one `callback_query:data` listener that
  * dispatches on the data prefix, preserving the original order and the
@@ -25,6 +26,7 @@ import { handlePulseCallback } from "./pulse.js";
 import { handleEffortCallback } from "./effort.js";
 import { handleMetricsCallback } from "./metrics.js";
 import { handleModelCallback } from "./model.js";
+import { handleAuthCallback } from "./auth.js";
 
 export { answerCallbackQuerySafe } from "./shared.js";
 
@@ -67,6 +69,12 @@ export function registerCallbacks(
     // Handle /model callbacks via the pure parser + menu controller.
     if (data.startsWith("model:")) {
       await handleModelCallback(ctx, data, cid, deps);
+      return;
+    }
+
+    // Handle /auth (backend CLI sign-in) callbacks.
+    if (data.startsWith("auth:")) {
+      await handleAuthCallback(ctx, data, deps);
       return;
     }
 
