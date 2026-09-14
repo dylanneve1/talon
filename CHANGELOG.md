@@ -1,5 +1,24 @@
 # Changelog
 
+## [3.34.1](https://github.com/dylanneve1/talon/compare/v3.34.0...v3.34.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* **log:** latch the repeated cache-minimum and invalid-override warnings ([#878](https://github.com/dylanneve1/talon/issues/878)) ([5ad7d82](https://github.com/dylanneve1/talon/commit/5ad7d82ea48a181a4d969e1a0bbda73a3c1b929b))
+* **mcp-hub:** log hub child exit code, signal and stderr tail ([#885](https://github.com/dylanneve1/talon/issues/885)) ([ca15f1a](https://github.com/dylanneve1/talon/commit/ca15f1aab816f3f66a4ad4db4853fac47b63ae64))
+* **remote-server:** keep plugin MCP tool ids under Anthropic's 64-char limit ([#881](https://github.com/dylanneve1/talon/issues/881)) ([1e04de1](https://github.com/dylanneve1/talon/commit/1e04de1f6825a58994f13c58d323cc06046a690e))
+* **telegram:** chunk the /admin chats, cron, and pulse listings ([#879](https://github.com/dylanneve1/talon/issues/879)) ([51a51da](https://github.com/dylanneve1/talon/commit/51a51da96b2b334457bc870bb7c918282f2cb5a2))
+* **triggers:** skip terminal wakes during shutdown and defer them to next boot ([#880](https://github.com/dylanneve1/talon/issues/880)) ([819de52](https://github.com/dylanneve1/talon/commit/819de5294c066aa7f25e3900a7d410bce2e89a33))
+* **watchdog:** measure wedge silence from turn activity, not turn length ([#877](https://github.com/dylanneve1/talon/issues/877)) ([0e433b7](https://github.com/dylanneve1/talon/commit/0e433b7d2fe8e244b844e86d906f20cf21608f2d))
+* **whatsapp:** install link-preview-js so baileys link previews work ([#876](https://github.com/dylanneve1/talon/issues/876)) ([1ac2a12](https://github.com/dylanneve1/talon/commit/1ac2a12304d6e974a4cfcb1716f190542ad10507))
+
+
+### Code Refactoring
+
+* **backend:** share the post-stream turn phases across backends ([#867](https://github.com/dylanneve1/talon/issues/867)) ([542d073](https://github.com/dylanneve1/talon/commit/542d0736c1a73f84a13a67a8d07aa72645387c4b))
+* **remote-server:** hoist the model presentation renderers out of the factory ([#869](https://github.com/dylanneve1/talon/issues/869)) ([19598ba](https://github.com/dylanneve1/talon/commit/19598ba036f1a7dfeecd9d362aa2cb295a101a94))
+
 ## [3.34.0](https://github.com/dylanneve1/talon/compare/v3.33.4...v3.34.0) (2026-09-14)
 
 
