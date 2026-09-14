@@ -42,6 +42,8 @@ import {
   type SessionMetrics,
   type SessionState,
   type SessionUsage,
+  TURN_PHASES,
+  type TurnPhase,
 } from "./session-record.js";
 // In-memory cache over the sessions table. Reads serve live references
 // from here; writes go through persist() so each mutation commits.
@@ -362,6 +364,28 @@ export function recordSessionMetrics(
   const session = getSession(chatId);
   foldMetricTurn(session.metrics.lifetime, turn);
   foldMetricTurn(metricBucket(session.metrics, day), turn);
+  persist(chatId, session);
+}
+
+/**
+ * Fold one turn's phase timings (ms) into the session's lifetime grain and
+ * today's bucket. Phases the caller could not measure are simply absent.
+ */
+export function recordSessionTurnPhases(
+  chatId: string,
+  phases: Partial<Record<TurnPhase, number>>,
+  day = todayUtc(),
+): void {
+  const session = getSession(chatId);
+  for (const grain of [
+    session.metrics.lifetime,
+    metricBucket(session.metrics, day),
+  ]) {
+    for (const phase of TURN_PHASES) {
+      const value = phases[phase];
+      if (value !== undefined) addLatency(grain.phases[phase], value);
+    }
+  }
   persist(chatId, session);
 }
 

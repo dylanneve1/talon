@@ -96,6 +96,12 @@
     "cx": 43
   },
   {
+    "file": "src/frontend/native/index.ts",
+    "name": "createNativeFrontend",
+    "lines": 1294,
+    "cx": 155
+  },
+  {
     "file": "src/frontend/native/server.ts",
     "name": ".buildRoutes",
     "lines": 326,
