@@ -1,7 +1,7 @@
 /**
  * One inbound message, from `messages.upsert` to the model's turn:
  * access gates → media saved to the workspace → history recorded →
- * slash commands → catch-up policy → `execute()`.
+ * slash commands (commands.ts) → catch-up policy → `execute()`.
  */
 
 import { isJidGroup, type WAMessage } from "baileys";
@@ -9,8 +9,6 @@ import type { AgentEvent } from "../../core/agent-runtime/events.js";
 import { log, logError } from "../../util/log.js";
 import { execute } from "../../core/engine/dispatcher.js";
 import { toolInputToRecord } from "../../core/agent-runtime/events.js";
-import { resolveChatBackend } from "../../core/engine/backend-controller/index.js";
-import { performSessionReset } from "../shared/session-status.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { pushMessage } from "../../storage/history.js";
 import {
@@ -18,6 +16,7 @@ import {
   recordMessageReceived,
 } from "../../util/watchdog.js";
 import { isAddressedToSelf, isGroupAllowed } from "./access.js";
+import { handleWhatsAppCommand } from "./commands.js";
 import { sendText } from "./actions/shared.js";
 import {
   bareId,
@@ -159,47 +158,6 @@ async function recordInbound(
   return { ...admitted, chat, msgId, text, media, senderName, platformTs };
 }
 
-/** `/reset` and `/help`. True when the message was a command. */
-async function handleSlashCommand(
-  runtime: WhatsAppRuntime,
-  inbound: RecordedMessage,
-): Promise<boolean> {
-  const { chat, senderName } = inbound;
-  const { gateway } = runtime;
-  const trimmed = inbound.text.toLowerCase();
-  if (trimmed === "/reset") {
-    await performSessionReset(
-      chat.chatId,
-      resolveChatBackend(chat.chatId, gateway.backend),
-      // The local history store is WhatsApp's only chat record — a
-      // reset clears the model's session, not the conversation log.
-      { keepHistory: true },
-    );
-    log("whatsapp", `Session reset by ${senderName}`);
-    const sock = runtime.sock;
-    if (sock) {
-      await sendText({ sock, gateway }, chat, "Session cleared.").catch(
-        () => {},
-      );
-    }
-    recordMessageProcessed();
-    return true;
-  }
-  if (trimmed === "/help") {
-    const sock = runtime.sock;
-    if (sock) {
-      await sendText(
-        { sock, gateway },
-        chat,
-        "*Commands*\n/reset — start a fresh session (chat log kept)\n/help — this message",
-      ).catch(() => {});
-    }
-    recordMessageProcessed();
-    return true;
-  }
-  return false;
-}
-
 /**
  * Catch-up messages (queued while the daemon was down) get a reply
  * turn only while fresh; stale ones are already recorded and the next
@@ -321,7 +279,7 @@ export async function handleInbound(
   if (!admitted) return;
   const inbound = await recordInbound(runtime, msg, admitted);
   if (!inbound) return;
-  if (await handleSlashCommand(runtime, inbound)) return;
+  if (await handleWhatsAppCommand(runtime, inbound)) return;
   if (options.catchUp && !catchUpDeservesReply(inbound)) return;
   await runInboundTurn(runtime, inbound);
 }
