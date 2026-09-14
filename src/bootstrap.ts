@@ -293,13 +293,10 @@ export async function initBackendAndDispatcher(
   // `config.dreamBackend`. When two roles point at the same id the
   // pool reuses one instance (refcounted) — a single-backend setup
   // still spins up exactly one instance.
-  await bootPhase("backend pool", () =>
-    initBackendPool(config, {
-      getBridgePort: () =>
-        resolveFrontend(undefined, frontends).getBridgePort(),
-      frontendName: resolveFrontend(undefined, frontends).name,
-    }),
-  );
+  await initBackendPool(config, {
+    getBridgePort: () => resolveFrontend(undefined, frontends).getBridgePort(),
+    frontendName: resolveFrontend(undefined, frontends).name,
+  });
   const backend = getBackendForRole("chat");
 
   // Model audit — verify the models pinned in config still exist on
