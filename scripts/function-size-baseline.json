@@ -72,22 +72,22 @@
     "cx": 66
   },
   {
-    "file": "src/core/engine/gateway.ts",
-    "name": ".start",
-    "lines": 239,
-    "cx": 38
-  },
-  {
     "file": "src/core/vfs/mounts/files.ts",
     "name": "createFileMount",
     "lines": 133,
     "cx": 31
   },
   {
-    "file": "src/frontend/native/index.ts",
-    "name": "createNativeFrontend",
-    "lines": 1294,
-    "cx": 155
+    "file": "src/frontend/discord/callbacks/components.ts",
+    "name": "handleComponentInteraction",
+    "lines": 545,
+    "cx": 93
+  },
+  {
+    "file": "src/frontend/discord/index.ts",
+    "name": "createDiscordFrontend",
+    "lines": 316,
+    "cx": 43
   },
   {
     "file": "src/frontend/native/server.ts",
