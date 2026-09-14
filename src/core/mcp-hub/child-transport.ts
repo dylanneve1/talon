@@ -122,7 +122,7 @@ export class HubChildTransport implements Transport {
 
   start(): Promise<void> {
     if (this.child) {
-      throw new Error("HubChildTransport already started");
+      return Promise.reject(new Error("HubChildTransport already started"));
     }
     return new Promise((resolve, reject) => {
       const child = crossSpawn(this.opts.command, this.opts.args, {
