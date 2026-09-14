@@ -54,6 +54,21 @@ export type MetricsLatencyAgg = {
   maxMs: number;
 };
 
+/**
+ * Where a turn's wall-clock went, as seen from the Weaver: waiting in the
+ * chat's FIFO, resolving the warp, until the backend's first event, the
+ * whole stream, and the slice of it spent inside frontend delivery.
+ */
+export const TURN_PHASES = [
+  "queueWait",
+  "warpResolve",
+  "firstToken",
+  "stream",
+  "delivery",
+] as const;
+export type TurnPhase = (typeof TURN_PHASES)[number];
+export type MetricsPhaseAggs = Record<TurnPhase, MetricsLatencyAgg>;
+
 export type MetricsGrain = {
   counters: MetricsCounterSet;
   latency: MetricsLatencyAgg;
@@ -62,6 +77,7 @@ export type MetricsGrain = {
   cacheHitPercent: MetricsLatencyAgg;
   toolCallsPerTurn: MetricsLatencyAgg;
   apiCallsPerTurn: MetricsLatencyAgg;
+  phases: MetricsPhaseAggs;
 };
 
 export type SessionMetrics = {
@@ -127,6 +143,14 @@ export const emptyLatency = (): MetricsLatencyAgg => ({
   maxMs: 0,
 });
 
+export const emptyPhases = (): MetricsPhaseAggs => ({
+  queueWait: emptyLatency(),
+  warpResolve: emptyLatency(),
+  firstToken: emptyLatency(),
+  stream: emptyLatency(),
+  delivery: emptyLatency(),
+});
+
 export const emptyGrain = (): MetricsGrain => ({
   counters: emptyCounters(),
   latency: emptyLatency(),
@@ -135,6 +159,7 @@ export const emptyGrain = (): MetricsGrain => ({
   cacheHitPercent: emptyLatency(),
   toolCallsPerTurn: emptyLatency(),
   apiCallsPerTurn: emptyLatency(),
+  phases: emptyPhases(),
 });
 
 export const emptyMetrics = (): SessionMetrics => ({
@@ -179,6 +204,10 @@ function normaliseGrain(raw: unknown): MetricsGrain {
   grain.cacheHitPercent = normaliseLatency(r?.cacheHitPercent);
   grain.toolCallsPerTurn = normaliseLatency(r?.toolCallsPerTurn);
   grain.apiCallsPerTurn = normaliseLatency(r?.apiCallsPerTurn);
+  const phases = r?.phases as Partial<Record<TurnPhase, unknown>> | undefined;
+  for (const phase of TURN_PHASES) {
+    grain.phases[phase] = normaliseLatency(phases?.[phase]);
+  }
   if (r?.toolCallsByName && typeof r.toolCallsByName === "object") {
     for (const [key, value] of Object.entries(r.toolCallsByName)) {
       if (typeof value === "number" && Number.isFinite(value)) {

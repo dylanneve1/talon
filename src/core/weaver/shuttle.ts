@@ -30,6 +30,18 @@ import {
 export type EventSink = (event: AgentEvent) => void | Promise<void>;
 
 /**
+ * Wall-clock the shuttle observes while carrying one stream: when the
+ * first event arrived (`undefined` if the stream ended empty) and how many
+ * ms were spent awaiting the frontend's sink in total.
+ */
+export type ShuttleTiming = {
+  firstEventAt?: number;
+  deliveryMs: number;
+};
+
+export const startShuttleTiming = (): ShuttleTiming => ({ deliveryMs: 0 });
+
+/**
  * Pump the stream to completion. Returns the `completed` event's
  * result (if the backend emitted one); throws `AgentRunError` when the
  * stream terminates with an `error` event.
@@ -37,16 +49,31 @@ export type EventSink = (event: AgentEvent) => void | Promise<void>;
 export async function carryTurnEvents(
   stream: AsyncIterable<AgentEvent>,
   onEvent?: EventSink,
+  timing?: ShuttleTiming,
 ): Promise<AgentResult | undefined> {
   let agentResult: AgentResult | undefined;
+  const sink: EventSink | undefined =
+    onEvent && timing
+      ? async (event) => {
+          const t0 = Date.now();
+          try {
+            await onEvent(event);
+          } finally {
+            timing.deliveryMs += Date.now() - t0;
+          }
+        }
+      : onEvent;
   for await (const event of stream) {
+    if (timing && timing.firstEventAt === undefined) {
+      timing.firstEventAt = Date.now();
+    }
     if (event.type === "completed") {
       agentResult = event.result;
     }
 
     if (event.type === "assistant_message" && event.deliveryAck) {
       try {
-        await onEvent?.(event);
+        await sink?.(event);
         event.deliveryAck.resolve();
       } catch (err) {
         event.deliveryAck.reject(err);
@@ -54,7 +81,7 @@ export async function carryTurnEvents(
       continue;
     }
 
-    await onEvent?.(event);
+    await sink?.(event);
     if (event.type === "error") {
       throw new AgentRunError(event.error);
     }

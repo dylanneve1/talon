@@ -1,9 +1,33 @@
 [
   {
+    "file": "src/backend/claude-sdk/handler.ts",
+    "name": "runChatTurn",
+    "lines": 513,
+    "cx": 64
+  },
+  {
     "file": "src/backend/claude-sdk/stream.ts",
     "name": "processResultMessage",
     "lines": 82,
     "cx": 31
+  },
+  {
+    "file": "src/backend/codex/handler/message.ts",
+    "name": "handleMessage",
+    "lines": 494,
+    "cx": 69
+  },
+  {
+    "file": "src/backend/openai-agents/handler/message.ts",
+    "name": "handleMessage",
+    "lines": 465,
+    "cx": 53
+  },
+  {
+    "file": "src/backend/remote-server/chat-turn.ts",
+    "name": "runRemoteChatTurn",
+    "lines": 281,
+    "cx": 20
   },
   {
     "file": "src/backend/remote-server/model-catalog/presentation.ts",
