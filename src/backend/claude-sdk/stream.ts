@@ -334,6 +334,79 @@ export function extractToolResults(msg: SDKUserMessage): ToolResultInfo[] {
   return results;
 }
 
+/** Context fill of the last API iteration + whether the turn's first request hit the cache. */
+function readContextFill(
+  state: StreamState,
+  usage: SDKResultMessage["usage"],
+): void {
+  if (
+    !usage ||
+    !Array.isArray(usage.iterations) ||
+    usage.iterations.length === 0
+  )
+    return;
+  const last = usage.iterations[usage.iterations.length - 1];
+  state.contextTokens =
+    (last.input_tokens ?? 0) +
+    (last.cache_read_input_tokens ?? 0) +
+    (last.cache_creation_input_tokens ?? 0);
+  // The same array answers a question the per-turn totals can't: whether
+  // the FIRST request of this turn read a cache or paid to write one.
+  state.cacheStats = turnCacheStats(usage.iterations);
+}
+
+/**
+ * Token counts from the ACTIVE model's usage only. modelUsage is keyed by
+ * the exact SDK model string (e.g. "sonnet[1m]") and holds cumulative
+ * session totals per model — summing all entries double-counts when
+ * switching models mid-session.
+ */
+function readModelUsage(
+  state: StreamState,
+  modelUsage: Record<string, ModelUsage>,
+  sdkModel: string,
+): void {
+  // Drift check: modelUsage is keyed by the model that ACTUALLY served
+  // the turn. If none of the keys is (an alias of) the model we asked
+  // for, the API substituted — warn instead of burying it in the
+  // accounting line.
+  checkModelDrift(sdkModel, Object.keys(modelUsage ?? {}));
+  const mu = modelUsage[sdkModel] ?? Object.values(modelUsage).at(-1);
+  if (!mu) return;
+  state.sdkInputTokens = mu.inputTokens ?? 0;
+  state.sdkOutputTokens = mu.outputTokens ?? 0;
+  state.sdkCacheRead = mu.cacheReadInputTokens ?? 0;
+  state.sdkCacheWrite = mu.cacheCreationInputTokens ?? 0;
+  if (mu.contextWindow > 0) {
+    state.contextWindow = mu.contextWindow;
+  }
+}
+
+/**
+ * Failed turn. Two shapes (see StreamState.resultErrorText):
+ *  - error subtype: no `result` field, but `errors[]` carries diagnostics.
+ *  - success subtype with is_error: `result` (and the trailing assistant
+ *    text) IS the API error message, e.g. "You've hit your weekly limit
+ *    · resets Jul 10, 9am". Prefer that text — it's the user-facing one.
+ */
+function readResultError(msg: SDKResultMessage, state: StreamState): void {
+  if (msg.subtype !== "success") {
+    const diagnostics = (msg.errors ?? [])
+      .filter((e) => typeof e === "string" && !e.startsWith("[ede_diagnostic]"))
+      .join("; ")
+      .slice(0, 500);
+    state.resultErrorText =
+      state.lastTrailingText.trim() ||
+      diagnostics ||
+      `Claude SDK turn failed (${msg.subtype})`;
+  } else if (msg.is_error) {
+    state.resultErrorText =
+      (typeof msg.result === "string" && msg.result.trim()) ||
+      state.lastTrailingText.trim() ||
+      "Claude SDK turn failed (API error)";
+  }
+}
+
 /**
  * Process the final result message — extracts token counts, context info,
  * and API call counts from the typed SDK result.
@@ -350,39 +423,8 @@ export function processResultMessage(
     state.costUsd = msg.total_cost_usd;
   }
 
-  // Context fill from last API iteration
-  const usage = msg.usage;
-  if (usage && Array.isArray(usage.iterations) && usage.iterations.length > 0) {
-    const last = usage.iterations[usage.iterations.length - 1];
-    state.contextTokens =
-      (last.input_tokens ?? 0) +
-      (last.cache_read_input_tokens ?? 0) +
-      (last.cache_creation_input_tokens ?? 0);
-    // The same array answers a question the per-turn totals can't: whether
-    // the FIRST request of this turn read a cache or paid to write one.
-    state.cacheStats = turnCacheStats(usage.iterations);
-  }
-
-  // Read token counts from the ACTIVE model's usage only.
-  // modelUsage is keyed by the exact SDK model string (e.g. "sonnet[1m]")
-  // and contains cumulative session totals per model — summing all entries
-  // double-counts when switching models mid-session.
-  const modelUsage: Record<string, ModelUsage> = msg.modelUsage;
-  // Drift check: modelUsage is keyed by the model that ACTUALLY served
-  // the turn. If none of the keys is (an alias of) the model we asked
-  // for, the API substituted — warn instead of burying it in the
-  // accounting line.
-  checkModelDrift(sdkModel, Object.keys(modelUsage ?? {}));
-  const mu = modelUsage[sdkModel] ?? Object.values(modelUsage).at(-1);
-  if (mu) {
-    state.sdkInputTokens = mu.inputTokens ?? 0;
-    state.sdkOutputTokens = mu.outputTokens ?? 0;
-    state.sdkCacheRead = mu.cacheReadInputTokens ?? 0;
-    state.sdkCacheWrite = mu.cacheCreationInputTokens ?? 0;
-    if (mu.contextWindow > 0) {
-      state.contextWindow = mu.contextWindow;
-    }
-  }
+  readContextFill(state, msg.usage);
+  readModelUsage(state, msg.modelUsage, sdkModel);
 
   log(
     "agent",
@@ -400,26 +442,7 @@ export function processResultMessage(
     state.currentBlockText = msg.result;
   }
 
-  // Failed turn. Two shapes (see StreamState.resultErrorText):
-  //  - error subtype: no `result` field, but `errors[]` carries diagnostics.
-  //  - success subtype with is_error: `result` (and the trailing assistant
-  //    text) IS the API error message, e.g. "You've hit your weekly limit
-  //    · resets Jul 10, 9am". Prefer that text — it's the user-facing one.
-  if (msg.subtype !== "success") {
-    const diagnostics = (msg.errors ?? [])
-      .filter((e) => typeof e === "string" && !e.startsWith("[ede_diagnostic]"))
-      .join("; ")
-      .slice(0, 500);
-    state.resultErrorText =
-      state.lastTrailingText.trim() ||
-      diagnostics ||
-      `Claude SDK turn failed (${msg.subtype})`;
-  } else if (msg.is_error) {
-    state.resultErrorText =
-      (typeof msg.result === "string" && msg.result.trim()) ||
-      state.lastTrailingText.trim() ||
-      "Claude SDK turn failed (API error)";
-  }
+  readResultError(msg, state);
 }
 
 // ── Trailing-text fallback dedup ────────────────────────────────────────────

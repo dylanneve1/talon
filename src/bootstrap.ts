@@ -36,6 +36,7 @@ import { initDream, maybeStartDream } from "./core/background/dream.js";
 import { initHeartbeat } from "./core/background/heartbeat/index.js";
 import { log, logWarn, logDebug } from "./util/log.js";
 import { bootPhase } from "./util/boot-timer.js";
+import { mapConcurrent } from "./util/concurrency.js";
 import type { TalonConfig } from "./util/config.js";
 import { resolveFrontendIdAmong } from "./core/frontend-runtime/routing.js";
 import type { Frontend } from "./core/frontend-runtime/index.js";
@@ -123,11 +124,11 @@ export async function bootstrap(
       const frontends =
         options.frontendNames ??
         (Array.isArray(config.frontend) ? config.frontend : [config.frontend]);
-      await loadPlugins(config.plugins, frontends);
+      await bootPhase("plugins", () => loadPlugins(config.plugins, frontends));
     }
 
     // Built-in plugins (GitHub, MemPalace, mem0, Playwright) — shared with hot-reload
-    await loadBuiltinPlugins(config);
+    await bootPhase("builtin plugins", () => loadBuiltinPlugins(config));
 
     rebuildSystemPrompt(config, getPluginPromptAdditions());
   }
@@ -144,12 +145,14 @@ export async function bootstrap(
   });
 
   initWorkspace(config.workspace);
-  loadSessions();
-  loadChatSettings();
-  loadCronJobs();
-  loadTriggers();
-  loadHistory();
-  loadMediaIndex();
+  await bootPhase("stores", () => {
+    loadSessions();
+    loadChatSettings();
+    loadCronJobs();
+    loadTriggers();
+    loadHistory();
+    loadMediaIndex();
+  });
   cleanupOldLogs();
 
   return { config };
@@ -166,6 +169,104 @@ export async function bootstrap(
  * heartbeat all read through `getActiveBackend()` so a runtime swap
  * via `switchBackend(id, config)` propagates without any re-init.
  */
+/** The backend-controller surface `reconcileChatBindings` needs. */
+type ChatBindingDeps = {
+  isBackendAvailable: (id: string, config: TalonConfig) => boolean;
+  releaseChat: (chatId: string) => Promise<void>;
+  rebindChat: (
+    chatId: string,
+    backendId: string,
+    config: TalonConfig,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  getBackendIdForChat: (chatId: string) => string;
+  getBackendForChat: (chatId: string) => Backend;
+  isModelValidForBackend: (backend: Backend, model: string) => Promise<boolean>;
+};
+
+const CHAT_BINDING_CONCURRENCY = 8;
+const REBIND_RETRY_DELAY_MS = 1_500;
+
+/**
+ * Re-establish every chat's stored backend/model override against the
+ * backends this boot actually has. Chats are independent, so they are
+ * reconciled `CHAT_BINDING_CONCURRENCY` at a time; a shared backend that
+ * two chats need at once is initialised exactly once by the pool.
+ */
+export async function reconcileChatBindings(
+  config: TalonConfig,
+  deps: ChatBindingDeps,
+): Promise<void> {
+  const { getAllChatSettings } = await import("./storage/chat-settings.js");
+  await mapConcurrent(
+    Object.entries(getAllChatSettings()),
+    CHAT_BINDING_CONCURRENCY,
+    ([cid, settings]) => reconcileChatBinding(cid, settings, config, deps),
+  );
+}
+
+async function reconcileChatBinding(
+  cid: string,
+  settings: { backend?: string; model?: string },
+  config: TalonConfig,
+  deps: ChatBindingDeps,
+): Promise<void> {
+  const { getAllChatSettings, setChatBackend, setChatModel } =
+    await import("./storage/chat-settings.js");
+  let resetVolatileState = false;
+  if (settings.backend) {
+    if (!deps.isBackendAvailable(settings.backend, config)) {
+      log(
+        "bot",
+        `Per-chat backend ${settings.backend} for ${cid} is no longer available — resetting chat to default backend`,
+      );
+      await deps.releaseChat(cid);
+      setChatBackend(cid, undefined);
+      setChatModel(cid, undefined);
+      resetVolatileState = true;
+    } else {
+      let result = await deps.rebindChat(cid, settings.backend, config);
+      if (!result.ok) {
+        await new Promise((r) => setTimeout(r, REBIND_RETRY_DELAY_MS));
+        result = await deps.rebindChat(cid, settings.backend, config);
+      }
+      if (!result.ok) {
+        log(
+          "bot",
+          `Per-chat backend rebind failed for ${cid} → ${settings.backend}: ${result.error} — keeping the setting; will serve on the default backend until re-selected`,
+        );
+      }
+    }
+  }
+  const bindingMatchesSetting =
+    !settings.backend || deps.getBackendIdForChat(cid) === settings.backend;
+  const currentModel = getAllChatSettings()[cid]?.model;
+  if (currentModel && bindingMatchesSetting) {
+    const be = deps.getBackendForChat(cid);
+    try {
+      const valid = await deps.isModelValidForBackend(be, currentModel);
+      if (!valid) {
+        log(
+          "bot",
+          `Per-chat model ${currentModel} for ${cid} is not valid for its backend — resetting model to default`,
+        );
+        setChatModel(cid, undefined);
+        resetVolatileState = true;
+      }
+    } catch (err) {
+      log(
+        "bot",
+        `Per-chat model validation failed for ${cid} (${currentModel}): ${
+          err instanceof Error ? err.message : String(err)
+        } — keeping stored model`,
+      );
+    }
+  }
+  if (resetVolatileState) {
+    resetSession(cid);
+    clearHistory(cid);
+  }
+}
+
 export async function initBackendAndDispatcher(
   config: TalonConfig,
   frontend: FrontendSelection,
@@ -259,77 +360,16 @@ export async function initBackendAndDispatcher(
   // for the backend that would serve it, clear the override and reset
   // volatile chat state so the next user message starts a fresh default
   // session instead of crashing on an orphaned model id.
-  const { getAllChatSettings, setChatBackend, setChatModel } =
-    await import("./storage/chat-settings.js");
-  for (const [cid, settings] of Object.entries(getAllChatSettings())) {
-    let resetVolatileState = false;
-
-    if (settings.backend) {
-      if (!isBackendAvailable(settings.backend, config)) {
-        log(
-          "bot",
-          `Per-chat backend ${settings.backend} for ${cid} is no longer available — resetting chat to default backend`,
-        );
-        await releaseChat(cid);
-        setChatBackend(cid, undefined);
-        setChatModel(cid, undefined);
-        resetVolatileState = true;
-      } else {
-        // A boot-time rebind failure is usually TRANSIENT (backend slow to
-        // spawn, auth endpoint briefly unreachable) — it must not destroy
-        // the user's persisted choice, session, and history. Retry once,
-        // then keep the setting and move on: the chat runs on the default
-        // backend until a later switch succeeds, and clients keep showing
-        // the user's chosen backend from settings (the source of truth).
-        let result = await rebindChat(cid, settings.backend, config);
-        if (!result.ok) {
-          await new Promise((r) => setTimeout(r, 1500));
-          result = await rebindChat(cid, settings.backend, config);
-        }
-        if (!result.ok) {
-          log(
-            "bot",
-            `Per-chat backend rebind failed for ${cid} → ${settings.backend}: ${result.error} — keeping the setting; will serve on the default backend until re-selected`,
-          );
-        }
-      }
-    }
-
-    // Only validate the stored model against the backend that will really
-    // serve this chat. After a kept-but-unbound override (transient rebind
-    // failure above) the chat temporarily runs on the default backend — the
-    // stored model belongs to the chosen backend, so validating it against
-    // the default would wrongly clear it.
-    const bindingMatchesSetting =
-      !settings.backend || getBackendIdForChat(cid) === settings.backend;
-    const currentModel = getAllChatSettings()[cid]?.model;
-    if (currentModel && bindingMatchesSetting) {
-      const be = getBackendForChat(cid);
-      try {
-        const valid = await isModelValidForBackend(be, currentModel);
-        if (!valid) {
-          log(
-            "bot",
-            `Per-chat model ${currentModel} for ${cid} is not valid for its backend — resetting model to default`,
-          );
-          setChatModel(cid, undefined);
-          resetVolatileState = true;
-        }
-      } catch (err) {
-        log(
-          "bot",
-          `Per-chat model validation failed for ${cid} (${currentModel}): ${
-            err instanceof Error ? err.message : String(err)
-          } — keeping stored model`,
-        );
-      }
-    }
-
-    if (resetVolatileState) {
-      resetSession(cid);
-      clearHistory(cid);
-    }
-  }
+  await bootPhase("chat bindings", () =>
+    reconcileChatBindings(config, {
+      isBackendAvailable,
+      releaseChat,
+      rebindChat,
+      getBackendIdForChat,
+      getBackendForChat,
+      isModelValidForBackend,
+    }),
+  );
 
   initDispatcher({
     // Dispatcher reads the backend per query so per-chat overrides

@@ -1,87 +1,15 @@
 [
   {
-    "file": "src/backend/claude-sdk/stream.ts",
-    "name": "processResultMessage",
-    "lines": 82,
-    "cx": 31
-  },
-  {
     "file": "src/backend/remote-server/model-catalog/presentation.ts",
     "name": "createRemoteModelPresentation",
     "lines": 256,
     "cx": 61
   },
   {
-    "file": "src/backend/remote-server/turn.ts",
-    "name": "subscribeToTurnEvents",
-    "lines": 109,
-    "cx": 31
-  },
-  {
     "file": "src/bootstrap.ts",
     "name": "initBackendAndDispatcher",
-    "lines": 378,
-    "cx": 29
-  },
-  {
-    "file": "src/cli/setup.ts",
-    "name": "runSetup",
-    "lines": 501,
-    "cx": 85
-  },
-  {
-    "file": "src/core/background/heartbeat/agent.ts",
-    "name": "runHeartbeatAgent",
-    "lines": 224,
-    "cx": 25
-  },
-  {
-    "file": "src/core/engine/gateway-actions/cron.ts",
-    "name": ".create_cron_job",
-    "lines": 169,
-    "cx": 61
-  },
-  {
-    "file": "src/core/engine/gateway-actions/cron.ts",
-    "name": ".edit_cron_job",
-    "lines": 170,
-    "cx": 66
-  },
-  {
-    "file": "src/core/engine/gateway.ts",
-    "name": ".start",
-    "lines": 239,
-    "cx": 38
-  },
-  {
-    "file": "src/core/vfs/mounts/files.ts",
-    "name": "createFileMount",
-    "lines": 133,
-    "cx": 31
-  },
-  {
-    "file": "src/frontend/discord/callbacks/components.ts",
-    "name": "handleComponentInteraction",
-    "lines": 545,
-    "cx": 93
-  },
-  {
-    "file": "src/frontend/discord/index.ts",
-    "name": "createDiscordFrontend",
-    "lines": 316,
-    "cx": 43
-  },
-  {
-    "file": "src/frontend/native/index.ts",
-    "name": "createNativeFrontend",
-    "lines": 1294,
-    "cx": 155
-  },
-  {
-    "file": "src/frontend/native/server.ts",
-    "name": ".buildRoutes",
-    "lines": 326,
-    "cx": 58
+    "lines": 322,
+    "cx": 17
   },
   {
     "file": "src/frontend/teams/index.ts",
@@ -160,17 +88,5 @@
     "name": "createInput",
     "lines": 292,
     "cx": 53
-  },
-  {
-    "file": "src/frontend/whatsapp/index.ts",
-    "name": "createWhatsAppFrontend",
-    "lines": 601,
-    "cx": 103
-  },
-  {
-    "file": "src/frontend/whatsapp/index.ts",
-    "name": "handleInbound",
-    "lines": 197,
-    "cx": 50
   }
 ]
