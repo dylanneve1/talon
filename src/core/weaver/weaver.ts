@@ -24,9 +24,11 @@ import type { ContextManager, ExecuteParams, ExecuteResult } from "../types.js";
 import { bus } from "../bus/index.js";
 import { taskTable, type TaskHandle } from "../tasks/index.js";
 import { log, logDebug, logWarn } from "../../util/log.js";
+import { recordSessionTurnPhases } from "../../storage/sessions.js";
+import type { TurnPhase } from "../../storage/session-record.js";
 import { TalonError } from "../errors.js";
 import { Loom } from "./loom.js";
-import { carryTurnEvents } from "./shuttle.js";
+import { carryTurnEvents, startShuttleTiming } from "./shuttle.js";
 import type { Thread, ThreadSnapshot } from "./thread.js";
 import { startTypingLoop } from "./typing-loop.js";
 import { resolveWarp } from "./warp-resolver.js";
@@ -72,7 +74,7 @@ export class Weaver {
     // interrupt the same chat's currently running one.
     const chat = this.deps.getBackend(params.chatId).chat;
     const interrupt = chat?.interruptChatTurn?.bind(chat);
-    const lifecycle = { started: false, killed: false };
+    const lifecycle = { started: false, killed: false, enqueuedAt: Date.now() };
     // Registered before enqueueing so a turn waiting in its chat's FIFO is
     // visible as `queued` in the task table, not invisible until it runs.
     const task = taskTable.enqueue({
@@ -109,7 +111,7 @@ export class Weaver {
     thread: Thread,
     params: ExecuteParams,
     task: TaskHandle,
-    lifecycle: { started: boolean; killed: boolean },
+    lifecycle: { started: boolean; killed: boolean; enqueuedAt: number },
   ): Promise<ExecuteResult> {
     if (lifecycle.killed) {
       // Killed while queued — the turn never reaches the backend. The
@@ -122,7 +124,9 @@ export class Weaver {
     this.activeCount++;
     task.start();
     try {
-      const result = await this.executeInner(thread, params, task);
+      const result = await this.executeInner(thread, params, task, {
+        queueWait: Date.now() - lifecycle.enqueuedAt,
+      });
       const usage = {
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
@@ -162,17 +166,20 @@ export class Weaver {
     thread: Thread,
     params: ExecuteParams,
     task: TaskHandle,
+    phases: Partial<Record<TurnPhase, number>>,
   ): Promise<ExecuteResult> {
     const { context } = this.deps;
     const backend = this.deps.getBackend(params.chatId);
     const reqId = randomBytes(4).toString("hex");
 
+    const warpStartedAt = Date.now();
     const warp = await resolveWarp(this.deps, {
       chatId: params.chatId,
       modelOverride: params.modelOverride,
       source: params.source,
       reqId,
     });
+    phases.warpResolve = Date.now() - warpStartedAt;
     if (!warp.ok) {
       // Refusals are delivered through the same event sink the backend
       // would use for output (as an `assistant_message` event, so the
@@ -246,7 +253,15 @@ export class Weaver {
         isGroup: params.isGroup,
         messageId: params.messageId,
       });
-      const agentResult = await carryTurnEvents(stream, params.onEvent);
+      const timing = startShuttleTiming();
+      const streamStartedAt = Date.now();
+      const agentResult = await carryTurnEvents(stream, params.onEvent, timing);
+      phases.stream = Date.now() - streamStartedAt;
+      phases.delivery = timing.deliveryMs;
+      if (timing.firstEventAt !== undefined) {
+        phases.firstToken = timing.firstEventAt - streamStartedAt;
+      }
+      recordSessionTurnPhases(params.chatId, phases);
 
       // Completion signal — pulse (and any other liveness subscriber) keys
       // off this. Failures throw past it; refusals never get this far.
@@ -261,7 +276,8 @@ export class Weaver {
       logDebug(
         "dispatcher",
         `[${reqId}] completed in ${agentResult?.durationMs ?? 0}ms ` +
-          `(in=${agentResult?.usage.inputTokens ?? 0} out=${agentResult?.usage.outputTokens ?? 0})`,
+          `(in=${agentResult?.usage.inputTokens ?? 0} out=${agentResult?.usage.outputTokens ?? 0}) ` +
+          formatPhases(phases),
       );
 
       return this.toExecuteResult(agentResult, params);
@@ -303,6 +319,21 @@ export class Weaver {
       ),
     };
   }
+}
+
+/** `queue=12ms warp=3ms ttft=1840ms stream=6200ms delivery=310ms` */
+function formatPhases(phases: Partial<Record<TurnPhase, number>>): string {
+  const labels: Record<TurnPhase, string> = {
+    queueWait: "queue",
+    warpResolve: "warp",
+    firstToken: "ttft",
+    stream: "stream",
+    delivery: "delivery",
+  };
+  return (Object.keys(labels) as TurnPhase[])
+    .filter((phase) => phases[phase] !== undefined)
+    .map((phase) => `${labels[phase]}=${phases[phase]}ms`)
+    .join(" ");
 }
 
 let weaver: Weaver | null = null;
