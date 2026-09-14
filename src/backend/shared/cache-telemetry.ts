@@ -250,9 +250,22 @@ function estimateTokens(text: string): number {
 }
 
 /**
+ * (label, model) pairs already warned about this process. A recurring
+ * caller (heartbeat, dream) builds the same prompt on every run, so the
+ * first warning says everything the rest would.
+ */
+const warnedCacheMinimums = new Set<string>();
+
+/** Test seam. */
+export function resetCacheMinimumWarnings(): void {
+  warnedCacheMinimums.clear();
+}
+
+/**
  * Warn when a prompt is too small to be cacheable on its model. No-op when
  * the model's floor is unknown or the prompt clears it. `label` names the
- * caller (e.g. `"dream"`) so the warning points somewhere.
+ * caller (e.g. `"dream"`) so the warning points somewhere. Warns once per
+ * (label, model) per process.
  */
 export function warnIfBelowCacheMinimum(
   label: string,
@@ -263,6 +276,9 @@ export function warnIfBelowCacheMinimum(
   if (min === undefined) return;
   const estimated = estimateTokens(prompt);
   if (estimated >= min) return;
+  const key = `${label}\0${model}`;
+  if (warnedCacheMinimums.has(key)) return;
+  warnedCacheMinimums.add(key);
   logWarn(
     "agent",
     `[${label}] prompt ~${estimated} tokens is below ${model}'s ${min}-token ` +

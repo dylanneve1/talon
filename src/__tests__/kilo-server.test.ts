@@ -44,6 +44,8 @@ const {
   getConfig,
   updateSystemPrompt,
 } = await import("../backend/kilo/server.js");
+const { getPluginMcpServerName, getPluginMcpServerPrefix } =
+  await import("../backend/remote-server/mcp.js");
 
 type MockKiloClient = {
   mcp: {
@@ -188,8 +190,8 @@ describe("kilo server helpers", () => {
     const registered = await ensurePluginMcpServers(oc as never, "chat-1");
 
     expect(registered).toEqual([
-      "talon-plugin-chat-1-alpha",
-      "talon-plugin-chat-1-beta",
+      getPluginMcpServerName("alpha", "chat-1"),
+      getPluginMcpServerName("beta", "chat-1"),
     ]);
     expect(oc.mcp.add).toHaveBeenCalledTimes(2);
   });
@@ -209,8 +211,8 @@ describe("kilo server helpers", () => {
     // were burning before the cache existed.
     const reRegistered = await ensurePluginMcpServers(oc as never, "chat-1");
     expect(reRegistered).toEqual([
-      "talon-plugin-chat-1-alpha",
-      "talon-plugin-chat-1-beta",
+      getPluginMcpServerName("alpha", "chat-1"),
+      getPluginMcpServerName("beta", "chat-1"),
     ]);
     expect(oc.mcp.add).toHaveBeenCalledTimes(2);
   });
@@ -270,10 +272,10 @@ describe("kilo server helpers", () => {
       { permission: "tool", pattern: "talon-tools-*", action: "deny" },
       {
         permission: "tool",
-        pattern: "talon-plugin-chat_a-*",
+        pattern: `${getPluginMcpServerPrefix("chat/a")}*`,
         action: "allow",
       },
-      { permission: "tool", pattern: "talon-plugin-*", action: "deny" },
+      { permission: "tool", pattern: "tp-*", action: "deny" },
       { permission: "tool", pattern: "*", action: "allow" },
       { permission: "edit", pattern: "*", action: "allow" },
       { permission: "bash", pattern: "*", action: "allow" },

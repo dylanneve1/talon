@@ -7,7 +7,8 @@ import { readFileSync } from "node:fs";
 import type { TalonConfig } from "../../util/config.js";
 import { files, dirs } from "../../util/paths.js";
 import { tailFile } from "../../util/tail-file.js";
-import { escapeHtml } from "./formatting.js";
+import { escapeHtml, splitMessage } from "./formatting.js";
+import { TELEGRAM_MAX_TEXT } from "./actions/types.js";
 import { resetSession, getAllSessions } from "../../storage/sessions.js";
 import { clearHistory } from "../../storage/history.js";
 import { todayLogDate } from "../../storage/daily-log.js";
@@ -22,6 +23,72 @@ import { getPulseStatus } from "../../core/background/pulse.js";
 import { getHealthStatus, getRecentErrors } from "../../util/watchdog.js";
 import { formatDuration, formatModelLabel } from "./helpers/index.js";
 
+/**
+ * Reply with an HTML listing, split across messages when it outgrows
+ * Telegram's 4096-char cap. The per-item listings below (chats, cron,
+ * pulse) scale with the daemon's chat count, and a single oversized
+ * `ctx.reply` fails the whole command with 400 "message is too long".
+ * Entries are `\n\n`-separated and each carries balanced tags, so the
+ * paragraph-first splitter never cuts through markup.
+ */
+async function replyHtmlChunked(ctx: Context, text: string): Promise<void> {
+  for (const chunk of splitMessage(text, TELEGRAM_MAX_TEXT)) {
+    await ctx.reply(chunk, { parse_mode: "HTML" });
+  }
+}
+
+/** `/admin chats` — every active session, newest first, titled via getChat. */
+async function replyActiveChats(
+  ctx: Context,
+  bot: Bot,
+  config: TalonConfig,
+): Promise<void> {
+  const sessions = getAllSessions();
+  if (sessions.length === 0) {
+    await ctx.reply("No active sessions.");
+    return;
+  }
+  sessions.sort((a, b) => (b.info.lastActive || 0) - (a.info.lastActive || 0));
+
+  const titles = new Map<string, string>();
+  await Promise.all(
+    sessions.map(async (s) => {
+      try {
+        const id = parseInt(s.chatId, 10);
+        if (isNaN(id)) return;
+        const chat = await bot.api.getChat(id);
+        titles.set(
+          s.chatId,
+          "title" in chat
+            ? (chat.title ?? "DM")
+            : "first_name" in chat
+              ? (chat.first_name ?? "DM")
+              : "DM",
+        );
+      } catch {
+        /* inaccessible */
+      }
+    }),
+  );
+
+  const lines = sessions.map((s) => {
+    const age = s.info.lastActive
+      ? `${Math.round((Date.now() - s.info.lastActive) / 60000)}m ago`
+      : "?";
+    const title = titles.get(s.chatId) ?? s.chatId;
+    const model = formatModelLabel(
+      getChatSettings(s.chatId).model ?? config.model,
+    );
+    // `model` is a catalog id (OpenRouter/Kilo ids are free-form), so
+    // it gets the same escaping the title already had.
+    return `<b>${escapeHtml(title)}</b> <code>${s.chatId}</code>\n  ${s.info.turns} turns | ${age} | ${escapeHtml(model)}`;
+  });
+  await replyHtmlChunked(
+    ctx,
+    `<b>Active chats (${sessions.length})</b>\n\n` + lines.join("\n\n"),
+  );
+}
+
 export async function handleAdminCommand(
   ctx: Context,
   bot: Bot,
@@ -32,52 +99,7 @@ export async function handleAdminCommand(
 
   switch (subcommand) {
     case "chats": {
-      const sessions = getAllSessions();
-      if (sessions.length === 0) {
-        await ctx.reply("No active sessions.");
-        return;
-      }
-      sessions.sort(
-        (a, b) => (b.info.lastActive || 0) - (a.info.lastActive || 0),
-      );
-
-      const titles = new Map<string, string>();
-      await Promise.all(
-        sessions.map(async (s) => {
-          try {
-            const id = parseInt(s.chatId, 10);
-            if (isNaN(id)) return;
-            const chat = await bot.api.getChat(id);
-            titles.set(
-              s.chatId,
-              "title" in chat
-                ? (chat.title ?? "DM")
-                : "first_name" in chat
-                  ? (chat.first_name ?? "DM")
-                  : "DM",
-            );
-          } catch {
-            /* inaccessible */
-          }
-        }),
-      );
-
-      const lines = sessions.map((s) => {
-        const age = s.info.lastActive
-          ? `${Math.round((Date.now() - s.info.lastActive) / 60000)}m ago`
-          : "?";
-        const title = titles.get(s.chatId) ?? s.chatId;
-        const model = formatModelLabel(
-          getChatSettings(s.chatId).model ?? config.model,
-        );
-        // `model` is a catalog id (OpenRouter/Kilo ids are free-form), so
-        // it gets the same escaping the title already had.
-        return `<b>${escapeHtml(title)}</b> <code>${s.chatId}</code>\n  ${s.info.turns} turns | ${age} | ${escapeHtml(model)}`;
-      });
-      await ctx.reply(
-        `<b>Active chats (${sessions.length})</b>\n\n` + lines.join("\n\n"),
-        { parse_mode: "HTML" },
-      );
+      await replyActiveChats(ctx, bot, config);
       return;
     }
 
@@ -189,9 +211,9 @@ export async function handleAdminCommand(
           : "?";
         return `${j.enabled ? "\u2713" : "\u2717"} <b>${escapeHtml(j.name)}</b>\n  <code>${escapeHtml(describeSchedule(j))}</code> | ${j.type} | runs: ${j.runCount} | last: ${last} | next: ${next}`;
       });
-      await ctx.reply(
+      await replyHtmlChunked(
+        ctx,
         `<b>Cron Jobs (${jobs.length})</b>\n\n` + lines.join("\n\n"),
-        { parse_mode: "HTML" },
       );
       return;
     }
@@ -217,9 +239,10 @@ export async function handleAdminCommand(
           return `${p.enabled ? "\u2713" : "\u2717"} ${escapeHtml(title)}`;
         }),
       );
-      await ctx.reply(`<b>Pulse (${chats.length})</b>\n\n` + lines.join("\n"), {
-        parse_mode: "HTML",
-      });
+      await replyHtmlChunked(
+        ctx,
+        `<b>Pulse (${chats.length})</b>\n\n` + lines.join("\n"),
+      );
       return;
     }
 

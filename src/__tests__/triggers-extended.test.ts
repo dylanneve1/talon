@@ -50,6 +50,7 @@ import type { Trigger } from "../storage/trigger-store.js";
 const {
   addTrigger,
   RESTART_KILL_ERROR,
+  SHUTDOWN_KILL_ERROR,
   generateTriggerId,
   getTrigger,
   updateTrigger,
@@ -326,6 +327,38 @@ describe("triggers — resumeAfterRestart", () => {
     const call = executeSpy.mock.calls[0][0];
     expect(call.chatId).toBe("chat-resume3");
     expect(call.prompt).toContain(RESTART_KILL_ERROR);
+  });
+
+  it("fires a death notice for a multi-fire watcher killed by a clean shutdown", async () => {
+    // Clean-shutdown twin of the case above: shutdownTriggers stamps
+    // SHUTDOWN_KILL_ERROR and finalizeExit skips the wake because the
+    // backend pool is already being torn down. lastFireAt is set from a
+    // mid-run signal, so only the marker re-qualifies it for the late wake.
+    const id = generateTriggerId();
+    const t: Trigger = {
+      id,
+      chatId: "chat-resume-shutdown",
+      numericChatId: 7,
+      name: "resume-shutdown-multifire",
+      language: "bash",
+      scriptPath: "/tmp/nonexistent4.sh",
+      logPath: "/tmp/nonexistent4.log",
+      status: "terminated",
+      createdAt: Date.now() - 100_000,
+      endedAt: Date.now() - 5_000,
+      timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+      fireCount: 2,
+      lastFireAt: Date.now() - 60_000,
+      lastError: SHUTDOWN_KILL_ERROR,
+    };
+    addTrigger(t);
+
+    await resumeAfterRestart();
+
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    const call = executeSpy.mock.calls[0][0];
+    expect(call.chatId).toBe("chat-resume-shutdown");
+    expect(call.prompt).toContain(SHUTDOWN_KILL_ERROR);
   });
 
   it("does NOT fire for an old terminated trigger (>5 min ago)", async () => {

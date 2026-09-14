@@ -44,6 +44,14 @@ Every backend uses these:
   bubble decisions.
 - `session-name.ts` — first-message → short session title.
 - `usage.ts` — cache-hit % + log summariser.
+- `turn-phases.ts` — the post-stream phases every handler runs after its
+  SDK loop: `accountTurn` / `accountFailedTurn` (metrics + session usage
+  + session id), `nameSessionFromFirstMessage`, `enforceTrailingProse`
+  (the tool-only contract + flow-violation retry decision), and
+  `finishCallbackTurn` (the summary log lines + `QueryResult`).
+- `result-events.ts` — `buildResultEvents`, the `usage` + `completed`
+  pair every chat-turn stream ends with; dependency-free so
+  `handler-to-events.ts` stays a pure adapter.
 
 ### `backend/remote-server/` — for HTTP-server backends (Kilo, OpenCode)
 

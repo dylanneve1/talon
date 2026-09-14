@@ -42,7 +42,11 @@ export { stopRemoteServer, RemoteServerStoppedError } from "./lifecycle.js";
 
 export {
   TALON_MCP_SERVER_NAME,
+  TALON_PLUGIN_MCP_SERVER_NAME,
+  PLUGIN_MCP_SERVER_NAME_MAX_LENGTH,
   getChatMcpServerName,
+  getPluginMcpServerName,
+  getPluginMcpServerPrefix,
   isTalonToolID,
   ensureChatMcpServer,
   ensurePluginMcpServers,

@@ -9,6 +9,11 @@ import {
   resolveWarp,
   startTypingLoop,
 } from "../core/weaver/index.js";
+import {
+  getHealthStatus,
+  recordMessageReceived,
+  resetWatchdogActivityForTests,
+} from "../util/watchdog.js";
 
 async function* stream(...events: AgentEvent[]): AsyncGenerator<AgentEvent> {
   for (const event of events) yield event;
@@ -43,6 +48,25 @@ describe("shuttle", () => {
     expect(seen).toEqual(["text_delta", "assistant_message", "completed"]);
     expect(result?.text).toBe("hello");
     expect(result?.usage.outputTokens).toBe(2);
+  });
+
+  it("bumps the watchdog activity clock for every event it carries", async () => {
+    vi.useFakeTimers();
+    try {
+      resetWatchdogActivityForTests();
+      vi.advanceTimersByTime(1_000);
+      recordMessageReceived();
+      // Received work with no completion and no events for 31 minutes
+      // reads as stuck...
+      vi.advanceTimersByTime(31 * 60_000);
+      expect(getHealthStatus().healthy).toBe(false);
+
+      // ...until a backend event flows through the shuttle.
+      await carryTurnEvents(stream({ type: "text_delta", text: "still here" }));
+      expect(getHealthStatus().healthy).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("settles deliveryAck: resolve on sink success, reject on sink throw", async () => {

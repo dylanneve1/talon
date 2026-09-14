@@ -4,9 +4,9 @@
  *
  * Resolves the active model against the server's catalog, makes sure the
  * server, session, and this chat's MCP servers exist, builds the prompt
- * pair, drives the turn (`./turn.ts`), then does the post-turn accounting:
- * usage fallback from the session summary, metrics, session id/name
- * persistence, and the shared delivery decision.
+ * pair, drives the turn (`./turn.ts`), then runs the shared post-turn
+ * phases (`backend/shared/turn-phases.ts`) with the one family-specific
+ * step in between: the usage fallback from the session summary.
  *
  * Kilo and OpenCode ran byte-for-byte copies of this (modulo the backend
  * name in log lines). The copies are gone; `RemoteChatBindings` is the
@@ -14,13 +14,7 @@
  * already returns.
  */
 
-import {
-  getSession,
-  incrementTurns,
-  recordUsage,
-  setSessionId,
-  setSessionName,
-} from "../../storage/sessions.js";
+import { getSession, incrementTurns } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { log, logError } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
@@ -32,13 +26,14 @@ import {
   finalizeResponseText,
   formatUserPrompt,
   prepareSystemPrompt,
-  extractSessionName,
-  summarizeUsage,
   routeDelivery,
   applyRetryDecision,
-  recordTurnMetrics,
-  recordFailedTurnAccounting,
   registerTurnInterrupt,
+  accountTurn,
+  accountFailedTurn,
+  nameSessionFromFirstMessage,
+  finishCallbackTurn,
+  type StreamState,
 } from "../shared/index.js";
 import type { RemoteAgentClient } from "./client.js";
 import type { RemoteServerBindings } from "./server-bindings.js";
@@ -157,9 +152,6 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
   const stopController = new AbortController();
   const untrackTurn = bindings.trackActiveTurn(stopController);
   const promptStartedAt = Date.now();
-  const seenQuestionIds = new Set<string>();
-  const seenPermissionIds = new Set<string>();
-  const seenToolCallIds = new Set<string>();
 
   const setupMs = Date.now() - t0;
   let promptMs = 0;
@@ -182,9 +174,9 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
       modelID,
       state,
       chatId,
-      seenQuestionIds,
-      seenPermissionIds,
-      seenToolCallIds,
+      seenQuestionIds: new Set<string>(),
+      seenPermissionIds: new Set<string>(),
+      seenToolCallIds: new Set<string>(),
       toolOverrides,
       onStreamDelta: undefined,
       onTextBlock,
@@ -205,25 +197,15 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
     if (outcome.retry) return outcome.retry;
 
     // Terminal failure — account for whatever the turn consumed before
-    // dying and drop the live overlay (the retry path above did its own
-    // accounting inside the recursive attempt).
-    recordFailedTurnAccounting({
+    // dying (the retry path above did its own accounting inside the
+    // recursive attempt).
+    accountFailedTurn({
       backend: id,
       chatId,
+      state,
       durationMs: Date.now() - t0,
-      toolCalls: state.toolCalls,
-      apiCalls: state.numApiCalls,
       model: activeModel,
-      usage: {
-        inputTokens: state.sdkInputTokens,
-        outputTokens: state.sdkOutputTokens,
-        cacheRead: state.sdkCacheRead,
-        cacheWrite: state.sdkCacheWrite,
-      },
-      contextTokens: state.contextTokens,
-      contextWindow: state.contextWindow,
     });
-
     logError(
       "agent",
       `[${chatId}] ${label} error: ${outcome.classified.message}`,
@@ -249,43 +231,16 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
 
   const responseText = finalizeResponseText(state);
   const durationMs = Date.now() - t0;
-  recordTurnMetrics({
+  accountTurn({
     chatId,
     backend: id,
-    durationMs,
-    toolCalls: state.toolCalls,
-    apiCalls: state.numApiCalls,
-    usage: {
-      inputTokens: state.sdkInputTokens,
-      outputTokens: state.sdkOutputTokens,
-      cacheRead: state.sdkCacheRead,
-      cacheWrite: state.sdkCacheWrite,
-    },
-  });
-
-  if (state.newSessionId) {
-    // setSessionId tolerates "same id" calls — keep it simple.
-    const stored = getSession(chatId).sessionId;
-    if (stored !== state.newSessionId) {
-      setSessionId(chatId, state.newSessionId);
-    }
-  }
-
-  incrementTurns(chatId);
-  recordUsage(chatId, {
-    inputTokens: state.sdkInputTokens,
-    outputTokens: state.sdkOutputTokens,
-    cacheRead: state.sdkCacheRead,
-    cacheWrite: state.sdkCacheWrite,
+    state,
     durationMs,
     model: activeModel,
+    sessionId: state.newSessionId,
   });
-
-  // Set a descriptive session name from the user's first message.
-  if (previousTurns === 0) {
-    const name = extractSessionName(text);
-    if (name) setSessionName(chatId, name);
-  }
+  incrementTurns(chatId);
+  nameSessionFromFirstMessage({ chatId, text, previousTurns });
 
   // ── Delivery — the decision tree shared by every backend ──────────────────
   const delivery = await routeDelivery({
@@ -296,40 +251,48 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
     onTextBlock,
   });
 
-  log(
-    "agent",
-    `[${chatId}] delivery: ${delivery.route} (${delivery.chars} chars)`,
-  );
-
-  log(
-    "agent",
-    `[${chatId}] -> (${summarizeUsage(
-      {
-        inputTokens: state.sdkInputTokens,
-        outputTokens: state.sdkOutputTokens,
-        cacheRead: state.sdkCacheRead,
-        cacheWrite: state.sdkCacheWrite,
-      },
-      { durationMs, toolCalls: state.toolCalls },
-    )} terminator=${state.turnTerminated ? "yes" : "no"} ` +
-      `delivered=${state.deliveredTextNorms.length} ` +
-      `respLen=${responseText.length} ` +
-      `setup=${setupMs}ms turn=${promptMs}ms ` +
-      `events=${formatEventCounts(state.eventCounts)})`,
-  );
-  traceMessage(chatId, "out", responseText, {
+  return finishCallbackTurn({
+    chatId,
+    state,
+    responseText,
     durationMs,
-    toolCalls: state.toolCalls,
+    setupMs,
+    turnMs: promptMs,
+    delivery,
+    detail: `events=${formatEventCounts(state.eventCounts)}`,
   });
+}
 
-  return {
-    text: responseText,
-    durationMs,
-    inputTokens: state.sdkInputTokens,
-    outputTokens: state.sdkOutputTokens,
-    cacheRead: state.sdkCacheRead,
-    cacheWrite: state.sdkCacheWrite,
-  };
+/**
+ * If the SSE loop missed any usage info, fall back to the session
+ * summary endpoint (which always reflects the final server state).
+ */
+async function fillUsageFromSummary(
+  oc: RemoteSessionClient,
+  sessionId: string,
+  promptStartedAt: number,
+  state: StreamState,
+): Promise<void> {
+  if (
+    state.sdkInputTokens !== 0 ||
+    state.sdkOutputTokens !== 0 ||
+    state.sdkCacheRead !== 0
+  ) {
+    return;
+  }
+  try {
+    const summary = await getTurnSummary(oc, sessionId, promptStartedAt);
+    if (summary.usage.assistantMessages > 0) {
+      recordTokens(state, {
+        inputTokens: summary.usage.inputTokens,
+        outputTokens: summary.usage.outputTokens,
+        cacheRead: summary.usage.cacheRead,
+        cacheWrite: summary.usage.cacheWrite,
+      });
+    }
+  } catch {
+    // best-effort — session summaries can race on cancellation
+  }
 }
 
 /**

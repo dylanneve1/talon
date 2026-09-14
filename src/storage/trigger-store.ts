@@ -73,6 +73,14 @@ function isTrigger(value: unknown): value is Trigger {
  */
 export const RESTART_KILL_ERROR = "Talon restarted while trigger was running";
 
+/**
+ * The lastError shutdownTriggers stamps on non-persistent triggers it kills
+ * during a clean shutdown. Their terminal wake is deliberately not dispatched
+ * while the daemon is tearing down — resume.ts keys the next boot's late-wake
+ * decision on this marker, exactly as it does for RESTART_KILL_ERROR.
+ */
+export const SHUTDOWN_KILL_ERROR = "Killed by Talon shutdown";
+
 export function loadTriggers(): void {
   try {
     importLegacyJson({

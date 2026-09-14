@@ -21,6 +21,7 @@ import {
   noteLookbackRisk,
   noteToolFingerprint,
   priorLookbackOverflow,
+  resetCacheMinimumWarnings,
   resetLookbackRisk,
   resetToolFingerprints,
   toolFingerprint,
@@ -170,6 +171,10 @@ describe("cacheMinimumTokens", () => {
 });
 
 describe("warnIfBelowCacheMinimum", () => {
+  beforeEach(() => {
+    resetCacheMinimumWarnings();
+  });
+
   it("warns when a prompt is under the model's floor", () => {
     const warn = spyWarn();
     warnIfBelowCacheMinimum("dream", "claude-haiku-4-5", "x".repeat(400));
@@ -189,6 +194,20 @@ describe("warnIfBelowCacheMinimum", () => {
     const warn = spyWarn();
     warnIfBelowCacheMinimum("dream", "default", "x");
     expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("warns once per (label, model) for the life of the process", () => {
+    const warn = spyWarn();
+    // The heartbeat builds the same undersized prompt on every run — the
+    // second and later runs must not repeat the warning.
+    warnIfBelowCacheMinimum("heartbeat", "claude-haiku-4-5", "x".repeat(400));
+    warnIfBelowCacheMinimum("heartbeat", "claude-haiku-4-5", "y".repeat(800));
+    expect(warn).toHaveBeenCalledTimes(1);
+    // A different caller or model is a distinct latch.
+    warnIfBelowCacheMinimum("dream", "claude-haiku-4-5", "x".repeat(400));
+    warnIfBelowCacheMinimum("heartbeat", "claude-sonnet-4-6", "x".repeat(400));
+    expect(warn).toHaveBeenCalledTimes(3);
     warn.mockRestore();
   });
 });

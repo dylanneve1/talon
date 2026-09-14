@@ -25,9 +25,23 @@ vi.mock("../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-const existsSyncMock = vi.fn(() => false);
-const readFileSyncMock = vi.fn(() => "null");
-const mkdirSyncMock = vi.fn();
+// Hoisted with the mock factories below: vi.mock is hoisted above every
+// import, so a plain `const` here is in its temporal dead zone whenever
+// node:fs is first evaluated through a transitive import (util/watchdog)
+// rather than this file's own imports.
+const {
+  existsSyncMock,
+  readFileSyncMock,
+  mkdirSyncMock,
+  appendFileMock,
+  mkdirAsyncMock,
+} = vi.hoisted(() => ({
+  existsSyncMock: vi.fn(() => false),
+  readFileSyncMock: vi.fn(() => "null"),
+  mkdirSyncMock: vi.fn(),
+  appendFileMock: vi.fn(async () => {}),
+  mkdirAsyncMock: vi.fn(async () => undefined),
+}));
 
 // Package-owned system templates (prompts/system/*.md) are real files
 // shipped with the code — buildHeartbeatSystemPrompt renders
@@ -46,8 +60,6 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-const appendFileMock = vi.fn(async () => {});
-const mkdirAsyncMock = vi.fn(async () => undefined);
 vi.mock("node:fs/promises", () => ({
   appendFile: appendFileMock,
   mkdir: mkdirAsyncMock,

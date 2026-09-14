@@ -20,6 +20,14 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+const hubPluginServerNamesMock = vi.fn<() => string[]>(() => []);
+
+vi.mock("../core/mcp-hub/index.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../core/mcp-hub/index.js")>()),
+  hubPluginServerNames: () => hubPluginServerNamesMock(),
+  listHubPluginToolNames: async (name: string) => [`${name}_tool`],
+}));
+
 import {
   createRemoteServerState,
   ensureChatMcpServer,
@@ -27,13 +35,18 @@ import {
   buildToolOverrides,
   disconnectChatMcpServer,
   getChatMcpServerName,
+  getPluginMcpServerName,
+  getPluginMcpServerPrefix,
   isTalonToolID,
   getRegisteredMcpServerNames,
   TALON_MCP_SERVER_NAME,
+  TALON_PLUGIN_MCP_SERVER_NAME,
+  PLUGIN_MCP_SERVER_NAME_MAX_LENGTH,
   stopRemoteServer,
   type RemoteAgentClient,
   type RemoteServerState,
 } from "../backend/remote-server/index.js";
+import { buildPermissionRuleset } from "../backend/remote-server/sessions.js";
 
 // ── Test doubles ────────────────────────────────────────────────────────────
 
@@ -141,6 +154,82 @@ describe("remote-server / mcp helpers", () => {
 
     it("falls back to 'chat' for the empty string", () => {
       expect(getChatMcpServerName("")).toBe("talon-tools-chat");
+    });
+  });
+
+  describe("getPluginMcpServerName", () => {
+    // Anthropic rejects tool names over 64 characters and the upstream
+    // agent server composes `<server>_<tool>`, so the server half must
+    // leave real headroom for the plugin's own tool name.
+    const ANTHROPIC_TOOL_NAME_LIMIT = 64;
+    const LONG_PLUGIN = "a-very-long-plugin-name-that-overflows-the-budget";
+
+    it("stays within the length budget for any chat id and plugin name", () => {
+      const cases: Array<[string, string]> = [
+        ["playwright-tools", "-1001426819337"],
+        [LONG_PLUGIN, "-1001426819337"],
+        [
+          LONG_PLUGIN,
+          "discord:guild/1234567890123456789/channel/9876543210987654321",
+        ],
+        ["", ""],
+      ];
+      for (const [plugin, chatId] of cases) {
+        const name = getPluginMcpServerName(plugin, chatId);
+        expect(name.length).toBeLessThanOrEqual(
+          PLUGIN_MCP_SERVER_NAME_MAX_LENGTH,
+        );
+        expect(name).toMatch(/^[a-zA-Z0-9_-]+$/);
+        expect(`${name}_browser_take_screenshot`.length).toBeLessThanOrEqual(
+          ANTHROPIC_TOOL_NAME_LIMIT,
+        );
+      }
+    });
+
+    it("is deterministic and keeps a short plugin name readable", () => {
+      // Pinned literal: a changed hash would silently orphan every
+      // `tp-*` permission rule on already-created upstream sessions.
+      expect(getPluginMcpServerName("playwright-tools", "-1001426819337")).toBe(
+        "tp-fbb85452-playwright-tools",
+      );
+      expect(getPluginMcpServerName("playwright-tools", "-1001426819337")).toBe(
+        getPluginMcpServerName("playwright-tools", "-1001426819337"),
+      );
+      expect(getPluginMcpServerName("", "")).toBe(
+        `${getPluginMcpServerPrefix("")}plugin`,
+      );
+    });
+
+    it("keeps overlong plugin names distinct via a hash suffix", () => {
+      const a = getPluginMcpServerName(LONG_PLUGIN, "chatA");
+      const b = getPluginMcpServerName(`${LONG_PLUGIN}-2`, "chatA");
+      expect(a).not.toBe(b);
+      expect(a.length).toBe(PLUGIN_MCP_SERVER_NAME_MAX_LENGTH);
+      expect(
+        a.startsWith(`${getPluginMcpServerPrefix("chatA")}a-very-long-`),
+      ).toBe(true);
+    });
+
+    it("namespaces per chat with a prefix the permission ruleset can match", () => {
+      const prefix = getPluginMcpServerPrefix("chatA");
+      expect(prefix).toBe("tp-726dc109-");
+      expect(getPluginMcpServerName("memory", "chatA").startsWith(prefix)).toBe(
+        true,
+      );
+      expect(getPluginMcpServerName("memory", "chatB").startsWith(prefix)).toBe(
+        false,
+      );
+      const rules = buildPermissionRuleset("chatA");
+      expect(rules).toContainEqual({
+        permission: "tool",
+        pattern: `${prefix}*`,
+        action: "allow",
+      });
+      expect(rules).toContainEqual({
+        permission: "tool",
+        pattern: `${TALON_PLUGIN_MCP_SERVER_NAME}-*`,
+        action: "deny",
+      });
     });
   });
 
@@ -423,6 +512,44 @@ describe("remote-server / mcp helpers", () => {
       // what plugins are configured in the test env — we only assert that
       // the call completes without throwing.
       void mcpAddCalls;
+    });
+  });
+
+  describe("ensurePluginMcpServers naming", () => {
+    beforeEach(() => {
+      hubPluginServerNamesMock.mockReturnValue(["playwright-tools"]);
+    });
+
+    it("registers under the generated name and keeps the reverse map", async () => {
+      const state = makeState();
+      const { client, mcpAddCalls, mcpDisconnectCalls } = makeMockClient();
+      const chatId = "-1001426819337";
+      const expected = getPluginMcpServerName("playwright-tools", chatId);
+
+      const names = await ensurePluginMcpServers(client, state, chatId);
+
+      expect(names).toEqual([expected]);
+      expect(mcpAddCalls.map((c) => c.name)).toEqual([expected]);
+      expect(
+        state.pluginMcpServersByChat.get(chatId)?.get("playwright-tools"),
+      ).toBe(expected);
+      expect(state.registeredMcpTools.get(expected)).toEqual([
+        "playwright-tools_tool",
+      ]);
+
+      const overrides = await buildToolOverrides(
+        client,
+        state,
+        getChatMcpServerName(chatId),
+        names,
+      );
+      expect(overrides?.[`${expected}_playwright-tools_tool`]).toBe(true);
+
+      await disconnectChatMcpServer(client, state, expected);
+      expect(mcpDisconnectCalls).toEqual([expected]);
+      expect(
+        state.pluginMcpServersByChat.get(chatId)?.has("playwright-tools"),
+      ).toBe(false);
     });
   });
 

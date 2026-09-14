@@ -1,6 +1,6 @@
 {
   "name": "talon-agent",
-  "version": "3.34.0",
+  "version": "3.34.1",
   "description": "Multi-frontend AI agent with full tool access, streaming, cron jobs, and plugin system",
   "author": "Dylan Neve",
   "license": "MIT",
@@ -120,6 +120,7 @@
     "discord.js": "^14.16.3",
     "file-type": "^22.0.1",
     "grammy": "^1.45.1",
+    "link-preview-js": "^5.0.0",
     "liquidjs": "^10.27.0",
     "marked": "^18.0.0",
     "mem0ai": "^3.0.13",
@@ -155,6 +156,7 @@
   "overrides": {
     "@anthropic-ai/sdk": "^0.104.1",
     "ip-address": "^10.1.1",
-    "fast-uri": "^3.1.2"
+    "fast-uri": "^3.1.2",
+    "link-preview-js": "^5.0.0"
   }
 }

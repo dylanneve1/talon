@@ -14,7 +14,9 @@
  *     `talon-tools-<chatId>` MCP server. Returns the registered name so
  *     callers can scope tool overrides to this chat alone.
  *   - {@link ensurePluginMcpServers} — register chat-namespaced plugin MCP
- *     servers (`mempalace-tools`, `brave-search`, `github-tools`, …).
+ *     servers (`mempalace-tools`, `brave-search`, `github-tools`, …) under
+ *     short `tp-<chat hash>-<plugin>` names (see
+ *     {@link getPluginMcpServerName} for the length budget).
  *   - {@link buildToolOverrides} — produce a `tools` map that whitelists
  *     this chat's Talon tools and blacklists every other chat's. Used
  *     as the `tools` field on the prompt payload to constrain the model's
@@ -29,12 +31,15 @@
  * registrations run concurrently through the hub; later turns skip them.
  */
 
+import { createHash } from "node:crypto";
+
 import { log, logDebug, logWarn } from "../../util/log.js";
 import {
   talonHubUrl,
   pluginHubUrl,
   hubPluginServerNames,
   listHubPluginToolNames,
+  describeHubChildExit,
 } from "../../core/mcp-hub/index.js";
 import type { RemoteAgentClient } from "./client.js";
 import type { RemoteServerState } from "./state.js";
@@ -51,8 +56,28 @@ import {
 
 /** Stable name prefix for Talon's per-chat MCP servers. */
 export const TALON_MCP_SERVER_NAME = "talon-tools";
-/** Stable prefix for chat-scoped plugin MCP registrations. */
-export const TALON_PLUGIN_MCP_SERVER_NAME = "talon-plugin";
+/**
+ * Stable prefix for chat-scoped plugin MCP registrations. Deliberately
+ * terse: the upstream agent server composes tool ids as
+ * `<server>_<tool>`, and Anthropic rejects tool names over 64 characters
+ * (`\`name\` must be at most 64 characters`). The old
+ * `talon-plugin-<chatId>-<plugin>` form alone reached ~45 characters and
+ * hard-failed the first call of any long-named plugin tool.
+ */
+export const TALON_PLUGIN_MCP_SERVER_NAME = "tp";
+
+/**
+ * Upper bound on a generated plugin MCP server name. The 64-character
+ * Anthropic tool-name limit must cover `<server>_<tool>`, so this leaves
+ * 31 characters for the plugin's own tool name — comfortably above the
+ * longest ones in the wild (`browser_take_screenshot`, 23).
+ */
+export const PLUGIN_MCP_SERVER_NAME_MAX_LENGTH = 32;
+
+/** Hex characters of the chat-id hash embedded in a plugin server name. */
+const PLUGIN_SERVER_CHAT_HASH_LENGTH = 8;
+/** Hex characters of the plugin-name hash appended when the name is cut. */
+const PLUGIN_SERVER_PLUGIN_HASH_LENGTH = 6;
 
 /**
  * MCP add() calls slower than this get a `[slow]` annotation in the log
@@ -87,13 +112,48 @@ export function getChatMcpServerName(chatId: string): string {
 }
 
 /** Sanitize a component embedded in an upstream MCP registration name. */
-export function safeMcpNamePart(value: string, fallback: string): string {
+function safeMcpNamePart(value: string, fallback: string): string {
   return value.replace(/[^a-zA-Z0-9_-]+/g, "_") || fallback;
 }
 
-/** Per-chat registration name for a plugin-provided MCP server. */
-function getPluginMcpServerName(pluginName: string, chatId: string): string {
-  return `${TALON_PLUGIN_MCP_SERVER_NAME}-${safeMcpNamePart(chatId, "chat")}-${safeMcpNamePart(pluginName, "plugin")}`;
+/** Leading `length` hex characters of the SHA-256 of `value`. */
+function shortHash(value: string, length: number): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, length);
+}
+
+/**
+ * Name prefix shared by every plugin MCP server registered for one chat
+ * (`tp-<8-hex chat hash>-`). The permission ruleset allows this chat's
+ * prefix and denies `tp-*` for everything else, so the prefix must be a
+ * pure function of the chat id — never of the plugin.
+ */
+export function getPluginMcpServerPrefix(chatId: string): string {
+  return `${TALON_PLUGIN_MCP_SERVER_NAME}-${shortHash(chatId, PLUGIN_SERVER_CHAT_HASH_LENGTH)}-`;
+}
+
+/**
+ * Per-chat registration name for a plugin-provided MCP server.
+ *
+ * Deterministic for a given (plugin, chat) pair and never longer than
+ * {@link PLUGIN_MCP_SERVER_NAME_MAX_LENGTH}. The plugin name is kept
+ * verbatim while it fits; an overlong one is cut and suffixed with a short
+ * hash of the full name so two long plugins sharing a head stay distinct.
+ * Nothing parses the name back — `state.pluginMcpServersByChat` is the
+ * reverse map from chat + plugin to registered name.
+ */
+export function getPluginMcpServerName(
+  pluginName: string,
+  chatId: string,
+): string {
+  const prefix = getPluginMcpServerPrefix(chatId);
+  const budget = PLUGIN_MCP_SERVER_NAME_MAX_LENGTH - prefix.length;
+  const safePlugin = safeMcpNamePart(pluginName, "plugin");
+  if (safePlugin.length <= budget) return `${prefix}${safePlugin}`;
+  const head = safePlugin.slice(
+    0,
+    budget - PLUGIN_SERVER_PLUGIN_HASH_LENGTH - 1,
+  );
+  return `${prefix}${head}-${shortHash(pluginName, PLUGIN_SERVER_PLUGIN_HASH_LENGTH)}`;
 }
 
 /** Whether a tool id belongs to one of Talon's MCP servers. */
@@ -257,7 +317,7 @@ export async function ensurePluginMcpServers<TClient extends RemoteAgentClient>(
         const ms = Date.now() - startedAt;
         log(
           "agent",
-          `Registered plugin MCP server: ${serverName} (${ms}ms)` +
+          `Registered plugin MCP server: ${serverName} (${name} for chat ${chatId}, ${ms}ms)` +
             (ms > SLOW_MCP_REGISTRATION_MS ? " [slow]" : ""),
         );
         return serverName;
@@ -271,9 +331,13 @@ export async function ensurePluginMcpServers<TClient extends RemoteAgentClient>(
           ? logDebug
           : logWarn;
         warnedMcpRegistrationFailures.add(serverName);
+        // "Connection closed" alone says nothing; the hub knows how the
+        // child behind this server last died.
+        const exit = describeHubChildExit(name, chatId);
         level(
           "agent",
-          `Plugin MCP registration failed for ${serverName}: ${errMsg(err)}`,
+          `Plugin MCP registration failed for ${serverName}: ${errMsg(err)}` +
+            (exit ? ` (hub child ${exit})` : ""),
         );
         return null;
       }

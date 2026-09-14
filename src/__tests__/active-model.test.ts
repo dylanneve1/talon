@@ -58,7 +58,9 @@ const {
   describeActiveModelSource,
   getModelByBackendSnapshot,
   resolveExplicitModelRef,
+  resetInvalidOverrideWarnings,
 } = await import("../core/models/active-model.js");
+const { logWarn } = await import("../util/log.js");
 const {
   setChatModelForBackend,
   setChatBackend,
@@ -120,7 +122,16 @@ describe("resolveActiveModelForChat — 5-step chain", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetInvalidOverrideWarnings();
   });
+
+  /** The invalid-override warnings emitted so far, trimmed to their key. */
+  const overrideWarnings = () =>
+    vi
+      .mocked(logWarn)
+      .mock.calls.map((call) => String(call[1]))
+      .filter((msg) => msg.includes("is not a selectable model"))
+      .map((msg) => msg.slice(0, msg.indexOf('" is not') + 1));
 
   // ── Step 1: valid override ─────────────────────────────────────────
   it("returns per-backend override when it validates", async () => {
@@ -177,6 +188,41 @@ describe("resolveActiveModelForChat — 5-step chain", () => {
     );
     expect(result.source).toBe("override-invalid-fallback");
     expect(result.model).toBe("gpt-5.5");
+  });
+
+  it("warns about an invalid override once per chat until the value changes", async () => {
+    const cid = nextChatId();
+    const be = fakeBackend({
+      resolveModel: async () => missingResolution(),
+      getDefaultModel: () => "gpt-5.5",
+    });
+    const resolve = () =>
+      resolveActiveModelForChat(cid, be, "codex", fakeConfig());
+
+    // One turn resolves the active model several times; the unchanged
+    // bad override must warn exactly once.
+    setChatModelForBackend(cid, "codex", "claude-opus-4-7");
+    await resolve();
+    await resolve();
+    await resolve();
+    expect(overrideWarnings()).toEqual([
+      `chat=${cid} backend=codex: per-chat override "claude-opus-4-7"`,
+    ]);
+
+    // A different invalid value re-arms the latch.
+    setChatModelForBackend(cid, "codex", "claude-sonnet-4-6");
+    await resolve();
+    await resolve();
+    expect(overrideWarnings()).toEqual([
+      `chat=${cid} backend=codex: per-chat override "claude-opus-4-7"`,
+      `chat=${cid} backend=codex: per-chat override "claude-sonnet-4-6"`,
+    ]);
+
+    // Another chat with the same bad override is its own latch.
+    const other = nextChatId();
+    setChatModelForBackend(other, "codex", "claude-sonnet-4-6");
+    await resolveActiveModelForChat(other, be, "codex", fakeConfig());
+    expect(overrideWarnings()).toHaveLength(3);
   });
 
   it("falls through to backend canonical when resolveModel throws", async () => {
