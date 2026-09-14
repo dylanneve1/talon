@@ -22,10 +22,17 @@ vi.mock("../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-const existsSyncMock = vi.fn(() => false);
-const readFileSyncMock = vi.fn(() => "null");
-const mkdirSyncMock = vi.fn();
-const appendFileSyncMock = vi.fn();
+// Hoisted with the mock factory: vi.mock is hoisted above every import,
+// so a plain `const` here is in its temporal dead zone whenever node:fs is
+// first evaluated through a transitive import (util/watchdog) rather than
+// this file's own imports.
+const { existsSyncMock, readFileSyncMock, mkdirSyncMock, appendFileSyncMock } =
+  vi.hoisted(() => ({
+    existsSyncMock: vi.fn(() => false),
+    readFileSyncMock: vi.fn(() => "null"),
+    mkdirSyncMock: vi.fn(),
+    appendFileSyncMock: vi.fn(),
+  }));
 
 vi.mock("node:fs", () => ({
   existsSync: existsSyncMock,
