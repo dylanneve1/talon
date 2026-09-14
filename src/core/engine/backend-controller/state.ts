@@ -29,6 +29,8 @@ export interface PoolEntry {
 
 /** id → entry. */
 export const pool = new Map<string, PoolEntry>();
+/** id → init in progress; concurrent callers await the same promise. */
+export const initInFlight = new Map<string, Promise<PoolEntry>>();
 /** holder → backend id (only present for holders currently bound). */
 export const bindings = new Map<BackendHolder, string>();
 
@@ -56,6 +58,8 @@ export async function ensurePoolEntry(
 ): Promise<PoolEntry> {
   const existing = pool.get(id);
   if (existing) return existing;
+  const inFlight = initInFlight.get(id);
+  if (inFlight) return inFlight;
 
   const factory = getBackend(id);
   if (!factory) {
@@ -64,22 +68,31 @@ export async function ensurePoolEntry(
       .join(", ");
     throw new Error(`Unknown backend "${id}" — known: ${known}`);
   }
-  if (!ctx.initCtx) {
+  const initCtx = ctx.initCtx;
+  if (!initCtx) {
     throw new Error(
       "Backend pool not initialised — call initBackendPool first",
     );
   }
-  const instance = await factory.init(config, ctx.initCtx);
-  const entry: PoolEntry = {
-    id: factory.id,
-    label: factory.label,
-    backend: instance.backend,
-    cleanup: instance.cleanup,
-    holders: new Set(),
-  };
-  pool.set(factory.id, entry);
-  log("backend-controller", `Pool init: ${factory.label} (${factory.id})`);
-  return entry;
+  const init = (async (): Promise<PoolEntry> => {
+    const instance = await factory.init(config, initCtx);
+    const entry: PoolEntry = {
+      id: factory.id,
+      label: factory.label,
+      backend: instance.backend,
+      cleanup: instance.cleanup,
+      holders: new Set(),
+    };
+    pool.set(factory.id, entry);
+    log("backend-controller", `Pool init: ${factory.label} (${factory.id})`);
+    return entry;
+  })();
+  initInFlight.set(id, init);
+  try {
+    return await init;
+  } finally {
+    initInFlight.delete(id);
+  }
 }
 
 /** Drop a holder from an entry; clean up the entry if its refcount hits zero. */

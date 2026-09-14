@@ -21,6 +21,7 @@ import {
   getBackendIdForRole,
   getBackendLabelForRole,
   rebindRole,
+  rebindChat,
   getPoolSnapshot,
   hasBackendPool,
   onBackendChange,
@@ -449,5 +450,38 @@ describe("backend pool — multi-role bindings", () => {
     await rebindRole("chat", "beta", configFor("alpha"));
     expect(inits).toEqual(["alpha", "beta", "beta"]);
     expect(cleanups).toEqual(["beta"]);
+  });
+});
+
+describe("pool init dedupe", () => {
+  beforeEach(() => {
+    clearBackends();
+    resetBackendPoolForTest();
+    clearBackendChangeListenersForTest();
+  });
+
+  it("initialises a backend once when two rebinds race for it", async () => {
+    const initSpy = vi.fn();
+    registerBackend(makeFactory("claude", "Claude", { initSpy }));
+    registerBackend({
+      id: "codex",
+      label: "Codex",
+      async init() {
+        initSpy("codex");
+        await new Promise((r) => setTimeout(r, 10));
+        return { backend: makeStubBackend("Codex") };
+      },
+    });
+    await initBackendPool(configFor("claude"), STUB_CTX);
+    await Promise.all([
+      rebindChat("a", "codex", configFor("claude")),
+      rebindChat("b", "codex", configFor("claude")),
+    ]);
+    expect(initSpy.mock.calls.filter(([id]) => id === "codex")).toHaveLength(1);
+    expect(
+      getPoolSnapshot()
+        .instances.map((i) => i.id)
+        .sort(),
+    ).toEqual(["claude", "codex"]);
   });
 });
