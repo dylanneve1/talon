@@ -83,6 +83,7 @@
     "lint": "oxlint src/",
     "depcruise": "node scripts/check-architecture.mjs",
     "ratchets": "node scripts/check-ratchets.mjs",
+    "function-size": "node scripts/check-function-size.mjs",
     "knip": "knip",
     "format": "prettier --write src/ prompts/",
     "format:check": "prettier --check src/ prompts/",

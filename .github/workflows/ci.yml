@@ -72,6 +72,9 @@ jobs:
       - name: Ratchet gates
         run: npm run ratchets
 
+      - name: Function-size ratchet
+        run: npm run function-size
+
       - name: Check for .only/.skip in tests
         run: |
           if grep -rn '\.only\s*(' --include='*.test.ts' src/__tests__/ || \
