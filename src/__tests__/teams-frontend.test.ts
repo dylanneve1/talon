@@ -760,3 +760,34 @@ describe("teams actions — non-Error throw coverage", () => {
     expect(result?.error).toContain("500");
   });
 });
+
+// ── Test poll cut ───────────────────────────────────────────────────────────
+
+describe("teams poll selectNewMessages", () => {
+  const msg = (id: string) => ({
+    id,
+    text: id,
+    senderName: "u",
+    senderId: "s",
+    chatId: "c",
+    createdDateTime: "",
+    messageType: "message",
+    edited: false,
+  });
+
+  it("returns everything newer than the last seen id, newest first", async () => {
+    const { selectNewMessages } = await import("../frontend/teams/poll.js");
+    const fresh = selectNewMessages(
+      [msg("3"), msg("2"), msg("1"), msg("0")],
+      "1",
+    );
+    expect(fresh.map((m) => m.id)).toEqual(["3", "2"]);
+  });
+
+  it("treats no last seen id as everything new, and an unseen id as a miss", async () => {
+    const { selectNewMessages } = await import("../frontend/teams/poll.js");
+    expect(selectNewMessages([msg("b"), msg("a")], null)).toHaveLength(2);
+    expect(selectNewMessages([msg("b"), msg("a")], "zzz")).toHaveLength(2);
+    expect(selectNewMessages([msg("b"), msg("a")], "b")).toHaveLength(0);
+  });
+});
