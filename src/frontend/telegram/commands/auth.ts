@@ -6,10 +6,16 @@
 
 import type { Bot } from "grammy";
 import type { LoginBinaries } from "../../../core/auth/login-flow.js";
-import { currentAuthPanel, pendingCodePrompt, submitPendingCode } from "../auth-panel.js";
+import {
+  currentAuthPanel,
+  pendingCodePrompt,
+  submitPendingCode,
+} from "../auth-panel.js";
 import { isAuthorizedAdmin, type RegisterDeps } from "./state.js";
 
-export function loginBinariesFrom(config: RegisterDeps["config"]): LoginBinaries {
+export function loginBinariesFrom(
+  config: RegisterDeps["config"],
+): LoginBinaries {
   return {
     claude: config.claudeBinary,
     codex: process.env.TALON_CODEX_BINARY || config.codexBinary,

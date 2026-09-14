@@ -43,7 +43,11 @@ export function isAuthProvider(value: string): value is AuthProvider {
 
 function statusIcon(s: ProviderAuthStatus): string {
   if (!s.loggedIn || s.expired) return "🔴";
-  if (s.loginExpiresAt !== undefined && s.loginExpiresAt - Date.now() < 7 * 86_400_000) return "🟡";
+  if (
+    s.loginExpiresAt !== undefined &&
+    s.loginExpiresAt - Date.now() < 7 * 86_400_000
+  )
+    return "🟡";
   return "🟢";
 }
 
@@ -53,11 +57,16 @@ export function renderAuthPanel(statuses: ProviderAuthStatus[]): AuthPanel {
   const keyboard: AuthKeyboard = [];
   for (const s of statuses) {
     const label = PROVIDER_LABELS[s.provider];
-    lines.push(`${statusIcon(s)} <b>${label}</b> — ${escapeHtml(describeProviderStatus(s))}`);
+    lines.push(
+      `${statusIcon(s)} <b>${label}</b> — ${escapeHtml(describeProviderStatus(s))}`,
+    );
     const pending = activeLoginFlow(s.provider);
     keyboard.push([
       pending
-        ? { text: `⏳ ${label} sign-in in progress…`, callback_data: `auth:resume:${s.provider}` }
+        ? {
+            text: `⏳ ${label} sign-in in progress…`,
+            callback_data: `auth:resume:${s.provider}`,
+          }
         : {
             text: `${s.loggedIn && !s.expired ? "🔄 Re-sign in to" : "🔑 Sign in to"} ${label}`,
             callback_data: `auth:login:${s.provider}`,
@@ -69,11 +78,20 @@ export function renderAuthPanel(statuses: ProviderAuthStatus[]): AuthPanel {
 }
 
 /** The in-progress panel: the CLI's instructions, an open-link button, cancel. */
-export function renderLoginPrompt(provider: AuthProvider, prompt: LoginPrompt): AuthPanel {
+export function renderLoginPrompt(
+  provider: AuthProvider,
+  prompt: LoginPrompt,
+): AuthPanel {
   const label = PROVIDER_LABELS[provider];
-  const lines = [`<b>🔑 Sign in to ${label}</b>`, "", "1. Open the sign-in page (button below) and log in."];
+  const lines = [
+    `<b>🔑 Sign in to ${label}</b>`,
+    "",
+    "1. Open the sign-in page (button below) and log in.",
+  ];
   if (prompt.code) {
-    lines.push(`2. Enter this one-time code: <code>${escapeHtml(prompt.code)}</code>`);
+    lines.push(
+      `2. Enter this one-time code: <code>${escapeHtml(prompt.code)}</code>`,
+    );
   }
   if (prompt.needsCode) {
     lines.push(
@@ -95,13 +113,23 @@ export async function currentAuthPanel(): Promise<AuthPanel> {
 }
 
 /** Messages awaiting a pasted code, keyed by chat → prompt message id. */
-const awaitingCode = new Map<string, { provider: AuthProvider; messageId: number }>();
+const awaitingCode = new Map<
+  string,
+  { provider: AuthProvider; messageId: number }
+>();
 
-export function pendingCodePrompt(chatId: string): { provider: AuthProvider; messageId: number } | undefined {
+export function pendingCodePrompt(
+  chatId: string,
+): { provider: AuthProvider; messageId: number } | undefined {
   return awaitingCode.get(chatId);
 }
 
-async function editPanel(ctx: Context, chatId: number, messageId: number, panel: AuthPanel): Promise<void> {
+async function editPanel(
+  ctx: Context,
+  chatId: number,
+  messageId: number,
+  panel: AuthPanel,
+): Promise<void> {
   try {
     await ctx.api.editMessageText(chatId, messageId, panel.text, {
       parse_mode: "HTML",
@@ -109,7 +137,8 @@ async function editPanel(ctx: Context, chatId: number, messageId: number, panel:
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (!/message is not modified/i.test(msg)) logWarn("bot", `auth panel edit failed: ${msg}`);
+    if (!/message is not modified/i.test(msg))
+      logWarn("bot", `auth panel edit failed: ${msg}`);
   }
 }
 
@@ -125,7 +154,8 @@ export async function driveLogin(
   provider: AuthProvider,
   bins: LoginBinaries,
 ): Promise<void> {
-  const flow: LoginFlow = activeLoginFlow(provider) ?? startLogin(provider, bins);
+  const flow: LoginFlow =
+    activeLoginFlow(provider) ?? startLogin(provider, bins);
   let prompt: LoginPrompt;
   try {
     prompt = await flow.prompt;
@@ -138,11 +168,13 @@ export async function driveLogin(
     });
     return;
   }
-  if (prompt.needsCode) awaitingCode.set(String(chatId), { provider, messageId });
+  if (prompt.needsCode)
+    awaitingCode.set(String(chatId), { provider, messageId });
   await editPanel(ctx, chatId, messageId, renderLoginPrompt(provider, prompt));
 
   void flow.done.then(async (outcome) => {
-    if (awaitingCode.get(String(chatId))?.messageId === messageId) awaitingCode.delete(String(chatId));
+    if (awaitingCode.get(String(chatId))?.messageId === messageId)
+      awaitingCode.delete(String(chatId));
     const panel = await currentAuthPanel();
     const label = PROVIDER_LABELS[provider];
     const note = outcome.ok
@@ -152,7 +184,10 @@ export async function driveLogin(
         : outcome.reason === "timeout"
           ? `⌛ ${label} sign-in link expired. Tap the button to try again.`
           : `❌ ${label} sign-in failed: ${escapeHtml(outcome.detail ?? "unknown error")}`;
-    await editPanel(ctx, chatId, messageId, { text: `${panel.text}\n\n${note}`, keyboard: panel.keyboard });
+    await editPanel(ctx, chatId, messageId, {
+      text: `${panel.text}\n\n${note}`,
+      keyboard: panel.keyboard,
+    });
   });
 }
 

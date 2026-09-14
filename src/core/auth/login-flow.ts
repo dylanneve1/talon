@@ -63,7 +63,9 @@ export function stripAnsi(text: string): string {
 }
 
 /** Parse `codex login --device-auth` output into URL + code, once both are present. */
-export function parseCodexDevicePrompt(output: string): LoginPrompt | undefined {
+export function parseCodexDevicePrompt(
+  output: string,
+): LoginPrompt | undefined {
   const text = stripAnsi(output);
   const url = /https:\/\/\S+\/device\S*/.exec(text)?.[0];
   const code = /\b([A-Z0-9]{4}-[A-Z0-9]{5,6})\b/.exec(text)?.[1];
@@ -72,7 +74,9 @@ export function parseCodexDevicePrompt(output: string): LoginPrompt | undefined 
 }
 
 /** Parse `claude auth login` output into the sign-in URL, once printed. */
-export function parseClaudeLoginPrompt(output: string): LoginPrompt | undefined {
+export function parseClaudeLoginPrompt(
+  output: string,
+): LoginPrompt | undefined {
   const text = stripAnsi(output);
   const url = /https:\/\/\S+oauth\/authorize\S*/.exec(text)?.[0];
   if (!url) return undefined;
@@ -122,7 +126,10 @@ async function installCredentials(from: string, to: string): Promise<void> {
   await rename(staging, to);
 }
 
-export function startLogin(provider: AuthProvider, bins: LoginBinaries = {}): LoginFlow {
+export function startLogin(
+  provider: AuthProvider,
+  bins: LoginBinaries = {},
+): LoginFlow {
   active.get(provider)?.cancel();
   const spec = specFor(provider, bins);
 
@@ -148,8 +155,12 @@ export function startLogin(provider: AuthProvider, bins: LoginBinaries = {}): Lo
     settled = true;
     clearTimeout(timer);
     if (active.get(provider) === flow) active.delete(provider);
-    if (!promptSent) rejectPrompt(new Error(outcome.ok ? "no prompt" : outcome.detail || outcome.reason));
-    if (tmpHome) await rm(tmpHome, { recursive: true, force: true }).catch(() => {});
+    if (!promptSent)
+      rejectPrompt(
+        new Error(outcome.ok ? "no prompt" : outcome.detail || outcome.reason),
+      );
+    if (tmpHome)
+      await rm(tmpHome, { recursive: true, force: true }).catch(() => {});
     resolveDone(outcome);
   };
 
@@ -206,12 +217,24 @@ export function startLogin(provider: AuthProvider, bins: LoginBinaries = {}): Lo
           return;
         } catch (err) {
           const detail = err instanceof Error ? err.message : String(err);
-          logWarn("notify", `${provider} login succeeded but install failed: ${detail}`);
-          await finish({ ok: false, reason: "failed", detail: `could not install credentials: ${detail}` });
+          logWarn(
+            "notify",
+            `${provider} login succeeded but install failed: ${detail}`,
+          );
+          await finish({
+            ok: false,
+            reason: "failed",
+            detail: `could not install credentials: ${detail}`,
+          });
           return;
         }
       }
-      const tail = stripAnsi(output).trim().split("\n").slice(-3).join(" ").slice(0, 300);
+      const tail = stripAnsi(output)
+        .trim()
+        .split("\n")
+        .slice(-3)
+        .join(" ")
+        .slice(0, 300);
       await finish({
         ok: false,
         reason: "failed",

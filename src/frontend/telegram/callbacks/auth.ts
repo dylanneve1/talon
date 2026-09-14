@@ -56,7 +56,13 @@ export async function handleAuthCallback(
 
   if (action === "login" || action === "resume") {
     await answerCallbackQuerySafe(ctx, { text: "Starting sign-in…" });
-    await driveLogin(ctx, chatId, messageId, provider, loginBinariesFrom(config));
+    await driveLogin(
+      ctx,
+      chatId,
+      messageId,
+      provider,
+      loginBinariesFrom(config),
+    );
     return;
   }
 

@@ -21,7 +21,10 @@ const WARN_DAYS = 7;
 const CHECK_INTERVAL_MS = 6 * 60 * 60_000;
 
 /** The alert key for a status, or undefined when nothing needs saying. */
-export function alertKeyFor(s: ProviderAuthStatus, now = Date.now()): string | undefined {
+export function alertKeyFor(
+  s: ProviderAuthStatus,
+  now = Date.now(),
+): string | undefined {
   if (!s.loggedIn) return `${s.provider}:missing`;
   if (s.expired) return `${s.provider}:expired`;
   if (s.loginExpiresAt === undefined) return undefined;
@@ -32,9 +35,12 @@ export function alertKeyFor(s: ProviderAuthStatus, now = Date.now()): string | u
 
 export function alertTextFor(s: ProviderAuthStatus, now = Date.now()): string {
   const label = PROVIDER_LABELS[s.provider];
-  if (!s.loggedIn) return `🔑 ${label} is not signed in — send /auth to sign in from here.`;
-  if (s.expired) return `🔑 ${label} login has expired — send /auth to sign in again.`;
-  const days = s.loginExpiresAt === undefined ? 0 : daysUntil(s.loginExpiresAt, now);
+  if (!s.loggedIn)
+    return `🔑 ${label} is not signed in — send /auth to sign in from here.`;
+  if (s.expired)
+    return `🔑 ${label} login has expired — send /auth to sign in again.`;
+  const days =
+    s.loginExpiresAt === undefined ? 0 : daysUntil(s.loginExpiresAt, now);
   const when = days <= 0 ? "today" : `in ${days} day${days === 1 ? "" : "s"}`;
   return `⏳ ${label} login expires ${when} — send /auth to renew it before it lapses.`;
 }

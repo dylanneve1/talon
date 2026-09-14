@@ -21,7 +21,10 @@ import {
   parseCodexAuth,
   readProviderStatus,
 } from "../core/auth/status.js";
-import { renderAuthPanel, renderLoginPrompt } from "../frontend/telegram/auth-panel.js";
+import {
+  renderAuthPanel,
+  renderLoginPrompt,
+} from "../frontend/telegram/auth-panel.js";
 
 const DAY = 86_400_000;
 
@@ -36,7 +39,9 @@ describe("login prompt parsers", () => {
       code: "D2YX-C4SB4",
       needsCode: false,
     });
-    expect(parseCodexDevicePrompt("Welcome to Codex\n1. Open this link")).toBeUndefined();
+    expect(
+      parseCodexDevicePrompt("Welcome to Codex\n1. Open this link"),
+    ).toBeUndefined();
   });
 
   it("extracts the sign-in URL from claude auth login output and asks for a code", () => {
@@ -47,7 +52,9 @@ describe("login prompt parsers", () => {
       url: "https://claude.com/cai/oauth/authorize?code=true&client_id=abc&state=xyz",
       needsCode: true,
     });
-    expect(parseClaudeLoginPrompt("Opening browser to sign in…")).toBeUndefined();
+    expect(
+      parseClaudeLoginPrompt("Opening browser to sign in…"),
+    ).toBeUndefined();
     expect(stripAnsi("\x1b[94mplain\x1b[0m")).toBe("plain");
   });
 });
@@ -68,7 +75,9 @@ describe("provider status", () => {
     );
     expect(s.loggedIn).toBe(true);
     expect(s.expired).toBe(false);
-    expect(describeProviderStatus(s, now)).toBe("signed in (max plan), login expires in 12d");
+    expect(describeProviderStatus(s, now)).toBe(
+      "signed in (max plan), login expires in 12d",
+    );
     expect(parseClaudeCredentials("{}").loggedIn).toBe(false);
     expect(parseClaudeCredentials("not json").loggedIn).toBe(false);
   });
@@ -82,10 +91,21 @@ describe("provider status", () => {
         last_refresh: new Date(now - 3 * DAY).toISOString(),
       }),
     );
-    expect(chatgpt).toMatchObject({ loggedIn: true, expired: false, account: "ChatGPT" });
-    expect(describeProviderStatus(chatgpt, now)).toBe("signed in (ChatGPT), refreshed 3d ago");
-    expect(parseCodexAuth(JSON.stringify({ OPENAI_API_KEY: "sk-1" })).account).toBe("API key");
-    expect(parseCodexAuth(JSON.stringify({ OPENAI_API_KEY: null, tokens: {} })).loggedIn).toBe(false);
+    expect(chatgpt).toMatchObject({
+      loggedIn: true,
+      expired: false,
+      account: "ChatGPT",
+    });
+    expect(describeProviderStatus(chatgpt, now)).toBe(
+      "signed in (ChatGPT), refreshed 3d ago",
+    );
+    expect(
+      parseCodexAuth(JSON.stringify({ OPENAI_API_KEY: "sk-1" })).account,
+    ).toBe("API key");
+    expect(
+      parseCodexAuth(JSON.stringify({ OPENAI_API_KEY: null, tokens: {} }))
+        .loggedIn,
+    ).toBe(false);
   });
 
   it("treats a missing file as not signed in and honours backend expiry reports", async () => {
@@ -97,7 +117,10 @@ describe("provider status", () => {
         join(home, "auth.json"),
         JSON.stringify({ tokens: { refresh_token: "r" } }),
       );
-      expect(await readProviderStatus("codex", env)).toMatchObject({ loggedIn: true, expired: false });
+      expect(await readProviderStatus("codex", env)).toMatchObject({
+        loggedIn: true,
+        expired: false,
+      });
       markProviderExpired("codex");
       expect((await readProviderStatus("codex", env)).expired).toBe(true);
       clearProviderExpired("codex");
@@ -112,14 +135,25 @@ describe("expiry monitor", () => {
   const now = Date.now();
 
   it("keys alerts by state so each is announced once", () => {
-    const fresh = { provider: "claude" as const, loggedIn: true, expired: false, loginExpiresAt: now + 30 * DAY };
+    const fresh = {
+      provider: "claude" as const,
+      loggedIn: true,
+      expired: false,
+      loginExpiresAt: now + 30 * DAY,
+    };
     expect(alertKeyFor(fresh, now)).toBeUndefined();
     const soon = { ...fresh, loginExpiresAt: now + 3 * DAY + 1000 };
     expect(alertKeyFor(soon, now)).toBe("claude:expiring:3");
     expect(alertTextFor(soon, now)).toContain("expires in 3 days");
-    expect(alertKeyFor({ ...fresh, expired: true }, now)).toBe("claude:expired");
-    expect(alertKeyFor({ provider: "codex", loggedIn: false, expired: true }, now)).toBe("codex:missing");
-    expect(alertTextFor({ provider: "codex", loggedIn: false, expired: true }, now)).toContain("/auth");
+    expect(alertKeyFor({ ...fresh, expired: true }, now)).toBe(
+      "claude:expired",
+    );
+    expect(
+      alertKeyFor({ provider: "codex", loggedIn: false, expired: true }, now),
+    ).toBe("codex:missing");
+    expect(
+      alertTextFor({ provider: "codex", loggedIn: false, expired: true }, now),
+    ).toContain("/auth");
   });
 
   describe("with isolated credential dirs", () => {
@@ -150,7 +184,12 @@ describe("expiry monitor", () => {
       await mkdir(process.env.CLAUDE_CONFIG_DIR!, { recursive: true });
       await wf(
         join(process.env.CLAUDE_CONFIG_DIR!, ".credentials.json"),
-        JSON.stringify({ claudeAiOauth: { accessToken: "a", refreshTokenExpiresAt: now + 2 * DAY + 1000 } }),
+        JSON.stringify({
+          claudeAiOauth: {
+            accessToken: "a",
+            refreshTokenExpiresAt: now + 2 * DAY + 1000,
+          },
+        }),
       );
       await runAuthExpiryCheck(now, notify);
       expect(sent).toHaveLength(3);
@@ -162,7 +201,13 @@ describe("expiry monitor", () => {
 describe("telegram auth panel", () => {
   it("renders a status line and sign-in button per provider plus refresh", () => {
     const panel = renderAuthPanel([
-      { provider: "claude", loggedIn: true, expired: false, account: "max plan", loginExpiresAt: Date.now() + 30 * DAY },
+      {
+        provider: "claude",
+        loggedIn: true,
+        expired: false,
+        account: "max plan",
+        loginExpiresAt: Date.now() + 30 * DAY,
+      },
       { provider: "codex", loggedIn: false, expired: true },
     ]);
     expect(panel.text).toContain("🟢 <b>Claude</b>");
@@ -175,13 +220,26 @@ describe("telegram auth panel", () => {
   });
 
   it("renders the device code and an open-link button for codex, reply instructions for claude", () => {
-    const codex = renderLoginPrompt("codex", { url: "https://auth.openai.com/codex/device", code: "AB12-CD34E", needsCode: false });
+    const codex = renderLoginPrompt("codex", {
+      url: "https://auth.openai.com/codex/device",
+      code: "AB12-CD34E",
+      needsCode: false,
+    });
     expect(codex.text).toContain("<code>AB12-CD34E</code>");
     expect(codex.text).not.toContain("reply to this message");
-    expect(codex.keyboard[0][0]).toEqual({ text: "🌐 Open sign-in page", url: "https://auth.openai.com/codex/device" });
-    expect(codex.keyboard[1][0]).toEqual({ text: "✖ Cancel", callback_data: "auth:cancel:codex" });
+    expect(codex.keyboard[0][0]).toEqual({
+      text: "🌐 Open sign-in page",
+      url: "https://auth.openai.com/codex/device",
+    });
+    expect(codex.keyboard[1][0]).toEqual({
+      text: "✖ Cancel",
+      callback_data: "auth:cancel:codex",
+    });
 
-    const claude = renderLoginPrompt("claude", { url: "https://claude.com/x", needsCode: true });
+    const claude = renderLoginPrompt("claude", {
+      url: "https://claude.com/x",
+      needsCode: true,
+    });
     expect(claude.text).toContain("reply to this message");
   });
 });
