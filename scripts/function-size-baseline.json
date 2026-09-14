@@ -6,24 +6,6 @@
     "cx": 17
   },
   {
-    "file": "src/frontend/teams/index.ts",
-    "name": ".start",
-    "lines": 263,
-    "cx": 41
-  },
-  {
-    "file": "src/frontend/teams/index.ts",
-    "name": "createTeamsFrontend",
-    "lines": 396,
-    "cx": 58
-  },
-  {
-    "file": "src/frontend/teams/index.ts",
-    "name": "poll",
-    "lines": 236,
-    "cx": 40
-  },
-  {
     "file": "src/frontend/telegram/actions/moderation.ts",
     "name": ".moderate",
     "lines": 163,
