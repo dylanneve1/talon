@@ -35,6 +35,7 @@ import {
   pluginHubUrl,
   hubPluginServerNames,
   listHubPluginToolNames,
+  describeHubChildExit,
 } from "../../core/mcp-hub/index.js";
 import type { RemoteAgentClient } from "./client.js";
 import type { RemoteServerState } from "./state.js";
@@ -271,9 +272,13 @@ export async function ensurePluginMcpServers<TClient extends RemoteAgentClient>(
           ? logDebug
           : logWarn;
         warnedMcpRegistrationFailures.add(serverName);
+        // "Connection closed" alone says nothing; the hub knows how the
+        // child behind this server last died.
+        const exit = describeHubChildExit(name, chatId);
         level(
           "agent",
-          `Plugin MCP registration failed for ${serverName}: ${errMsg(err)}`,
+          `Plugin MCP registration failed for ${serverName}: ${errMsg(err)}` +
+            (exit ? ` (hub child ${exit})` : ""),
         );
         return null;
       }

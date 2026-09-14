@@ -19,12 +19,17 @@
  * connected once over stdio, and shared by every hub session that
  * proxies to it. The tools list is cached per child lifetime — plugin
  * reload restarts children, which naturally invalidates the cache.
+ *
+ * Every exit is accounted for: the child's exit code, signal and
+ * stderr tail are logged when it goes away unasked (handshake death,
+ * crash) and kept per key so a registration failure upstream can name
+ * the cause instead of just "Connection closed" (see getLastChildExit).
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { log, logError, logWarn } from "../../util/log.js";
+import { HubChildTransport, type ChildExit } from "./child-transport.js";
 
 export type ChildSpec = {
   command: string;
@@ -56,11 +61,73 @@ type ChildEntry = {
    * retire grace timer, whichever comes first).
    */
   retired: boolean;
+  transport: HubChildTransport;
   close: () => Promise<void>;
 };
 
 const children = new Map<string, ChildEntry>();
 const inflight = new Map<string, Promise<ChildHandle>>();
+
+/**
+ * Most recent exit per key, whether the child died during the
+ * handshake (never registered) or later. Consulted by the backends'
+ * registration path to explain a failure that surfaced upstream as a
+ * bare "Connection closed".
+ */
+export type ChildExitRecord = ChildExit & {
+  at: number;
+  /** Last stderr lines before exit (bounded ring buffer). */
+  stderr: string[];
+};
+const lastExits = new Map<string, ChildExitRecord>();
+
+/** Last recorded exit for `key`, or null if it never exited. */
+export function getLastChildExit(key: string): ChildExitRecord | null {
+  return lastExits.get(key) ?? null;
+}
+
+/**
+ * One-line exit summary: `code=1 signal=null 3s ago; stderr: a | b`.
+ * `maxStderrLines` bounds the stderr part for compact callers.
+ */
+export function formatChildExit(
+  exit: ChildExitRecord,
+  maxStderrLines = exit.stderr.length,
+): string {
+  const age = Math.round((Date.now() - exit.at) / 1000);
+  const head = `code=${exit.code} signal=${exit.signal} ${age}s ago`;
+  const lines = exit.stderr.slice(-maxStderrLines);
+  return lines.length > 0 ? `${head}; stderr: ${lines.join(" | ")}` : head;
+}
+
+/**
+ * Bookkeeping for a child process that has gone away, asked or not.
+ * Wired as the transport's `onclose` BEFORE `client.connect` so the SDK
+ * chains it ahead of its own close handling — set afterwards it would
+ * replace the SDK's handler and every in-flight request on a dead
+ * child would hang instead of rejecting with "Connection closed".
+ */
+function onChildClosed(key: string, transport: HubChildTransport): void {
+  const exit = transport.exit ?? { code: null, signal: null };
+  const record: ChildExitRecord = {
+    ...exit,
+    at: Date.now(),
+    stderr: transport.stderrLines,
+  };
+  lastExits.set(key, record);
+  const entry = children.get(key);
+  if (entry?.transport === transport) children.delete(key);
+  // Hub-initiated closes (reap/retire/shutdown) are logged by their
+  // callers; only an unasked exit is news.
+  if (transport.closedByHub) return;
+  const phase = entry
+    ? "exited — will respawn on demand"
+    : "died before registration";
+  logWarn(
+    "gateway",
+    `hub child ${key} ${phase} (pid ${transport.pid ?? "?"}): ${formatChildExit(record)}`,
+  );
+}
 
 /**
  * Negative cache for spawn failures. A child whose backing service is down
@@ -92,14 +159,14 @@ const REAP_INTERVAL_MS = 60_000;
 let reaper: ReturnType<typeof setInterval> | null = null;
 
 async function spawnChild(key: string, spec: ChildSpec): Promise<ChildHandle> {
-  const transport = new StdioClientTransport({
+  const transport = new HubChildTransport({
     command: spec.command,
     args: spec.args,
     // Merge over the daemon env — same visibility the SDK-spawned
     // subprocesses had (PATH, HOME, proxy vars, …).
     env: { ...(process.env as Record<string, string>), ...spec.env },
-    stderr: "inherit",
   });
+  transport.onclose = () => onChildClosed(key, transport);
   const client = new Client(
     { name: "talon-mcp-hub", version: "1.0.0" },
     { capabilities: {} },
@@ -123,6 +190,7 @@ async function spawnChild(key: string, spec: ChildSpec): Promise<ChildHandle> {
     lastActivity: Date.now(),
     pending: 0,
     retired: false,
+    transport,
     // Idempotent: retirement can race its own grace timer.
     close: (() => {
       let closing: Promise<void> | null = null;
@@ -157,17 +225,8 @@ async function spawnChild(key: string, spec: ChildSpec): Promise<ChildHandle> {
     },
   };
 
-  // If the child dies on its own (crash, plugin bug), drop the entry so
-  // the next request respawns instead of hitting a dead pipe forever.
-  transport.onclose = () => {
-    if (children.get(key) === entry) {
-      children.delete(key);
-      log("gateway", `hub child ${key} exited — will respawn on demand`);
-    }
-  };
-
   children.set(key, entry);
-  log("gateway", `hub child started: ${key}`);
+  log("gateway", `hub child started: ${key} (pid ${transport.pid ?? "?"})`);
   return entry.handle;
 }
 

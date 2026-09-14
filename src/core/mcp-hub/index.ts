@@ -45,6 +45,8 @@ import { buildProxyServer } from "./proxy-server.js";
 import {
   acquireChild,
   closeAllChildren,
+  formatChildExit,
+  getLastChildExit,
   retireAllChildren,
   startChildReaper,
   stopChildReaper,
@@ -115,15 +117,39 @@ export async function listHubPluginToolNames(
   chatId: string,
   bridgeUrl: string,
 ): Promise<string[]> {
-  const key =
-    serverName === "brave-search"
-      ? "brave-search"
-      : `${serverName}\u0000${chatId}`;
-  const child = await acquireChild(key, () =>
+  const child = await acquireChild(childKey(serverName, chatId), () =>
     pluginSpec(serverName, chatId, bridgeUrl),
   );
   child.touch();
   return (await child.listTools()).map((tool) => tool.name);
+}
+
+/** Stderr lines quoted in a registration-failure warning (full tail is in the exit log line). */
+const EXIT_SUMMARY_STDERR_LINES = 5;
+
+/**
+ * Why the hub child behind (serverName, chatId) last went away —
+ * `code=1 signal=null 2s ago; stderr: …` — or null if it never exited.
+ * Lets a backend's "registration failed: Connection closed" warning
+ * carry the cause.
+ */
+export function describeHubChildExit(
+  serverName: string,
+  chatId: string,
+): string | null {
+  const exit = getLastChildExit(childKey(serverName, chatId));
+  return exit ? formatChildExit(exit, EXIT_SUMMARY_STDERR_LINES) : null;
+}
+
+/**
+ * brave-search is chat-agnostic (one shared child); plugins read
+ * TALON_CHAT_ID at boot, so their children stay chat-scoped and the
+ * idle reaper bounds the fleet.
+ */
+function childKey(serverName: string, chatId: string): string {
+  return serverName === "brave-search"
+    ? "brave-search"
+    : `${serverName}\u0000${chatId}`;
 }
 
 // ── Server construction per session ─────────────────────────────────────────
@@ -191,15 +217,8 @@ function buildServerFor(target: HubTarget, bridgeUrl: string) {
       includeNativeTools: hubConfig.nativeTools,
     });
   }
-  // brave-search is chat-agnostic (one shared child); plugins read
-  // TALON_CHAT_ID at boot, so their children stay chat-scoped and the
-  // idle reaper bounds the fleet.
-  const key =
-    target.serverName === "brave-search"
-      ? "brave-search"
-      : `${target.serverName}\u0000${target.chatId}`;
   return buildProxyServer(target.serverName, () =>
-    acquireChild(key, () =>
+    acquireChild(childKey(target.serverName, target.chatId), () =>
       pluginSpec(target.serverName, target.chatId, bridgeUrl),
     ),
   );
