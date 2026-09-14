@@ -241,6 +241,60 @@ interface SubscribeInputs {
   abortSignal: AbortSignal;
 }
 
+/** The SSE wire format wraps every event in `{payload: {type, properties}}`. */
+function unwrapSseEvent(
+  evt: unknown,
+): { type?: string; properties?: Record<string, unknown> } | undefined {
+  if (!evt || typeof evt !== "object") return undefined;
+  const payload =
+    "payload" in evt ? (evt as { payload?: unknown }).payload : evt;
+  if (!payload || typeof payload !== "object") return undefined;
+  return payload as { type?: string; properties?: Record<string, unknown> };
+}
+
+/**
+ * A `session.error` on the global stream: ignored when it belongs to
+ * another session (a heartbeat's error must not pollute this chat's log),
+ * stashed as the turn's synthetic error otherwise. Returns whether the
+ * event was ours — ours ends the turn, since the server produces nothing
+ * more for this prompt.
+ */
+function noteSessionError(
+  props: Record<string, unknown>,
+  inputs: Pick<SubscribeInputs, "label" | "sessionId" | "state" | "chatId">,
+): "ours" | "other" {
+  const evtSessionID =
+    typeof props.sessionID === "string" ? props.sessionID : undefined;
+  if (evtSessionID && evtSessionID !== inputs.sessionId) return "other";
+  const errProp = props.error as
+    | { name?: string; message?: string; data?: Record<string, unknown> }
+    | undefined;
+  // MessageAbortedError is expected for an explicit user interrupt.
+  const isOurAbort =
+    inputs.state.turnTerminated &&
+    (errProp?.name === "MessageAbortedError" ||
+      /abort/i.test(errProp?.name ?? "") ||
+      /abort/i.test(errProp?.message ?? ""));
+  if (errProp && !isOurAbort) {
+    const detail = [
+      errProp.name && `name=${errProp.name}`,
+      errProp.message && `message=${errProp.message}`,
+      errProp.data && `data=${JSON.stringify(errProp.data)}`,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    logWarn(
+      "agent",
+      `[${inputs.chatId}] ${inputs.label} session.error: ${detail}`,
+    );
+    // Stash the error message so the handler's delivery branch can
+    // surface it as `⚠️ <label>: <message>` instead of silence.
+    const msg = errProp.message ?? errProp.name;
+    if (msg) inputs.state.syntheticError = msg;
+  }
+  return "ours";
+}
+
 /**
  * Subscribe to the server's global SSE event stream and translate relevant
  * events into stream-state mutations / callback firings. Only events scoped
@@ -271,61 +325,12 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
   try {
     for await (const evt of stream) {
       if (abortSignal.aborted) break;
-      if (!evt || typeof evt !== "object") continue;
+      const event = unwrapSseEvent(evt);
+      if (!event) continue;
 
-      // The SSE wire format wraps every event in `{payload: {type,
-      // properties}}`. Unwrap here so type/properties land where the rest
-      // of the loop expects them.
-      const payload =
-        "payload" in evt ? (evt as { payload?: unknown }).payload : evt;
-      if (!payload || typeof payload !== "object") continue;
-      const event = payload as {
-        type?: string;
-        properties?: Record<string, unknown>;
-      };
-
-      // session.error is observed here for logging; everything else goes
-      // through the shared pure helper. The SSE stream is global, so
-      // scope-filter to our own sessionId before attributing the error to
-      // this chat — a heartbeat session.error would otherwise pollute the
-      // chat's log.
       if (event.type === "session.error") {
-        const props = event.properties ?? {};
-        const evtSessionID =
-          typeof props.sessionID === "string" ? props.sessionID : undefined;
-        if (evtSessionID && evtSessionID !== sessionId) {
-          continue;
-        }
-        const errProp = props.error as
-          | {
-              name?: string;
-              message?: string;
-              data?: Record<string, unknown>;
-            }
-          | undefined;
-        // MessageAbortedError is expected for an explicit user interrupt.
-        const isOurAbort =
-          state.turnTerminated &&
-          (errProp?.name === "MessageAbortedError" ||
-            /abort/i.test(errProp?.name ?? "") ||
-            /abort/i.test(errProp?.message ?? ""));
-        if (errProp && !isOurAbort) {
-          const detail = [
-            errProp.name && `name=${errProp.name}`,
-            errProp.message && `message=${errProp.message}`,
-            errProp.data && `data=${JSON.stringify(errProp.data)}`,
-          ]
-            .filter(Boolean)
-            .join(" ");
-          logWarn("agent", `[${chatId}] ${label} session.error: ${detail}`);
-          // Stash the error message so the handler's delivery branch can
-          // surface it as `⚠️ <label>: <message>` instead of silence.
-          const msg = errProp.message ?? errProp.name;
-          if (msg) state.syntheticError = msg;
-        }
-        // session.error for OUR session ends the turn — the server isn't
-        // going to produce more events for this prompt.
-        return;
+        if (noteSessionError(event.properties ?? {}, inputs) === "ours") return;
+        continue;
       }
 
       const outcome = await processStreamEvent(event, {
@@ -338,7 +343,6 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
         onTextBlock,
         onToolUse,
       });
-
       if (outcome.kind === "terminator_fired") {
         // tool_calls counter increment happens per-tool inside
         // events.ts processPartUpdate. Don't double-count here.
@@ -347,7 +351,6 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
         // Delivery is already complete, so wait for natural idle instead.
         continue;
       }
-
       if (outcome.kind === "stop") {
         if (outcome.reason === "out_of_scope") continue;
         return; // turn.close or idle — stop iterating

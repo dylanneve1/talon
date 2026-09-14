@@ -14,6 +14,7 @@ import { log, logWarn } from "../../../util/log.js";
 import { roleHolder } from "./holders.js";
 import {
   pool,
+  initInFlight,
   bindings,
   listeners,
   ctx,
@@ -285,6 +286,7 @@ export async function cleanupBackendPool(): Promise<void> {
 /** Test-only state reset. */
 export function resetBackendPoolForTest(): void {
   pool.clear();
+  initInFlight.clear();
   bindings.clear();
   ctx.initCtx = null;
   ctx.poolConfig = null;
