@@ -80,7 +80,7 @@ export async function runSetup(): Promise<void> {
       p.cancel("Cancelled.");
       process.exit(0);
     }
-    botToken = token;
+    botToken = token as string;
 
     adminId = (await p.text({
       message: "Your Telegram user ID",
@@ -126,7 +126,7 @@ export async function runSetup(): Promise<void> {
         p.cancel("Cancelled.");
         process.exit(0);
       }
-      if (id) apiId = parseInt(id, 10);
+      if (id) apiId = parseInt(id as string, 10);
       if (hash) apiHash = hash as string;
     }
   }
@@ -161,7 +161,7 @@ export async function runSetup(): Promise<void> {
       p.cancel("Cancelled.");
       process.exit(0);
     }
-    teamsWebhookUrl = url;
+    teamsWebhookUrl = url as string;
 
     const secret = (await p.text({
       message: "Webhook secret for inbound verification",
