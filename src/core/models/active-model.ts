@@ -150,12 +150,7 @@ async function runChain(
       if (validated) {
         return { model: override, source: "override-valid" };
       }
-      logWarn(
-        "settings",
-        `chat=${chatId} backend=${backendId}: per-chat override ` +
-          `"${override}" is not a selectable model on this backend. ` +
-          `Falling through to backend default.`,
-      );
+      warnInvalidOverrideOnce(chatId, backendId, override);
       return stepsTwoThroughFive(
         backend,
         backendId,
@@ -168,6 +163,34 @@ async function runChain(
   // ── Step 2-5: backend canonical → config.backendDefaults →
   //              config.model (chat-role only) → null
   return stepsTwoThroughFive(backend, backendId, config, null);
+}
+
+/**
+ * chat id → the invalid override it was last warned about. A single turn
+ * resolves the active model several times (status line, send guard,
+ * menu), so an unchanged bad override warns once; picking a different
+ * value re-arms the warning for that chat.
+ */
+const warnedInvalidOverrides = new Map<string, string>();
+
+/** Test seam. */
+export function resetInvalidOverrideWarnings(): void {
+  warnedInvalidOverrides.clear();
+}
+
+function warnInvalidOverrideOnce(
+  chatId: string,
+  backendId: string,
+  override: string,
+): void {
+  if (warnedInvalidOverrides.get(chatId) === override) return;
+  warnedInvalidOverrides.set(chatId, override);
+  logWarn(
+    "settings",
+    `chat=${chatId} backend=${backendId}: per-chat override ` +
+      `"${override}" is not a selectable model on this backend. ` +
+      `Falling through to backend default.`,
+  );
 }
 
 async function stepsTwoThroughFive(
