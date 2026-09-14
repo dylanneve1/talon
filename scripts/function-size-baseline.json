@@ -72,6 +72,12 @@
     "cx": 66
   },
   {
+    "file": "src/core/engine/gateway.ts",
+    "name": ".start",
+    "lines": 239,
+    "cx": 38
+  },
+  {
     "file": "src/core/vfs/mounts/files.ts",
     "name": "createFileMount",
     "lines": 133,
