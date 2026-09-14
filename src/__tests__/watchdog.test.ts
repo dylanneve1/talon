@@ -13,6 +13,7 @@ vi.mock("../util/log.js", () => ({
 const {
   recordMessageProcessed,
   recordMessageReceived,
+  recordTurnActivity,
   resetWatchdogActivityForTests,
   getTotalMessagesProcessed,
   recordError,
@@ -316,6 +317,85 @@ describe("watchdog", () => {
         logWarn.mockClear();
         vi.advanceTimersByTime(30 * 60_000);
         expect(stuckWarns()).toBe(0);
+
+        stopWatchdog();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("stays quiet during a long turn that keeps emitting events", async () => {
+      const logModule = await import("../util/log.js");
+      const { logWarn } = vi.mocked(logModule);
+      vi.useFakeTimers();
+      try {
+        resetWatchdogActivityForTests();
+        startWatchdog();
+
+        vi.advanceTimersByTime(1_000);
+        recordMessageReceived();
+        logWarn.mockClear();
+
+        // A 90-minute agentic grind: a tool call or text delta lands every
+        // minute, the turn never completes. That is a live turn, not a
+        // wedged loop — the old watchdog warned at minute 10 regardless.
+        for (let minute = 0; minute < 90; minute++) {
+          vi.advanceTimersByTime(60_000);
+          recordTurnActivity();
+        }
+
+        expect(logWarn).not.toHaveBeenCalledWith(
+          "watchdog",
+          expect.stringContaining("unprocessed"),
+        );
+        expect(getHealthStatus().healthy).toBe(true);
+        stopWatchdog();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("warns when a running turn goes silent past the threshold", async () => {
+      const logModule = await import("../util/log.js");
+      const { logWarn } = vi.mocked(logModule);
+      vi.useFakeTimers();
+      try {
+        resetWatchdogActivityForTests();
+        startWatchdog();
+
+        vi.advanceTimersByTime(1_000);
+        recordMessageReceived();
+        logWarn.mockClear();
+
+        // Five minutes of activity, then nothing at all.
+        for (let minute = 0; minute < 5; minute++) {
+          vi.advanceTimersByTime(60_000);
+          recordTurnActivity();
+        }
+        const stuckWarns = () =>
+          logWarn.mock.calls.filter(
+            (c) => c[0] === "watchdog" && String(c[1]).includes("unprocessed"),
+          ).length;
+
+        // Silence is measured from the last event, not from receipt: at
+        // 9 minutes of silence (14 since receipt) still no warning...
+        vi.advanceTimersByTime(9 * 60_000);
+        expect(stuckWarns()).toBe(0);
+        // ...and past the 10-minute silence threshold it fires.
+        vi.advanceTimersByTime(2 * 60_000);
+        expect(stuckWarns()).toBe(1);
+        expect(String(logWarn.mock.calls[0][1])).toContain(
+          "no turn activity for 11 minutes",
+        );
+
+        // The turn wakes back up: the stuck state clears and the backoff
+        // resets so a fresh stall would warn again promptly.
+        recordTurnActivity();
+        logWarn.mockClear();
+        vi.advanceTimersByTime(5 * 60_000);
+        expect(stuckWarns()).toBe(0);
+        vi.advanceTimersByTime(6 * 60_000);
+        expect(stuckWarns()).toBe(1);
 
         stopWatchdog();
       } finally {

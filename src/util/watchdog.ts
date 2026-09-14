@@ -10,6 +10,7 @@ import { logWarn } from "./log.js";
 
 let lastProcessedAt = Date.now();
 let lastReceivedAt = 0;
+let lastActivityAt = 0;
 let totalMessagesProcessed = 0;
 const startTime = Date.now();
 
@@ -27,6 +28,20 @@ export function recordMessageReceived(): void {
 export function recordMessageProcessed(): void {
   lastProcessedAt = Date.now();
   totalMessagesProcessed++;
+  resetStuckWarnBackoff();
+}
+
+/**
+ * Record that a running turn showed signs of life: a backend event (tool
+ * call, text delta, result) flowed through the shuttle. A long agentic
+ * turn is not a wedged loop — an hour-long grind that keeps calling tools
+ * used to trip the stuck warning at the 10-minute mark and re-warn on
+ * backoff until it finished, because `lastProcessedAt` only advances at
+ * turn end. Stuck detection measures silence since the last event, not
+ * turn length.
+ */
+export function recordTurnActivity(): void {
+  lastActivityAt = Date.now();
   resetStuckWarnBackoff();
 }
 
@@ -51,15 +66,22 @@ export function recordMessageSettled(): void {
 export function resetWatchdogActivityForTests(): void {
   lastProcessedAt = Date.now();
   lastReceivedAt = 0;
+  lastActivityAt = 0;
   resetStuckWarnBackoff();
 }
 
 /**
  * How long the newest RECEIVED message has been waiting with no processing
- * completed after it. Zero when idle or keeping up.
+ * completed after it AND no turn activity since. Zero when idle, keeping
+ * up, or mid-turn with events still flowing.
  */
 function stuckMs(now: number): number {
   if (lastReceivedAt === 0 || lastReceivedAt <= lastProcessedAt) return 0;
+  return now - Math.max(lastReceivedAt, lastActivityAt);
+}
+
+/** How long the newest RECEIVED message has been waiting for completion. */
+function pendingMs(now: number): number {
   return now - lastReceivedAt;
 }
 
@@ -113,17 +135,20 @@ export function startWatchdog(workspaceDir?: string): void {
   if (watchdogTimer) return;
 
   watchdogTimer = setInterval(() => {
-    // Warn only when work is actually stuck — a message arrived and nothing
-    // has finished processing since. A quiet chat used to trip this every
-    // minute all night ("No messages processed for N minutes"), burying real
-    // warnings in noise. Repeat warnings back off exponentially.
+    // Warn only when work is actually stuck — a message arrived, nothing
+    // has finished processing since, and the turn has gone silent (no
+    // backend events) for the threshold. A quiet chat used to trip this
+    // every minute all night ("No messages processed for N minutes"), and a
+    // long tool-calling turn used to trip it at the 10-minute mark; both
+    // buried real warnings in noise. Repeat warnings back off exponentially.
     const now = Date.now();
     const stuck = stuckMs(now);
     if (stuck > STUCK_WARN_MS && now >= nextStuckWarnAt) {
-      const mins = Math.round(stuck / 60000);
+      const silentMins = Math.round(stuck / 60000);
+      const pendingMins = Math.round(pendingMs(now) / 60000);
       logWarn(
         "watchdog",
-        `Message received ${mins} minutes ago is still unprocessed — the message loop may be wedged`,
+        `Message received ${pendingMins} minutes ago is still unprocessed with no turn activity for ${silentMins} minutes — the message loop may be wedged`,
       );
       nextStuckWarnAt = now + stuckWarnBackoffMs;
       stuckWarnBackoffMs = Math.min(

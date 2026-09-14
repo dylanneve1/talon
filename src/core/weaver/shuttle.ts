@@ -26,6 +26,7 @@ import {
   type AgentEvent,
   type AgentResult,
 } from "../agent-runtime/events.js";
+import { recordTurnActivity } from "../../util/watchdog.js";
 
 export type EventSink = (event: AgentEvent) => void | Promise<void>;
 
@@ -64,6 +65,9 @@ export async function carryTurnEvents(
         }
       : onEvent;
   for await (const event of stream) {
+    // Every backend's events cross this loop exactly once, so this is the
+    // one place the watchdog learns a turn is alive (vs. wedged).
+    recordTurnActivity();
     if (timing && timing.firstEventAt === undefined) {
       timing.firstEventAt = Date.now();
     }
