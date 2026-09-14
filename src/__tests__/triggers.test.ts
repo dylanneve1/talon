@@ -40,6 +40,7 @@ const {
   updateTrigger,
   _resetTriggersForTesting,
   DEFAULT_TIMEOUT_SECONDS,
+  SHUTDOWN_KILL_ERROR,
 } = await import("../storage/trigger-store.js");
 
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -114,6 +115,21 @@ function waitForRunningCount(target: number, timeoutMs = 5000): Promise<void> {
             `timeout waiting for running count ${target} (got ${getRunningCount()})`,
           ),
         );
+      setTimeout(tick, 25);
+    };
+    tick();
+  });
+}
+
+/** finalizeExit stamps endedAt right before its wake decision, so once it is
+ *  set any wake dispatch for that exit has already happened (or been skipped). */
+function waitForEnded(id: string, timeoutMs = 5000): Promise<void> {
+  return new Promise((res, rej) => {
+    const start = Date.now();
+    const tick = () => {
+      if (getTrigger(id)?.endedAt !== undefined) return res();
+      if (Date.now() - start > timeoutMs)
+        return rej(new Error(`timeout waiting for ${id} to finalize`));
       setTimeout(tick, 25);
     };
     tick();
@@ -254,6 +270,41 @@ describeBash("trigger supervisor", () => {
     await waitForStatus(b.id, (s) => s === "terminated");
     await waitForRunningCount(0);
     expect(getRunningCount()).toBe(0);
+
+    // The backend pool is torn down alongside the triggers, so the terminal
+    // wake must not be dispatched during shutdown — the record is left for
+    // resumeAfterRestart to report on the next boot.
+    await waitForEnded(a.id);
+    await waitForEnded(b.id);
+    expect(executeSpy).not.toHaveBeenCalled();
+    expect(getTrigger(a.id)!.lastError).toBe(SHUTDOWN_KILL_ERROR);
+    expect(getTrigger(a.id)!.lastFireAt).toBeUndefined();
+  });
+
+  it("defers the shutdown death notice of a mid-run watcher to the next boot", async () => {
+    // A watcher that signalled mid-run has lastFireAt set. Killing it at
+    // shutdown must not dispatch a wake (pool is going away), and the next
+    // boot's resumeAfterRestart must still deliver the death notice.
+    const t = makeTrigger({ body: 'echo "TALON_FIRE: alive"\nsleep 30\n' });
+    spawnTrigger(t);
+    await waitForExecuteCalls(1);
+    expect(getTrigger(t.id)!.lastFireAt).toBeDefined();
+
+    await shutdownTriggers();
+    await waitForEnded(t.id);
+    await waitForRunningCount(0);
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    expect(getTrigger(t.id)!.status).toBe("terminated");
+
+    // Next boot: initTriggers clears the shutdown flag, resume fires the
+    // late notice keyed on SHUTDOWN_KILL_ERROR.
+    initTriggers({ execute: executeSpy as never });
+    await resumeAfterRestart();
+    expect(executeSpy).toHaveBeenCalledTimes(2);
+    const call = executeSpy.mock.calls[1][0];
+    expect(call.chatId).toBe(t.chatId);
+    expect(call.prompt).toMatch(/terminated/);
+    expect(call.prompt).toContain(SHUTDOWN_KILL_ERROR);
   });
 
   it("writes interleaved stdout + stderr to the log file", async () => {

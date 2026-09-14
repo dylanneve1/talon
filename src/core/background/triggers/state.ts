@@ -20,6 +20,14 @@ export type TriggerDeps = {
 /** Reassignable on a holder object so submodules see the injected deps. */
 export const depsHolder: { deps: TriggerDeps | null } = { deps: null };
 
+/**
+ * Set by shutdownTriggers for the rest of the process lifetime. finalizeExit
+ * consults it so the children it kills don't dispatch wakes into a backend
+ * pool that is being torn down at the same time. initTriggers clears it so a
+ * fresh lifecycle (next boot, or the next test) starts clean.
+ */
+export const lifecycle = { shuttingDown: false };
+
 /** Live child handles, keyed by trigger id. */
 export const children = new Map<string, ChildProcess>();
 export const timeouts = new Map<string, ReturnType<typeof setTimeout>>();
@@ -43,6 +51,7 @@ export const WARDEN_GRACE_SLACK_MS = 2_000;
 
 export function initTriggers(d: TriggerDeps): void {
   depsHolder.deps = d;
+  lifecycle.shuttingDown = false;
   log("triggers", "Initialized");
 }
 

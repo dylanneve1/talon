@@ -8,16 +8,18 @@ import type { ChildProcess } from "node:child_process";
 import {
   getTrigger,
   updateTrigger,
+  SHUTDOWN_KILL_ERROR,
   type Trigger,
   type TriggerStatus,
 } from "../../../storage/trigger-store.js";
-import { log, logError } from "../../../util/log.js";
+import { log, logDebug, logError } from "../../../util/log.js";
 import { appendDailyLog } from "../../../storage/daily-log.js";
 import {
   children,
   timeouts,
   logStreams,
   lineBuffers,
+  lifecycle,
   wardened,
   SIGTERM_GRACE_MS,
   WARDEN_GRACE_SLACK_MS,
@@ -53,6 +55,9 @@ export function cancelTrigger(id: string): boolean {
 
 /** Kill all running children — called during shutdown. */
 export async function shutdownTriggers(): Promise<void> {
+  // Flag first, unconditionally: a child that exits on its own from here on
+  // must not dispatch a wake either — the backend pool is going away.
+  lifecycle.shuttingDown = true;
   if (children.size === 0) return;
   log("triggers", `Shutting down ${children.size} running trigger(s)`);
   const ids = Array.from(children.keys());
@@ -70,7 +75,7 @@ export async function shutdownTriggers(): Promise<void> {
     } else {
       updateTrigger(id, {
         status: "terminated",
-        lastError: "Killed by Talon shutdown",
+        lastError: SHUTDOWN_KILL_ERROR,
       });
     }
     killChild(id, c);
@@ -188,6 +193,18 @@ export async function finalizeExit(
     status === "cancelled" ||
     status === "terminated"
   ) {
+    // During shutdown the backend pool is being torn down alongside us, so a
+    // dispatch here can only fail ("Backend role not bound"). Skip it; the
+    // record keeps status=terminated + SHUTDOWN_KILL_ERROR and no lastFireAt
+    // bump, which is exactly what resumeAfterRestart's late death notice
+    // keys on — the chat hears about it on the next boot instead.
+    if (lifecycle.shuttingDown) {
+      logDebug(
+        "triggers",
+        `Skipped ${status} wake for "${t.name}" [${id}] — shutting down; deferred to next boot`,
+      );
+      return;
+    }
     await fireWake(id, status, payload, /* terminal */ true);
   }
 }
