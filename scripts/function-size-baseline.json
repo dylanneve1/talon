@@ -6,12 +6,6 @@
     "cx": 64
   },
   {
-    "file": "src/backend/claude-sdk/stream.ts",
-    "name": "processResultMessage",
-    "lines": 82,
-    "cx": 31
-  },
-  {
     "file": "src/backend/codex/handler/message.ts",
     "name": "handleMessage",
     "lines": 494,
@@ -34,12 +28,6 @@
     "name": "createRemoteModelPresentation",
     "lines": 256,
     "cx": 61
-  },
-  {
-    "file": "src/backend/remote-server/turn.ts",
-    "name": "subscribeToTurnEvents",
-    "lines": 109,
-    "cx": 31
   },
   {
     "file": "src/bootstrap.ts",
