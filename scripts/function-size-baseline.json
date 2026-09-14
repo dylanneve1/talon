@@ -20,8 +20,8 @@
   {
     "file": "src/backend/remote-server/chat-turn.ts",
     "name": "runRemoteChatTurn",
-    "lines": 281,
-    "cx": 20
+    "lines": 270,
+    "cx": 15
   },
   {
     "file": "src/backend/remote-server/model-catalog/presentation.ts",

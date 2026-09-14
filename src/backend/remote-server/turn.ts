@@ -69,7 +69,21 @@ export interface RunRemoteTurnInputs {
   onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
   onTextBlock?: (text: string) => Promise<void>;
   onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
+  /**
+   * Fires when the backend is stopped underneath the turn (hot-swap or
+   * shutdown). Its `reason` is the error the turn rejects with.
+   */
+  stopSignal?: AbortSignal;
 }
+
+/** Poll cadence for the headless question/permission watchdog. */
+const WATCHDOG_INTERVAL_MS = 350;
+/**
+ * Consecutive poll failures before the watchdog gives up. A server that
+ * refuses three polls in a row is gone; polling on would only log
+ * `fetch failed` every 350ms until the turn is torn down.
+ */
+const WATCHDOG_MAX_CONSECUTIVE_FAILURES = 3;
 
 /**
  * Run one turn end-to-end.
@@ -105,6 +119,7 @@ export async function runRemoteTurn(
     onStreamDelta,
     onTextBlock,
     onToolUse,
+    stopSignal,
   } = inputs;
   const sessionClient = oc as unknown as RemoteSessionClient;
 
@@ -112,6 +127,10 @@ export async function runRemoteTurn(
   // `message.part.updated` events can fire immediately after promptAsync
   // returns, so the iterator must already be alive.
   const sseAbort = new AbortController();
+  // A backend stop ends the SSE loop and the watchdog the same way a
+  // finished turn does; the turn itself rejects via `rejectWhenStopped`.
+  const onStop = (): void => sseAbort.abort();
+  stopSignal?.addEventListener("abort", onStop, { once: true });
   const sseDone = subscribeToTurnEvents({
     label,
     oc,
@@ -144,35 +163,30 @@ export async function runRemoteTurn(
         label,
       ),
     ]);
-  const questionWatchdog = (async () => {
-    while (!sseAbort.signal.aborted) {
-      try {
-        await settlePending();
-      } catch (err) {
-        logWarn(
-          "agent",
-          `[${chatId}] question watchdog failed: ${errMsg(err)}`,
-        );
-      }
-      await sleep(350, sseAbort.signal);
-    }
-  })();
+  const questionWatchdog = runQuestionWatchdog({
+    settlePending,
+    signal: sseAbort.signal,
+    chatId,
+  });
 
   try {
     // Fire and forget — promptAsync returns immediately. The await below
     // is on the SSE close event. Per-prompt overrides hide sibling chats'
     // MCP tools while session permissions independently deny execution.
     await awaitRemoteTurn(
-      (async () => {
-        await oc.session.promptAsync({
-          sessionID: sessionId,
-          parts: [{ type: "text", text: prompt }],
-          model: { providerID, modelID },
-          system: systemPrompt,
-          ...(toolOverrides ? { tools: toolOverrides } : {}),
-        });
-        await sseDone;
-      })(),
+      rejectWhenStopped(
+        (async () => {
+          await oc.session.promptAsync({
+            sessionID: sessionId,
+            parts: [{ type: "text", text: prompt }],
+            model: { providerID, modelID },
+            system: systemPrompt,
+            ...(toolOverrides ? { tools: toolOverrides } : {}),
+          });
+          await sseDone;
+        })(),
+        stopSignal,
+      ),
       { client: oc, sessionId, chatId, label },
     );
 
@@ -214,6 +228,7 @@ export async function runRemoteTurn(
     }
     throw err;
   } finally {
+    stopSignal?.removeEventListener("abort", onStop);
     sseAbort.abort();
     // A dead SSE socket may ignore the local abort flag until another event
     // arrives. Bound cleanup so a timed-out turn cannot wedge its caller in
@@ -225,6 +240,61 @@ export async function runRemoteTurn(
     } catch {
       /* noop */
     }
+  }
+}
+
+/**
+ * Race the turn against a backend stop. A stop rejects with the signal's
+ * `reason` (a `RemoteServerStoppedError`) the moment it fires, instead of
+ * waiting for an SSE socket that will never close on its own.
+ */
+function rejectWhenStopped<T>(
+  turn: Promise<T>,
+  stopSignal: AbortSignal | undefined,
+): Promise<T> {
+  if (!stopSignal) return turn;
+  if (stopSignal.aborted) return Promise.reject(stopSignal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(stopSignal.reason);
+    stopSignal.addEventListener("abort", onAbort, { once: true });
+    turn.then(resolve, reject).finally(() => {
+      stopSignal.removeEventListener("abort", onAbort);
+    });
+  });
+}
+
+/**
+ * Poll the pending question/permission lists until the turn's signal
+ * fires. Gives up after {@link WATCHDOG_MAX_CONSECUTIVE_FAILURES} failed
+ * polls in a row — a server that stopped answering is not coming back
+ * within this turn, and the finally-block settle runs once more anyway.
+ */
+async function runQuestionWatchdog(inputs: {
+  settlePending: () => Promise<unknown>;
+  signal: AbortSignal;
+  chatId: string;
+}): Promise<void> {
+  const { settlePending, signal, chatId } = inputs;
+  let consecutiveFailures = 0;
+  while (!signal.aborted) {
+    try {
+      await settlePending();
+      consecutiveFailures = 0;
+    } catch (err) {
+      consecutiveFailures += 1;
+      logWarn(
+        "agent",
+        `[${chatId}] question watchdog failed (${consecutiveFailures}/${WATCHDOG_MAX_CONSECUTIVE_FAILURES}): ${errMsg(err)}`,
+      );
+      if (consecutiveFailures >= WATCHDOG_MAX_CONSECUTIVE_FAILURES) {
+        logWarn(
+          "agent",
+          `[${chatId}] question watchdog stopped: server unreachable`,
+        );
+        return;
+      }
+    }
+    await sleep(WATCHDOG_INTERVAL_MS, signal);
   }
 }
 

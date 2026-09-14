@@ -38,7 +38,7 @@ export type { RemoteAgentClient } from "./client.js";
 
 export { type RemoteServerState, createRemoteServerState } from "./state.js";
 
-export { stopRemoteServer } from "./lifecycle.js";
+export { stopRemoteServer, RemoteServerStoppedError } from "./lifecycle.js";
 
 export {
   TALON_MCP_SERVER_NAME,

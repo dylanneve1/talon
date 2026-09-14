@@ -13,10 +13,28 @@
  * reuse machinery.
  */
 
+import { TalonError } from "../../core/errors.js";
 import { log, logWarn } from "../../util/log.js";
 import type { RemoteAgentClient } from "./client.js";
 import type { RemoteServerState } from "./state.js";
 import { errMsg } from "./state.js";
+
+/**
+ * Rejection for a turn whose server was stopped underneath it (a backend
+ * hot-swap or shutdown). Non-retryable on purpose: the chat no longer
+ * points at this backend, so a fallback-model retry against it would be
+ * wrong — the turn fails cleanly and the next message runs on the new
+ * backend.
+ */
+export class RemoteServerStoppedError extends TalonError {
+  constructor(label: string) {
+    super(`${label} server stopped while the turn was in flight`, {
+      reason: "unknown",
+      retryable: false,
+    });
+    this.name = "RemoteServerStoppedError";
+  }
+}
 
 /**
  * Inputs passed to {@link ensureRemoteServer}. The backend supplies its
@@ -180,6 +198,7 @@ export function stopRemoteServer<TClient extends RemoteAgentClient>(
   extraCleanup?: () => void,
 ): void {
   state.clientPromise = null;
+  abortActiveTurns(state);
   state.modelProviderCache.clear();
   state.registeredMcpServers.clear();
   state.registeredMcpTools.clear();
@@ -200,4 +219,22 @@ export function stopRemoteServer<TClient extends RemoteAgentClient>(
   // Always discard this process's client, including when the server was
   // reused and is intentionally left running for its external owner.
   state.client = null;
+}
+
+/**
+ * Reject every in-flight turn with {@link RemoteServerStoppedError} before
+ * the server goes away. The turn's own cleanup unregisters its controller;
+ * clearing here only covers turns that never reach their `finally`.
+ */
+function abortActiveTurns<TClient extends RemoteAgentClient>(
+  state: RemoteServerState<TClient>,
+): void {
+  if (state.activeTurns.size === 0) return;
+  log(
+    "agent",
+    `${state.label} stopping with ${state.activeTurns.size} turn(s) in flight; aborting them`,
+  );
+  const reason = new RemoteServerStoppedError(state.label);
+  for (const controller of state.activeTurns) controller.abort(reason);
+  state.activeTurns.clear();
 }

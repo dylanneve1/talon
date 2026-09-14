@@ -50,6 +50,7 @@ export type RemoteChatBindings<TClient extends RemoteAgentClient> = Pick<
   RemoteServerBindings<TClient>,
   | "getConfig"
   | "ensureServer"
+  | "trackActiveTurn"
   | "parseModelSelection"
   | "resolveProviderID"
   | "ensureSession"
@@ -150,6 +151,11 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
     state.turnTerminated = true;
     await turnClient.session.abort({ sessionID: sessionId });
   });
+  // Stopping the backend mid-turn (a `/model` swap, shutdown) aborts this
+  // controller, which rejects the turn promptly instead of leaving it to
+  // the deadline.
+  const stopController = new AbortController();
+  const untrackTurn = bindings.trackActiveTurn(stopController);
   const promptStartedAt = Date.now();
   const seenQuestionIds = new Set<string>();
   const seenPermissionIds = new Set<string>();
@@ -183,6 +189,7 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
       onStreamDelta: undefined,
       onTextBlock,
       onToolUse,
+      stopSignal: stopController.signal,
     });
     promptMs = Date.now() - turnStart;
   } catch (err) {
@@ -223,6 +230,7 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
     );
     throw outcome.classified;
   } finally {
+    untrackTurn();
     unregisterInterrupt();
     // Note: we deliberately do NOT disconnect the chat MCP server here.
     // The server is named per-chat so it's safe to keep across turns;
@@ -232,31 +240,12 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
 
   // ── Post-loop accounting ──────────────────────────────────────────────────
 
-  // If the SSE loop missed any usage info, fall back to the session
-  // summary endpoint (which always reflects the final server state).
-  if (
-    state.sdkInputTokens === 0 &&
-    state.sdkOutputTokens === 0 &&
-    state.sdkCacheRead === 0
-  ) {
-    try {
-      const summary = await getTurnSummary(
-        oc as unknown as RemoteSessionClient,
-        sessionId,
-        promptStartedAt,
-      );
-      if (summary.usage.assistantMessages > 0) {
-        recordTokens(state, {
-          inputTokens: summary.usage.inputTokens,
-          outputTokens: summary.usage.outputTokens,
-          cacheRead: summary.usage.cacheRead,
-          cacheWrite: summary.usage.cacheWrite,
-        });
-      }
-    } catch {
-      // best-effort — session summaries can race on cancellation
-    }
-  }
+  await fillUsageFromSummary(
+    oc as unknown as RemoteSessionClient,
+    sessionId,
+    promptStartedAt,
+    state,
+  );
 
   const responseText = finalizeResponseText(state);
   const durationMs = Date.now() - t0;
@@ -341,6 +330,40 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
     cacheRead: state.sdkCacheRead,
     cacheWrite: state.sdkCacheWrite,
   };
+}
+
+/**
+ * If the SSE loop missed the usage info, fall back to the session summary
+ * endpoint (which always reflects the final server state). Best-effort:
+ * session summaries can race on cancellation, so a failure leaves the
+ * counts at zero.
+ */
+async function fillUsageFromSummary(
+  oc: RemoteSessionClient,
+  sessionId: string,
+  promptStartedAt: number,
+  state: ReturnType<typeof createStreamState>,
+): Promise<void> {
+  if (
+    state.sdkInputTokens !== 0 ||
+    state.sdkOutputTokens !== 0 ||
+    state.sdkCacheRead !== 0
+  ) {
+    return;
+  }
+  try {
+    const summary = await getTurnSummary(oc, sessionId, promptStartedAt);
+    if (summary.usage.assistantMessages > 0) {
+      recordTokens(state, {
+        inputTokens: summary.usage.inputTokens,
+        outputTokens: summary.usage.outputTokens,
+        cacheRead: summary.usage.cacheRead,
+        cacheWrite: summary.usage.cacheWrite,
+      });
+    }
+  } catch {
+    // best-effort — session summaries can race on cancellation
+  }
 }
 
 /**

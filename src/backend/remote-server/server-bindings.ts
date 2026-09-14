@@ -107,6 +107,12 @@ export interface RemoteServerBindings<TClient extends RemoteAgentClient> {
   stop(): void;
   /** Lazily start (or reuse) the local server and return a strict client. */
   ensureServer(): Promise<TClient>;
+  /**
+   * Register a chat turn's abort controller for the lifetime of the turn.
+   * `stop()` aborts every registered controller so no turn outlives its
+   * server. Returns the unregister function; call it when the turn ends.
+   */
+  trackActiveTurn(controller: AbortController): () => void;
   ensureChatMcpServer(oc: TClient, chatId: string): Promise<string>;
   ensurePluginMcpServers(oc: TClient, chatId: string): Promise<string[]>;
   /**
@@ -193,6 +199,12 @@ export function bindRemoteServer<TClient extends RemoteAgentClient>(
       });
     },
     ensureServer,
+    trackActiveTurn(controller) {
+      state.activeTurns.add(controller);
+      return () => {
+        state.activeTurns.delete(controller);
+      };
+    },
     ensureChatMcpServer,
     ensurePluginMcpServers,
     buildToolOverrides: (oc, chatServerName, pluginServerNames = []) =>

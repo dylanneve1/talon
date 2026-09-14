@@ -56,6 +56,13 @@ export interface RemoteServerState<TClient extends RemoteAgentClient> {
   readonly registeredMcpTools: Map<string, readonly string[]>;
   /** Plugin-name → registered server-name mapping for each chat context. */
   readonly pluginMcpServersByChat: Map<string, Map<string, string>>;
+  /**
+   * One controller per in-flight chat turn. `stopRemoteServer` aborts them
+   * so a turn cannot outlive the server it is streaming from — without
+   * this, a mid-turn backend swap left the SSE await hanging until the
+   * 600s deadline while the question watchdog hammered the dead socket.
+   */
+  readonly activeTurns: Set<AbortController>;
 }
 
 /** Inputs for {@link createRemoteServerState}. */
@@ -90,6 +97,7 @@ export function createRemoteServerState<TClient extends RemoteAgentClient>(
     registeredMcpServers: new Set(),
     registeredMcpTools: new Map(),
     pluginMcpServersByChat: new Map(),
+    activeTurns: new Set(),
   };
 }
 
