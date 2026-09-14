@@ -1,0 +1,120 @@
+# Cleanup plan — structure, naming, mega-functions, latency
+
+A map of the tree as of 2026-09-14 (v3.33.4) and the ordered worklist
+that falls out of it. Successor to [consolidation-plan.md](consolidation-plan.md)
+(whose items 1–6 have landed: #820, #825, #826, #824, #830). Numbers come
+from a function-level AST pass (`scripts/check-function-size.mjs`, added
+by item A below), `git ls-files | wc`, and reading the code.
+
+The personality stays. Weaver / Loom / Thread / Shuttle / Warp, Warden,
+Soul, Dream, Heartbeat, Pulse, Doctor are the vocabulary of the system
+and are not renamed. What gets cleaned is the layer underneath them —
+the closures, the dumping-ground files, and the three ways of naming a
+store.
+
+## Map
+
+### Function size (non-test TypeScript, 2,764 functions)
+
+| Measure | Count |
+| --- | ---: |
+| Functions over 100 lines | 83 |
+| Functions over 150 lines | 40 |
+| Functions over 200 lines | 24 |
+| Cyclomatic complexity over 20 | 77 |
+| Cyclomatic complexity over 30 | 30 |
+
+The 24 over 200 lines fall into five shapes, and each shape has one fix:
+
+| Shape | Functions | Lines / cx | Fix |
+| --- | --- | ---: | --- |
+| **Frontend factory closure** — one `createXFrontend()` holding all state and every handler as inner functions | `native/index.ts createNativeFrontend`, `whatsapp/index.ts createWhatsAppFrontend`, `teams/index.ts createTeamsFrontend` + `.start` + `poll`, `discord/index.ts createDiscordFrontend` + `.init`, `terminal/index.ts createTerminalFrontend` | 1263/155, 596/103, 391/58, 316/43, 185/15 | Lift closure state into one explicit runtime object; one module per concern (chats, turn, context, emit, connect). The factory becomes wiring. |
+| **Backend turn loop** — prompt → stream loop → accounting → trailing-prose retry → result events, three copies | `claude-sdk/handler.ts runChatTurn`, `codex/handler/message.ts handleMessage`, `openai-agents/handler/message.ts handleMessage`, `remote-server/chat-turn.ts runRemoteChatTurn` | 508/64, 488/69, 451/53, 278/20 | The post-loop phases are already commented "shared with the other backends" — make them shared: `backend/shared/turn-phases.ts`. Each backend keeps only its stream loop. |
+| **Command / interaction switch** | `terminal/commands.ts registerBuiltinCommands`, `discord/callbacks/components.ts handleComponentInteraction`, `telegram/callbacks/model.ts handleModelCallback` (nesting depth 13), `telegram/middleware.ts registerMiddleware` (depth 11), `telegram/admin.ts handleAdminCommand`, `telegram/commands/{settings,admin}.ts` | 508/111, 529/93, 271/42, 222/39, 236/43, 306/36, 219/34 | Dispatch table keyed by command / customId prefix, one handler per file — the shape #824 gave the native bridge. |
+| **Wizard** | `cli/setup.ts runSetup` | 499/85 | One step function per frontend / backend section; an `askOrExit()` helper replaces the `as string` casts around every `isCancel` guard. |
+| **Validate-then-mutate action** | `gateway-actions/cron.ts .create_cron_job` / `.edit_cron_job` | 170/61, 169/66 | One `parseCronSpec()` in `core/background/` that both call; the actions shrink to lookup + apply. |
+
+### Naming
+
+The verb vocabulary is already consistent (`get`/`is`/`handle`/`build`/
+`create`/`resolve`/`register`/`run`/`init` cover 80% of exports; files are
+100% kebab-case; 37 classes, all nouns). What drifted:
+
+| Drift | Where | Fix |
+| --- | --- | --- |
+| Three naming schemes for one concept | `storage/`: `cron-store.ts`, `goal-store.ts`, `script-store.ts`, `skill-store.ts`, `sticker-store.ts`, `trigger-store.ts`, `scheduled-store.ts` next to `sessions.ts`, `history.ts`, `journal.ts`, `kv.ts`, `metrics.ts`, `chat-settings.ts`, `media-index.ts`, `turn-meta.ts`, next to `repositories/*-repo.ts` | One rule: `storage/<noun>.ts` is the store API, `storage/repositories/<noun>-repo.ts` is its SQL. Drop the `-store` suffix. |
+| `Opts` vs `Options` | 4 `*Opts` types against 30 `*Options` | `Options`. |
+| Dumping-ground files | `frontend/{discord,telegram,whatsapp}/{actions,callbacks,commands}/shared.ts` (7 files), `frontend/discord/helpers.ts`, `gateway-actions/shared.ts` | Name each by what it holds (`reply.ts`, `context.ts`, `permissions.ts`). A file called `shared` is a file nobody owns. |
+| Loose files at `core/` root | `doctor.ts` + `doctor-types.ts`, `notify.ts`, `pairing-broker.ts`, `constants.ts`, `errors.ts`, `types.ts` | `core/doctor/`, `core/notify/`; `pairing-broker` belongs with `mesh/`. `errors`, `types`, `constants` stay — they are the root's vocabulary. |
+| Engine config filed as a leaf util | `util/config.ts` (843 lines, imports `core/`) | Already a documented migration (`config-belongs-in-core`, warn). Move to `core/config/`, ratchet to error. |
+
+### Latency and startup
+
+There is no timing instrumentation in the daemon: no boot-phase log, no
+per-turn phase histogram beyond `response_latency_ms`. Everything below
+is therefore a hypothesis ranked by what the code shows, and the first
+item is the one that turns hypotheses into numbers.
+
+| Where | What the code does | Cost | Fix |
+| --- | --- | --- | --- |
+| Turn pipeline | `Weaver.executeInner` → `resolveWarp` → `backend.chat.runChatTurn` → `carryTurnEvents` → frontend `onEvent` | Unmeasured | Per-turn phase timeline (queue wait, warp resolve, prompt build, time-to-first-token, stream, delivery) recorded through the existing `recordHistogram` seam and surfaced in `/status`. Every later item is verified against it. |
+| Boot | `bootstrap.ts` walks every chat in `getAllChatSettings()` serially: `rebindChat` (with a 1.5 s sleep-and-retry) then `isModelValidForBackend` (may hit the network) | O(chats) sequential awaits before frontends start | Bounded-concurrency pass (`Promise.all` over batches of 8); a `boot` phase timer so the number is visible in the log. |
+| Boot | `bin/talon.js` loads `tsx` on Node and transpiles ~90 k lines of source every start | Transpile + esbuild worker on every launch | Node ≥ 24 strips types natively. Blockers: 9 constructor parameter properties (rewrite to explicit fields). `with { type: "json" }` and `#prompt-assets` already work. Measure before/after; keep `tsx` for `--watch`. |
+| Every log line | `pino` at `trace` with in-process `pino-pretty` on the console stream, always | Pretty-formatting every trace line on the hot path | Console level from `TALON_LOG_LEVEL` (default `info`); the file stream stays `trace`. Async destination for the file. |
+| Native frontend | `warmContextCache()` at boot touches 40 chats; `refreshContext()` fire-and-forget after every turn recomputes context and (on a cold entry) resolves the active model | One resolve per chat per boot; one recompute per turn | Bounded concurrency; skip recompute when session usage did not change. |
+| Claude SDK turn | `waitForMcpServersReady` polls `mcpServerStatus()` every 100 ms for up to 5 s | Nothing on warm turns (returns on first poll) | Leave. Listed so nobody re-investigates it. |
+
+## Worklist, ordered by value over risk
+
+**A. Function-size ratchet** — `scripts/check-function-size.mjs` on
+`oxc-parser` (already in `node_modules` via oxlint), a committed baseline
+of the functions currently over the limits (200 lines, complexity 30),
+and a Code Quality step. Same contract as `check-ratchets.mjs`: counts
+may only fall; lowering the baseline is part of the PR that earns it.
+Cheap, and every item below clicks it one tooth tighter.
+
+**B. Turn instrumentation + boot timer** — the two measurement seams
+from the latency table. No behaviour change. Lands before any
+performance work so each later PR can quote numbers.
+
+**C. Backend turn phases** — `backend/shared/turn-phases.ts`:
+`accountTurn`, `enforceTrailingProse`, `buildResultEvents`. The three
+handlers drop to their stream loops. Highest duplication in the tree;
+best-covered by existing tests (`handler-to-events`, `stream-state`,
+`delivered-text` suites).
+
+**D. Native frontend split** — the 1,263-line closure. `chats.ts`
+(registry + wire projection), `context.ts` (compute / refresh / warm),
+`emit.ts` (assistant / photo / user / system), `turn.ts` (`runTurn` +
+`startTurn`), `index.ts` (wiring). Nine test files already import this
+module; they keep passing unchanged because the exported surface does
+not move.
+
+**E. WhatsApp, Teams, Discord, Terminal factories** — same pattern as D,
+one PR each. Each has a `connect`/`poll` loop that becomes its own
+module.
+
+**F. Command dispatch tables** — terminal builtin commands, Discord
+component interactions, Telegram model callback / middleware / admin.
+One PR per frontend.
+
+**G. Setup wizard** and **cron spec** — the two remaining shapes. Small
+PRs.
+
+**H. Storage naming** — drop `-store`; `Opts` → `Options`; rename the
+seven `shared.ts` files and `discord/helpers.ts`. Mechanical, one PR,
+after C–G so it does not conflict with them.
+
+**I. `core/` root tidy + `config → core/config`** — the ratcheted
+migration. After H.
+
+**J. Performance PRs, each quoting B's numbers** — boot concurrency,
+native context cache, console log level, native type stripping. In that
+order; each is independent and revertible.
+
+## Out of scope
+
+Soul kernel (slated for teardown, see memory-persona-plan.md). The
+Companion app (`settings_screen.dart` split is tracked in
+consolidation-plan.md §8). Test suite restructuring — `src/__tests__/`
+is flat and large but it is not what is slowing anyone down.
