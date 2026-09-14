@@ -111,7 +111,7 @@ export function getChatMcpServerName(chatId: string): string {
 }
 
 /** Sanitize a component embedded in an upstream MCP registration name. */
-export function safeMcpNamePart(value: string, fallback: string): string {
+function safeMcpNamePart(value: string, fallback: string): string {
   return value.replace(/[^a-zA-Z0-9_-]+/g, "_") || fallback;
 }
 
