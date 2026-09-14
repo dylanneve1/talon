@@ -120,6 +120,7 @@
     "discord.js": "^14.16.3",
     "file-type": "^22.0.1",
     "grammy": "^1.45.1",
+    "link-preview-js": "^3.2.0",
     "liquidjs": "^10.27.0",
     "marked": "^18.0.0",
     "mem0ai": "^3.0.13",
