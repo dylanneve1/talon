@@ -12,7 +12,8 @@ import { toYMD } from "../../../util/time.js";
 import { getDefaultModel } from "../../models/catalog.js";
 import { loadSystemTemplate } from "../../prompt/templates.js";
 import { formatGoal, getOpenGoals } from "../../../storage/goal-store.js";
-import { taskTable } from "../../tasks/index.js";
+import { taskTable, type TaskHandle } from "../../tasks/index.js";
+import type { Backend } from "../../agent-runtime/capabilities.js";
 import type { OneShotAgentParams } from "../../types.js";
 import { resolveBackgroundEffort } from "../effort.js";
 import { hb } from "./state.js";
@@ -102,29 +103,25 @@ function renderGoalsBlock(): { text: string; count: number } {
   return { text, count };
 }
 
-export async function runHeartbeatAgent(
-  lastRunTimestamp: number,
-  runCount: number,
-): Promise<string> {
-  const config = hb.config;
-  if (!config) {
-    throw new Error("Heartbeat agent not initialized");
-  }
+/** Everything the seeded heartbeat.md template interpolates. */
+type HeartbeatPromptInputs = {
+  lastRunIso: string;
+  runCount: number;
+  workspace: string;
+  logsDir: string;
+  memoryFile: string;
+  instructionsFile: string;
+  dailyMemoryFile: string;
+};
 
-  const lastRunIso =
-    lastRunTimestamp > 0 ? new Date(lastRunTimestamp).toISOString() : "never";
-
-  const logsDir = dirs.logs;
-  const memoryFile = pathFiles.memory;
-  const workspace = config.workspace ?? dirs.workspace;
-  const instructionsFile = resolve(workspace, "heartbeat-instructions.md");
-  const dailyMemoryFile = resolve(dirs.dailyMemory, `${toYMD(new Date())}.md`);
-
-  // Load prompt template from the prompts directory (seeded to ~/.talon/prompts/)
+/**
+ * Load the user's heartbeat.md (seeded to ~/.talon/prompts/) and fill its
+ * placeholders. Seeded copies are never rewritten once the user owns them,
+ * so two older vintages get their missing sections appended instead.
+ */
+function renderHeartbeatPrompt(inputs: HeartbeatPromptInputs): string {
   const promptPath = resolve(dirs.prompts, "heartbeat.md");
-
   const goalsBlock = renderGoalsBlock();
-
   let prompt: string;
   let hadGoalsVar: boolean;
   let hadStateVar: boolean;
@@ -133,14 +130,14 @@ export async function runHeartbeatAgent(
     hadGoalsVar = raw.includes("{{goals}}");
     hadStateVar = raw.includes("{{stateFile}}");
     prompt = raw
-      .replace(/\{\{workspace\}\}/g, workspace)
-      .replace(/\{\{logsDir\}\}/g, logsDir)
-      .replace(/\{\{lastRunIso\}\}/g, lastRunIso)
-      .replace(/\{\{memoryFile\}\}/g, memoryFile)
+      .replace(/\{\{workspace\}\}/g, inputs.workspace)
+      .replace(/\{\{logsDir\}\}/g, inputs.logsDir)
+      .replace(/\{\{lastRunIso\}\}/g, inputs.lastRunIso)
+      .replace(/\{\{memoryFile\}\}/g, inputs.memoryFile)
       .replace(/\{\{stateFile\}\}/g, pathFiles.state)
-      .replace(/\{\{instructionsFile\}\}/g, instructionsFile)
-      .replace(/\{\{dailyMemoryFile\}\}/g, dailyMemoryFile)
-      .replace(/\{\{runCount\}\}/g, String(runCount))
+      .replace(/\{\{instructionsFile\}\}/g, inputs.instructionsFile)
+      .replace(/\{\{dailyMemoryFile\}\}/g, inputs.dailyMemoryFile)
+      .replace(/\{\{runCount\}\}/g, String(inputs.runCount))
       .replace(/\{\{intervalMinutes\}\}/g, String(hb.intervalMinutesRef))
       .replace(/\{\{goals\}\}/g, goalsBlock.text);
   } catch {
@@ -161,8 +158,6 @@ export async function runHeartbeatAgent(
   // Same vintage problem for the memory/state split: a seeded heartbeat.md
   // from before it still instructs the agent to write memory.md, which is
   // how status snapshots accreted in the durable store in the first place.
-  // Append the ownership rules so the split holds regardless of template
-  // vintage — the seeded copy is never rewritten once the user owns it.
   if (!hadStateVar) {
     logWarn(
       "heartbeat",
@@ -172,33 +167,20 @@ export async function runHeartbeatAgent(
     prompt += `\n\n${loadSystemTemplate("heartbeat-agent", {
       mode: "state-fallback",
       stateFile: pathFiles.state,
-      memoryFile,
+      memoryFile: inputs.memoryFile,
     }).trim()}`;
   }
+  return prompt;
+}
 
-  const model = config.heartbeatModel ?? config.model ?? getDefaultModel();
-
-  const backend = config.getBackend?.() ?? null;
-  const background = backend?.background;
-  if (!background) {
-    throw new Error(
-      "Heartbeat requires a backend that implements the background capability",
-    );
-  }
-
-  // Effort is resolved against the heartbeat backend's catalog, not just
-  // copied from config — a level the model doesn't offer is dropped with a
-  // reason rather than handed to the SDK.
-  const effort = await resolveBackgroundEffort({
-    requested: config.heartbeatEffort,
-    model,
-    backend,
-  });
-  if (effort.dropped) {
-    logWarn("heartbeat", effort.dropped);
-  }
-
-  // Set up heartbeat log file
+/** Create this run's log file and write its header; returns the path. */
+async function openHeartbeatLog(
+  runCount: number,
+  lastRunIso: string,
+  model: string,
+  effort: { effort?: string; dropped?: string },
+  prompt: string,
+): Promise<string> {
   const heartbeatLogFile = await createHeartbeatLogFile();
   await appendHeartbeatLog(
     heartbeatLogFile,
@@ -219,32 +201,23 @@ export async function runHeartbeatAgent(
     heartbeatLogFile,
     `**Prompt:**\n\`\`\`\n${prompt}\n\`\`\`\n\n---\n`,
   );
+  return heartbeatLogFile;
+}
 
-  // AbortController is the canonical way to signal a cancellation to a backend.
-  // .abort() should tear down any spawned subprocess (Claude SDK) or stop
-  // streaming (Kilo/OpenCode). We defend against backends that ignore it — see
-  // heartbeatAbortGraceMs below.
-  const abortController = new AbortController();
-
-  const task = taskTable.begin({
-    kind: "heartbeat",
-    label: `#${runCount}`,
-    abort: () => abortController.abort(),
-  });
-  task.bind({ model });
-
-  const oneShotParams: OneShotAgentParams = {
-    prompt,
-    systemPrompt: buildHeartbeatSystemPrompt(),
-    workspace,
-    model,
-    ...(effort.effort ? { reasoningEffort: effort.effort } : {}),
-    contextLabel: "heartbeat",
-    abortController,
-    appendLog: (text) => appendHeartbeatLog(heartbeatLogFile, text),
-  };
-
-  // Timeout that requests eviction (graceful first, force-kill on grace exit).
+/**
+ * Run the one-shot agent under the heartbeat's soft timeout. On timeout the
+ * abort signal goes out, the backend gets a bounded grace window to clean
+ * up, and a backend that ignores it is asked to evict its orphans; either
+ * way the error propagates so the caller releases the lock.
+ */
+async function runOneShotWithTimeout(
+  background: NonNullable<Backend["background"]>,
+  params: OneShotAgentParams,
+  abortController: AbortController,
+  task: TaskHandle,
+  runCount: number,
+  heartbeatLogFile: string,
+): Promise<Awaited<ReturnType<typeof background.runOneShotAgent>>> {
   let timeoutFired = false;
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -262,7 +235,7 @@ export async function runHeartbeatAgent(
   });
 
   const agentPromise = (async () => {
-    const usage = await background.runOneShotAgent(oneShotParams);
+    const usage = await background.runOneShotAgent(params);
     await appendHeartbeatLog(
       heartbeatLogFile,
       `\n---\n**Heartbeat #${runCount} completed at ${new Date().toISOString()}**\n`,
@@ -270,9 +243,8 @@ export async function runHeartbeatAgent(
     return usage;
   })();
 
-  let usage: Awaited<typeof agentPromise>;
   try {
-    usage = await Promise.race([agentPromise, timeoutPromise]);
+    return await Promise.race([agentPromise, timeoutPromise]);
   } catch (err) {
     // Snapshot timeout state and clear the timer immediately, BEFORE any awaits
     // in the error-handling path. Otherwise the timer can fire during the async
@@ -289,28 +261,7 @@ export async function runHeartbeatAgent(
       `\n---\n**Heartbeat #${runCount} FAILED at ${new Date().toISOString()}:** ${err}\n`,
     );
     if (wasTimeout) {
-      // Give the backend a bounded grace window to clean up after the abort
-      // signal — but never wait indefinitely. If the backend ignores the abort,
-      // release the lock anyway and ask it to evict any orphan subprocesses.
-      const settled = await raceWithTimeout(
-        agentPromise.catch(() => "settled"),
-        heartbeatAbortGraceMs(),
-      );
-      if (settled === "timed_out") {
-        logWarn(
-          "heartbeat",
-          `Heartbeat #${runCount} backend ignored abort after ${heartbeatAbortGraceMs()}ms — releasing lock and evicting orphan subprocesses`,
-        );
-        // Fire-and-forget — we don't block the next heartbeat on subprocess
-        // cleanup. Backends that don't spawn per-run subprocesses leave
-        // evictOrphanSubprocesses unimplemented; that's fine.
-        const evict = background.evictOrphanSubprocesses;
-        if (evict) {
-          evict("heartbeat").catch((sweepErr: unknown) => {
-            logError("heartbeat", "Orphan subprocess sweep failed", sweepErr);
-          });
-        }
-      }
+      await evictAfterIgnoredAbort(background, agentPromise, runCount);
     } else {
       // Non-timeout failure path — agentPromise has already settled.
       await agentPromise.catch(() => {});
@@ -321,7 +272,119 @@ export async function runHeartbeatAgent(
     // resolution of Promise.race() needs this too.
     if (timeoutHandle) clearTimeout(timeoutHandle);
   }
+}
 
+/**
+ * Give the backend a bounded grace window to clean up after the abort
+ * signal — but never wait indefinitely. If the backend ignores the abort,
+ * release the lock anyway and ask it to evict any orphan subprocesses.
+ */
+async function evictAfterIgnoredAbort(
+  background: NonNullable<Backend["background"]>,
+  agentPromise: Promise<unknown>,
+  runCount: number,
+): Promise<void> {
+  const settled = await raceWithTimeout(
+    agentPromise.catch(() => "settled"),
+    heartbeatAbortGraceMs(),
+  );
+  if (settled !== "timed_out") return;
+  logWarn(
+    "heartbeat",
+    `Heartbeat #${runCount} backend ignored abort after ${heartbeatAbortGraceMs()}ms — releasing lock and evicting orphan subprocesses`,
+  );
+  // Fire-and-forget — we don't block the next heartbeat on subprocess
+  // cleanup. Backends that don't spawn per-run subprocesses leave
+  // evictOrphanSubprocesses unimplemented; that's fine.
+  const evict = background.evictOrphanSubprocesses;
+  if (evict) {
+    evict("heartbeat").catch((sweepErr: unknown) => {
+      logError("heartbeat", "Orphan subprocess sweep failed", sweepErr);
+    });
+  }
+}
+
+export async function runHeartbeatAgent(
+  lastRunTimestamp: number,
+  runCount: number,
+): Promise<string> {
+  const config = hb.config;
+  if (!config) {
+    throw new Error("Heartbeat agent not initialized");
+  }
+
+  const lastRunIso =
+    lastRunTimestamp > 0 ? new Date(lastRunTimestamp).toISOString() : "never";
+  const workspace = config.workspace ?? dirs.workspace;
+  const memoryFile = pathFiles.memory;
+  const prompt = renderHeartbeatPrompt({
+    lastRunIso,
+    runCount,
+    workspace,
+    logsDir: dirs.logs,
+    memoryFile,
+    instructionsFile: resolve(workspace, "heartbeat-instructions.md"),
+    dailyMemoryFile: resolve(dirs.dailyMemory, `${toYMD(new Date())}.md`),
+  });
+
+  const model = config.heartbeatModel ?? config.model ?? getDefaultModel();
+  const backend = config.getBackend?.() ?? null;
+  const background = backend?.background;
+  if (!background) {
+    throw new Error(
+      "Heartbeat requires a backend that implements the background capability",
+    );
+  }
+
+  // Effort is resolved against the heartbeat backend's catalog, not just
+  // copied from config — a level the model doesn't offer is dropped with a
+  // reason rather than handed to the SDK.
+  const effort = await resolveBackgroundEffort({
+    requested: config.heartbeatEffort,
+    model,
+    backend,
+  });
+  if (effort.dropped) {
+    logWarn("heartbeat", effort.dropped);
+  }
+
+  const heartbeatLogFile = await openHeartbeatLog(
+    runCount,
+    lastRunIso,
+    model,
+    effort,
+    prompt,
+  );
+
+  // AbortController is the canonical way to signal a cancellation to a backend.
+  // .abort() should tear down any spawned subprocess (Claude SDK) or stop
+  // streaming (Kilo/OpenCode). We defend against backends that ignore it — see
+  // heartbeatAbortGraceMs.
+  const abortController = new AbortController();
+  const task = taskTable.begin({
+    kind: "heartbeat",
+    label: `#${runCount}`,
+    abort: () => abortController.abort(),
+  });
+  task.bind({ model });
+
+  const usage = await runOneShotWithTimeout(
+    background,
+    {
+      prompt,
+      systemPrompt: buildHeartbeatSystemPrompt(),
+      workspace,
+      model,
+      ...(effort.effort ? { reasoningEffort: effort.effort } : {}),
+      contextLabel: "heartbeat",
+      abortController,
+      appendLog: (text) => appendHeartbeatLog(heartbeatLogFile, text),
+    },
+    abortController,
+    task,
+    runCount,
+    heartbeatLogFile,
+  );
   task.succeed(usage ?? undefined);
   return heartbeatLogFile;
 }
