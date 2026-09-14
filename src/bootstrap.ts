@@ -35,6 +35,7 @@ import {
 import { initDream, maybeStartDream } from "./core/background/dream.js";
 import { initHeartbeat } from "./core/background/heartbeat/index.js";
 import { log, logWarn, logDebug } from "./util/log.js";
+import { bootPhase } from "./util/boot-timer.js";
 import type { TalonConfig } from "./util/config.js";
 import { resolveFrontendIdAmong } from "./core/frontend-runtime/routing.js";
 import type { Frontend } from "./core/frontend-runtime/index.js";
@@ -193,10 +194,13 @@ export async function initBackendAndDispatcher(
   // `config.dreamBackend`. When two roles point at the same id the
   // pool reuses one instance (refcounted) — a single-backend setup
   // still spins up exactly one instance.
-  await initBackendPool(config, {
-    getBridgePort: () => resolveFrontend(undefined, frontends).getBridgePort(),
-    frontendName: resolveFrontend(undefined, frontends).name,
-  });
+  await bootPhase("backend pool", () =>
+    initBackendPool(config, {
+      getBridgePort: () =>
+        resolveFrontend(undefined, frontends).getBridgePort(),
+      frontendName: resolveFrontend(undefined, frontends).name,
+    }),
+  );
   const backend = getBackendForRole("chat");
 
   // Model audit — verify the models pinned in config still exist on

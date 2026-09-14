@@ -27,6 +27,7 @@ import { pruneSettledTriggers } from "./storage/trigger-store.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { spawnSuccessor } from "./util/respawn.js";
 import { log, logError, logWarn } from "./util/log.js";
+import { bootPhase, bootReport } from "./util/boot-timer.js";
 import {
   getVfs,
   mountNamespaceFs,
@@ -51,7 +52,7 @@ import {
   removePidRecordIfOwnedBy,
 } from "./core/daemon/pidfile.js";
 
-const { config } = await bootstrap();
+const { config } = await bootPhase("bootstrap", () => bootstrap());
 
 // Record this process as the daemon. The gateway port is appended once
 // the gateway binds (it may fall back from the default on EADDRINUSE).
@@ -69,15 +70,19 @@ gateway.onShutdownRequest((reason) => void gracefulShutdown(reason));
 const configuredFrontends = [...new Set(getFrontends(config))];
 
 const frontends: Frontend[] = [];
-for (const name of configuredFrontends) {
-  const frontend = await createFrontendById(name, config, gateway);
-  frontends.push(frontend);
-  log("bot", `Frontend: ${getFrontendDescriptor(name)?.label ?? name}`);
-}
+await bootPhase("frontends create", async () => {
+  for (const name of configuredFrontends) {
+    const frontend = await createFrontendById(name, config, gateway);
+    frontends.push(frontend);
+    log("bot", `Frontend: ${getFrontendDescriptor(name)?.label ?? name}`);
+  }
+});
 
 // ── Create backend + wire dispatcher ─────────────────────────────────────────
 
-const { backend } = await initBackendAndDispatcher(config, frontends);
+const { backend } = await bootPhase("backend + dispatcher", () =>
+  initBackendAndDispatcher(config, frontends),
+);
 gateway.backend = backend;
 
 // Subscribe the gateway to chat-role rebinds so `/model`, `/settings`,
@@ -303,7 +308,10 @@ async function main(): Promise<void> {
       "Terminal frontend shares stdin with the other frontends; it will run alongside them without blocking startup.",
     );
   }
-  await Promise.all(blockingFrontends.map((frontend) => frontend.start()));
+  await bootPhase("frontends start", () =>
+    Promise.all(blockingFrontends.map((frontend) => frontend.start())),
+  );
+  log("bot", `Ready in ${bootReport()}`);
   for (const frontend of stdinFrontends) {
     void frontend
       .start()
