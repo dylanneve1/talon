@@ -24,7 +24,7 @@ import {
   type AuthProvider,
 } from "./status.js";
 
-export const LOGIN_TIMEOUT_MS = 15 * 60_000;
+const LOGIN_TIMEOUT_MS = 15 * 60_000;
 
 export interface LoginPrompt {
   /** Page the human must open. */
@@ -35,7 +35,7 @@ export interface LoginPrompt {
   needsCode: boolean;
 }
 
-export type LoginOutcome =
+type LoginOutcome =
   | { ok: true }
   | { ok: false; reason: "cancelled" | "timeout" | "failed"; detail?: string };
 

@@ -30,7 +30,7 @@ import {
 import { logWarn } from "../../util/log.js";
 import { escapeHtml } from "./formatting.js";
 
-export type AuthKeyboard = InlineKeyboardButton[][];
+type AuthKeyboard = InlineKeyboardButton[][];
 
 export interface AuthPanel {
   text: string;

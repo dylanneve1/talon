@@ -17,8 +17,8 @@ import {
   type ProviderAuthStatus,
 } from "./status.js";
 
-export const WARN_DAYS = 7;
-export const CHECK_INTERVAL_MS = 6 * 60 * 60_000;
+const WARN_DAYS = 7;
+const CHECK_INTERVAL_MS = 6 * 60 * 60_000;
 
 /** The alert key for a status, or undefined when nothing needs saying. */
 export function alertKeyFor(s: ProviderAuthStatus, now = Date.now()): string | undefined {
