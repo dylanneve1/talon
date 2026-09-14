@@ -37,6 +37,58 @@ async function replyHtmlChunked(ctx: Context, text: string): Promise<void> {
   }
 }
 
+/** `/admin chats` — every active session, newest first, titled via getChat. */
+async function replyActiveChats(
+  ctx: Context,
+  bot: Bot,
+  config: TalonConfig,
+): Promise<void> {
+  const sessions = getAllSessions();
+  if (sessions.length === 0) {
+    await ctx.reply("No active sessions.");
+    return;
+  }
+  sessions.sort((a, b) => (b.info.lastActive || 0) - (a.info.lastActive || 0));
+
+  const titles = new Map<string, string>();
+  await Promise.all(
+    sessions.map(async (s) => {
+      try {
+        const id = parseInt(s.chatId, 10);
+        if (isNaN(id)) return;
+        const chat = await bot.api.getChat(id);
+        titles.set(
+          s.chatId,
+          "title" in chat
+            ? (chat.title ?? "DM")
+            : "first_name" in chat
+              ? (chat.first_name ?? "DM")
+              : "DM",
+        );
+      } catch {
+        /* inaccessible */
+      }
+    }),
+  );
+
+  const lines = sessions.map((s) => {
+    const age = s.info.lastActive
+      ? `${Math.round((Date.now() - s.info.lastActive) / 60000)}m ago`
+      : "?";
+    const title = titles.get(s.chatId) ?? s.chatId;
+    const model = formatModelLabel(
+      getChatSettings(s.chatId).model ?? config.model,
+    );
+    // `model` is a catalog id (OpenRouter/Kilo ids are free-form), so
+    // it gets the same escaping the title already had.
+    return `<b>${escapeHtml(title)}</b> <code>${s.chatId}</code>\n  ${s.info.turns} turns | ${age} | ${escapeHtml(model)}`;
+  });
+  await replyHtmlChunked(
+    ctx,
+    `<b>Active chats (${sessions.length})</b>\n\n` + lines.join("\n\n"),
+  );
+}
+
 export async function handleAdminCommand(
   ctx: Context,
   bot: Bot,
@@ -47,52 +99,7 @@ export async function handleAdminCommand(
 
   switch (subcommand) {
     case "chats": {
-      const sessions = getAllSessions();
-      if (sessions.length === 0) {
-        await ctx.reply("No active sessions.");
-        return;
-      }
-      sessions.sort(
-        (a, b) => (b.info.lastActive || 0) - (a.info.lastActive || 0),
-      );
-
-      const titles = new Map<string, string>();
-      await Promise.all(
-        sessions.map(async (s) => {
-          try {
-            const id = parseInt(s.chatId, 10);
-            if (isNaN(id)) return;
-            const chat = await bot.api.getChat(id);
-            titles.set(
-              s.chatId,
-              "title" in chat
-                ? (chat.title ?? "DM")
-                : "first_name" in chat
-                  ? (chat.first_name ?? "DM")
-                  : "DM",
-            );
-          } catch {
-            /* inaccessible */
-          }
-        }),
-      );
-
-      const lines = sessions.map((s) => {
-        const age = s.info.lastActive
-          ? `${Math.round((Date.now() - s.info.lastActive) / 60000)}m ago`
-          : "?";
-        const title = titles.get(s.chatId) ?? s.chatId;
-        const model = formatModelLabel(
-          getChatSettings(s.chatId).model ?? config.model,
-        );
-        // `model` is a catalog id (OpenRouter/Kilo ids are free-form), so
-        // it gets the same escaping the title already had.
-        return `<b>${escapeHtml(title)}</b> <code>${s.chatId}</code>\n  ${s.info.turns} turns | ${age} | ${escapeHtml(model)}`;
-      });
-      await replyHtmlChunked(
-        ctx,
-        `<b>Active chats (${sessions.length})</b>\n\n` + lines.join("\n\n"),
-      );
+      await replyActiveChats(ctx, bot, config);
       return;
     }
 

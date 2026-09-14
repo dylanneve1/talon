@@ -98,8 +98,8 @@
   {
     "file": "src/frontend/telegram/admin.ts",
     "name": "handleAdminCommand",
-    "lines": 233,
-    "cx": 43
+    "lines": 191,
+    "cx": 31
   },
   {
     "file": "src/frontend/telegram/callbacks/model.ts",
