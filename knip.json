@@ -20,8 +20,7 @@
   ],
   "ignoreDependencies": [
     "@brave/brave-search-mcp-server",
-    "@playwright/mcp",
-    "@swc/core"
+    "@playwright/mcp"
   ],
   "ignoreBinaries": [
     "gleam",
