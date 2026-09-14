@@ -172,17 +172,5 @@
     "name": "createInput",
     "lines": 292,
     "cx": 53
-  },
-  {
-    "file": "src/frontend/whatsapp/index.ts",
-    "name": "createWhatsAppFrontend",
-    "lines": 601,
-    "cx": 103
-  },
-  {
-    "file": "src/frontend/whatsapp/index.ts",
-    "name": "handleInbound",
-    "lines": 197,
-    "cx": 50
   }
 ]
