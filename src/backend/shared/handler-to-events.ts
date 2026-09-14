@@ -23,6 +23,7 @@ import {
 import { classify } from "../../core/errors.js";
 import type { ChatRunParams } from "../../core/agent-runtime/capabilities.js";
 import type { QueryParams, QueryResult } from "./handler-types.js";
+import { buildResultEvents } from "./result-events.js";
 
 const SENTINEL = Symbol("handler-to-events:sentinel");
 
@@ -205,21 +206,15 @@ export async function* handlerToEvents(
     return;
   }
 
-  const usage = {
-    inputTokens: result.inputTokens,
-    outputTokens: result.outputTokens,
-    cacheRead: result.cacheRead,
-    cacheWrite: result.cacheWrite,
-    modelId: params.model.id,
-  };
-  yield { type: "usage", usage };
-  yield {
-    type: "completed",
-    result: {
-      text: result.text,
-      durationMs: result.durationMs,
-      usage,
-      modelId: params.model.id,
+  yield* buildResultEvents({
+    text: result.text,
+    durationMs: result.durationMs,
+    usage: {
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      cacheRead: result.cacheRead,
+      cacheWrite: result.cacheWrite,
     },
-  };
+    modelId: params.model.id,
+  });
 }

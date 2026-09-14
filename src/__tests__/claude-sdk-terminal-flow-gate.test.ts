@@ -100,6 +100,9 @@ vi.mock("../storage/sessions.js", () => ({
   setSessionId: vi.fn(),
   setSessionName: vi.fn(),
   updateLiveTurn: vi.fn(),
+  clearLiveTurn: vi.fn(),
+  recordSessionMetrics: vi.fn(),
+  recordSessionMetricEvent: vi.fn(),
 }));
 
 vi.mock("../storage/chat-settings.js", () => ({
@@ -136,30 +139,25 @@ vi.mock("../storage/metrics.js", () => ({
   recordHistogram: vi.fn(),
 }));
 
-vi.mock("../backend/shared/index.js", () => ({
-  formatUserPrompt: ({ text }: { text: string }) => text,
-  prepareSystemPrompt: vi.fn(),
-  extractSessionName: () => null,
+// The shared post-stream phases run for real (against the storage stubs
+// above); only the prompt assembly is stubbed out. The flow-violation
+// detector is spied at its own module so the spy sees the call the shared
+// `enforceTrailingProse` phase makes.
+vi.mock("../backend/shared/flow-violation.js", async (importActual) => ({
+  ...(await importActual<
+    typeof import("../backend/shared/flow-violation.js")
+  >()),
   detectFlowViolation: (...args: Parameters<typeof detectFlowViolationSpy>) =>
     detectFlowViolationSpy(...args),
-  FLOW_VIOLATION_MAX_RETRIES: 3,
-  captureDeliveredText: () => null,
-  summarizeUsage: () => "0ms in=0 out=0 cache=0% tools=0",
+}));
+
+vi.mock("../backend/shared/index.js", async (importActual) => ({
+  ...(await importActual<typeof import("../backend/shared/index.js")>()),
+  formatUserPrompt: ({ text }: { text: string }) => text,
+  prepareSystemPrompt: vi.fn(),
   buildDeliveryContract: () => "",
   buildFlowViolationReminder: () => "",
   buildFirstTurnReminder: () => "",
-  recordToolCall: vi.fn(),
-  recordTurnMetrics: vi.fn(),
-  recordFailedTurnAccounting: vi.fn(),
-  recordFlowViolation: vi.fn(),
-  crossTurnVerdict: () => "none",
-  priorLookbackOverflow: () => undefined,
-  noteLookbackRisk: vi.fn(),
-  CACHE_LOOKBACK_BLOCKS: 20,
-  applyRetryDecision: async ({ err }: { err: unknown }) => ({
-    retry: undefined,
-    classified: err instanceof Error ? err : new Error(String(err)),
-  }),
 }));
 
 async function drainChatTurn(chatId: string, text: string) {

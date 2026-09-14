@@ -133,6 +133,10 @@ vi.mock("../storage/sessions.js", () => ({
   resetSession: vi.fn(),
   setSessionId: vi.fn(),
   setSessionName: vi.fn(),
+  updateLiveTurn: vi.fn(),
+  clearLiveTurn: vi.fn(),
+  recordSessionMetrics: vi.fn(),
+  recordSessionMetricEvent: vi.fn(),
 }));
 
 vi.mock("../storage/chat-settings.js", () => ({
@@ -166,32 +170,15 @@ vi.mock("../storage/metrics.js", () => ({
   recordHistogram: vi.fn(),
 }));
 
-vi.mock("../backend/shared/index.js", () => ({
+// The shared post-stream phases run for real (against the storage stubs
+// above); only the prompt assembly is stubbed out.
+vi.mock("../backend/shared/index.js", async (importActual) => ({
+  ...(await importActual<typeof import("../backend/shared/index.js")>()),
   formatUserPrompt: ({ text }: { text: string }) => text,
   prepareSystemPrompt: vi.fn(),
-  extractSessionName: () => null,
-  detectFlowViolation: () => ({ violated: false }),
-  FLOW_VIOLATION_MAX_RETRIES: 3,
-  captureDeliveredText: () => null,
-  summarizeUsage: () => "0ms in=0 out=0 cache=0% tools=0",
   buildDeliveryContract: () => "",
   buildFlowViolationReminder: () => "",
   buildFirstTurnReminder: () => "",
-  recordToolCall: vi.fn(),
-  recordTurnMetrics: vi.fn(),
-  recordFlowViolation: vi.fn(),
-  // Tests don't exercise the retry path (the watchdog short-circuits the
-  // catch block when it fires). Stub returns the no-retry shape so the
-  // handler's `if (outcome.retry) return outcome.retry` falls through to
-  // the throw — preserving error visibility if a test ever triggers it.
-  crossTurnVerdict: () => "none",
-  priorLookbackOverflow: () => undefined,
-  noteLookbackRisk: vi.fn(),
-  CACHE_LOOKBACK_BLOCKS: 20,
-  applyRetryDecision: async ({ err }: { err: unknown }) => ({
-    retry: undefined,
-    classified: err instanceof Error ? err : new Error(String(err)),
-  }),
 }));
 
 /**
@@ -270,6 +257,9 @@ describe("Claude SDK chat handler — post-result watchdog", () => {
         provider: "anthropic",
       },
     ]);
+    // Warm the fresh module graph so the timed drain below measures the
+    // watchdog, not the import of the handler and its shared phases.
+    await import("../backend/claude-sdk/handler.js");
   });
 
   it("returns within the grace window when the SDK iterator hangs after `result`", async () => {
