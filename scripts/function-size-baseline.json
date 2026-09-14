@@ -90,12 +90,6 @@
     "cx": 93
   },
   {
-    "file": "src/frontend/discord/index.ts",
-    "name": "createDiscordFrontend",
-    "lines": 316,
-    "cx": 43
-  },
-  {
     "file": "src/frontend/native/index.ts",
     "name": "createNativeFrontend",
     "lines": 1294,
