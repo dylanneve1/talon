@@ -256,7 +256,10 @@ describe("gateway shared actions", () => {
         42,
       );
       expect(result).toEqual({ ok: true, text: "search results here" });
-      expect(mockSearchHistory).toHaveBeenCalledWith("42", "hello", 20);
+      expect(mockSearchHistory).toHaveBeenCalledWith("42", "hello", 20, {
+        after: undefined,
+        before: undefined,
+      });
     });
 
     it("passes custom limit", async () => {
@@ -264,7 +267,10 @@ describe("gateway shared actions", () => {
         { action: "search_history", query: "test", limit: 5 },
         42,
       );
-      expect(mockSearchHistory).toHaveBeenCalledWith("42", "test", 5);
+      expect(mockSearchHistory).toHaveBeenCalledWith("42", "test", 5, {
+        after: undefined,
+        before: undefined,
+      });
     });
 
     it("clamps limit to 100", async () => {
@@ -272,12 +278,18 @@ describe("gateway shared actions", () => {
         { action: "search_history", query: "test", limit: 999 },
         42,
       );
-      expect(mockSearchHistory).toHaveBeenCalledWith("42", "test", 100);
+      expect(mockSearchHistory).toHaveBeenCalledWith("42", "test", 100, {
+        after: undefined,
+        before: undefined,
+      });
     });
 
     it("uses empty string when query is missing", async () => {
       await handleSharedAction({ action: "search_history" }, 42);
-      expect(mockSearchHistory).toHaveBeenCalledWith("42", "", 20);
+      expect(mockSearchHistory).toHaveBeenCalledWith("42", "", 20, {
+        after: undefined,
+        before: undefined,
+      });
     });
   });
 
