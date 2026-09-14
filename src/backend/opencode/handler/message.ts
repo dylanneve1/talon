@@ -7,6 +7,7 @@ import type { QueryParams, QueryResult } from "../../shared/handler-types.js";
 import { runRemoteChatTurn } from "../../remote-server/chat-turn.js";
 import {
   ensureServer,
+  trackActiveTurn,
   ensureSession,
   ensureChatMcpServer,
   ensurePluginMcpServers,
@@ -26,6 +27,7 @@ export function handleMessage(params: QueryParams): Promise<QueryResult> {
       label: "OpenCode",
       getConfig,
       ensureServer,
+      trackActiveTurn,
       parseModelSelection: parseStoredOpenCodeModelSelection,
       resolveProviderID,
       ensureSession,

@@ -64,6 +64,7 @@ export const stopOpenCodeServer = opencode.stop;
 export const {
   onServerStop,
   ensureServer,
+  trackActiveTurn,
   ensureChatMcpServer,
   ensurePluginMcpServers,
   buildToolOverrides,

@@ -82,6 +82,7 @@ export const stopKiloServer = kilo.stop;
 export const {
   onServerStop,
   ensureServer,
+  trackActiveTurn,
   ensureChatMcpServer,
   ensurePluginMcpServers,
   buildToolOverrides,
