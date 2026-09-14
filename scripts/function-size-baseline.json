@@ -90,12 +90,6 @@
     "cx": 43
   },
   {
-    "file": "src/frontend/native/server.ts",
-    "name": ".buildRoutes",
-    "lines": 326,
-    "cx": 58
-  },
-  {
     "file": "src/frontend/teams/index.ts",
     "name": ".start",
     "lines": 263,
