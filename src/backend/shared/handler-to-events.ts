@@ -23,7 +23,7 @@ import {
 import { classify } from "../../core/errors.js";
 import type { ChatRunParams } from "../../core/agent-runtime/capabilities.js";
 import type { QueryParams, QueryResult } from "./handler-types.js";
-import { buildResultEvents } from "./turn-phases.js";
+import { buildResultEvents } from "./result-events.js";
 
 const SENTINEL = Symbol("handler-to-events:sentinel");
 

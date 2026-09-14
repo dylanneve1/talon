@@ -91,6 +91,7 @@ export {
   nameSessionFromFirstMessage,
   enforceTrailingProse,
   finishCallbackTurn,
-  buildResultEvents,
   turnUsageSnapshot,
 } from "./turn-phases.js";
+
+export { buildResultEvents } from "./result-events.js";

@@ -10,15 +10,14 @@
  *   2. `nameSessionFromFirstMessage` — the session title.
  *   3. `enforceTrailingProse` — the tool-only delivery contract and the
  *      flow-violation re-prompt decision.
- *   4. `finishCallbackTurn` / `buildResultEvents` — the delivery summary
- *      log lines and the `QueryResult` / `usage` + `completed` tail.
+ *   4. `finishCallbackTurn` — the delivery summary log lines and the
+ *      `QueryResult` (the event-stream tail is `result-events.ts`).
  *
  * The functions take the stream state and explicit config bits and return
  * explicit results; the handler decides what to do with a retry decision
  * because recursion is the handler's own entry point.
  */
 
-import type { AgentEvent } from "../../core/agent-runtime/events.js";
 import {
   getSession,
   recordUsage,
@@ -275,30 +274,4 @@ export function finishCallbackTurn(
     toolCalls: state.toolCalls,
   });
   return { text: responseText, durationMs, ...usage };
-}
-
-/**
- * The `usage` + `completed` pair that closes every successful
- * `runChatTurn` stream, whether the backend emits events natively or
- * through `handlerToEvents`.
- */
-export function buildResultEvents(inputs: {
-  text: string;
-  durationMs: number;
-  usage: TokenUsageSnapshot;
-  modelId: string;
-}): [AgentEvent, AgentEvent] {
-  const usage = { ...inputs.usage, modelId: inputs.modelId };
-  return [
-    { type: "usage", usage },
-    {
-      type: "completed",
-      result: {
-        text: inputs.text,
-        durationMs: inputs.durationMs,
-        usage,
-        modelId: inputs.modelId,
-      },
-    },
-  ];
 }
