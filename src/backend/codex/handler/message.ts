@@ -1,12 +1,13 @@
 /**
  * Codex main message handler.
  *
- * Orchestrates the full turn lifecycle on top of `@openai/codex-sdk`'s
- * `Thread.runStreamed`. Shares the non-SDK-specific primitives with the other
- * backends via `../../shared/`. Codex-specific bits: reading the `runStreamed`
- * event stream, translating items into shared stream state (see `events.ts`),
- * resuming via `codex.resumeThread(id)`, the rollout-JSONL live/settle usage
- * accounting, and the ChatGPT-OAuth model-mismatch recovery ladder.
+ * Orchestrates the turn on top of `@openai/codex-sdk`'s `Thread.runStreamed`.
+ * Codex-specific bits: reading the `runStreamed` event stream, translating
+ * items into shared stream state (see `events.ts`), resuming via
+ * `codex.resumeThread(id)`, the rollout-JSONL live/settle usage accounting
+ * (`rollout-accounting.ts`), and the ChatGPT-OAuth model-mismatch recovery
+ * ladder. The post-stream phases are the shared ones in
+ * `backend/shared/turn-phases.ts`.
  */
 
 import type { Thread, Usage } from "@openai/codex-sdk";
@@ -14,9 +15,6 @@ import type { QueryParams, QueryResult } from "../../shared/handler-types.js";
 import {
   getSession,
   incrementTurns,
-  recordUsage,
-  setSessionName,
-  setSessionId,
   resetSession,
 } from "../../../storage/sessions.js";
 import { getChatSettings } from "../../../storage/chat-settings.js";
@@ -26,20 +24,19 @@ import { incrementCounter } from "../../../storage/metrics.js";
 
 import {
   createStreamState,
-  recordTokens,
   finalizeResponseText,
   formatUserPrompt,
   prepareSystemPrompt,
-  extractSessionName,
-  summarizeUsage,
   routeDelivery,
   buildDeliveryFailureReminder,
   TextBlockDeliveryError,
   applyRetryDecision,
-  recordTurnMetrics,
-  recordFailedTurnAccounting,
-  pushLiveUsage,
   registerTurnInterrupt,
+  accountTurn,
+  accountFailedTurn,
+  nameSessionFromFirstMessage,
+  finishCallbackTurn,
+  type StreamState,
 } from "../../shared/index.js";
 
 import {
@@ -47,7 +44,6 @@ import {
   CODEX_DEFAULT_MODEL,
   CODEX_CHATGPT_DEFAULT_MODEL,
   CODEX_THREAD_PERMISSIONS,
-  CODEX_LIVE_POLL_INTERVAL_MS,
 } from "../constants.js";
 import {
   frontendsForChat,
@@ -67,15 +63,23 @@ import {
 import { supportsReasoningLevel } from "../../../core/models/reasoning-levels.js";
 import { toCodexReasoningEffort } from "../effort.js";
 import { markOAuthIncompat } from "../oauth-incompat.js";
-import { readLastRolloutSnapshot } from "../token-usage.js";
 import { activeAborts } from "./state.js";
 import { CodexUsageExhaustedError, probeUsageExhausted } from "./usage.js";
-import { handleEvent } from "./events.js";
+import { handleEvent, type HandleEventContext } from "./events.js";
+import {
+  createRolloutAccounting,
+  type RolloutAccounting,
+} from "./rollout-accounting.js";
 
 // ── Local utility ───────────────────────────────────────────────────────────
 
 const errMsg = (e: unknown): string =>
   e instanceof Error ? e.message : String(e);
+
+/** The expected close on `end_turn` / a user interrupt: abort after the terminator. */
+const isTerminatorAbort = (state: StreamState, err: unknown): boolean =>
+  state.turnTerminated &&
+  (errMsg(err) === "AbortError" || /abort/i.test(errMsg(err)));
 
 /**
  * One-shot ChatGPT-OAuth model-mismatch recovery.
@@ -183,52 +187,24 @@ async function maybeFallbackForChatGptMismatch(
   return await handleMessage({ ...params, model: fallbackModel }, true);
 }
 
-// ── Main handler ────────────────────────────────────────────────────────────
+// ── Model resolution ────────────────────────────────────────────────────────
 
-export async function handleMessage(
-  params: QueryParams,
-  _retried = false,
-): Promise<QueryResult> {
-  const state = getState();
-  const config = state.config;
-  if (!config) {
-    throw new Error("Codex agent not initialized");
-  }
-  const codex = ensureCodex(params.chatId);
-
-  const {
-    chatId,
-    text,
-    senderName,
-    senderHandle,
-    isGroup,
-    messageId,
-    onTextBlock,
-    onToolUse,
-    onToolStart,
-    onToolEnd,
-  } = params;
-  const t0 = Date.now();
-  const session = getSession(chatId);
-  const previousTurns = session.turns;
-
-  // Resolve active model. Codex accepts arbitrary model strings; we
-  // pass through whatever the chat settings hold. The fallback chain
-  // is: chat-settings → config → auth-aware default. The auth-aware
-  // default is `gpt-5-codex` when an API key is present, `gpt-5.5`
-  // when only ChatGPT OAuth is configured (because `gpt-5-codex` is
-  // rejected with a 400 on ChatGPT-mode accounts).
-  const chatSettings = getChatSettings(chatId);
+/**
+ * Codex accepts arbitrary model strings; we pass through whatever the
+ * caller resolved (chat-settings → config) and fall back to the auth-aware
+ * default: `gpt-5-codex` when an API key is present, `gpt-5.5` when only
+ * ChatGPT OAuth is configured (because `gpt-5-codex` is rejected with a
+ * 400 on ChatGPT-mode accounts). A model known to be OAuth-incompat on a
+ * ChatGPT-OAuth account is swapped pre-emptively rather than letting the
+ * first turn fail.
+ */
+function resolveCodexModel(chatId: string, requested: string | undefined) {
   const authInfo = getCodexAuthInfo();
   const authAwareDefault =
     authInfo?.mode === "chatgpt"
       ? CODEX_CHATGPT_DEFAULT_MODEL
       : CODEX_DEFAULT_MODEL;
-  const requestedModel =
-    params.model ?? chatSettings.model ?? config.model ?? authAwareDefault;
-  // If the resolved model is known OAuth-incompat AND we're on
-  // ChatGPT OAuth, pre-emptively swap to the chatgpt-compatible
-  // fallback rather than letting the first turn fail.
+  const requestedModel = requested ?? authAwareDefault;
   let activeModel = requestedModel;
   if (authInfo?.mode === "chatgpt" && isCodexOAuthIncompat(requestedModel)) {
     const fallback =
@@ -246,6 +222,188 @@ export async function handleMessage(
     }
   }
   log("agent", `[${chatId}] Codex model resolved: ${activeModel}`);
+  return activeModel;
+}
+
+/**
+ * Availability check (does this model offer the level?) then vocabulary
+ * translation (can Codex express it?) — the latter is shared with the
+ * one-shot path via `toCodexReasoningEffort` so the two can't drift.
+ */
+async function buildThreadOptions(
+  activeModel: string,
+  requestedEffort: ReturnType<typeof getChatSettings>["effort"],
+) {
+  const activeModelInfo = await getModelInfo(activeModel).catch(
+    () => undefined,
+  );
+  const supportedReasoningLevels =
+    activeModelInfo?.supportedReasoningLevels ?? [];
+  const modelReasoningEffort =
+    requestedEffort &&
+    supportsReasoningLevel(requestedEffort, supportedReasoningLevels)
+      ? toCodexReasoningEffort(requestedEffort)
+      : undefined;
+  return {
+    activeModelInfo,
+    threadOptions: {
+      model: activeModel,
+      skipGitRepoCheck: true,
+      ...(modelReasoningEffort ? { modelReasoningEffort } : {}),
+      ...CODEX_THREAD_PERMISSIONS,
+    },
+  };
+}
+
+// ── Stream loop ─────────────────────────────────────────────────────────────
+
+function createEventContext(
+  params: QueryParams,
+  state: StreamState,
+): HandleEventContext {
+  return {
+    state,
+    seenToolCallIds: new Set<string>(),
+    startedToolIds: new Set<string>(),
+    codexToolMetrics: { count: 0 },
+    onTextBlock: params.onTextBlock,
+    onToolUse: params.onToolUse,
+    onToolStart: params.onToolStart,
+    onToolEnd: params.onToolEnd,
+    chatId: params.chatId,
+  };
+}
+
+/** What the stream reported, readable mid-loop by the failure path too. */
+type CodexStreamOutcome = {
+  usage: Usage | null;
+  turnFailedError: string | undefined;
+};
+
+async function driveCodexStream(inputs: {
+  thread: Thread;
+  inputText: string;
+  abortController: AbortController;
+  eventContext: HandleEventContext;
+  rollout: RolloutAccounting;
+  outcome: CodexStreamOutcome;
+}): Promise<void> {
+  const { abortController, eventContext, rollout, outcome } = inputs;
+  const { state, chatId } = eventContext;
+  const { events } = await inputs.thread.runStreamed(inputs.inputText, {
+    signal: abortController.signal,
+  });
+
+  for await (const event of events) {
+    if (abortController.signal.aborted && !state.turnTerminated) break;
+    handleEvent(event, eventContext);
+
+    if (event.type === "thread.started") {
+      rollout.threadId = event.thread_id;
+    } else if (event.type === "turn.completed") {
+      outcome.usage = event.usage;
+    } else if (event.type === "turn.failed") {
+      outcome.turnFailedError = event.error.message;
+    } else if (event.type === "error") {
+      outcome.turnFailedError = event.message;
+    }
+
+    rollout.pollLive();
+
+    // Terminator-driven abort: a delivery tool already shipped the
+    // reply via the bridge. Cancel further model generation to skip
+    // the wrap-up round-trip Codex would otherwise burn.
+    if (state.turnTerminated && !abortController.signal.aborted) {
+      log("agent", `[${chatId}] terminator fired — aborting Codex turn`);
+      try {
+        abortController.abort();
+      } catch (err) {
+        logWarn("agent", `[${chatId}] abort failed: ${errMsg(err)}`);
+      }
+    }
+  }
+}
+
+/**
+ * The failure ladder: ChatGPT-OAuth mismatch recovery, then the shared
+ * retry decision, then terminal-failure accounting and the throw.
+ */
+async function recoverCodexFailure(inputs: {
+  err: unknown;
+  params: QueryParams;
+  retried: boolean;
+  activeModel: string;
+  state: StreamState;
+  rollout: RolloutAccounting;
+  outcome: CodexStreamOutcome;
+  toolCalls: number;
+  t0: number;
+}): Promise<QueryResult> {
+  const { err, params, retried, activeModel, state, rollout, outcome } = inputs;
+  const { chatId } = params;
+
+  // Check both the captured event-stream message and the thrown error —
+  // Codex SDK surfaces it via both channels. Only use the thread ID from
+  // this run.
+  const fallback = await maybeFallbackForChatGptMismatch(
+    `${outcome.turnFailedError ?? ""} ${errMsg(err)}`,
+    activeModel,
+    params,
+    retried,
+    chatId,
+    rollout.threadId,
+  );
+  if (fallback) return fallback;
+
+  const decision = await applyRetryDecision({
+    err,
+    chatId,
+    activeModel,
+    retried,
+    params,
+    recurseWithRetried: (p) => handleMessage(p, true),
+    backendLabel: "Codex",
+    resetNoun: "thread",
+  });
+  if (decision.retry) return decision.retry;
+
+  // Terminal failure — recover whatever usage the rollout recorded
+  // before the turn died, then account for it.
+  await rollout.settle(outcome.usage).catch(() => {});
+  accountFailedTurn({
+    backend: "codex",
+    chatId,
+    state,
+    durationMs: Date.now() - inputs.t0,
+    model: activeModel,
+    toolCalls: inputs.toolCalls,
+  });
+  logError("agent", `[${chatId}] Codex error: ${decision.classified.message}`);
+  throw decision.classified;
+}
+
+// ── Main handler ────────────────────────────────────────────────────────────
+
+export async function handleMessage(
+  params: QueryParams,
+  _retried = false,
+): Promise<QueryResult> {
+  const config = getState().config;
+  if (!config) {
+    throw new Error("Codex agent not initialized");
+  }
+  const codex = ensureCodex(params.chatId);
+
+  const { chatId, text, senderName, senderHandle, isGroup, messageId } = params;
+  const t0 = Date.now();
+  const session = getSession(chatId);
+  const previousTurns = session.turns;
+
+  const chatSettings = getChatSettings(chatId);
+  const activeModel = resolveCodexModel(
+    chatId,
+    params.model ?? chatSettings.model ?? config.model,
+  );
 
   // Per-session frozen prompt + Codex-specific delivery suffix.
   const { text: systemPrompt } = prepareSystemPrompt({
@@ -270,49 +428,22 @@ export async function handleMessage(
   log("agent", `[${chatId}] <- (${text.length} chars)`);
   traceMessage(chatId, "in", text, { senderName, isGroup });
 
-  // Resume an existing Codex thread or start a fresh one. Codex persists
-  // threads under `~/.codex/sessions/`; we store the thread id in Talon's
-  // session storage so `resumeThread()` keeps the conversation continuous.
-  const activeModelInfo = await getModelInfo(activeModel).catch(
-    () => undefined,
+  // Resume the stored Codex thread (persisted under `~/.codex/sessions/`).
+  const { activeModelInfo, threadOptions } = await buildThreadOptions(
+    activeModel,
+    chatSettings.effort,
   );
-  const supportedReasoningLevels =
-    activeModelInfo?.supportedReasoningLevels ?? [];
-  const requestedEffort = chatSettings.effort;
-  // Availability check (does this model offer the level?) then vocabulary
-  // translation (can Codex express it?) — the latter is shared with the
-  // one-shot path via `toCodexReasoningEffort` so the two can't drift.
-  const modelReasoningEffort =
-    requestedEffort &&
-    supportsReasoningLevel(requestedEffort, supportedReasoningLevels)
-      ? toCodexReasoningEffort(requestedEffort)
-      : undefined;
-  const threadOptions = {
-    model: activeModel,
-    skipGitRepoCheck: true,
-    ...(modelReasoningEffort ? { modelReasoningEffort } : {}),
-    ...CODEX_THREAD_PERMISSIONS,
-  };
   const thread: Thread = session.sessionId
     ? codex.resumeThread(session.sessionId, threadOptions)
     : codex.startThread(threadOptions);
 
-  // Baseline cumulative token totals from the rollout JSONL, captured
-  // BEFORE the turn runs. `total_token_usage` accumulates across the
-  // whole session file, so this turn's usage = post-turn totals minus
-  // this baseline. Fresh threads have no rollout yet → zero baseline.
-  // `null` = resumed thread whose baseline couldn't be read.
-  const baselineTotals = session.sessionId
-    ? ((await readLastRolloutSnapshot(session.sessionId).catch(() => null))
-        ?.totals ?? null)
-    : { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
-
-  // Bind the stream state to the chat so token mutators mirror counts
-  // into the live-turn overlay — /status updates while the turn runs.
+  // Chat-bound state mirrors counts into the live-turn overlay.
   const streamState = createStreamState(chatId);
-  const seenToolCallIds = new Set<string>();
-  const startedToolIds = new Set<string>();
-  const codexToolMetrics = { count: 0 };
+  const rollout = await createRolloutAccounting({
+    state: streamState,
+    sessionId: session.sessionId,
+  });
+  const eventContext = createEventContext(params, streamState);
   const abortController = new AbortController();
   activeAborts.set(chatId, abortController);
   // A user interrupt is a synthetic turn terminator: marking the flag
@@ -324,217 +455,42 @@ export async function handleMessage(
     abortController.abort();
   });
 
-  let usage: Usage | null = null;
-  let turnFailedError: string | undefined;
-  let resolvedThreadId: string | undefined;
-
-  // Throttled mid-turn rollout poll. The Codex CLI appends a
-  // `token_count` event to the rollout JSONL after every API call, so
-  // tailing it during the turn gives live context-fill / token / API-call
-  // stats long before `turn.completed`. Fire-and-forget with an in-flight
-  // guard — never blocks the event loop, never throws.
-  let rolloutPollInFlight = false;
-  let lastRolloutPollAt = 0;
-  const pollRolloutForLiveStats = () => {
-    if (!resolvedThreadId || rolloutPollInFlight) return;
-    const now = Date.now();
-    if (now - lastRolloutPollAt < CODEX_LIVE_POLL_INTERVAL_MS) return;
-    rolloutPollInFlight = true;
-    lastRolloutPollAt = now;
-    readLastRolloutSnapshot(resolvedThreadId)
-      .then((snap) => {
-        if (!snap) return;
-        if (snap.usage) {
-          streamState.contextTokens = snap.usage.contextTokens;
-          if (snap.usage.contextWindow) {
-            streamState.contextWindow = snap.usage.contextWindow;
-          }
-        }
-        if (typeof snap.numApiCalls === "number") {
-          streamState.numApiCalls = snap.numApiCalls;
-        }
-        // Same delta-vs-baseline math as the post-loop accounting; the
-        // final pass recomputes and overwrites, so a torn mid-turn read
-        // can't corrupt the committed numbers.
-        if (snap.totals && baselineTotals) {
-          streamState.sdkInputTokens = Math.max(
-            0,
-            snap.totals.inputTokens - baselineTotals.inputTokens,
-          );
-          streamState.sdkOutputTokens = Math.max(
-            0,
-            snap.totals.outputTokens - baselineTotals.outputTokens,
-          );
-          streamState.sdkCacheRead = Math.max(
-            0,
-            snap.totals.cachedInputTokens - baselineTotals.cachedInputTokens,
-          );
-        }
-        pushLiveUsage(streamState);
-      })
-      .catch(() => {})
-      .finally(() => {
-        rolloutPollInFlight = false;
-      });
+  const outcome: CodexStreamOutcome = {
+    usage: null,
+    turnFailedError: undefined,
   };
-
-  // Final authoritative usage settlement — shared by the success post-loop
-  // and the terminal-failure path so failed turns account for the tokens
-  // they burned too. Codex's `turn.completed.usage` is CUMULATIVE across
-  // every API call in the turn — never in the per-turn units the shared
-  // stream state (and everything downstream: /status, the companion's
-  // per-message counts) speaks. The rollout JSONL's totals diffed against
-  // the pre-turn baseline are this turn's real usage; that is the ONLY
-  // authoritative source. The SDK figure is a last-resort fallback when
-  // the rollout can't be read, and it overstates multi-call turns.
-  const settleUsageAccounting = async (): Promise<void> => {
-    const last = resolvedThreadId
-      ? await readLastRolloutSnapshot(resolvedThreadId).catch(() => null)
-      : null;
-    if (last?.usage) {
-      streamState.contextTokens = last.usage.contextTokens;
-      if (last.usage.contextWindow) {
-        streamState.contextWindow = last.usage.contextWindow;
-      }
-    }
-    if (typeof last?.numApiCalls === "number") {
-      streamState.numApiCalls = last.numApiCalls;
-    }
-    if (last?.totals && baselineTotals) {
-      recordTokens(streamState, {
-        inputTokens: last.totals.inputTokens - baselineTotals.inputTokens,
-        outputTokens: last.totals.outputTokens - baselineTotals.outputTokens,
-        cacheRead:
-          last.totals.cachedInputTokens - baselineTotals.cachedInputTokens,
-        cacheWrite: 0, // Codex doesn't report cache writes
-      });
-    } else if (usage) {
-      recordTokens(streamState, {
-        inputTokens: usage.input_tokens,
-        outputTokens: usage.output_tokens,
-        cacheRead: usage.cached_input_tokens,
-        cacheWrite: 0, // Codex doesn't report cache writes
-      });
-    }
-  };
-
   const setupMs = Date.now() - t0;
   let turnMs = 0;
 
   try {
     const turnStart = Date.now();
-
-    // Codex's SDK does not expose `system` directly on `runStreamed`;
-    // system prompts are baked at thread creation via the CLI's config.
-    // Talon-side workaround: prepend the system prompt to the user prompt
-    // as a fenced block on the first turn only. Subsequent turns inherit
-    // instructions from the resumed thread.
+    // `runStreamed` has no `system` slot: prepend the system prompt as a
+    // fenced block on the first turn only; resumed threads inherit it.
     const inputText =
       previousTurns === 0 ? `${systemPrompt}\n\n---\n\n${prompt}` : prompt;
-
-    const { events } = await thread.runStreamed(inputText, {
-      signal: abortController.signal,
+    await driveCodexStream({
+      thread,
+      inputText,
+      abortController,
+      eventContext,
+      rollout,
+      outcome,
     });
-
-    for await (const event of events) {
-      if (abortController.signal.aborted && !streamState.turnTerminated) break;
-      handleEvent(event, {
-        state: streamState,
-        seenToolCallIds,
-        startedToolIds,
-        codexToolMetrics,
-        onTextBlock,
-        onToolUse,
-        onToolStart,
-        onToolEnd,
-        chatId,
-      });
-
-      if (event.type === "thread.started") {
-        resolvedThreadId = event.thread_id;
-      } else if (event.type === "turn.completed") {
-        usage = event.usage;
-      } else if (event.type === "turn.failed") {
-        turnFailedError = event.error.message;
-      } else if (event.type === "error") {
-        turnFailedError = event.message;
-      }
-
-      pollRolloutForLiveStats();
-
-      // Terminator-driven abort: a delivery tool already shipped the
-      // reply via the bridge. Cancel further model generation to skip
-      // the wrap-up round-trip Codex would otherwise burn.
-      if (streamState.turnTerminated && !abortController.signal.aborted) {
-        log("agent", `[${chatId}] terminator fired — aborting Codex turn`);
-        try {
-          abortController.abort();
-        } catch (err) {
-          logWarn("agent", `[${chatId}] abort failed: ${errMsg(err)}`);
-        }
-      }
-    }
-
     turnMs = Date.now() - turnStart;
   } catch (err) {
     // Aborted-by-terminator path is the expected close on `end_turn`.
-    if (
-      streamState.turnTerminated &&
-      (errMsg(err) === "AbortError" || /abort/i.test(errMsg(err)))
-    ) {
-      // Swallow — turn completed via terminator tool.
-    } else {
-      // ChatGPT-OAuth model-mismatch path. Check both the captured
-      // event-stream message and the thrown error — Codex SDK surfaces
-      // it via both channels. Only use the thread ID from this run.
-      const fallback = await maybeFallbackForChatGptMismatch(
-        `${turnFailedError ?? ""} ${errMsg(err)}`,
-        activeModel,
-        params,
-        _retried,
-        chatId,
-        resolvedThreadId,
-      );
-      if (fallback) return fallback;
-
-      const outcome = await applyRetryDecision({
+    if (!isTerminatorAbort(streamState, err)) {
+      return await recoverCodexFailure({
         err,
-        chatId,
-        activeModel,
-        retried: _retried,
         params,
-        recurseWithRetried: (p) => handleMessage(p, true),
-        backendLabel: "Codex",
-        resetNoun: "thread",
+        retried: _retried,
+        activeModel,
+        state: streamState,
+        rollout,
+        outcome,
+        toolCalls: eventContext.codexToolMetrics.count,
+        t0,
       });
-      if (outcome.retry) return outcome.retry;
-
-      // Terminal failure — recover whatever usage the rollout recorded
-      // before the turn died, then account for it (failed turns burn
-      // real tokens; they must not vanish from /status and /metrics).
-      await settleUsageAccounting().catch(() => {});
-      recordFailedTurnAccounting({
-        backend: "codex",
-        chatId,
-        durationMs: Date.now() - t0,
-        toolCalls: codexToolMetrics.count,
-        apiCalls: streamState.numApiCalls,
-        model: activeModel,
-        usage: {
-          inputTokens: streamState.sdkInputTokens,
-          outputTokens: streamState.sdkOutputTokens,
-          cacheRead: streamState.sdkCacheRead,
-          cacheWrite: streamState.sdkCacheWrite,
-        },
-        contextTokens: streamState.contextTokens,
-        contextWindow: streamState.contextWindow,
-      });
-
-      logError(
-        "agent",
-        `[${chatId}] Codex error: ${outcome.classified.message}`,
-      );
-      throw outcome.classified;
     }
   } finally {
     unregisterInterrupt();
@@ -548,9 +504,9 @@ export async function handleMessage(
   // Event-only ChatGPT-mismatch recovery: if the SDK emitted a
   // `turn.failed` carrying the mismatch text but DIDN'T rethrow, the
   // catch block above never fired. Catch it here too.
-  if (turnFailedError && !_retried) {
+  if (outcome.turnFailedError && !_retried) {
     const fallback = await maybeFallbackForChatGptMismatch(
-      turnFailedError,
+      outcome.turnFailedError,
       activeModel,
       params,
       _retried,
@@ -559,57 +515,35 @@ export async function handleMessage(
     if (fallback) return fallback;
   }
 
-  if (resolvedThreadId) {
-    const stored = getSession(chatId).sessionId;
-    if (stored !== resolvedThreadId) {
-      setSessionId(chatId, resolvedThreadId);
-    }
-  }
-
-  await settleUsageAccounting();
+  await rollout.settle(outcome.usage);
 
   // Surface a synthetic error if Codex failed the turn upstream.
-  if (turnFailedError) {
-    streamState.syntheticError = turnFailedError;
+  if (outcome.turnFailedError) {
+    streamState.syntheticError = outcome.turnFailedError;
   }
 
   const responseText = finalizeResponseText(streamState);
   const durationMs = Date.now() - t0;
-  recordTurnMetrics({
+  accountTurn({
     chatId,
     backend: "codex",
-    durationMs,
-    toolCalls: codexToolMetrics.count,
-    apiCalls: streamState.numApiCalls,
-    failed: Boolean(turnFailedError),
-    usage: {
-      inputTokens: streamState.sdkInputTokens,
-      outputTokens: streamState.sdkOutputTokens,
-      cacheRead: streamState.sdkCacheRead,
-      cacheWrite: streamState.sdkCacheWrite,
-    },
-  });
-
-  recordUsage(chatId, {
-    inputTokens: streamState.sdkInputTokens,
-    outputTokens: streamState.sdkOutputTokens,
-    cacheRead: streamState.sdkCacheRead,
-    cacheWrite: streamState.sdkCacheWrite,
+    state: streamState,
     durationMs,
     model: activeModel,
-    // contextTokens comes from the rollout JSONL when available. Falls
-    // back to 0 → /status shows "unknown", correct under-promise behaviour.
-    contextTokens: streamState.contextTokens || undefined,
-    // Prefer the rollout's reported context window over the static catalog.
-    contextWindow: streamState.contextWindow ?? activeModelInfo?.contextWindow,
-    numApiCalls: streamState.numApiCalls || undefined,
+    sessionId: rollout.threadId,
+    failed: Boolean(outcome.turnFailedError),
+    toolCalls: eventContext.codexToolMetrics.count,
+    context: {
+      // contextTokens comes from the rollout JSONL when available. Falls
+      // back to 0 → /status shows "unknown", correct under-promise behaviour.
+      contextTokens: streamState.contextTokens || undefined,
+      // Prefer the rollout's reported context window over the static catalog.
+      contextWindow:
+        streamState.contextWindow ?? activeModelInfo?.contextWindow,
+      numApiCalls: streamState.numApiCalls || undefined,
+    },
   });
-
-  // Set a descriptive session name from the user's first message.
-  if (previousTurns === 0) {
-    const name = extractSessionName(text);
-    if (name) setSessionName(chatId, name);
-  }
+  nameSessionFromFirstMessage({ chatId, text, previousTurns });
 
   // ── Delivery — decision tree shared with the other backends ────────────────
   let delivery;
@@ -619,7 +553,7 @@ export async function handleMessage(
       chatId,
       state: streamState,
       responseText,
-      onTextBlock,
+      onTextBlock: params.onTextBlock,
       propagateDeliveryFailure: true,
     });
   } catch (err) {
@@ -638,38 +572,13 @@ export async function handleMessage(
   }
 
   incrementTurns(chatId);
-
-  log(
-    "agent",
-    `[${chatId}] delivery: ${delivery.route} (${delivery.chars} chars)`,
-  );
-
-  log(
-    "agent",
-    `[${chatId}] -> (${summarizeUsage(
-      {
-        inputTokens: streamState.sdkInputTokens,
-        outputTokens: streamState.sdkOutputTokens,
-        cacheRead: streamState.sdkCacheRead,
-        cacheWrite: streamState.sdkCacheWrite,
-      },
-      { durationMs, toolCalls: streamState.toolCalls },
-    )} terminator=${streamState.turnTerminated ? "yes" : "no"} ` +
-      `delivered=${streamState.deliveredTextNorms.length} ` +
-      `respLen=${responseText.length} ` +
-      `setup=${setupMs}ms turn=${turnMs}ms)`,
-  );
-  traceMessage(chatId, "out", responseText, {
+  return finishCallbackTurn({
+    chatId,
+    state: streamState,
+    responseText,
     durationMs,
-    toolCalls: streamState.toolCalls,
+    setupMs,
+    turnMs,
+    delivery,
   });
-
-  return {
-    text: responseText,
-    durationMs,
-    inputTokens: streamState.sdkInputTokens,
-    outputTokens: streamState.sdkOutputTokens,
-    cacheRead: streamState.sdkCacheRead,
-    cacheWrite: streamState.sdkCacheWrite,
-  };
 }

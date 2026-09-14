@@ -24,6 +24,8 @@
  *   - `stream-state` — backend-agnostic accumulator for stream loops.
  *   - `turn-interrupt` — user-driven mid-turn interrupt registry (the
  *     shared `ChatBackend.interruptChatTurn` for callback backends).
+ *   - `turn-phases` — the post-stream phases (accounting, session name,
+ *     trailing-prose contract, result tail) every handler runs.
  *
  * What's NOT here (intentionally):
  *   - SDK-specific event types — those live in each backend.
@@ -34,11 +36,6 @@
 
 export { captureDeliveredText } from "./delivered-text.js";
 
-export {
-  FLOW_VIOLATION_MAX_RETRIES,
-  detectFlowViolation,
-} from "./flow-violation.js";
-
 export { registerTurnInterrupt } from "./turn-interrupt.js";
 
 export { formatUserPrompt } from "./prompt-format.js";
@@ -48,8 +45,6 @@ export {
   buildFlowViolationReminder,
   buildFirstTurnReminder,
 } from "./delivery-contract.js";
-
-export { extractSessionName } from "../../util/session-name.js";
 
 export { summarizeUsage } from "./usage.js";
 
@@ -65,8 +60,6 @@ export {
 } from "./cache-telemetry.js";
 
 export { prepareSystemPrompt, appendBackendSuffix } from "./system-prompt.js";
-
-export { classifyRetry } from "./model-retry.js";
 
 export {
   createStreamState,
@@ -88,11 +81,16 @@ export {
 
 export { sleep } from "./sleep.js";
 
-export {
-  recordToolCall,
-  recordTurnMetrics,
-  recordFailedTurnAccounting,
-  recordFlowViolation,
-} from "./metrics.js";
+export { recordToolCall } from "./metrics.js";
 
 export { applyRetryDecision } from "./handle-retry.js";
+
+export {
+  accountTurn,
+  accountFailedTurn,
+  nameSessionFromFirstMessage,
+  enforceTrailingProse,
+  finishCallbackTurn,
+  buildResultEvents,
+  turnUsageSnapshot,
+} from "./turn-phases.js";
