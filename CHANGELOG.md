@@ -1,5 +1,40 @@
 # Changelog
 
+## [3.34.0](https://github.com/dylanneve1/talon/compare/v3.33.4...v3.34.0) (2026-09-14)
+
+
+### Features
+
+* **metrics:** time each turn phase and each boot phase ([#861](https://github.com/dylanneve1/talon/issues/861)) ([229bead](https://github.com/dylanneve1/talon/commit/229beadda2761bad7407892aac091ba4a49fafcb))
+
+
+### Performance Improvements
+
+* **boot:** reconcile per-chat bindings concurrently and dedupe pool inits ([#863](https://github.com/dylanneve1/talon/issues/863)) ([a727698](https://github.com/dylanneve1/talon/commit/a72769804b0f2802fdfec58254e746fcd2918b42))
+
+
+### Documentation
+
+* cleanup plan + function-size ratchet ([#859](https://github.com/dylanneve1/talon/issues/859)) ([f3fd6c0](https://github.com/dylanneve1/talon/commit/f3fd6c0e153854d0fa3d9b7ccd3a27f1a222b4bb))
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump the production-dependencies group with 4 updates ([#858](https://github.com/dylanneve1/talon/issues/858)) ([97a3a4d](https://github.com/dylanneve1/talon/commit/97a3a4de5050f6b3412374e02ccbb160cdf8fdfa))
+
+
+### Code Refactoring
+
+* **backend:** name the SSE session-error and SDK result readers ([#873](https://github.com/dylanneve1/talon/issues/873)) ([e33a329](https://github.com/dylanneve1/talon/commit/e33a329b7d36a25575925f67f04c61a2074d077a))
+* **cli:** split the setup wizard into steps ([#860](https://github.com/dylanneve1/talon/issues/860)) ([af2ea08](https://github.com/dylanneve1/talon/commit/af2ea08768411f1ef274b202763ed473972894ec))
+* **core:** split the heartbeat run and the VFS file mount ([#870](https://github.com/dylanneve1/talon/issues/870)) ([902815b](https://github.com/dylanneve1/talon/commit/902815b72e7303f0cbf23b6454010680f76fc3d6))
+* **cron:** parse the schedule spec once for create and edit ([#864](https://github.com/dylanneve1/talon/issues/864)) ([73ff8cf](https://github.com/dylanneve1/talon/commit/73ff8cfe76a7a544474f56d7316a6f635392fded))
+* **discord:** split the frontend closure and table-dispatch component interactions ([#868](https://github.com/dylanneve1/talon/issues/868)) ([c49e5a7](https://github.com/dylanneve1/talon/commit/c49e5a78bc6ca3c8e1b8fe2fc379b79de3bf96bf))
+* **gateway:** declare the action gateway's routes in one table ([#866](https://github.com/dylanneve1/talon/issues/866)) ([7049626](https://github.com/dylanneve1/talon/commit/7049626f4a65def0b037239efed2be9efbe5e74b))
+* **native:** move the bridge's route handlers into route-group modules ([#874](https://github.com/dylanneve1/talon/issues/874)) ([6c8bf38](https://github.com/dylanneve1/talon/commit/6c8bf384d8c2a70dab783eb0883c45aca8499e5d))
+* **native:** split the frontend closure into runtime + modules ([#862](https://github.com/dylanneve1/talon/issues/862)) ([f28ea1c](https://github.com/dylanneve1/talon/commit/f28ea1c82d414fe81ae585ca54aa44601e588992))
+* **whatsapp:** split the frontend closure into runtime + modules ([#875](https://github.com/dylanneve1/talon/issues/875)) ([6de89a5](https://github.com/dylanneve1/talon/commit/6de89a53b68648ad1f5a09f97770b9d585aebcf6))
+
 ## [3.33.4](https://github.com/dylanneve1/talon/compare/v3.33.3...v3.33.4) (2026-09-14)
 
 
