@@ -10,6 +10,7 @@
  *   - `metrics`  — `metrics:*` (today ↔ all-time panel grain)
  *   - `model`    — `model:*` (menu / backend / browse controller)
  *   - `auth`     — `auth:*` (backend sign-in panel, admin only)
+ *   - `whatsapp` — `whatsapp:*` (WhatsApp link panel, admin only)
  *
  * `registerCallbacks` installs one `callback_query:data` listener that
  * dispatches on the data prefix, preserving the original order and the
@@ -27,6 +28,7 @@ import { handleEffortCallback } from "./effort.js";
 import { handleMetricsCallback } from "./metrics.js";
 import { handleModelCallback } from "./model.js";
 import { handleAuthCallback } from "./auth.js";
+import { handleWhatsAppCallback } from "./whatsapp.js";
 
 export { answerCallbackQuerySafe } from "./shared.js";
 
@@ -75,6 +77,12 @@ export function registerCallbacks(
     // Handle /auth (backend CLI sign-in) callbacks.
     if (data.startsWith("auth:")) {
       await handleAuthCallback(ctx, data, deps);
+      return;
+    }
+
+    // Handle /whatsapp (link status / pairing) callbacks.
+    if (data.startsWith("whatsapp:")) {
+      await handleWhatsAppCallback(ctx, data);
       return;
     }
 

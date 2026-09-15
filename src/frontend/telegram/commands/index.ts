@@ -10,9 +10,9 @@
  *   - `admin`       — /admin /metrics /doctor /dream /soul /restart /update
  *                     + the unknown-command suggester
  *
- * `registerCommands` wires every group onto the bot, preserving the original
- * registration order (info → session → settings → admin, with the
- * unknown-command catch-all registered last).
+ * `registerCommands` wires every group onto the bot in an order that ends
+ * with `admin`, because admin owns the unknown-command catch-all and that
+ * must be the last handler to see a bare /command.
  */
 
 import type { Bot } from "grammy";
@@ -37,7 +37,11 @@ export function registerCommands(
   registerInfoCommands(bot);
   registerSessionCommands(bot, deps);
   registerSettingsCommands(bot, deps);
-  registerAdminCommands(bot, deps);
   registerWhatsAppPairingCommand(bot);
   registerAuthCommand(bot);
+  // admin LAST: it owns the unknown-command catch-all, which must only
+  // be reached after every real command has had its chance to match.
+  // Registering anything after it makes that command look unknown
+  // ("Unknown command /whatsapp — did you mean /whatsapp?").
+  registerAdminCommands(bot, deps);
 }
