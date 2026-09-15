@@ -432,38 +432,75 @@ class BridgeClient {
     return _list(j['results']).map((r) => SearchHit.fromJson(_map(r))).toList();
   }
 
+  /// Send a message, optionally carrying files already uploaded with
+  /// [uploadAttachment]. Only the identifying fields go up: the daemon
+  /// resolves each reference against what it actually wrote to disk.
   Future<void> send(
     String chatId,
     String text, {
-    String? imagePath,
-    String? attachmentPath,
+    List<Attachment> attachments = const [],
   }) =>
       _postJson('/send', {
         'chatId': chatId,
         'text': text,
-        if (imagePath != null) 'imagePath': imagePath,
-        if (attachmentPath != null) 'attachmentPath': attachmentPath,
+        if (attachments.isNotEmpty)
+          'attachments': attachments.map((a) => a.toRef()).toList(),
       });
 
-  /// Upload image bytes to the bridge. Returns the relative render path
-  /// (`/media?id=…`) and the absolute on-disk path handed to the model.
-  Future<({String imagePath, String path})> uploadImage(
-    List<int> bytes,
+  /// Stream a file up to the bridge as one raw request — no base64, no
+  /// buffering the whole thing in memory, so a large archive costs a socket
+  /// rather than the heap. [onProgress] reports bytes sent against [length].
+  ///
+  /// Returns the daemon's record of the upload: its on-disk path, the
+  /// relative bridge path the bytes are served from, and the name/size/type
+  /// the daemon assigned.
+  Future<Attachment> uploadAttachment(
+    Stream<List<int>> bytes,
+    int length,
     String filename,
-    String contentType,
-  ) async {
-    final res = await _http
-        .post(
-          _u('/upload', {'filename': filename}),
-          headers: config.authHeaders({'Content-Type': contentType}),
-          body: bytes,
-        )
-        .timeout(const Duration(seconds: 30));
-    final j = _decode(res);
-    return (
-      imagePath: j['imagePath']?.toString() ?? '',
-      path: j['path']?.toString() ?? '',
+    String contentType, {
+    void Function(int sent)? onProgress,
+  }) async {
+    final req = http.StreamedRequest('POST', _u('/upload', {
+      'filename': filename,
+    }))
+      ..headers.addAll(config.authHeaders())
+      ..headers['Content-Type'] = contentType
+      ..contentLength = length;
+    var sent = 0;
+    unawaited(() async {
+      try {
+        await for (final chunk in bytes) {
+          req.sink.add(chunk);
+          sent += chunk.length;
+          onProgress?.call(sent);
+        }
+        await req.sink.close();
+      } catch (e) {
+        req.sink.addError(e);
+      }
+    }());
+    final streamed = await _http.send(req);
+    final body = await streamed.stream.bytesToString();
+    if (streamed.statusCode != 200) {
+      throw BridgeException(_uploadError(streamed.statusCode, body));
+    }
+    final decoded = jsonDecode(body);
+    return Attachment.fromJson(
+      decoded is Map<String, dynamic> ? decoded : <String, dynamic>{},
     );
+  }
+
+  /// The daemon explains a rejected upload (too large, disk error) in the
+  /// body; surface that rather than a bare status code.
+  static String _uploadError(int status, String body) {
+    try {
+      final j = jsonDecode(body);
+      if (j is Map && j['error'] is String) return j['error'] as String;
+    } catch (_) {
+      /* not JSON — fall through to the generic form */
+    }
+    return 'Upload rejected ($status)${body.isEmpty ? '' : ': $body'}';
   }
 
   Future<(String active, List<ModelOption> models)> models([

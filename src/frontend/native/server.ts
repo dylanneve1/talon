@@ -24,9 +24,9 @@ import { createServer as createTlsServer } from "node:https";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { extname } from "node:path";
 import { log, logError, logDebug, logWarn } from "../../util/log.js";
 import { formatFingerprint, type BridgeTlsIdentity } from "./tls.js";
+import { contentTypeFor } from "./media.js";
 import { type BridgeEvent } from "./protocol.js";
 import { buildRoutes } from "./routes/index.js";
 import type { BridgeServerHandlers, RouteHost } from "./routes/host.js";
@@ -38,7 +38,7 @@ import {
   type RouteHandler,
 } from "./routes/table.js";
 
-export type { BridgeServerHandlers } from "./routes/host.js";
+export type { BridgeServerHandlers, SendOptions } from "./routes/host.js";
 export { BRIDGE_ROUTE_AUTH, type BridgeRouteKey } from "./routes/table.js";
 
 const SSE_PING_MS = 25_000;
@@ -352,7 +352,6 @@ export class BridgeServer {
       fingerprint: () => this.getFingerprint(),
       json: (res, code, body) => this.json(res, code, body),
       readJson: (req) => this.readJson(req),
-      readRaw: (req, max) => this.readRaw(req, max),
       corsHeaders: () => this.corsHeaders(),
       streamFile: (res, file) => this.streamFile(res, file),
       serveMedia: (res, id) => this.serveMedia(res, id),
@@ -591,17 +590,6 @@ export class BridgeServer {
   }
 
   /** Read a raw request body (binary-safe) up to `max` bytes. */
-  private async readRaw(req: IncomingMessage, max: number): Promise<Buffer> {
-    const chunks: Buffer[] = [];
-    let total = 0;
-    for await (const chunk of req) {
-      total += (chunk as Buffer).length;
-      if (total > max) throw new Error("Upload too large");
-      chunks.push(chunk as Buffer);
-    }
-    return Buffer.concat(chunks);
-  }
-
   private async readJson(
     req: IncomingMessage,
   ): Promise<Record<string, unknown>> {
@@ -619,26 +607,5 @@ export class BridgeServer {
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
       throw new Error("Body must be a JSON object");
     return parsed as Record<string, unknown>;
-  }
-}
-
-/** Minimal image content-type map for the media endpoint. */
-function contentTypeFor(filePath: string): string {
-  switch (extname(filePath).toLowerCase()) {
-    case ".png":
-      return "image/png";
-    case ".jpg":
-    case ".jpeg":
-      return "image/jpeg";
-    case ".gif":
-      return "image/gif";
-    case ".webp":
-      return "image/webp";
-    case ".bmp":
-      return "image/bmp";
-    case ".svg":
-      return "image/svg+xml";
-    default:
-      return "application/octet-stream";
   }
 }

@@ -12,7 +12,12 @@ import type { TalonConfig } from "../../util/config.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { getMeshService, type MeshService } from "../../core/mesh/index.js";
 import { NativeChats } from "./chats.js";
-import type { BridgeEvent, ClientToolCall, ContextInfo } from "./protocol.js";
+import type {
+  BridgeEvent,
+  ClientAttachment,
+  ClientToolCall,
+  ContextInfo,
+} from "./protocol.js";
 
 /** One tool call observed during a running turn, kept for mid-turn replay. */
 export type LiveToolEntry = {
@@ -21,11 +26,10 @@ export type LiveToolEntry = {
   done?: boolean;
 };
 
-/** A chat's single queued follow-up, with its attachment paths intact. */
+/** A chat's single queued follow-up, with its attachments intact. */
 export type QueuedEntry = {
   text: string;
-  imagePath?: string;
-  attachmentPath?: string;
+  attachments: ClientAttachment[];
 };
 
 export type NativeRuntime = {
@@ -51,6 +55,13 @@ export type NativeRuntime = {
    * frontends behave).
    */
   readonly media: Map<string, string>;
+  /**
+   * Uploads this daemon run has accepted, keyed by their media id. `/send`
+   * resolves a client's attachment references through here rather than
+   * trusting the paths in the request body, so a message can only ever point
+   * the model at a file this daemon itself wrote to the uploads dir.
+   */
+  readonly uploads: Map<string, ClientAttachment>;
   /**
    * Live context-window fill per chat, refreshed at the end of each turn.
    * Cached (not computed inline) so the sync `toClientChat` projection stays
@@ -99,6 +110,7 @@ export function createNativeRuntime(
     chats: new NativeChats(),
     mesh: getMeshService(),
     media: new Map(),
+    uploads: new Map(),
     contextByChat: new Map(),
     liveTurns: new Map(),
     queuedByChat: new Map(),

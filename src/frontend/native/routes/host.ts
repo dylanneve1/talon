@@ -1,6 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Readable } from "node:stream";
+import type { AttachmentRef } from "./params.js";
 import type {
   BackendOption,
+  ClientAttachment,
   BridgeEvent,
   BridgeStatus,
   ClientChat,
@@ -18,7 +21,13 @@ import type {
 import type { ConfigSnapshot } from "../settings.js";
 
 /** Optional attachment references carried alongside a sent message. */
-type SendOptions = {
+export type SendOptions = {
+  /**
+   * Every file attached to the message, as the client's references to its
+   * own uploads. `imagePath` and `attachmentPath` below are the single-file
+   * shape older clients send; the handler folds them into the same list.
+   */
+  attachments?: AttachmentRef[];
   /** Relative bridge path to render inline (e.g. `/media?id=…`). */
   imagePath?: string;
   /** Absolute on-disk path handed to the model so it can read the file. */
@@ -41,12 +50,16 @@ export type BridgeServerHandlers = {
   search(query: string, chatId?: string): SearchResult[];
   /** Fire-and-forget: streams its results back through `broadcast`. */
   send(id: string, text: string, opts?: SendOptions): void;
-  /** Persist an uploaded image and return its render path + on-disk path. */
+  /**
+   * Stream an uploaded file to disk and return its wire description. The body
+   * is consumed as it arrives (never buffered whole), so the size ceiling is
+   * disk, not memory.
+   */
   upload(
     filename: string,
     contentType: string,
-    bytes: Buffer,
-  ): Promise<{ imagePath: string; path: string }>;
+    body: Readable,
+  ): Promise<ClientAttachment>;
   listModels(
     id?: string,
   ):
@@ -139,7 +152,6 @@ export type RouteHost = {
   fingerprint: () => string | null;
   json: (res: ServerResponse, code: number, body: unknown) => void;
   readJson: (req: IncomingMessage) => Promise<Record<string, unknown>>;
-  readRaw: (req: IncomingMessage, max: number) => Promise<Buffer>;
   corsHeaders: () => Record<string, string>;
   streamFile: (
     res: ServerResponse,

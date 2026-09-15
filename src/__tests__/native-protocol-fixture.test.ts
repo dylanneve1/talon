@@ -46,6 +46,14 @@ describe("bridge protocol fixture (shared with the companion app)", () => {
     expect(m.ts).toBe(1767225600000);
     expect(m.buttons?.[0][0].url).toBe("https://example.com");
     expect(m.imagePath).toBe("/media?id=m42");
+    // Multi-file attachments: the first image mirrors `imagePath`, and a
+    // non-image rides alongside it on the same message.
+    expect(m.attachments).toHaveLength(2);
+    expect(m.attachments?.[0].url).toBe(m.imagePath);
+    expect(m.attachments?.[0].image).toBe(true);
+    expect(m.attachments?.[1].name).toBe("logs.zip");
+    expect(m.attachments?.[1].mimeType).toBe("application/zip");
+    expect(m.attachments?.[1].image).toBe(false);
     expect(m.durationMs).toBe(4200);
     expect(m.tokensIn).toBe(1200);
     expect(m.tokensOut).toBe(340);
@@ -68,6 +76,7 @@ describe("bridge protocol fixture (shared with the companion app)", () => {
     expect(s.app).toBe("talon-bridge");
     expect(s.protocol).toBe(1);
     expect(s.activeChats).toBe(3);
+    expect(s.capabilities).toContain("attachments");
   });
 
   it("search result shape matches SearchResult", () => {

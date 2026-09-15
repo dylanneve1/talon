@@ -19,6 +19,10 @@ that speaks the protocol works.
 - Multiple chats with a time-grouped, searchable history sidebar (ChatGPT-style)
 - Live streaming replies, with the model's reasoning and tool calls shown inline
 - Full Markdown rendering (code blocks, tables, lists, links)
+- **Attach anything** — images, archives, PDFs, code, audio/video: any number
+  of files per message, picked with the paperclip or **dragged and dropped
+  onto the conversation** on desktop. Files stream to the daemon (nothing is
+  held in memory) and the model is handed each one's path to read.
 - Per-chat **model** + **reasoning effort** + **session reset**
 - **Settings sync** — read and change the daemon's own config (default model,
   display name, timezone, pulse/heartbeat/dream) and see live status

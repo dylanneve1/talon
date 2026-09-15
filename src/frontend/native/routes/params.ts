@@ -27,3 +27,24 @@ export function asPositiveInt(v: string | null): number | undefined {
   const n = Number(v);
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
+
+/** A client's reference to a file it already uploaded. */
+export type AttachmentRef = { url?: string; path?: string };
+
+/**
+ * Coerce the `attachments` array on a `/send` body to reference shape. Only
+ * the identifying fields are read: name, size and type are whatever the
+ * daemon recorded when it wrote the file, never what the client claims now.
+ */
+export function asAttachmentRefs(v: unknown): AttachmentRef[] {
+  if (!Array.isArray(v)) return [];
+  const refs: AttachmentRef[] = [];
+  for (const item of v) {
+    if (typeof item !== "object" || item === null) continue;
+    const row = item as Record<string, unknown>;
+    const url = asString(row.url);
+    const path = asString(row.path);
+    if (url || path) refs.push({ url, path });
+  }
+  return refs;
+}

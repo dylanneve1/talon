@@ -1,8 +1,11 @@
 import type { RouteHost } from "./host.js";
 import type { BridgeRoutes } from "./table.js";
-import { asPositiveInt, asString, deviceIdParam } from "./params.js";
-
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+import {
+  asAttachmentRefs,
+  asPositiveInt,
+  asString,
+  deviceIdParam,
+} from "./params.js";
 
 export function chatRoutes(
   host: RouteHost,
@@ -87,27 +90,42 @@ export function chatRoutes(
       const body = await readJson(req);
       const id = asString(body.chatId) ?? "";
       const text = asString(body.text) ?? "";
+      // Multi-file clients send `attachments`; the single-image shape older
+      // clients send is folded into the same list by the handler.
+      const attachments = asAttachmentRefs(body.attachments);
       const imagePath = asString(body.imagePath);
       const attachmentPath = asString(body.attachmentPath);
-      // Text may be empty when an image is attached; require one or the
-      // other.
-      if (!id || (!text.trim() && !attachmentPath))
+      const hasAttachment =
+        attachments.length > 0 || Boolean(attachmentPath || imagePath);
+      // Text may be empty when a file is attached; require one or the other.
+      if (!id || (!text.trim() && !hasAttachment))
         return json(res, 400, {
           ok: false,
           error: "chatId and text (or an attachment) required",
         });
-      h.send(id, text, { imagePath, attachmentPath });
+      h.send(id, text, { attachments, imagePath, attachmentPath });
       json(res, 202, { ok: true });
     },
     "POST /upload": async ({ req, res, url }) => {
       const filename = url.searchParams.get("filename") ?? "upload";
       const contentType =
         req.headers["content-type"] ?? "application/octet-stream";
-      const bytes = await host.readRaw(req, MAX_UPLOAD_BYTES);
-      if (!bytes.length)
-        return json(res, 400, { ok: false, error: "Empty upload" });
-      const result = await h.upload(filename, contentType, bytes);
-      json(res, 200, { ok: true, ...result });
+      try {
+        const attachment = await h.upload(filename, contentType, req);
+        // `imagePath` mirrors the URL for clients written against the
+        // single-image upload response.
+        json(res, 200, { ok: true, ...attachment, imagePath: attachment.url });
+      } catch (err) {
+        // The client can only act on this if it knows why: too large (pick a
+        // smaller file), empty (nothing was read), or a server-side failure.
+        const error = err instanceof Error ? err.message : String(err);
+        const status = /limit/i.test(error)
+          ? 413
+          : /empty/i.test(error)
+            ? 400
+            : 500;
+        json(res, status, { ok: false, error });
+      }
     },
     "GET /media": ({ res, url }) =>
       host.serveMedia(res, url.searchParams.get("id") ?? ""),

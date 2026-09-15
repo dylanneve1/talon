@@ -14,14 +14,18 @@ import type { ChatEntry } from "./chats.js";
 import type { ClientChat, QueuedMessage } from "./protocol.js";
 import type { NativeRuntime } from "./runtime.js";
 
-/** Project the stored queue entry to its wire shape (text + attachment flag). */
+/** Project the stored queue entry to its wire shape (text + attachments). */
 function toQueued(
   runtime: NativeRuntime,
   chatId: string,
 ): QueuedMessage | undefined {
   const q = runtime.queuedByChat.get(chatId);
   if (!q) return undefined;
-  return { text: q.text, hasAttachment: Boolean(q.attachmentPath) };
+  return {
+    text: q.text,
+    hasAttachment: q.attachments.length > 0,
+    attachmentCount: q.attachments.length,
+  };
 }
 
 export function toClientChat(

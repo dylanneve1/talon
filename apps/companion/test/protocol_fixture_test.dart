@@ -31,6 +31,17 @@ void main() {
     expect(m.buttons.single.single.url, 'https://example.com');
     expect(m.reactions, ['👍']);
     expect(m.imagePath, '/media?id=m42');
+    // Multi-file attachments: the first image mirrors imagePath, and a
+    // non-image rides alongside it on the same message.
+    expect(m.attachments, hasLength(2));
+    expect(m.attachments.first.url, m.imagePath);
+    expect(m.attachments.first.name, 'diagram.png');
+    expect(m.attachments.first.image, isTrue);
+    expect(m.attachments.first.sizeLabel, '82 KB');
+    expect(m.attachments.last.name, 'logs.zip');
+    expect(m.attachments.last.mimeType, 'application/zip');
+    expect(m.attachments.last.image, isFalse);
+    expect(m.attachments.last.sizeLabel, '1.0 MB');
     expect(m.durationMs, 4200);
     expect(m.tokensIn, 1200);
     expect(m.tokensOut, 340);

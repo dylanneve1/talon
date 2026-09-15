@@ -51,6 +51,75 @@ class ClientButton {
       );
 }
 
+/// One file attached to a message — an image, an archive, a document, or
+/// anything else the user staged in the composer. Mirrors the daemon's
+/// `ClientAttachment`: [path] is where the file lives on the daemon host (what
+/// the model is pointed at), [url] the relative bridge path the bytes are
+/// fetched from.
+class Attachment {
+  final String path;
+  final String name;
+  final int size;
+  final String mimeType;
+  final String url;
+
+  /// True when the client should render this inline rather than as a chip.
+  final bool image;
+
+  const Attachment({
+    required this.path,
+    required this.name,
+    required this.size,
+    required this.mimeType,
+    required this.url,
+    required this.image,
+  });
+
+  factory Attachment.fromJson(Map<String, dynamic> j) {
+    final mimeType = _string(j['mimeType']);
+    return Attachment(
+      path: _string(j['path']),
+      name: _string(j['name']),
+      size: _int(j['size']),
+      mimeType: mimeType,
+      url: _string(j['url']),
+      // Trust the daemon's own classification when it sent one; fall back to
+      // the type so an older daemon's rows still render inline.
+      image: j['image'] is bool
+          ? j['image'] as bool
+          : mimeType.startsWith('image/'),
+    );
+  }
+
+  /// The identifying fields `/send` needs to resolve this back to the upload
+  /// the daemon recorded. Name, size and type are the daemon's to decide.
+  Map<String, dynamic> toRef() => {'url': url, 'path': path};
+
+  Map<String, dynamic> toJson() => {
+        'path': path,
+        'name': name,
+        'size': size,
+        'mimeType': mimeType,
+        'url': url,
+        'image': image,
+      };
+
+  /// Size as a short human label ("4.2 MB"), for the chip under the message.
+  String get sizeLabel {
+    if (size <= 0) return '';
+    if (size < 1024) return '$size B';
+    const units = ['KB', 'MB', 'GB', 'TB'];
+    var value = size / 1024;
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    final rounded = value < 10 ? value.toStringAsFixed(1) : value.round();
+    return '$rounded ${units[unit]}';
+  }
+}
+
 class ClientMessage {
   final String id;
   final String chatId;
@@ -62,7 +131,13 @@ class ClientMessage {
 
   /// Relative bridge path to an attached image (e.g. `/media?id=…`), resolved
   /// against the connection's base URL + token by the UI. Null for text rows.
+  /// Always mirrors the first image in [attachments] when there is one.
   final String? imagePath;
+
+  /// Every file attached to this message, in the order they were staged.
+  /// Empty for text-only rows, and for daemons older than multi-file
+  /// attachments (which send only [imagePath]).
+  final List<Attachment> attachments;
 
   /// Tools that ran during this assistant turn (client-only — snapshot from
   /// the live turn when the canonical message arrives, so the history pane
@@ -88,12 +163,14 @@ class ClientMessage {
     this.buttons = const [],
     List<String>? reactions,
     this.imagePath,
+    List<Attachment>? attachments,
     List<ToolActivity>? tools,
     this.streaming = false,
     this.durationMs,
     this.tokensIn,
     this.tokensOut,
   })  : reactions = reactions ?? <String>[],
+        attachments = attachments ?? const <Attachment>[],
         tools = tools ?? <ToolActivity>[];
 
   /// Whether this row has any turn stats worth showing.
@@ -126,6 +203,9 @@ class ClientMessage {
           .toList(),
       reactions: _list(j['reactions']).map((e) => e.toString()).toList(),
       imagePath: j['imagePath'] is String ? j['imagePath'] as String : null,
+      attachments: _list(j['attachments'])
+          .map((a) => Attachment.fromJson(_map(a)))
+          .toList(),
       tools: tools.isEmpty ? null : tools,
       durationMs: durationMs > 0 ? durationMs : null,
       tokensIn: tokensIn > 0 ? tokensIn : null,
@@ -144,6 +224,8 @@ class ClientMessage {
         'text': text,
         'ts': ts,
         if (imagePath != null) 'imagePath': imagePath,
+        if (attachments.isNotEmpty)
+          'attachments': attachments.map((a) => a.toJson()).toList(),
         if (durationMs != null) 'durationMs': durationMs,
         if (tokensIn != null) 'tokensIn': tokensIn,
         if (tokensOut != null) 'tokensOut': tokensOut,

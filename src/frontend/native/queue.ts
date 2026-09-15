@@ -9,7 +9,7 @@ import type { NativeRuntime, QueuedEntry } from "./runtime.js";
 
 /**
  * Set (or replace) a chat's queued follow-up and sync it to every client via
- * chat_updated. Empty text with no attachment clears the queue.
+ * chat_updated. Empty text with no attachments clears the queue.
  */
 export function setQueued(
   runtime: NativeRuntime,
@@ -19,14 +19,11 @@ export function setQueued(
   const entry = runtime.chats.get(chatId);
   if (!entry) return;
   const text = next.text.trim();
-  if (!text && !next.attachmentPath) {
+  const attachments = next.attachments;
+  if (!text && attachments.length === 0) {
     if (!runtime.queuedByChat.delete(chatId)) return;
   } else {
-    runtime.queuedByChat.set(chatId, {
-      text,
-      imagePath: next.imagePath,
-      attachmentPath: next.attachmentPath,
-    });
+    runtime.queuedByChat.set(chatId, { text, attachments });
   }
   broadcastChatUpdated(runtime, entry);
 }

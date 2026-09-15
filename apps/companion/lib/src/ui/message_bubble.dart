@@ -7,6 +7,7 @@ import '../models/bridge_models.dart';
 import '../services/haptics.dart';
 import '../theme.dart';
 import 'assistant_surface.dart';
+import 'composer.dart' show iconForMime;
 import 'code_block.dart';
 import 'markdown.dart';
 import 'motion.dart';
@@ -32,8 +33,14 @@ class MessageBubble extends StatelessWidget {
   /// — so the list stays calm and nothing re-animates while scrolling.
   final bool animateIn;
 
-  /// Fully-resolved URL for an attached image (base URL + token), or null.
+  /// Fully-resolved URL for the first attached image (base URL + token), or
+  /// null. Kept separate from [files] because an image-only message lays its
+  /// bubble out differently (no text padding around the picture).
   final String? imageUrl;
+
+  /// The message's non-image attachments, already resolved to fetchable URLs.
+  /// Rendered as a column of chips under the text.
+  final List<BubbleFile> files;
 
   /// False when this row is grouped under a previous assistant row from the
   /// same run — the avatar + name header is skipped.
@@ -49,6 +56,7 @@ class MessageBubble extends StatelessWidget {
     required this.botName,
     this.animateIn = false,
     this.imageUrl,
+    this.files = const [],
     this.showHeader = true,
     this.showTime = true,
   });
@@ -198,6 +206,8 @@ class MessageBubble extends StatelessWidget {
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
+                                if (files.isNotEmpty)
+                                  _FileList(files: files, onAccent: true),
                               ],
                             ),
                           ),
@@ -254,8 +264,9 @@ class MessageBubble extends StatelessWidget {
                     bottom: message.text.isEmpty ? 0 : TalonSpace.sm),
                 child: _InlineImage(url: imageUrl!),
               ),
-            // Suppress the "…" placeholder for an image-only message.
-            if (!(imageUrl != null && message.text.isEmpty))
+            // Suppress the "…" placeholder for an attachment-only message.
+            if (!((imageUrl != null || files.isNotEmpty) &&
+                message.text.isEmpty))
               MarkdownBody(
                 data: message.text.isEmpty ? '…' : message.text,
                 selectable: true,
@@ -268,6 +279,7 @@ class MessageBubble extends StatelessWidget {
                 },
                 styleSheet: talonMarkdownStyle(),
               ),
+            if (files.isNotEmpty) _FileList(files: files, onAccent: false),
           ],
         ),
         belowBubble: Column(
@@ -366,9 +378,13 @@ class _InlineImage extends StatelessWidget {
                   ),
                 );
               },
+              // Sized by constraint, not a fixed width: inside a narrow
+              // bubble (a phone, a long file name beside it) a hard 200px
+              // placeholder overflows its own row.
               errorBuilder: (context, _, __) => Container(
-                width: 200,
-                height: 110,
+                constraints: const BoxConstraints(maxWidth: 200, minHeight: 110),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: TalonSpace.sm, vertical: TalonSpace.sm),
                 alignment: Alignment.center,
                 color: TalonColors.surface,
                 child: Row(
@@ -377,9 +393,11 @@ class _InlineImage extends StatelessWidget {
                     Icon(Icons.broken_image_outlined,
                         size: 18, color: TalonColors.textFaint),
                     const SizedBox(width: TalonSpace.sm),
-                    Text('Image unavailable',
-                        style: TextStyle(
-                            color: TalonColors.textFaint, fontSize: 12.5)),
+                    Flexible(
+                      child: Text('Image unavailable',
+                          style: TextStyle(
+                              color: TalonColors.textFaint, fontSize: 12.5)),
+                    ),
                   ],
                 ),
               ),
@@ -517,5 +535,126 @@ class _MessageActionsState extends State<_MessageActions> {
     final k = n / 1000;
     // Round first so 9950 → "10k", not "10.0k".
     return k < 9.95 ? '${k.toStringAsFixed(1)}k' : '${k.round()}k';
+  }
+}
+
+/// One non-image attachment as the bubble renders it: what to show, and where
+/// to fetch it from when the reader taps it.
+class BubbleFile {
+  final String name;
+  final String sizeLabel;
+  final String mimeType;
+
+  /// Fully-resolved URL (base URL + token) the bytes are served from.
+  final String url;
+
+  const BubbleFile({
+    required this.name,
+    required this.sizeLabel,
+    required this.mimeType,
+    required this.url,
+  });
+}
+
+/// The attached files under a message: one tappable chip each, opening the
+/// file with the OS handler. [onAccent] tints them for the accent-filled user
+/// bubble rather than the neutral assistant one.
+class _FileList extends StatelessWidget {
+  final List<BubbleFile> files;
+  final bool onAccent;
+  const _FileList({required this.files, required this.onAccent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: TalonSpace.sm),
+      child: Column(
+        crossAxisAlignment:
+            onAccent ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final file in files)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: _FileChip(file: file, onAccent: onAccent),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FileChip extends StatelessWidget {
+  final BubbleFile file;
+  final bool onAccent;
+  const _FileChip({required this.file, required this.onAccent});
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = onAccent ? Colors.white : TalonColors.text;
+    final faint = onAccent
+        ? Colors.white.withValues(alpha: 0.75)
+        : TalonColors.textFaint;
+    return Semantics(
+      button: true,
+      label: 'Attached file ${file.name}, ${file.sizeLabel}. Open',
+      child: Tooltip(
+        message: 'Open ${file.name}',
+        child: GestureDetector(
+          onTap: () => launchUrl(
+            Uri.parse(file.url),
+            mode: LaunchMode.externalApplication,
+          ),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 280),
+            padding: const EdgeInsets.symmetric(
+                horizontal: TalonSpace.sm, vertical: 7),
+            decoration: BoxDecoration(
+              color: onAccent
+                  ? Colors.white.withValues(alpha: 0.16)
+                  : TalonColors.glassFill,
+              borderRadius: TalonRadius.rSm,
+              border: Border.all(
+                color: onAccent
+                    ? Colors.white.withValues(alpha: 0.24)
+                    : TalonColors.glassStroke,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(iconForMime(file.mimeType), size: 18, color: foreground),
+                const SizedBox(width: TalonSpace.sm),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        file.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: foreground,
+                        ),
+                      ),
+                      if (file.sizeLabel.isNotEmpty)
+                        Text(
+                          file.sizeLabel,
+                          style: TextStyle(fontSize: 11, color: faint),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.open_in_new_rounded, size: 14, color: faint),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -1,10 +1,15 @@
+import 'dart:io' show Platform;
+
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../models/bridge_models.dart';
+import '../services/haptics.dart';
 import '../services/voice.dart';
 import '../state/app_state.dart';
+import '../state/composer_attachments.dart';
 import '../theme.dart';
 import 'activity_card.dart';
 import 'brand.dart';
@@ -40,8 +45,20 @@ class ChatView extends StatefulWidget {
   State<ChatView> createState() => _ChatViewState();
 }
 
+/// Native file drop is a desktop affordance — there is no OS drag source on
+/// Android, and desktop_drop ships no implementation there.
+bool get _dropSupported =>
+    Platform.isLinux || Platform.isMacOS || Platform.isWindows;
+
 class _ChatViewState extends State<ChatView> {
   final _scroll = ScrollController();
+
+  /// Files staged for the next send. Owned here (not by the composer) so the
+  /// drop target wrapping the whole pane can stage into the same list.
+  final _attachments = ComposerAttachments();
+
+  /// True while a drag is hovering the chat, for the drop overlay.
+  bool _dragging = false;
 
   /// Ids we've already shown, so the entrance animation plays once per message
   /// and never re-fires when a row is recycled back into view on scroll.
@@ -74,8 +91,30 @@ class _ChatViewState extends State<ChatView> {
 
   @override
   void dispose() {
+    _attachments.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  /// Stage everything dropped on the chat. Directories and empty files are
+  /// skipped (a folder has no single set of bytes to upload); if that leaves
+  /// nothing, say so rather than silently doing nothing.
+  Future<void> _onDrop(DropDoneDetails detail) async {
+    setState(() => _dragging = false);
+    if (widget.state.conn != ConnState.connected) return;
+    final added = _attachments.addPaths(
+      detail.files.map((f) => f.path).where((p) => p.isNotEmpty),
+    );
+    if (added > 0) {
+      Haptics.selection();
+    } else if (detail.files.isNotEmpty && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nothing to attach — folders and empty files are '
+              'skipped.'),
+        ),
+      );
+    }
   }
 
   void _onScrolled() {
@@ -115,6 +154,24 @@ class _ChatViewState extends State<ChatView> {
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
     );
+  }
+
+  /// The message's non-image attachments, resolved to fetchable URLs. The
+  /// first image is already rendered inline from `imagePath`, so it is left
+  /// out here; any further image still gets a chip rather than vanishing.
+  List<BubbleFile> _bubbleFiles(ClientMessage m) {
+    if (m.attachments.isEmpty) return const [];
+    final inline = m.imagePath;
+    return [
+      for (final a in m.attachments)
+        if (a.url != inline)
+          BubbleFile(
+            name: a.name,
+            sizeLabel: a.sizeLabel,
+            mimeType: a.mimeType,
+            url: widget.state.activeConfig.mediaUrl(a.url),
+          ),
+    ];
   }
 
   /// Whether [a] (earlier) and [b] (later) belong to the same visual run:
@@ -198,7 +255,8 @@ class _ChatViewState extends State<ChatView> {
                       _QueuedBar(state: widget.state, chatId: chat.id),
                       Composer(
                         onSend: widget.state.sendMessage,
-                        onUpload: widget.state.uploadImage,
+                        onUpload: widget.state.uploadAttachment,
+                        attachments: _attachments,
                         enabled: widget.state.conn == ConnState.connected,
                         running: widget.state.isTurnRunning(chat.id),
                         onStop: () => widget.state.interruptTurn(chat.id),
@@ -217,13 +275,28 @@ class _ChatViewState extends State<ChatView> {
       },
     );
     // Full-bleed (phone): straight onto the app backdrop, like Settings.
-    if (widget.fullBleed) return body;
-    // Card (desktop/tablet pane): rounded clip over a quiet canvas tint.
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-      child: Container(
-        color: TalonColors.void1.withValues(alpha: 0.55),
-        child: body,
+    final framed = widget.fullBleed
+        ? body
+        // Card (desktop/tablet pane): rounded clip over a quiet canvas tint.
+        : ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: Container(
+              color: TalonColors.void1.withValues(alpha: 0.55),
+              child: body,
+            ),
+          );
+    if (!_dropSupported) return framed;
+    // Desktop: the whole conversation pane is a drop zone — files land in the
+    // composer's staging strip exactly as if they'd been picked.
+    return DropTarget(
+      onDragEntered: (_) => setState(() => _dragging = true),
+      onDragExited: (_) => setState(() => _dragging = false),
+      onDragDone: _onDrop,
+      child: Stack(
+        children: [
+          framed,
+          if (_dragging) const Positioned.fill(child: _DropOverlay()),
+        ],
       ),
     );
   }
@@ -322,6 +395,7 @@ class _ChatViewState extends State<ChatView> {
                     imageUrl: m.imagePath == null
                         ? null
                         : widget.state.activeConfig.mediaUrl(m.imagePath!),
+                    files: _bubbleFiles(m),
                   );
                 }
                 return LiveTurn(
@@ -1291,5 +1365,48 @@ class _StarterChip extends StatelessWidget {
         .fadeIn(delay: delay, duration: TalonMotion.base)
         .slideY(
             begin: 0.3, end: 0, delay: delay, curve: TalonMotion.emphasized);
+  }
+}
+
+/// Shown over the conversation while files are dragged across it: a dashed
+/// accent frame and one line of instruction, so the drop target is visible
+/// rather than guessed at.
+class _DropOverlay extends StatelessWidget {
+  const _DropOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        margin: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: TalonColors.void1.withValues(alpha: 0.82),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: TalonColors.accent, width: 1.6),
+        ),
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.file_download_outlined,
+                size: 34, color: TalonColors.accent),
+            const SizedBox(height: 10),
+            Text(
+              'Drop to attach',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: TalonColors.text,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Any file type — images, archives, documents',
+              style: TextStyle(fontSize: 12.5, color: TalonColors.textDim),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

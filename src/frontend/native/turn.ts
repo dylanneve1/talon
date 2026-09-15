@@ -16,7 +16,7 @@ import { recordTurnMeta } from "./turn-meta.js";
 import type { ChatEntry } from "./chats.js";
 import { refreshContext } from "./context.js";
 import { emitAssistant, emitUser } from "./emit.js";
-import type { BridgeEvent } from "./protocol.js";
+import type { BridgeEvent, ClientAttachment } from "./protocol.js";
 import { takeQueued } from "./queue.js";
 import type { LiveToolEntry, NativeRuntime } from "./runtime.js";
 import { summarizeToolResult } from "./tool-result.js";
@@ -24,7 +24,38 @@ import { summarizeToolResult } from "./tool-result.js";
 /** The tool calls of one running turn, in call order. */
 type TurnTools = Map<string, LiveToolEntry>;
 
-export type StartTurnOptions = { imagePath?: string; attachmentPath?: string };
+export type StartTurnOptions = { attachments?: ClientAttachment[] };
+
+/** Human-readable size for the attachment lines handed to the model. */
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
+/**
+ * Point the model at the files the user attached. Each gets its own line with
+ * an absolute path so the model can read it with its own tools; images keep
+ * the `[Attached image: …]` wording backends already recognise.
+ */
+export function attachmentPrompt(
+  text: string,
+  attachments: ClientAttachment[],
+): string {
+  if (!attachments.length) return text;
+  const lines = attachments.map((a) =>
+    a.image
+      ? `[Attached image: ${a.path}]`
+      : `[Attached file: ${a.name} (${a.mimeType}, ${formatSize(a.size)}) at ${a.path}]`,
+  );
+  return `${text ? `${text}\n\n` : ""}${lines.join("\n")}`;
+}
 
 /** True when a turn is currently running for a chat (used to decide queue). */
 export function isBusy(runtime: NativeRuntime, chatId: string): boolean {
@@ -247,7 +278,7 @@ async function runTurn(
   entry: ChatEntry,
   text: string,
   messageId: number,
-  attachmentPath?: string,
+  attachments: ClientAttachment[],
 ): Promise<void> {
   const start = Date.now();
   // Tool calls observed during this turn, in call order — recorded into the
@@ -256,10 +287,7 @@ async function runTurn(
   // the activity so far (cleared in the `finally`).
   const turnTools: TurnTools = new Map();
   runtime.liveTurns.set(entry.id, turnTools);
-  // Point the model at an attached image so it can read the file itself.
-  const prompt = attachmentPath
-    ? `${text ? `${text}\n\n` : ""}[Attached image: ${attachmentPath}]`
-    : text;
+  const prompt = attachmentPrompt(text, attachments);
   try {
     const result = await execute({
       chatId: entry.id,
@@ -287,8 +315,7 @@ async function runTurn(
     if (queued) {
       setImmediate(() =>
         startTurn(runtime, entry, queued.text, {
-          imagePath: queued.imagePath,
-          attachmentPath: queued.attachmentPath,
+          attachments: queued.attachments,
         }),
       );
     }
@@ -303,16 +330,11 @@ export function startTurn(
   text: string,
   options?: StartTurnOptions,
 ): void {
-  const messageId = emitUser(
-    runtime,
-    entry,
-    text,
-    options?.imagePath,
-    options?.attachmentPath,
-  );
+  const attachments = options?.attachments ?? [];
+  const messageId = emitUser(runtime, entry, text, attachments);
   runtime.broadcast({ kind: "turn_start", chatId: entry.id });
   runtime.broadcast({ kind: "typing", chatId: entry.id, on: true });
-  void runTurn(runtime, entry, text, messageId, options?.attachmentPath);
+  void runTurn(runtime, entry, text, messageId, attachments);
 }
 
 /** Best-effort interrupt of a chat's in-flight turn. `true` if one was

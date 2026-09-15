@@ -9,6 +9,24 @@ import { escapeLike } from "../../native/sqlguard.js";
 import { getDatabase, inTransaction } from "../db.js";
 import { historySql } from "../sql/statements.generated.js";
 /** One chat message as the domain sees it — the shape the rows map to. */
+/**
+ * A file attached to a message, persisted with it. The bridge's own
+ * `ClientAttachment` is this plus a per-run `/media` URL — storage keeps only
+ * what survives a restart, and the URL is minted fresh on read.
+ */
+export type MessageAttachment = {
+  /** Absolute path on this host. */
+  path: string;
+  /** Original file name, for display. */
+  name: string;
+  /** Size in bytes. */
+  size: number;
+  /** Best-effort MIME type. */
+  mimeType: string;
+  /** True when clients render it inline as an image. */
+  image: boolean;
+};
+
 export type HistoryMessage = {
   msgId: number;
   senderId: number;
@@ -25,8 +43,11 @@ export type HistoryMessage = {
   mediaType?:
     "photo" | "document" | "voice" | "sticker" | "video" | "animation";
   stickerFileId?: string;
-  /** Saved file path for downloaded media. */
+  /** Saved file path for downloaded media (the first attachment's, when
+   *  a message carries several). */
   filePath?: string;
+  /** Every file attached to this message, oldest row shape holds none. */
+  attachments?: MessageAttachment[];
 };
 
 type Row = {
@@ -40,7 +61,30 @@ type Row = {
   media_type: string | null;
   sticker_file_id: string | null;
   file_path: string | null;
+  attachments: string | null;
 };
+
+/**
+ * Parse the persisted attachments column. Anything unreadable (hand-edited
+ * row, a shape from a future version) degrades to "no attachments" rather
+ * than failing the whole history read.
+ */
+function parseAttachments(raw: string | null): MessageAttachment[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return undefined;
+    const rows = parsed.filter(
+      (a): a is MessageAttachment =>
+        typeof a === "object" &&
+        a !== null &&
+        typeof (a as MessageAttachment).path === "string",
+    );
+    return rows.length ? rows : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function rowToMessage(row: Row): HistoryMessage {
   return {
@@ -54,6 +98,7 @@ function rowToMessage(row: Row): HistoryMessage {
     mediaType: (row.media_type ?? undefined) as HistoryMessage["mediaType"],
     stickerFileId: row.sticker_file_id ?? undefined,
     filePath: row.file_path ?? undefined,
+    attachments: parseAttachments(row.attachments),
   };
 }
 
@@ -72,6 +117,7 @@ export function insert(chatId: string, msg: HistoryMessage): void {
       msg.mediaType ?? null,
       msg.stickerFileId ?? null,
       msg.filePath ?? null,
+      msg.attachments?.length ? JSON.stringify(msg.attachments) : null,
     );
 }
 

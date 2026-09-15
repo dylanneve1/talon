@@ -8,6 +8,7 @@ import 'package:talon_companion/src/state/app_state.dart';
 import 'package:talon_companion/src/state/voice_session.dart';
 import 'package:talon_companion/src/theme.dart';
 import 'package:talon_companion/src/ui/code_block.dart';
+import 'package:talon_companion/src/state/composer_attachments.dart';
 import 'package:talon_companion/src/ui/composer.dart';
 import 'package:talon_companion/src/ui/voice_mode_screen.dart';
 
@@ -33,8 +34,9 @@ void main() {
       (tester) async {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(host(Composer(
-      onSend: (_, {imagePath, attachmentPath}) async => true,
-      onUpload: (_, __, ___) async => null,
+      onSend: (_, {attachments = const []}) async => true,
+      onUpload: (_, __, ___, ____, {onProgress}) async => null,
+      attachments: ComposerAttachments(),
       enabled: true,
     )));
 
@@ -57,8 +59,9 @@ void main() {
       (tester) async {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(host(Composer(
-      onSend: (_, {imagePath, attachmentPath}) async => true,
-      onUpload: (_, __, ___) async => null,
+      onSend: (_, {attachments = const []}) async => true,
+      onUpload: (_, __, ___, ____, {onProgress}) async => null,
+      attachments: ComposerAttachments(),
       enabled: true,
       running: true,
       onStop: () async {},

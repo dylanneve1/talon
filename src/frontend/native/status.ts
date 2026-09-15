@@ -12,7 +12,9 @@ export function bridgeStatus(runtime: NativeRuntime): BridgeStatus {
   return {
     app: "talon-bridge",
     protocol: BRIDGE_PROTOCOL_VERSION,
-    capabilities: ["mesh", "mesh-commands", "plugins-skills"],
+    // "attachments": /upload streams any file type and /send takes an
+    // `attachments` list, so a client can stage several files per message.
+    capabilities: ["mesh", "mesh-commands", "plugins-skills", "attachments"],
     botName: runtime.botName,
     backend: config.backend,
     model: resolveModel(config.model)?.displayName ?? config.model,

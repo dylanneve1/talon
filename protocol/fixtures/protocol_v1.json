@@ -7,9 +7,36 @@
     "role": "assistant",
     "text": "Here is **markdown** with `code`.",
     "ts": 1767225600000,
-    "buttons": [[{ "text": "Open", "url": "https://example.com" }]],
-    "reactions": ["👍"],
+    "buttons": [
+      [
+        {
+          "text": "Open",
+          "url": "https://example.com"
+        }
+      ]
+    ],
+    "reactions": [
+      "👍"
+    ],
     "imagePath": "/media?id=m42",
+    "attachments": [
+      {
+        "path": "/home/user/.talon/workspace/uploads/1767225600000-m42-diagram.png",
+        "name": "diagram.png",
+        "size": 84213,
+        "mimeType": "image/png",
+        "url": "/media?id=m42",
+        "image": true
+      },
+      {
+        "path": "/home/user/.talon/workspace/uploads/1767225600001-m43-logs.zip",
+        "name": "logs.zip",
+        "size": 1048576,
+        "mimeType": "application/zip",
+        "url": "/media?id=m43",
+        "image": false
+      }
+    ],
     "durationMs": 4200,
     "tokensIn": 1200,
     "tokensOut": 340,
@@ -17,13 +44,17 @@
       {
         "id": "toolu_01",
         "name": "mcp__search__web",
-        "input": { "query": "talon agent" },
+        "input": {
+          "query": "talon agent"
+        },
         "durationMs": 800
       },
       {
         "id": "toolu_02",
         "name": "Bash",
-        "input": { "command": "ls" },
+        "input": {
+          "command": "ls"
+        },
         "error": "exit 1",
         "durationMs": 120
       }
@@ -47,7 +78,13 @@
     "backend": "claude",
     "model": "Claude Sonnet 5",
     "activeChats": 3,
-    "startedAt": "2026-01-01T00:00:00.000Z"
+    "startedAt": "2026-01-01T00:00:00.000Z",
+    "capabilities": [
+      "mesh",
+      "mesh-commands",
+      "plugins-skills",
+      "attachments"
+    ]
   },
   "searchResult": {
     "chatId": "d_abc123",

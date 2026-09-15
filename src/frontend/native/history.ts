@@ -3,18 +3,21 @@
  * (attached images get a fresh /media URL, assistant rows their turn meta).
  */
 
+import { basename } from "node:path";
 import {
   getRecentHistory,
   getHistoryBefore,
   searchHistoryMessages,
   type HistoryMessage,
+  type MessageAttachment,
 } from "../../storage/history.js";
 import { isDeliveryTool } from "../../core/tools/index.js";
 import type { ChatEntry } from "./chats.js";
 import { refreshContext } from "./context.js";
-import { mediaUrl, registerMedia } from "./media.js";
+import { contentTypeFor, rehydrateAttachment } from "./media.js";
 import {
   historyToClientMessage,
+  type ClientAttachment,
   type ClientMessage,
   type SearchResult,
 } from "./protocol.js";
@@ -29,11 +32,32 @@ function hydrateHistoryRow(
   row: HistoryMessage,
 ): ClientMessage {
   const msg = historyToClientMessage(row, chatId);
-  // Re-hydrate an attached image: re-register its on-disk path into
-  // the media map and hand back a fresh /media URL so the image shows
-  // in reloaded history (survives restarts as long as the file exists).
-  if (row.mediaType === "photo" && row.filePath) {
-    msg.imagePath = mediaUrl(registerMedia(runtime, row.filePath));
+  // Re-hydrate attached files: media ids are per-daemon-run, so each stored
+  // attachment is re-registered and handed a fresh /media URL. Rows written
+  // before multi-file attachments carry only mediaType + filePath, which is
+  // projected into the same one-element list so every client renders history
+  // the same way regardless of when it was recorded.
+  const stored: ClientAttachment[] = row.attachments?.length
+    ? row.attachments.map((a: MessageAttachment) =>
+        rehydrateAttachment(runtime, { ...a, url: "" }),
+      )
+    : row.filePath &&
+        (row.mediaType === "photo" || row.mediaType === "document")
+      ? [
+          rehydrateAttachment(runtime, {
+            path: row.filePath,
+            name: basename(row.filePath),
+            size: 0,
+            mimeType: contentTypeFor(row.filePath),
+            image: row.mediaType === "photo",
+            url: "",
+          }),
+        ]
+      : [];
+  if (stored.length) {
+    msg.attachments = stored;
+    const firstImage = stored.find((a) => a.image);
+    if (firstImage) msg.imagePath = firstImage.url;
   }
   // Re-hydrate turn meta (tool timeline + stats) for assistant rows.
   if (msg.role === "assistant") {

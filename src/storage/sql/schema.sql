@@ -20,7 +20,12 @@ CREATE TABLE IF NOT EXISTS history_messages (
   timestamp       INTEGER NOT NULL,
   media_type      TEXT,
   sticker_file_id TEXT,
-  file_path       TEXT
+  file_path       TEXT,
+  -- Files attached to this message, as a JSON array of
+  -- {path,name,size,mimeType,image}. A message can carry several (the
+  -- companion's composer stages any number), so file_path above holds
+  -- only the first for the pre-multi-file row shape. Null when none.
+  attachments     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_history_chat ON history_messages(chat_id, id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_history_chat_msg ON history_messages(chat_id, msg_id);

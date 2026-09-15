@@ -26,7 +26,10 @@ import { formatSmartTimestamp, formatRelativeAge } from "../util/time.js";
 import { importLegacyJson } from "./legacy-import.js";
 import * as repo from "./repositories/history-repo.js";
 
-export type { HistoryMessage } from "./repositories/history-repo.js";
+export type {
+  HistoryMessage,
+  MessageAttachment,
+} from "./repositories/history-repo.js";
 import type { HistoryMessage } from "./repositories/history-repo.js";
 
 // ── Persistence lifecycle ───────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import {
   BOT_SENDER_ID,
   USER_SENDER_ID,
   type ClientButton,
+  type ClientAttachment,
   type ClientMessage,
 } from "./protocol.js";
 import type { NativeRuntime } from "./runtime.js";
@@ -104,43 +105,61 @@ export function emitPhoto(
   return id;
 }
 
+/** The sidebar preview for a message whose real content is its files. */
+function attachmentPreview(attachments: ClientAttachment[]): string {
+  if (attachments.length === 1) {
+    const only = attachments[0]!;
+    return only.image ? "[photo]" : `[${only.name}]`;
+  }
+  return `[${attachments.length} files]`;
+}
+
 /** Persist + broadcast a user message; returns its numeric id so the turn
  *  hands the model that same id (as `[msg_id:N]`) to react/reply to.
- *  An optional imagePath renders an attached image inline. */
+ *  Attached files ride along on the message and are persisted with it. */
 export function emitUser(
   runtime: NativeRuntime,
   entry: ChatEntry,
   text: string,
-  imagePath?: string,
-  attachmentPath?: string,
+  attachments: ClientAttachment[] = [],
 ): number {
   const id = runtime.nextId();
   const ts = Date.now();
+  // `imagePath` stays in sync with the first image so clients written against
+  // the single-image shape keep rendering it.
+  const firstImage = attachments.find((a) => a.image);
   const message: ClientMessage = {
     id: String(id),
     chatId: entry.id,
     role: "user",
     text,
     ts,
-    ...(imagePath ? { imagePath } : {}),
+    ...(firstImage ? { imagePath: firstImage.url } : {}),
+    ...(attachments.length ? { attachments } : {}),
   };
-  // For an attached image, persist the on-disk path + a `photo` mediaType so
-  // it re-renders on history reload (rehydrated in the `history` handler)
-  // instead of vanishing to a text-only placeholder. Caption stays as text.
+  // Persist the attachment records so the files re-render on history reload
+  // (rehydrated in `history.ts`) instead of vanishing to a text-only
+  // placeholder. mediaType/filePath keep the pre-multi-file row shape
+  // populated from the first attachment. Caption stays as text.
+  const first = attachments[0];
   pushMessage(entry.id, {
     msgId: id,
     senderId: USER_SENDER_ID,
     senderName: "User",
     text,
     timestamp: ts,
-    ...(imagePath
+    ...(first
       ? {
-          mediaType: "photo" as const,
-          ...(attachmentPath ? { filePath: attachmentPath } : {}),
+          mediaType: first.image ? ("photo" as const) : ("document" as const),
+          filePath: first.path,
+          attachments,
         }
       : {}),
   });
-  runtime.chats.touch(entry.id, imagePath ? text || "[photo]" : text);
+  runtime.chats.touch(
+    entry.id,
+    attachments.length ? text || attachmentPreview(attachments) : text,
+  );
   maybeAutoTitle(runtime, entry, text);
   runtime.broadcast({ kind: "message", chatId: entry.id, message });
   broadcastChatUpdated(runtime, entry);

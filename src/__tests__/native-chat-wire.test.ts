@@ -19,7 +19,24 @@ import {
 } from "../frontend/native/runtime.js";
 import { toClientChat } from "../frontend/native/chat-wire.js";
 import { setQueued, takeQueued } from "../frontend/native/queue.js";
-import type { BridgeEvent } from "../frontend/native/protocol.js";
+import type {
+  BridgeEvent,
+  ClientAttachment,
+} from "../frontend/native/protocol.js";
+
+/** A staged attachment, as `/send` resolves one from the uploads registry. */
+function attachment(path: string): ClientAttachment {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  const image = name.endsWith(".png");
+  return {
+    path,
+    name,
+    size: 12,
+    mimeType: image ? "image/png" : "application/zip",
+    url: `/media?id=${name}`,
+    image,
+  };
+}
 
 function makeRuntime(): { runtime: NativeRuntime; events: BridgeEvent[] } {
   const events: BridgeEvent[] = [];
@@ -51,7 +68,7 @@ describe("native chat wire projection", () => {
     });
     runtime.queuedByChat.set(entry.id, {
       text: "later",
-      attachmentPath: "/tmp/x.png",
+      attachments: [attachment("/tmp/x.png")],
     });
 
     expect(toClientChat(runtime, entry)).toEqual({
@@ -65,7 +82,7 @@ describe("native chat wire projection", () => {
       effort: undefined,
       pulse: undefined,
       context: { known: true, used: 10, max: 100, pct: 10, warn: false },
-      queued: { text: "later", hasAttachment: true },
+      queued: { text: "later", hasAttachment: true, attachmentCount: 1 },
     });
   });
 
@@ -78,42 +95,50 @@ describe("native chat wire projection", () => {
     expect(chat.context).toBeUndefined();
   });
 
-  it("setQueued trims, stores the attachment paths and syncs one chat_updated", () => {
+  it("setQueued trims, stores every attachment and syncs one chat_updated", () => {
     const entry = runtime.chats.create();
-    setQueued(runtime, entry.id, {
-      text: "  follow up  ",
-      imagePath: "/media?id=m1",
-      attachmentPath: "/uploads/1.png",
-    });
+    const staged = [attachment("/uploads/1.png"), attachment("/uploads/2.zip")];
+    setQueued(runtime, entry.id, { text: "  follow up  ", attachments: staged });
     expect(runtime.queuedByChat.get(entry.id)).toEqual({
       text: "follow up",
-      imagePath: "/media?id=m1",
-      attachmentPath: "/uploads/1.png",
+      attachments: staged,
     });
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       kind: "chat_updated",
       chat: {
         id: entry.id,
-        queued: { text: "follow up", hasAttachment: true },
+        queued: { text: "follow up", hasAttachment: true, attachmentCount: 2 },
       },
+    });
+  });
+
+  it("setQueued keeps an attachment-only follow-up with no text", () => {
+    const entry = runtime.chats.create();
+    setQueued(runtime, entry.id, {
+      text: "   ",
+      attachments: [attachment("/uploads/only.zip")],
+    });
+    expect(runtime.queuedByChat.get(entry.id)?.attachments).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      chat: { queued: { text: "", hasAttachment: true } },
     });
   });
 
   it("setQueued with empty text clears the queue, and only broadcasts when something changed", () => {
     const entry = runtime.chats.create();
-    setQueued(runtime, entry.id, { text: "   " });
+    setQueued(runtime, entry.id, { text: "   ", attachments: [] });
     expect(events).toHaveLength(0);
 
-    setQueued(runtime, entry.id, { text: "queued" });
-    setQueued(runtime, entry.id, { text: "" });
+    setQueued(runtime, entry.id, { text: "queued", attachments: [] });
+    setQueued(runtime, entry.id, { text: "", attachments: [] });
     expect(runtime.queuedByChat.has(entry.id)).toBe(false);
     expect(events.map((e) => e.kind)).toEqual(["chat_updated", "chat_updated"]);
     expect(events[1]).toMatchObject({ chat: { queued: undefined } });
   });
 
   it("setQueued ignores chats the registry does not know", () => {
-    setQueued(runtime, "d_missing", { text: "hello" });
+    setQueued(runtime, "d_missing", { text: "hello", attachments: [] });
     expect(runtime.queuedByChat.size).toBe(0);
     expect(events).toHaveLength(0);
   });
@@ -123,12 +148,14 @@ describe("native chat wire projection", () => {
     expect(takeQueued(runtime, entry)).toBeUndefined();
     expect(events).toHaveLength(0);
 
-    setQueued(runtime, entry.id, { text: "next", attachmentPath: "/a.png" });
+    setQueued(runtime, entry.id, {
+      text: "next",
+      attachments: [attachment("/a.png")],
+    });
     events.length = 0;
     expect(takeQueued(runtime, entry)).toEqual({
       text: "next",
-      imagePath: undefined,
-      attachmentPath: "/a.png",
+      attachments: [attachment("/a.png")],
     });
     expect(runtime.queuedByChat.has(entry.id)).toBe(false);
     expect(events).toHaveLength(1);

@@ -18,7 +18,12 @@ import {
 } from "./extensions.js";
 import { historyPage, searchHistory } from "./history.js";
 import { readLogEntries } from "./logs.js";
-import { mediaUrl, registerMedia, saveUpload } from "./media.js";
+import {
+  describeAttachment,
+  MAX_UPLOAD_BYTES,
+  resolveUpload,
+  saveUploadStream,
+} from "./media.js";
 import {
   effortLevels,
   listBackends,
@@ -30,10 +35,39 @@ import {
 import { setQueued } from "./queue.js";
 import { resetChat } from "./reset.js";
 import type { NativeRuntime } from "./runtime.js";
-import type { BridgeServerHandlers } from "./server.js";
+import type { BridgeServerHandlers, SendOptions } from "./server.js";
+import type { ClientAttachment } from "./protocol.js";
 import { configSnapshot, applyConfigUpdate } from "./settings.js";
 import { bridgeStatus, broadcastStatus } from "./status.js";
 import { interruptTurn, isBusy, liveTurnEvents, startTurn } from "./turn.js";
+
+/**
+ * Turn a `/send` body's attachment references into the records this daemon
+ * minted at upload time. Both wire shapes land here: the `attachments` list
+ * multi-file clients send, and the `imagePath`/`attachmentPath` pair older
+ * single-image clients send. References the daemon cannot account for are
+ * dropped — a message can only ever point the model at a file the daemon
+ * itself wrote to its uploads dir.
+ */
+function resolveAttachments(
+  runtime: NativeRuntime,
+  opts: SendOptions | undefined,
+): ClientAttachment[] {
+  const refs = [...(opts?.attachments ?? [])];
+  if (!refs.length && (opts?.imagePath || opts?.attachmentPath)) {
+    refs.push({ url: opts.imagePath, path: opts.attachmentPath });
+  }
+  const resolved: ClientAttachment[] = [];
+  for (const ref of refs) {
+    const found = resolveUpload(runtime, ref);
+    // Same file referenced twice (a re-send of a queued message, say) stays
+    // one attachment.
+    if (found && !resolved.some((a) => a.path === found.path)) {
+      resolved.push(found);
+    }
+  }
+  return resolved;
+}
 
 export function buildBridgeHandlers(
   runtime: NativeRuntime,
@@ -49,29 +83,44 @@ export function buildBridgeHandlers(
     search: (query, chatId) => searchHistory(runtime, query, chatId),
     send: (id, text, opts) => {
       const entry = chats.get(id) ?? chats.ensure(id);
+      // Resolve the client's references into the records this daemon minted
+      // at upload time — dropping anything it can't account for.
+      const attachments = resolveAttachments(runtime, opts);
       // A turn is already running for this chat — don't interrupt it. Park the
       // message as the single queued follow-up (synced to every client); it
       // auto-sends when the running turn ends. `isBusy` reads `liveTurns`,
       // which `runTurn` sets synchronously, so even a rapid second /send from
       // any client is caught here rather than starting a concurrent turn.
       if (isBusy(runtime, entry.id)) {
-        setQueued(runtime, entry.id, {
-          text,
-          imagePath: opts?.imagePath,
-          attachmentPath: opts?.attachmentPath,
-        });
+        setQueued(runtime, entry.id, { text, attachments });
         return;
       }
-      startTurn(runtime, entry, text, opts);
+      startTurn(runtime, entry, text, { attachments });
     },
     queueMessage: (id, text) => {
-      // Edit/replace the queued follow-up (text-only). Empty clears it.
+      // Edit/replace the queued follow-up's text, keeping whatever files were
+      // queued with it. Empty text cancels the whole follow-up, attachments
+      // included — the client's queue editor offers no other way to drop it.
       const entry = chats.get(id);
-      if (entry) setQueued(runtime, entry.id, { text });
+      if (!entry) return;
+      const attachments = text.trim()
+        ? (runtime.queuedByChat.get(entry.id)?.attachments ?? [])
+        : [];
+      setQueued(runtime, entry.id, { text, attachments });
     },
-    upload: async (filename, _contentType, bytes) => {
-      const path = await saveUpload(runtime, filename, bytes);
-      return { imagePath: mediaUrl(registerMedia(runtime, path)), path };
+    upload: async (filename, contentType, body) => {
+      const saved = await saveUploadStream(
+        runtime,
+        filename,
+        body,
+        MAX_UPLOAD_BYTES,
+      );
+      return describeAttachment(runtime, {
+        path: saved.path,
+        name: filename,
+        size: saved.size,
+        contentType,
+      });
     },
     listModels: (chatId) => listModels(runtime, chatId),
     setModel: (id, model) => setModel(runtime, id, model),

@@ -1,30 +1,32 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
+import '../models/bridge_models.dart';
 import '../services/haptics.dart';
+import '../state/composer_attachments.dart';
 import '../theme.dart';
 
-/// Result of an image upload: the relative render path + on-disk path.
-typedef UploadResult = ({String imagePath, String path});
-
 /// The message input. Enter sends; Shift+Enter inserts a newline. Grows with
-/// content up to a cap, then scrolls. Supports attaching a single image, which
-/// is uploaded on send and passed through to the model.
+/// content up to a cap, then scrolls. Any number of files of any type can be
+/// attached — picked with the paperclip, or dropped onto the chat on desktop
+/// — and they upload on send before the message goes out.
 class Composer extends StatefulWidget {
   /// Sends the message; resolves false when the daemon rejected it (dead
   /// bridge, network error) so the draft can be handed back to the user.
-  final Future<bool> Function(
-    String text, {
-    String? imagePath,
-    String? attachmentPath,
-  }) onSend;
-  final Future<UploadResult?> Function(
-    List<int> bytes,
-    String filename,
-    String contentType,
-  ) onUpload;
+  final Future<bool> Function(String text, {List<Attachment> attachments})
+      onSend;
+
+  /// Uploads one staged file, reporting progress. Null on failure.
+  final UploadFile onUpload;
+
+  /// Files staged for the next send. Owned by the chat view so the desktop
+  /// drop target can stage into the same list this renders.
+  final ComposerAttachments attachments;
+
   final bool enabled;
 
   /// True while a turn is running for this chat. When set (and the input is
@@ -44,6 +46,7 @@ class Composer extends StatefulWidget {
     super.key,
     required this.onSend,
     required this.onUpload,
+    required this.attachments,
     required this.enabled,
     this.running = false,
     this.onStop,
@@ -59,15 +62,16 @@ class _ComposerState extends State<Composer> {
   final _focus = FocusNode();
   bool _canSend = false;
   bool _uploading = false;
-  Uint8List? _pendingBytes;
-  String? _pendingName;
-
   bool _focused = false;
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_recomputeCanSend);
+    widget.attachments.addListener(_onAttachmentsChanged);
+    // Files can already be staged at mount — dropped onto the pane while the
+    // composer was rebuilding, or handed back by a failed send.
+    _canSend = widget.attachments.isNotEmpty;
     _focus.addListener(() {
       if (_focused != _focus.hasFocus) {
         setState(() => _focused = _focus.hasFocus);
@@ -76,101 +80,135 @@ class _ComposerState extends State<Composer> {
   }
 
   @override
+  void didUpdateWidget(Composer old) {
+    super.didUpdateWidget(old);
+    if (old.attachments != widget.attachments) {
+      old.attachments.removeListener(_onAttachmentsChanged);
+      widget.attachments.addListener(_onAttachmentsChanged);
+      _recomputeCanSend();
+    }
+  }
+
+  @override
   void dispose() {
+    widget.attachments.removeListener(_onAttachmentsChanged);
     _controller.dispose();
     _focus.dispose();
     super.dispose();
   }
 
+  void _onAttachmentsChanged() {
+    if (mounted) setState(_recomputeCanSend);
+  }
+
   void _recomputeCanSend() {
-    final can = _controller.text.trim().isNotEmpty || _pendingBytes != null;
+    final can =
+        _controller.text.trim().isNotEmpty || widget.attachments.isNotEmpty;
     if (can != _canSend) setState(() => _canSend = can);
   }
 
-  Future<void> _pickImage() async {
+  /// Pick any number of files of any type. Bytes are deliberately NOT loaded
+  /// here (`withData: false`): the send streams each file from its path, so
+  /// attaching a large archive costs nothing until it is actually sent.
+  Future<void> _pickFiles() async {
     if (!widget.enabled || _uploading) return;
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        withData: true,
+        type: FileType.any,
+        allowMultiple: true,
+        withData: false,
       );
-      final file = result?.files.firstOrNull;
-      if (file?.bytes == null) return;
-      setState(() {
-        _pendingBytes = file!.bytes;
-        _pendingName = file.name;
-      });
-      _recomputeCanSend();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not pick image: $e')),
-        );
+      final picked = <StagedFile>[];
+      for (final file in result?.files ?? const <PlatformFile>[]) {
+        final path = file.path;
+        if (path == null) continue;
+        final staged = StagedFile.fromPath(path, name: file.name);
+        if (staged != null) picked.add(staged);
       }
+      if (picked.isEmpty) return;
+      widget.attachments.addAll(picked);
+    } catch (e) {
+      _notify('Could not attach files: $e');
     }
   }
 
-  void _clearAttachment() {
-    setState(() {
-      _pendingBytes = null;
-      _pendingName = null;
-    });
-    _recomputeCanSend();
+  void _notify(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  /// Upload every staged file, in order, reporting progress per file.
+  /// Returns null as soon as one fails — the caller restores the draft.
+  Future<List<Attachment>?> _uploadStaged(List<StagedFile> staged) async {
+    final uploaded = <Attachment>[];
+    for (final file in staged) {
+      final handle = File(file.path);
+      if (!handle.existsSync()) {
+        _notify('${file.name} is no longer on disk.');
+        return null;
+      }
+      final result = await widget.onUpload(
+        handle.openRead(),
+        file.size,
+        file.name,
+        file.mimeType,
+        onProgress: (sent) {
+          if (mounted) widget.attachments.markProgress(file, sent);
+        },
+      );
+      if (result == null) return null;
+      uploaded.add(result);
+    }
+    return uploaded;
   }
 
   Future<void> _send() async {
     final text = _controller.text.trim();
-    final bytes = _pendingBytes;
-    if ((text.isEmpty && bytes == null) || !widget.enabled || _uploading) {
+    final staged = widget.attachments.files.toList();
+    if ((text.isEmpty && staged.isEmpty) || !widget.enabled || _uploading) {
       return;
     }
     // A send is the one irreversible thing this control does: acknowledge it
     // in the hand, the same way the FAB and long-presses do. Silent on
     // desktop (the engine no-ops) and gated by the Settings haptics switch.
     Haptics.selection();
-    final name = _pendingName ?? 'image.jpg';
     _controller.clear();
-    setState(() {
-      _canSend = false;
-      _pendingBytes = null;
-      _pendingName = null;
-    });
+    setState(() => _canSend = false);
     _focus.requestFocus();
 
-    String? imagePath;
-    String? attachmentPath;
-    if (bytes != null) {
+    var attachments = const <Attachment>[];
+    if (staged.isNotEmpty) {
       setState(() => _uploading = true);
-      final up = await widget.onUpload(bytes, name, _contentTypeFor(name));
+      final uploaded = await _uploadStaged(staged);
       if (mounted) setState(() => _uploading = false);
-      if (up == null) {
+      if (uploaded == null) {
         // Upload failed (a system note explains why). Hand the draft back so
-        // the user's message and attachment aren't silently thrown away —
-        // unless they already started typing a new one.
-        if (mounted) {
-          setState(() {
-            _pendingBytes = bytes;
-            _pendingName = name;
-          });
-          if (_controller.text.trim().isEmpty) _controller.text = text;
-          _recomputeCanSend();
+        // the message and its files aren't silently thrown away — unless the
+        // user already started typing a new one.
+        widget.attachments.restore(staged);
+        if (mounted && _controller.text.trim().isEmpty && text.isNotEmpty) {
+          _controller.text = text;
         }
+        _recomputeCanSend();
         return;
       }
-      imagePath = up.imagePath;
-      attachmentPath = up.path;
+      attachments = uploaded;
     }
-    final ok = await widget.onSend(
-      text,
-      imagePath: imagePath,
-      attachmentPath: attachmentPath,
-    );
+    // Uploaded and about to go out: clear the staging strip.
+    widget.attachments.clear();
+
+    final ok = await widget.onSend(text, attachments: attachments);
     if (!ok && mounted) {
       // Send failed (a system note in the chat explains why). Hand the text
-      // back so the message isn't silently thrown away — unless the user
-      // already started typing a new one.
+      // and files back rather than losing them — unless the user already
+      // started typing a new message.
       if (_controller.text.trim().isEmpty && text.isNotEmpty) {
         _controller.text = text;
+      }
+      if (widget.attachments.isEmpty && staged.isNotEmpty) {
+        widget.attachments.restore(staged);
       }
       _recomputeCanSend();
     }
@@ -223,13 +261,13 @@ class _ComposerState extends State<Composer> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (_pendingBytes != null) _attachmentPreview(),
+            if (widget.attachments.isNotEmpty) _stagingStrip(),
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 _AttachButton(
                   enabled: widget.enabled && !_uploading,
-                  onTap: _pickImage,
+                  onTap: _pickFiles,
                 ),
                 Expanded(
                   child: Focus(
@@ -301,57 +339,186 @@ class _ComposerState extends State<Composer> {
     );
   }
 
-  Widget _attachmentPreview() {
+  /// The staged files, above the input: image thumbnails and file chips, each
+  /// removable, each showing its own progress bar while the send uploads it.
+  Widget _stagingStrip() {
+    final files = widget.attachments.files;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 6, 6, 2),
+      padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: Stack(
-          clipBehavior: Clip.none,
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.memory(
-                _pendingBytes!,
-                width: 72,
-                height: 72,
-                fit: BoxFit.cover,
+            for (final file in files)
+              _StagedTile(
+                file: file,
+                onRemove: _uploading
+                    ? null
+                    : () {
+                        widget.attachments.remove(file);
+                        _recomputeCanSend();
+                      },
               ),
-            ),
-            Positioned(
-              top: -6,
-              right: -6,
-              child: Semantics(
-                button: true,
-                label: 'Remove attached image',
-                child: GestureDetector(
-                  onTap: _clearAttachment,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: TalonColors.surfaceHi,
-                      shape: BoxShape.circle,
-                    ),
-                    padding: const EdgeInsets.all(2),
-                    child:
-                        const Icon(Icons.close, size: 15, color: Colors.white),
-                  ),
-                ),
-              ),
-            ),
           ],
         ),
       ),
     );
   }
+}
 
-  static String _contentTypeFor(String name) {
-    final n = name.toLowerCase();
-    if (n.endsWith('.png')) return 'image/png';
-    if (n.endsWith('.gif')) return 'image/gif';
-    if (n.endsWith('.webp')) return 'image/webp';
-    if (n.endsWith('.bmp')) return 'image/bmp';
-    return 'image/jpeg';
+/// One staged file: a thumbnail for images, an icon chip for everything else,
+/// with a remove affordance and an upload progress bar.
+class _StagedTile extends StatelessWidget {
+  final StagedFile file;
+  final VoidCallback? onRemove;
+  const _StagedTile({required this.file, this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = file.progress;
+    return Semantics(
+      label: 'Attached ${file.name}, ${file.sizeLabel}',
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              height: 72,
+              child: Stack(
+                fit: StackFit.passthrough,
+                children: [
+                  file.isImage ? _thumbnail() : _fileChip(),
+                  if (progress != null)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 3,
+                        backgroundColor: TalonColors.surfaceHi,
+                        valueColor:
+                            AlwaysStoppedAnimation(TalonColors.accent),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (onRemove != null)
+            Positioned(
+              top: -6,
+              right: -6,
+              child: Semantics(
+                button: true,
+                label: 'Remove ${file.name}',
+                child: GestureDetector(
+                  onTap: onRemove,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: TalonColors.surfaceHi,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: TalonColors.glassStroke),
+                    ),
+                    padding: const EdgeInsets.all(2),
+                    child: const Icon(Icons.close, size: 15,
+                        color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
+
+  Widget _thumbnail() => Image.file(
+        File(file.path),
+        width: 72,
+        height: 72,
+        fit: BoxFit.cover,
+        // The file can vanish between staging and render; show the same chip
+        // the non-image case uses rather than a broken box.
+        errorBuilder: (_, __, ___) => _fileChip(),
+      );
+
+  Widget _fileChip() => Container(
+        width: 168,
+        height: 72,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        color: TalonColors.surfaceHi,
+        child: Row(
+          children: [
+            Icon(iconForMime(file.mimeType),
+                size: 22, color: TalonColors.textDim),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    file.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.2,
+                      color: TalonColors.text,
+                    ),
+                  ),
+                  if (file.sizeLabel.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        file.sizeLabel,
+                        style: TextStyle(
+                            fontSize: 11, color: TalonColors.textFaint),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+/// A recognisable icon per family of file, so a chip reads at a glance.
+IconData iconForMime(String mimeType) {
+  if (mimeType.startsWith('image/')) return Icons.image_outlined;
+  if (mimeType.startsWith('video/')) return Icons.movie_outlined;
+  if (mimeType.startsWith('audio/')) return Icons.audiotrack_outlined;
+  if (mimeType == 'application/pdf') return Icons.picture_as_pdf_outlined;
+  if (mimeType.contains('zip') ||
+      mimeType.contains('tar') ||
+      mimeType.contains('compressed') ||
+      mimeType.contains('gzip') ||
+      mimeType.contains('bzip') ||
+      mimeType.contains('xz') ||
+      mimeType.contains('zstd') ||
+      mimeType.contains('vnd.rar')) {
+    return Icons.folder_zip_outlined;
+  }
+  if (mimeType.contains('spreadsheet') || mimeType == 'text/csv') {
+    return Icons.table_chart_outlined;
+  }
+  if (mimeType.contains('presentation')) return Icons.slideshow_outlined;
+  if (mimeType.contains('word') || mimeType == 'application/rtf') {
+    return Icons.description_outlined;
+  }
+  if (mimeType.startsWith('text/') ||
+      mimeType.contains('json') ||
+      mimeType.contains('xml') ||
+      mimeType.contains('yaml') ||
+      mimeType.contains('toml') ||
+      mimeType.contains('sql')) {
+    return Icons.code_outlined;
+  }
+  return Icons.insert_drive_file_outlined;
 }
 
 class _AttachButton extends StatelessWidget {
@@ -363,10 +530,9 @@ class _AttachButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return IconButton(
       onPressed: enabled ? onTap : null,
-      icon: Icon(Icons.add_photo_alternate_outlined,
-          size: TalonDensity.d(20, 23)),
+      icon: Icon(Icons.attach_file_rounded, size: TalonDensity.d(20, 23)),
       color: TalonColors.textDim,
-      tooltip: 'Attach image',
+      tooltip: 'Attach files',
     );
   }
 }
@@ -477,7 +643,7 @@ class _SendButtonState extends State<_SendButton> {
     return Semantics(
       button: true,
       enabled: active,
-      label: busy ? 'Sending, image uploading' : 'Send message',
+      label: busy ? 'Sending, files uploading' : 'Send message',
       child: GestureDetector(
         onTapDown: active ? (_) => setState(() => _pressed = true) : null,
         onTapUp: active ? (_) => setState(() => _pressed = false) : null,

@@ -25,7 +25,12 @@ CREATE TABLE IF NOT EXISTS history_messages (
   timestamp       INTEGER NOT NULL,
   media_type      TEXT,
   sticker_file_id TEXT,
-  file_path       TEXT
+  file_path       TEXT,
+  -- Files attached to this message, as a JSON array of
+  -- {path,name,size,mimeType,image}. A message can carry several (the
+  -- companion's composer stages any number), so file_path above holds
+  -- only the first for the pre-multi-file row shape. Null when none.
+  attachments     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_history_chat ON history_messages(chat_id, id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_history_chat_msg ON history_messages(chat_id, msg_id);
@@ -324,6 +329,10 @@ ALTER TABLE history_messages ADD COLUMN sender_handle TEXT`,
   addSessionsMetricsColumn: `-- Column reconciliation for databases that shipped before per-session
 -- metrics existed. Fresh databases get the column via schema.sql.
 ALTER TABLE sessions ADD COLUMN metrics TEXT NOT NULL DEFAULT '{"lifetime":{"counters":{"queries":0,"toolCalls":0,"turnsWithTools":0,"apiCalls":0,"inputTokens":0,"outputTokens":0,"cacheReadTokens":0,"cacheWriteTokens":0,"failedTurns":0,"flowViolationRetries":0,"flowViolationCapExhausted":0,"trailingTextDropped":0},"latency":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"toolCallsByName":{},"backend":{},"cacheHitPercent":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"toolCallsPerTurn":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"apiCallsPerTurn":{"count":0,"sumMs":0,"minMs":null,"maxMs":0}},"buckets":{}}'`,
+  addHistoryAttachmentsColumn: `-- Column reconciliation for databases that shipped before a message could
+-- carry more than one attachment. Fresh databases get the column via
+-- schema.sql.
+ALTER TABLE history_messages ADD COLUMN attachments TEXT`,
 } as const;
 
 export const goalsSql = {
@@ -355,22 +364,23 @@ WHERE chat_id = ? AND status IN (/* statuses */)`,
 export const historySql = {
   insert: `INSERT OR IGNORE INTO history_messages
   (chat_id, msg_id, sender_id, sender_name, sender_handle, text,
-   reply_to_msg_id, timestamp, media_type, sticker_file_id, file_path)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+   reply_to_msg_id, timestamp, media_type, sticker_file_id, file_path,
+   attachments)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   recent: `SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
-       timestamp, media_type, sticker_file_id, file_path
+       timestamp, media_type, sticker_file_id, file_path, attachments
 FROM history_messages
 WHERE chat_id = ? ORDER BY id DESC LIMIT ?`,
   recentBefore: `-- Scroll-back pagination: the window of messages strictly older than a
 -- given msg_id, newest-first (the repository reverses to chronological).
 SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
-       timestamp, media_type, sticker_file_id, file_path
+       timestamp, media_type, sticker_file_id, file_path, attachments
 FROM history_messages
 WHERE chat_id = ? AND msg_id < ? ORDER BY id DESC LIMIT ?`,
   recentBeforeTime: `-- Time-cursor variant of recentBefore for the read_history \`before\` date
 -- parameter: the newest \`limit\` messages strictly older than a timestamp.
 SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
-       timestamp, media_type, sticker_file_id, file_path
+       timestamp, media_type, sticker_file_id, file_path, attachments
 FROM history_messages
 WHERE chat_id = ? AND timestamp < ? ORDER BY id DESC LIMIT ?`,
   setFilePath: `UPDATE history_messages SET file_path = ? WHERE chat_id = ? AND msg_id = ?`,
@@ -378,7 +388,7 @@ WHERE chat_id = ? AND timestamp < ? ORDER BY id DESC LIMIT ?`,
   searchFts: `-- The match param must already be a valid FTS5 expression
 -- (see history.ts ftsQuery).
 SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
-       timestamp, media_type, sticker_file_id, file_path
+       timestamp, media_type, sticker_file_id, file_path, attachments
 FROM history_messages
 WHERE chat_id = ?
   AND id IN (SELECT rowid FROM history_fts WHERE history_fts MATCH ?)
@@ -387,7 +397,7 @@ ORDER BY id DESC LIMIT ?`,
 -- search_history \`after\` / \`before\` date parameters. Either bound may be
 -- the open end of the range (0 / a far-future value).
 SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
-       timestamp, media_type, sticker_file_id, file_path
+       timestamp, media_type, sticker_file_id, file_path, attachments
 FROM history_messages
 WHERE chat_id = ?
   AND id IN (SELECT rowid FROM history_fts WHERE history_fts MATCH ?)
@@ -395,16 +405,16 @@ WHERE chat_id = ?
 ORDER BY id DESC LIMIT ?`,
   bySenderName: `-- The fragment param is LIKE-escaped by the repository (backslash escape).
 SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
-       timestamp, media_type, sticker_file_id, file_path
+       timestamp, media_type, sticker_file_id, file_path, attachments
 FROM history_messages
 WHERE chat_id = ? AND lower(sender_name) LIKE ? ESCAPE '\\'
 ORDER BY id DESC LIMIT ?`,
   byMsgId: `SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
-       timestamp, media_type, sticker_file_id, file_path
+       timestamp, media_type, sticker_file_id, file_path, attachments
 FROM history_messages
 WHERE chat_id = ? AND msg_id = ? ORDER BY id DESC LIMIT 1`,
   bySenderId: `SELECT msg_id, sender_id, sender_name, sender_handle, text, reply_to_msg_id,
-       timestamp, media_type, sticker_file_id, file_path
+       timestamp, media_type, sticker_file_id, file_path, attachments
 FROM history_messages
 WHERE chat_id = ? AND sender_id = ? ORDER BY id DESC LIMIT ?`,
   latestMsgId: `SELECT msg_id FROM history_messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1`,

@@ -681,8 +681,7 @@ class _VoiceAppState extends AppState {
   @override
   Future<bool> sendMessage(
     String text, {
-    String? imagePath,
-    String? attachmentPath,
+    List<Attachment> attachments = const [],
   }) async {
     sent.add(text);
     return sendAccepted;

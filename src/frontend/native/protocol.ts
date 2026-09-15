@@ -52,6 +52,31 @@ export type ClientToolCall = {
   output?: string;
 };
 
+/**
+ * One file attached to a message — an image, an archive, a document, or
+ * anything else the user dropped on the composer. Additive in v1: older
+ * clients that only know `imagePath` keep rendering the first image.
+ *
+ * `path` is the absolute on-disk location in the daemon's uploads dir; it is
+ * what the model is pointed at so it can read the file itself. `url` is the
+ * relative bridge path a client fetches the bytes from (`/media?id=…`),
+ * resolved against its own base URL + token.
+ */
+export type ClientAttachment = {
+  /** Absolute path on the daemon host (handed to the model). */
+  path: string;
+  /** Original file name, for display. */
+  name: string;
+  /** Size in bytes. */
+  size: number;
+  /** Best-effort MIME type, `application/octet-stream` when unknown. */
+  mimeType: string;
+  /** Relative bridge path the bytes are served from (`/media?id=…`). */
+  url: string;
+  /** True when the client should render this inline as an image. */
+  image: boolean;
+};
+
 /** A single rendered message in a conversation. */
 export type ClientMessage = {
   id: string;
@@ -68,6 +93,12 @@ export type ClientMessage = {
    * Present on photo messages the bot sends; `text` carries any caption.
    */
   imagePath?: string;
+  /**
+   * Every file attached to this message, in the order the user staged them.
+   * `imagePath` stays in sync with the first image here so clients written
+   * against the single-image shape keep working unchanged.
+   */
+  attachments?: ClientAttachment[];
   /** Tools that ran during this assistant turn (history hydration). */
   tools?: ClientToolCall[];
   /** Turn stats attached once the turn ended (history hydration). */
@@ -109,8 +140,10 @@ export type ContextInfo = {
  */
 export type QueuedMessage = {
   text: string;
-  /** True when an image/file is attached to the queued send. */
+  /** True when one or more files are attached to the queued send. */
   hasAttachment: boolean;
+  /** How many files are attached (additive; older clients read the flag). */
+  attachmentCount?: number;
 };
 
 /** A conversation in the sidebar. */

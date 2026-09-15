@@ -580,14 +580,13 @@ class AppState extends ChangeNotifier {
   /// composer hand the draft back instead of silently losing it.
   Future<bool> sendMessage(
     String text, {
-    String? imagePath,
-    String? attachmentPath,
+    List<Attachment> attachments = const [],
   }) async {
     final chatId = selectedChatId;
     final client = _client;
     if (chatId == null || client == null) return false;
-    // Text may be empty when an image is attached.
-    if (text.trim().isEmpty && attachmentPath == null) return false;
+    // Text may be empty when files are attached.
+    if (text.trim().isEmpty && attachments.isEmpty) return false;
     // The user committed to this chat: it is no longer an untouched one, even
     // if the send fails or the reply is slow to arrive.
     _unusedChats.remove(chatId);
@@ -596,12 +595,7 @@ class AppState extends ChangeNotifier {
     // auto-sends it at turn end, rather than interrupting. So the app doesn't
     // need to decide — it just sends.
     try {
-      await client.send(
-        chatId,
-        text.trim(),
-        imagePath: imagePath,
-        attachmentPath: attachmentPath,
-      );
+      await client.send(chatId, text.trim(), attachments: attachments);
       return true;
     } catch (e) {
       _appendSystem(chatId, 'Failed to send: $e');
@@ -626,17 +620,26 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Upload image bytes and return the render + on-disk paths, or null on
+  /// Stream a staged file up to the daemon and return its record, or null on
   /// failure (a system note is appended so the user sees what happened).
-  Future<({String imagePath, String path})?> uploadImage(
-    List<int> bytes,
+  /// [onProgress] reports bytes sent so the composer can show a real bar.
+  Future<Attachment?> uploadAttachment(
+    Stream<List<int>> bytes,
+    int length,
     String filename,
-    String contentType,
-  ) async {
+    String contentType, {
+    void Function(int sent)? onProgress,
+  }) async {
     final client = _client;
     if (client == null) return null;
     try {
-      return await client.uploadImage(bytes, filename, contentType);
+      return await client.uploadAttachment(
+        bytes,
+        length,
+        filename,
+        contentType,
+        onProgress: onProgress,
+      );
     } catch (e) {
       final chatId = selectedChatId;
       if (chatId != null) _appendSystem(chatId, 'Upload failed: $e');
