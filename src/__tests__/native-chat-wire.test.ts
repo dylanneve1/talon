@@ -98,7 +98,10 @@ describe("native chat wire projection", () => {
   it("setQueued trims, stores every attachment and syncs one chat_updated", () => {
     const entry = runtime.chats.create();
     const staged = [attachment("/uploads/1.png"), attachment("/uploads/2.zip")];
-    setQueued(runtime, entry.id, { text: "  follow up  ", attachments: staged });
+    setQueued(runtime, entry.id, {
+      text: "  follow up  ",
+      attachments: staged,
+    });
     expect(runtime.queuedByChat.get(entry.id)).toEqual({
       text: "follow up",
       attachments: staged,

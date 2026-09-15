@@ -4,7 +4,7 @@
  * the upload path and the `/media` route classify files with.
  */
 
-import { createWriteStream } from "node:fs";
+import { createWriteStream, type WriteStream } from "node:fs";
 import { mkdir, unlink } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -176,6 +176,7 @@ export async function saveUploadStream(
 ): Promise<{ path: string; size: number }> {
   await mkdir(dirs.uploads, { recursive: true });
   const dest = uploadDest(runtime, filename);
+  const sink = createWriteStream(dest);
   let size = 0;
   let tooLarge = false;
   try {
@@ -193,9 +194,13 @@ export async function saveUploadStream(
           yield chunk;
         }
       },
-      createWriteStream(dest),
+      sink,
     );
   } catch (err) {
+    // Wait for the sink to actually close before removing the partial file:
+    // the pipeline can reject before the fd exists, and an unlink that races
+    // it leaves the file on disk once the open finally lands.
+    await closed(sink);
     await unlink(dest).catch(() => {});
     if (tooLarge) throw err;
     throw new Error(
@@ -203,10 +208,20 @@ export async function saveUploadStream(
     );
   }
   if (size === 0) {
+    await closed(sink);
     await unlink(dest).catch(() => {});
     throw new Error("Empty upload");
   }
   return { path: dest, size };
+}
+
+/** Resolve once a write stream is closed, destroying it if it still is not. */
+function closed(sink: WriteStream): Promise<void> {
+  return new Promise((resolve) => {
+    if (sink.closed) return resolve();
+    sink.once("close", () => resolve());
+    sink.destroy();
+  });
 }
 
 /**
