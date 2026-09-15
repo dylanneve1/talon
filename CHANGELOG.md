@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.36.0](https://github.com/dylanneve1/talon/compare/v3.35.0...v3.36.0) (2026-09-15)
+
+
+### Features
+
+* **companion:** attach any file type, several per message, with desktop drag and drop ([#897](https://github.com/dylanneve1/talon/issues/897)) ([99dea04](https://github.com/dylanneve1/talon/commit/99dea0436614cfdff2680fe1eb311885ef352082))
+
 ## [3.35.0](https://github.com/dylanneve1/talon/compare/v3.34.1...v3.35.0) (2026-09-15)
 
 
