@@ -280,6 +280,63 @@ void main() {
       expect(received, payload);
     });
 
+    test('downloadFile gives up on a body that stalls mid-stream', () async {
+      final bridge = await MockBridge.start(token: 'tok');
+      addTearDown(bridge.close);
+      final client = BridgeClient(configFor(bridge, token: 'tok'));
+      addTearDown(client.dispose);
+
+      // Headers and a first slice arrive, then the connection goes quiet
+      // without an end-of-stream — before the idle timeout existed this
+      // call never returned and never threw, so the mesh command it backs
+      // was never answered at all.
+      bridge.stalledDownloads['t-stall'] = List<int>.filled(64, 1);
+
+      await expectLater(
+        client.downloadFile(
+          't-stall',
+          (_) async {},
+          idleTimeout: const Duration(milliseconds: 150),
+        ),
+        throwsA(isA<BridgeException>().having(
+          (e) => e.message,
+          'message',
+          contains('stalled'),
+        )),
+      );
+    });
+
+    test('downloadFile does not cut off a slow but live transfer', () async {
+      final bridge = await MockBridge.start(token: 'tok');
+      addTearDown(bridge.close);
+      final client = BridgeClient(configFor(bridge, token: 'tok'));
+      addTearDown(client.dispose);
+
+      // The deadline is between events, not overall — so neither a server
+      // that trickles nor a consumer slower than the deadline may abort a
+      // transfer that is still making progress.
+      final payload = List<int>.generate(64 * 1024, (i) => i % 256);
+      bridge.downloadFiles['t-slow'] = payload;
+      bridge.downloadSliceBytes = 8 * 1024;
+      bridge.downloadSliceGap = const Duration(milliseconds: 60);
+
+      final received = <int>[];
+      final n = await client.downloadFile(
+        't-slow',
+        (chunk) async {
+          received.addAll(chunk);
+          await Future<void>.delayed(const Duration(milliseconds: 40));
+        },
+        idleTimeout: const Duration(milliseconds: 200),
+      );
+
+      expect(n, payload.length);
+      expect(received, payload);
+      // Total wall clock (8 slices × ~100ms) comfortably exceeds the
+      // deadline; only a per-event deadline lets this pass.
+      expect(payload.length ~/ (8 * 1024), greaterThan(4));
+    });
+
     test('downloadFile surfaces an unknown token as an error', () async {
       final bridge = await MockBridge.start(token: 'tok');
       addTearDown(bridge.close);

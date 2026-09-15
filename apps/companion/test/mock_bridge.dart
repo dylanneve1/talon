@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 class MockBridge {
   MockBridge({
@@ -75,6 +76,17 @@ class MockBridge {
   final Set<String> uploadTokens = {};
   final Map<String, List<int>> uploadedFiles = {};
   final Map<String, List<int>> downloadFiles = {};
+
+  /// Tokens whose GET answers with headers and a first slice of body, then
+  /// never sends the rest and never closes — a half-open connection, which
+  /// is what a mobile NAT timeout looks like to the client.
+  final Map<String, List<int>> stalledDownloads = {};
+
+  /// When set, [downloadFiles] bodies are served in slices of this many
+  /// bytes with [downloadSliceGap] between them — a transfer that is slow
+  /// but alive, as opposed to one that has stopped.
+  int downloadSliceBytes = 0;
+  Duration downloadSliceGap = Duration.zero;
 
   int get port => _port;
   String get host => '127.0.0.1';
@@ -272,6 +284,18 @@ class MockBridge {
         return _json(req.response, 200, {'ok': true, 'bytes': chunks.length});
       }
       if (req.method == 'GET') {
+        final stalled = stalledDownloads[t];
+        if (stalled != null) {
+          stalledDownloads.remove(t);
+          final res = req.response;
+          res.statusCode = 200;
+          res.headers.contentType = ContentType.binary;
+          // Promise more than we send, then go quiet without closing.
+          res.headers.contentLength = stalled.length * 2;
+          res.add(stalled);
+          await res.flush();
+          return;
+        }
         final body = downloadFiles[t];
         if (body == null) {
           return _json(req.response, 404, {'ok': false, 'error': 'bad token'});
@@ -281,6 +305,20 @@ class MockBridge {
         res.statusCode = 200;
         res.headers.contentType = ContentType.binary;
         res.headers.contentLength = body.length;
+        if (downloadSliceBytes > 0) {
+          for (var i = 0; i < body.length; i += downloadSliceBytes) {
+            res.add(body.sublist(
+              i,
+              math.min(i + downloadSliceBytes, body.length),
+            ));
+            await res.flush();
+            if (downloadSliceGap > Duration.zero) {
+              await Future<void>.delayed(downloadSliceGap);
+            }
+          }
+          await res.close();
+          return;
+        }
         res.add(body);
         unawaited(res.close());
         return;

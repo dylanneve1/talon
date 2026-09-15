@@ -22,6 +22,27 @@ import 'log.dart';
 /// every later connect requires the same one and fails with
 /// [BridgeException.certificateChanged] otherwise.
 class BridgeClient {
+  /// Inter-chunk deadline for a streamed file transfer body.
+  ///
+  /// A half-open TCP connection — mobile NAT dropping a flow without a FIN
+  /// is the everyday cause — delivers neither bytes nor an end-of-stream,
+  /// so an untimed read of a transfer body waits forever. That matters
+  /// beyond the transfer itself: [MeshService] answers the daemon's
+  /// `download_file`/`upload_file` command only after the body finishes, so
+  /// a read that never returns is a command the daemon never hears back
+  /// about, and the tool call behind it hangs until its own timeout. Giving
+  /// up here turns silence into a reported failure.
+  static const Duration streamIdleTimeout = Duration(seconds: 45);
+
+  /// Wall-clock budget for pushing [bytes] up (the `upload_file` half).
+  /// Unlike a download there is no per-chunk event to watch — the response
+  /// arrives only once the whole body is sent — so the deadline is sized
+  /// to the payload at a deliberately pessimistic floor throughput, with
+  /// grace on top for the handshake.
+  static Duration uploadBudget(int bytes) => Duration(
+        milliseconds: 30 * 1000 + (bytes / (32 * 1024) * 1000).round(),
+      );
+
   ConnectionConfig config;
   late final http.Client _http = _newClient();
 
@@ -236,8 +257,10 @@ class BridgeClient {
   Future<int> uploadFile(
     String token,
     Stream<List<int>> bytes,
-    int length,
-  ) async {
+    int length, {
+    Duration? budget,
+  }) async {
+    final deadline = budget ?? uploadBudget(length);
     final req = http.StreamedRequest(
       'POST',
       _u('/devices/file', {
@@ -260,8 +283,20 @@ class BridgeClient {
         req.sink.addError(e);
       }
     }());
-    final res = await _http.send(req);
-    final body = await res.stream.bytesToString();
+    final res = await _http.send(req).timeout(
+          deadline,
+          onTimeout: () => throw BridgeException(
+            'Upload stalled: no response within ${deadline.inSeconds}s '
+            'after $sent of $length bytes.',
+          ),
+        );
+    final body = await res.stream.bytesToString().timeout(
+          streamIdleTimeout,
+          onTimeout: () => throw BridgeException(
+            'Upload stalled: no response body within '
+            '${streamIdleTimeout.inSeconds}s.',
+          ),
+        );
     if (res.statusCode != 200) {
       throw BridgeException(
         'Upload rejected (${res.statusCode}): '
@@ -276,8 +311,10 @@ class BridgeClient {
   /// received (validated against Content-Length when present).
   Future<int> downloadFile(
     String token,
-    Future<void> Function(List<int> chunk) onChunk,
-  ) async {
+    Future<void> Function(List<int> chunk) onChunk, {
+    Duration? idleTimeout,
+  }) async {
+    final idle = idleTimeout ?? streamIdleTimeout;
     final req = http.Request(
       'GET',
       _u('/devices/file', {
@@ -285,7 +322,12 @@ class BridgeClient {
         if (meshDeviceId != null) 'deviceId': meshDeviceId!,
       }),
     )..headers.addAll(config.authHeaders());
-    final res = await _http.send(req);
+    final res = await _http.send(req).timeout(
+          idle,
+          onTimeout: () => throw BridgeException(
+            'Download stalled: no response headers within ${idle.inSeconds}s.',
+          ),
+        );
     if (res.statusCode != 200) {
       final body = await res.stream.bytesToString();
       throw BridgeException(
@@ -294,7 +336,20 @@ class BridgeClient {
       );
     }
     var received = 0;
-    await for (final chunk in res.stream) {
+    // `timeout` on a stream is an INTER-EVENT deadline, so a slow but live
+    // transfer is never cut off — only one that stops delivering. Without
+    // it a half-open connection (mobile NAT dropping the flow without a
+    // FIN) leaves this loop waiting forever, and the caller never answers
+    // the daemon's `download_file` command at all.
+    await for (final chunk in res.stream.timeout(
+      idle,
+      onTimeout: (sink) => sink.addError(
+        BridgeException(
+          'Download stalled: no data for ${idle.inSeconds}s '
+          'after $received bytes.',
+        ),
+      ),
+    )) {
       received += chunk.length;
       await onChunk(chunk);
     }
