@@ -1,5 +1,29 @@
 # Changelog
 
+## [3.35.0](https://github.com/dylanneve1/talon/compare/v3.34.1...v3.35.0) (2026-09-15)
+
+
+### Features
+
+* **auth:** let admins re-sign in to Claude and Codex from Telegram ([#886](https://github.com/dylanneve1/talon/issues/886)) ([4dbbf37](https://github.com/dylanneve1/talon/commit/4dbbf37ea5cd86baaee8e5251b85a1de4cf3eb6d))
+* **whatsapp:** /model, /effort, /settings and /status text commands ([#891](https://github.com/dylanneve1/talon/issues/891)) ([5fa1178](https://github.com/dylanneve1/talon/commit/5fa11788118f535469ec1eb6e2776552cb00118a))
+* **whatsapp:** chat history search, retrieval and persisted message keys ([#893](https://github.com/dylanneve1/talon/issues/893)) ([4a369a3](https://github.com/dylanneve1/talon/commit/4a369a34f67359849426c777a0fe70e9d74fcdbd))
+
+
+### Bug Fixes
+
+* **codex:** classify an expired OAuth login as an auth error, not a silent exit ([#883](https://github.com/dylanneve1/talon/issues/883)) ([5957f55](https://github.com/dylanneve1/talon/commit/5957f55fea9e5e7e334a29655b7f0b310650c38e))
+* **remote-server:** abort in-flight turns when the server is stopped ([#882](https://github.com/dylanneve1/talon/issues/882)) ([ca1f786](https://github.com/dylanneve1/talon/commit/ca1f786277c5cc9a2d8775594e8d875c4725406c))
+* **telegram:** stop /whatsapp and /auth being shadowed by the unknown-command catch-all ([#895](https://github.com/dylanneve1/talon/issues/895)) ([679b7be](https://github.com/dylanneve1/talon/commit/679b7be9a9933c0eec08e6d2aa76b446d3e57c54))
+
+
+### Miscellaneous Chores
+
+* add the MIT LICENSE and remove sponsorship links ([#890](https://github.com/dylanneve1/talon/issues/890)) ([d73d724](https://github.com/dylanneve1/talon/commit/d73d7240ec0b0c369e0b574980ffd5da0487a4a2))
+* **deps-dev:** Bump the dev-dependencies group with 3 updates ([#887](https://github.com/dylanneve1/talon/issues/887)) ([c8fc561](https://github.com/dylanneve1/talon/commit/c8fc561534dddeef1e034db65892ef4db780f664))
+* **deps:** Bump github/codeql-action from 4.37.9 to 4.38.0 ([#888](https://github.com/dylanneve1/talon/issues/888)) ([f244d16](https://github.com/dylanneve1/talon/commit/f244d16aa0f0db601c0b8e1d1f69f52e08b35591))
+* **deps:** Bump the production-dependencies group with 8 updates ([#889](https://github.com/dylanneve1/talon/issues/889)) ([4b30abb](https://github.com/dylanneve1/talon/commit/4b30abb94912adaeac912c2571bbdbc8283c4011))
+
 ## [3.34.1](https://github.com/dylanneve1/talon/compare/v3.34.0...v3.34.1) (2026-09-14)
 
 
