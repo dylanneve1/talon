@@ -15,7 +15,7 @@ import { getPairingProvider } from "../../../core/pairing-broker.js";
 import { log } from "../../../util/log.js";
 import { isAuthorizedAdmin } from "./state.js";
 
-export const WHATSAPP_NOT_ENABLED =
+const WHATSAPP_NOT_ENABLED =
   'WhatsApp isn\'t enabled on this daemon — add "whatsapp" to the ' +
   "frontend list and configure the whatsapp block, then restart.";
 
