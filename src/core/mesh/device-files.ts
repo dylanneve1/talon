@@ -61,8 +61,53 @@ export interface DeviceFilesHost {
  * fallback tolerable without bloating a single SSE frame too far.
  */
 const FILE_CHUNK_BYTES = 1024 * 1024;
-/** Wall-clock budget for one streamed transfer (command dispatch → done). */
-const STREAM_TRANSFER_TIMEOUT_MS = 60 * 60 * 1000;
+/**
+ * Wall-clock budget for one streamed transfer (command dispatch → done).
+ *
+ * A device that accepts the transfer command and then goes silent answers
+ * never: a stalled body stream on a flaky mobile link delivers neither
+ * bytes nor a FIN, so the device-side `await` for the body never completes
+ * and never throws, and the command result it would have posted afterwards
+ * is never posted. The dispatch timeout is the only thing that ends that
+ * wait — and since turns serialize per chat, the whole chat's message loop
+ * queues behind it. A flat hour therefore takes a chat offline for an hour
+ * over one dropped TCP connection.
+ *
+ * So the budget is sized to the payload instead: a fixed grace for the
+ * handshake and device-side setup, plus the body at a deliberately
+ * pessimistic floor throughput, clamped at both ends. A genuinely slow
+ * link still finishes; a dead one gives up in minutes.
+ */
+const STREAM_TRANSFER_GRACE_MS = 60_000;
+const STREAM_TRANSFER_FLOOR_BYTES_PER_SEC = 32 * 1024;
+/**
+ * Ceiling, so a payload large enough to out-scale the formula still can't
+ * block a chat indefinitely. Deliberately well above what a big transfer
+ * over a slow link needs — the common wedge is a SMALL transfer that used
+ * to inherit the same budget as a huge one, and that case now resolves in
+ * about a minute.
+ */
+const STREAM_TRANSFER_MAX_MS = 30 * 60 * 1000;
+
+/**
+ * Budget for streaming `bytes` to or from a device. An unknown size — a
+ * pull whose caller has not already paid for a `stat` — takes the ceiling
+ * rather than an extra mesh round trip to size a budget with: still
+ * bounded, just less tightly. Either way the device-side idle timeout
+ * normally answers long before this fires; this is the backstop for a
+ * device that has stopped answering altogether.
+ */
+export function streamTransferTimeoutMs(bytes?: number): number {
+  if (bytes === undefined || !Number.isFinite(bytes)) {
+    return STREAM_TRANSFER_MAX_MS;
+  }
+  const forBody =
+    (Math.max(0, bytes) / STREAM_TRANSFER_FLOOR_BYTES_PER_SEC) * 1000;
+  return Math.min(
+    Math.round(STREAM_TRANSFER_GRACE_MS + forBody),
+    STREAM_TRANSFER_MAX_MS,
+  );
+}
 /** readFileBytes switches to the streaming path above this size. */
 const STREAM_READ_THRESHOLD_BYTES = 4 * 1024 * 1024;
 /**
@@ -134,13 +179,14 @@ export class DeviceFiles {
     target: DeviceInfo,
     remote: string,
     dest: string,
+    sizeHint?: number,
   ): Promise<{ bytes: number } | { error: string }> {
     const { token, done } = this.transfers.createPull(target.id, dest);
     const dispatched = await this.host.dispatchCommand(
       target.id,
       "upload_file",
       { token, path: remote },
-      STREAM_TRANSFER_TIMEOUT_MS,
+      streamTransferTimeoutMs(sizeHint),
     );
     if ("error" in dispatched) {
       this.transfers.cancel(token);
@@ -203,7 +249,7 @@ export class DeviceFiles {
       const size = await this.statSize(target.id, p);
       if (size !== undefined && size > STREAM_READ_THRESHOLD_BYTES) {
         const tmp = join(tmpdir(), `talon-pull-${randomUUID()}-${basename(p)}`);
-        const pulled = await this.pullViaStream(target, p, tmp);
+        const pulled = await this.pullViaStream(target, p, tmp, size);
         if ("error" in pulled) return { error: pulled.error };
         try {
           const data = await readFile(tmp);
@@ -338,12 +384,19 @@ export class DeviceFiles {
     const target = resolved.target;
     if (this.canStream(target, "download_file")) {
       const started = Date.now();
+      // The source is on this host, so sizing the budget costs a local stat
+      // rather than a mesh round trip. A source we cannot stat still gets a
+      // bounded (if looser) budget — this decides a timeout, not whether
+      // the transfer is allowed to start.
+      const localSize = await stat(local)
+        .then((s) => s.size)
+        .catch(() => undefined);
       const { token } = this.transfers.createPush(target.id, local);
       const dispatched = await this.host.dispatchCommand(
         target.id,
         "download_file",
         { token, path: remote },
-        STREAM_TRANSFER_TIMEOUT_MS,
+        streamTransferTimeoutMs(localSize),
       );
       if ("error" in dispatched) {
         this.transfers.cancel(token);
