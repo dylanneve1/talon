@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.0.1](https://github.com/dylanneve1/talon/compare/v4.0.0...v4.0.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **ci:** give npm propagation ten minutes, and bypass the cached miss ([#914](https://github.com/dylanneve1/talon/issues/914)) ([26b0bca](https://github.com/dylanneve1/talon/commit/26b0bca1ce5eb28d6a4e6a12414b9e4fda4236da))
+
+
+### Miscellaneous Chores
+
+* drop the 4.0.0 release-as pin ([#912](https://github.com/dylanneve1/talon/issues/912)) ([1b34788](https://github.com/dylanneve1/talon/commit/1b3478815672aa14859e3a6223dd93269b6c4788))
+
 ## [4.0.0](https://github.com/dylanneve1/talon/compare/v3.37.0...v4.0.0) (2026-09-16)
 
 
