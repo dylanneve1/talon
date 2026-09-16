@@ -47,26 +47,33 @@ jobs:
     name: Smoke Test
     needs: [npm]
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Must clear the propagation poll (up to 10 minutes) plus install + verify.
+    timeout-minutes: 20
     steps:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
 
-      # The registry needs a moment to serve a version it has just accepted,
-      # and a fixed sleep is a guess: v3.37.0 published fine and this job
-      # still went red with `ETARGET No matching version found for
-      # talon-agent@3.37.0` after 15s, marking a good release as failed.
-      # Poll for the version instead, and only give up after two minutes.
+      # Publishing is asynchronous — npm says so itself on the way out:
+      # "Your package is being processed and may take a few minutes to become
+      # available." Two release runs have now been marked failed by a good
+      # publish: v3.37.0 on a fixed 15s sleep, and v4.0.0 on a two-minute
+      # poll that still gave up too early (4.0.0 was live minutes later).
+      # Ten minutes covers what npm actually means by "a few minutes".
+      #
+      # --prefer-online matters as much as the window: without it npm can
+      # keep serving the cached 404 from the first attempt, so the poll would
+      # re-read its own stale miss instead of asking the registry again.
       - name: Wait for npm registry propagation
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          for attempt in $(seq 1 12); do
-            if npm view talon-agent@"$TAG_VERSION" version >/dev/null 2>&1; then
+          for attempt in $(seq 1 60); do
+            if npm view --prefer-online talon-agent@"$TAG_VERSION" version \
+                 >/dev/null 2>&1; then
               echo "talon-agent@$TAG_VERSION is live (after ${attempt} check(s))"
               exit 0
             fi
-            echo "not on the registry yet — retrying in 10s (${attempt}/12)"
+            echo "not on the registry yet — retrying in 10s (${attempt}/60)"
             sleep 10
           done
           echo "::error::talon-agent@$TAG_VERSION never appeared on the registry"
