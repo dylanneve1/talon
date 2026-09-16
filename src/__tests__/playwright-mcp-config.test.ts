@@ -36,14 +36,14 @@ describe("playwright plugin — endpoint mode MCP config", () => {
 
     expect(files.playwrightMcpConfig.startsWith(root)).toBe(true);
     expect(existsSync(files.playwrightMcpConfig)).toBe(true);
-    expect(JSON.parse(readFileSync(files.playwrightMcpConfig, "utf-8"))).toEqual(
-      {
-        browser: {
-          browserName: "firefox",
-          remoteEndpoint: "ws://localhost:9323/camoufox",
-        },
+    expect(
+      JSON.parse(readFileSync(files.playwrightMcpConfig, "utf-8")),
+    ).toEqual({
+      browser: {
+        browserName: "firefox",
+        remoteEndpoint: "ws://localhost:9323/camoufox",
       },
-    );
+    });
     expect(plugin.mcpServer?.args).toContain(files.playwrightMcpConfig);
   });
 
