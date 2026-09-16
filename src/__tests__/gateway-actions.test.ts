@@ -2457,5 +2457,136 @@ describe("per-job model override + discovery actions", () => {
         "does not implement send_message",
       );
     });
+
+    it("promotes a media source to the matching per-kind send action", async () => {
+      const handler = vi.fn(async () => ({ ok: true, message_id: 11 }));
+      registerCrossSendTarget("whatsapp", handler);
+      const result = await handleChatFreeAction({
+        action: "send_via",
+        frontend: "whatsapp",
+        target: "+353871234567",
+        file_path: "media/dolphin.png",
+        text: "look at this",
+      });
+      expect(result).toEqual({ ok: true, message_id: 11 });
+      // Text rides as the caption — a media send has no separate body.
+      expect(handler).toHaveBeenCalledWith(
+        {
+          action: "send_photo",
+          target: "+353871234567",
+          file_path: "media/dolphin.png",
+          caption: "look at this",
+        },
+        0,
+      );
+    });
+
+    it("infers the kind from a URL extension, ignoring the query string", async () => {
+      const handler = vi.fn(
+        async (_body: Record<string, unknown>, _chatId: number) => ({
+          ok: true,
+        }),
+      );
+      registerCrossSendTarget("whatsapp", handler);
+      await handleChatFreeAction({
+        action: "send_via",
+        frontend: "whatsapp",
+        target: "+353871234567",
+        url: "https://example.com/clip.mp4?v=2",
+      });
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "send_video",
+          url: "https://example.com/clip.mp4?v=2",
+        }),
+        0,
+      );
+      // No text given, so no caption key at all.
+      expect(handler.mock.calls[0]?.[0]).not.toHaveProperty("caption");
+    });
+
+    it("falls back to a document for an unrecognised extension", async () => {
+      const handler = vi.fn(async () => ({ ok: true }));
+      registerCrossSendTarget("whatsapp", handler);
+      await handleChatFreeAction({
+        action: "send_via",
+        frontend: "whatsapp",
+        target: "+353871234567",
+        file_path: "reports/q3.xyz",
+      });
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "send_file" }),
+        0,
+      );
+    });
+
+    it("honours an explicit media_type over the inferred one", async () => {
+      const handler = vi.fn(async () => ({ ok: true }));
+      registerCrossSendTarget("whatsapp", handler);
+      await handleChatFreeAction({
+        action: "send_via",
+        frontend: "whatsapp",
+        target: "+353871234567",
+        file_path: "media/wave.webp",
+        media_type: "sticker",
+      });
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "send_sticker" }),
+        0,
+      );
+    });
+
+    it("rejects an unknown media_type by name", async () => {
+      registerCrossSendTarget(
+        "whatsapp",
+        vi.fn(async () => ({ ok: true })),
+      );
+      const result = await handleChatFreeAction({
+        action: "send_via",
+        frontend: "whatsapp",
+        target: "+353871234567",
+        file_path: "media/x.png",
+        media_type: "hologram",
+      });
+      expect(result?.ok).toBe(false);
+      expect(String(result?.error)).toContain('unknown media_type "hologram"');
+      expect(String(result?.error)).toContain("photo");
+    });
+
+    it("accepts media with no text, but still requires one or the other", async () => {
+      registerCrossSendTarget(
+        "whatsapp",
+        vi.fn(async () => ({ ok: true })),
+      );
+      const bare = await handleChatFreeAction({
+        action: "send_via",
+        frontend: "whatsapp",
+        target: "+353871234567",
+      });
+      expect(bare?.error).toContain("text is required");
+      expect(String(bare?.error)).toContain("file_path");
+
+      const mediaOnly = await handleChatFreeAction({
+        action: "send_via",
+        frontend: "whatsapp",
+        target: "+353871234567",
+        file_path: "media/x.png",
+      });
+      expect(mediaOnly?.ok).toBe(true);
+    });
+
+    it("names the media action when the frontend does not implement it", async () => {
+      registerCrossSendTarget(
+        "teams",
+        vi.fn(async () => null),
+      );
+      const result = await handleChatFreeAction({
+        action: "send_via",
+        frontend: "teams",
+        target: "42",
+        file_path: "media/x.png",
+      });
+      expect(String(result?.error)).toContain("does not implement send_photo");
+    });
   });
 });
