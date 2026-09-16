@@ -11,7 +11,6 @@
   "packages": {
     ".": {
       "package-name": "talon-agent",
-      "release-as": "4.0.0",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         { "type": "generic", "path": "apps/node/version.txt" }
