@@ -119,6 +119,17 @@ export const _deps = {
     // dynamic import() rejects bare drive-letter paths (e.g. C:\...).
     // Leave node: specifiers, relative paths, and URLs unchanged.
     const isAbsFilePath = /^[a-zA-Z]:[/\\]/.test(path) || path.startsWith("/");
-    return import(isAbsFilePath ? pathToFileURL(path).href : path);
+    if (!isAbsFilePath) return import(path);
+
+    // Cache-bust with the reload timestamp. ESM caches modules by resolved
+    // URL forever, so without a changing query a hot reload re-imports the
+    // *old* module object and the plugin's own source edits are invisible
+    // until a full restart — silently, since the stale module still loads
+    // fine (observed 2026-09-16: a rewritten plugin kept reporting its
+    // previous version through three reloads). The timestamp only moves per
+    // reload, so every module in one load cycle shares a key.
+    const url = pathToFileURL(path);
+    url.searchParams.set("talonReloadAt", reloadState.lastReloadAt);
+    return import(url.href);
   },
 };
