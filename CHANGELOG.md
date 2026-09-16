@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.37.0](https://github.com/dylanneve1/talon/compare/v3.36.0...v3.37.0) (2026-09-16)
+
+
+### Features
+
+* **companion:** upload attachments as they are staged, not on send ([#907](https://github.com/dylanneve1/talon/issues/907)) ([912d08f](https://github.com/dylanneve1/talon/commit/912d08f84abd1522a19798a318ba5037efea63d6))
+
+
+### Bug Fixes
+
+* **dispatcher:** stop the typing loop after three consecutive failures ([#903](https://github.com/dylanneve1/talon/issues/903)) ([e2a3e26](https://github.com/dylanneve1/talon/commit/e2a3e260a17bddfb1f9c417270f22138d1d64100))
+* **native:** log uploads and dropped attachment references ([#906](https://github.com/dylanneve1/talon/issues/906)) ([8a607ce](https://github.com/dylanneve1/talon/commit/8a607ce0e23f2f732f4393e3a610e5ba2feb0994))
+* **playwright:** keep the MCP endpoint config out of /tmp and self-heal it ([#902](https://github.com/dylanneve1/talon/issues/902)) ([1dc4d95](https://github.com/dylanneve1/talon/commit/1dc4d9543ab3cde02bbb8fee78edfe230d35243e))
+* **plugin:** re-evaluate path-plugin modules on hot reload ([#904](https://github.com/dylanneve1/talon/issues/904)) ([a0ca8d8](https://github.com/dylanneve1/talon/commit/a0ca8d8bc9571e4d626c2dd86321806f70aae393))
+
 ## [3.36.0](https://github.com/dylanneve1/talon/compare/v3.35.0...v3.36.0) (2026-09-15)
 
 
