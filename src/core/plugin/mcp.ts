@@ -5,6 +5,7 @@
  */
 
 import { resolve } from "node:path";
+import { logWarn } from "../../util/log.js";
 import { wrapMcpServer } from "../../util/mcp-launcher.js";
 import { isBunRuntime } from "../../util/runtime.js";
 import { registry, reloadState } from "./registry.js";
@@ -51,6 +52,18 @@ export function getPluginMcpServers(
   for (const { plugin, envVars } of registry.all) {
     // Skip plugins not in the allow-list when filtering
     if (only !== undefined && !only.includes(plugin.name)) continue;
+
+    // Let the plugin re-materialize on-disk state the child will read. Runs
+    // on every build so a deleted file heals within a turn; never fatal.
+    try {
+      if (plugin.mcpServer || plugin.mcpServerPath) plugin.prepareMcpSpawn?.();
+    } catch (err) {
+      logWarn(
+        "plugin",
+        `${plugin.name}: prepareMcpSpawn failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
     const baseEnv = buildBridgeEnv(bridgeUrl, chatId, envVars);
 
     if (plugin.mcpServer) {

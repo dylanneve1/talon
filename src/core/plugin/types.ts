@@ -86,6 +86,18 @@ export interface TalonPlugin {
   };
 
   /**
+   * Materialize anything the MCP child needs on disk before it is spawned.
+   *
+   * MCP children are spawned lazily and respawned on demand for the lifetime
+   * of the daemon, so state written once at load time can go missing long
+   * before the last spawn. This hook runs every time the MCP server map is
+   * built, making such state self-healing instead of broken-until-restart.
+   * Must be synchronous, cheap, and idempotent; throwing is swallowed and
+   * logged (a failed prepare must not take the whole server map down).
+   */
+  prepareMcpSpawn?(): void;
+
+  /**
    * Map plugin config to env vars for the MCP subprocess and action handlers.
    * Called once at load time. Values are set on process.env for the main
    * process and passed to the MCP subprocess.

@@ -162,4 +162,15 @@ export const files = {
    * for what the data means.
    */
   codexOauthIncompat: resolve(TALON_ROOT, "data", "codex-oauth-incompat.json"),
+  /**
+   * Generated @playwright/mcp config (endpoint mode): ~/.talon/data/playwright-mcp.json
+   *
+   * Deliberately NOT in os.tmpdir(): the MCP child re-reads this file on every
+   * spawn, hours or days after the daemon wrote it, and a /tmp sweeper
+   * deleting it takes every browser tool down until the daemon restarts
+   * (2026-09-15: an hourly disk cleaner removed 676 `/tmp/talon-*` entries,
+   * and browser tools failed with ENOENT for the next 24h). The name is
+   * pid-free so each run overwrites the last instead of orphaning a file.
+   */
+  playwrightMcpConfig: resolve(TALON_ROOT, "data", "playwright-mcp.json"),
 } as const;

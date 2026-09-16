@@ -30,10 +30,10 @@
  * other.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import type { TalonPlugin } from "../../core/plugin/types.js";
+import { files } from "../../util/paths.js";
 import { log } from "../../util/log.js";
 
 export function createPlaywrightPlugin(config: {
@@ -66,6 +66,11 @@ export function createPlaywrightPlugin(config: {
 
   const args: string[] = [];
 
+  // Endpoint mode writes a config file the MCP child reads at every spawn;
+  // `writeMcpConfig` is re-run before each spawn via `prepareMcpSpawn` so a
+  // deleted config heals instead of failing every browser tool until restart.
+  let writeMcpConfig: (() => void) | undefined;
+
   if (endpoint) {
     // Connect to the existing browser (e.g. the Camoufox websocket server)
     // via a generated MCP config file: `browser.remoteEndpoint` is the
@@ -79,11 +84,12 @@ export function createPlaywrightPlugin(config: {
         remoteEndpoint: endpoint,
       },
     };
-    const configPath = join(
-      tmpdir(),
-      `talon-playwright-mcp-${process.pid}.json`,
-    );
-    writeFileSync(configPath, JSON.stringify(mcpConfig));
+    const configPath = files.playwrightMcpConfig;
+    writeMcpConfig = () => {
+      mkdirSync(dirname(configPath), { recursive: true });
+      writeFileSync(configPath, JSON.stringify(mcpConfig));
+    };
+    writeMcpConfig();
     args.push("--config", configPath);
   } else {
     args.push("--no-sandbox");
@@ -105,6 +111,10 @@ export function createPlaywrightPlugin(config: {
     mcpServer: {
       command: "node",
       args: [mcpBin, ...args],
+    },
+
+    prepareMcpSpawn() {
+      writeMcpConfig?.();
     },
 
     validateConfig() {
