@@ -53,8 +53,24 @@ jobs:
         with:
           node-version: 24
 
+      # The registry needs a moment to serve a version it has just accepted,
+      # and a fixed sleep is a guess: v3.37.0 published fine and this job
+      # still went red with `ETARGET No matching version found for
+      # talon-agent@3.37.0` after 15s, marking a good release as failed.
+      # Poll for the version instead, and only give up after two minutes.
       - name: Wait for npm registry propagation
-        run: sleep 15
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          for attempt in $(seq 1 12); do
+            if npm view talon-agent@"$TAG_VERSION" version >/dev/null 2>&1; then
+              echo "talon-agent@$TAG_VERSION is live (after ${attempt} check(s))"
+              exit 0
+            fi
+            echo "not on the registry yet — retrying in 10s (${attempt}/12)"
+            sleep 10
+          done
+          echo "::error::talon-agent@$TAG_VERSION never appeared on the registry"
+          exit 1
 
       - name: Install published package
         run: |
