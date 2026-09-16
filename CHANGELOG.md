@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.0.0](https://github.com/dylanneve1/talon/compare/v3.37.0...v4.0.0) (2026-09-16)
+
+
+### Bug Fixes
+
+* **ci:** poll the npm registry in the release smoke test ([#909](https://github.com/dylanneve1/talon/issues/909)) ([b6691be](https://github.com/dylanneve1/talon/commit/b6691bee722983cfd83a9c283d3455e76d40dfce))
+
+
+### Miscellaneous Chores
+
+* cut the next release as 4.0.0 ([#910](https://github.com/dylanneve1/talon/issues/910)) ([507009a](https://github.com/dylanneve1/talon/commit/507009a80854c3f6486fc5f1b1cbcb712a1f0591))
+* **deps:** Bump the production-dependencies group across 1 directory with 4 updates ([#908](https://github.com/dylanneve1/talon/issues/908)) ([bbbc4fa](https://github.com/dylanneve1/talon/commit/bbbc4faa0117ae4270e44dc01e03b500b55beee8))
+
 ## [3.37.0](https://github.com/dylanneve1/talon/compare/v3.36.0...v3.37.0) (2026-09-16)
 
 
