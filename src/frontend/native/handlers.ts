@@ -39,6 +39,7 @@ import type { BridgeServerHandlers, SendOptions } from "./server.js";
 import type { ClientAttachment } from "./protocol.js";
 import { configSnapshot, applyConfigUpdate } from "./settings.js";
 import { bridgeStatus, broadcastStatus } from "./status.js";
+import { logWarn } from "../../util/log.js";
 import { interruptTurn, isBusy, liveTurnEvents, startTurn } from "./turn.js";
 
 /**
@@ -58,13 +59,29 @@ function resolveAttachments(
     refs.push({ url: opts.imagePath, path: opts.attachmentPath });
   }
   const resolved: ClientAttachment[] = [];
+  const dropped: string[] = [];
   for (const ref of refs) {
     const found = resolveUpload(runtime, ref);
+    if (!found) {
+      dropped.push(ref.url ?? ref.path ?? "(empty reference)");
+      continue;
+    }
     // Same file referenced twice (a re-send of a queued message, say) stays
     // one attachment.
-    if (found && !resolved.some((a) => a.path === found.path)) {
+    if (!resolved.some((a) => a.path === found.path)) {
       resolved.push(found);
     }
+  }
+  // A dropped reference is how "I attached a file and the agent never saw it"
+  // happens, and it used to be entirely silent. The usual cause is a media id
+  // minted by a previous daemon run — `runtime.uploads` is per-run, so a
+  // client that staged a file before a restart and sent it after points at
+  // nothing.
+  if (dropped.length) {
+    logWarn(
+      "native",
+      `dropped ${dropped.length} unknown attachment reference(s) from /send: ${dropped.join(", ")} — re-upload the file (ids do not survive a daemon restart)`,
+    );
   }
   return resolved;
 }

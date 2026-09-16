@@ -6,6 +6,7 @@ import {
   asString,
   deviceIdParam,
 } from "./params.js";
+import { log, logWarn } from "../../../util/log.js";
 
 export function chatRoutes(
   host: RouteHost,
@@ -110,8 +111,18 @@ export function chatRoutes(
       const filename = url.searchParams.get("filename") ?? "upload";
       const contentType =
         req.headers["content-type"] ?? "application/octet-stream";
+      const startedAt = Date.now();
       try {
         const attachment = await h.upload(filename, contentType, req);
+        // Uploads are the one client action whose failure used to be visible
+        // only in the app: the route answered in JSON and logged nothing, so
+        // "attaching a file doesn't work — check the logs" had nothing to
+        // read. Both outcomes are logged now, with the size and duration
+        // that distinguish a rejected upload from a dropped connection.
+        log(
+          "native",
+          `upload ok: ${attachment.name} (${attachment.size} bytes, ${attachment.mimeType}) in ${Date.now() - startedAt}ms`,
+        );
         // `imagePath` mirrors the URL for clients written against the
         // single-image upload response.
         json(res, 200, { ok: true, ...attachment, imagePath: attachment.url });
@@ -124,6 +135,10 @@ export function chatRoutes(
           : /empty/i.test(error)
             ? 400
             : 500;
+        logWarn(
+          "native",
+          `upload failed (${status}) for ${filename} after ${Date.now() - startedAt}ms: ${error}`,
+        );
         json(res, status, { ok: false, error });
       }
     },
