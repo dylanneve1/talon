@@ -260,4 +260,35 @@ describe("typing loop", () => {
     stop();
     expect(sendTyping).toHaveBeenCalledTimes(2);
   });
+
+  it("gives up after three consecutive failures", async () => {
+    vi.useFakeTimers();
+    // A chat that has gone away fails every refresh, forever.
+    const sendTyping = vi.fn(async () => {
+      throw new Error("Bad Request: chat not found");
+    });
+
+    const stop = startTypingLoop(sendTyping, 7, "chat", 4000);
+    await vi.advanceTimersByTimeAsync(60_000);
+    stop();
+
+    // Immediate send + two refreshes, then silence for the rest of the turn.
+    expect(sendTyping).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps going when a failure is transient", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const sendTyping = vi.fn(async () => {
+      calls++;
+      // Fail in pairs, never three in a row.
+      if (calls % 3 !== 0) throw new Error("blip");
+    });
+
+    const stop = startTypingLoop(sendTyping, 7, "chat", 4000);
+    await vi.advanceTimersByTimeAsync(40_000);
+    stop();
+
+    expect(sendTyping).toHaveBeenCalledTimes(11);
+  });
 });

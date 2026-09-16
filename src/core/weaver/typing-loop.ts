@@ -10,6 +10,16 @@ import { logWarn } from "../../util/log.js";
 /** Platforms expire typing indicators after ~5s; refresh under that. */
 const TYPING_REFRESH_MS = 4000;
 
+/**
+ * Consecutive failures after which the loop gives up for the rest of the
+ * turn. A chat that has gone away (deleted, kicked, migrated) fails every
+ * single refresh, and a long turn then logs one warning every 4 seconds for
+ * a cosmetic indicator — 55 of them in 30 seconds on 2026-09-15, all
+ * "sendChatAction failed (400: chat not found)". Three strikes is enough to
+ * tell a transient blip from a chat that is simply gone.
+ */
+const MAX_CONSECUTIVE_FAILURES = 3;
+
 export type SendTyping = (
   numericChatId: number,
   stringId?: string,
@@ -22,15 +32,36 @@ export function startTypingLoop(
   stringId: string,
   intervalMs = TYPING_REFRESH_MS,
 ): () => void {
-  const send = (label: string) => {
-    sendTyping(numericChatId, stringId).catch((err: unknown) => {
-      logWarn(
-        "dispatcher",
-        `${label} failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    });
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let consecutiveFailures = 0;
+
+  const stop = () => {
+    if (timer !== undefined) clearInterval(timer);
+    timer = undefined;
   };
+
+  const send = (label: string) => {
+    sendTyping(numericChatId, stringId).then(
+      () => {
+        consecutiveFailures = 0;
+      },
+      (err: unknown) => {
+        consecutiveFailures++;
+        const reason = err instanceof Error ? err.message : String(err);
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          stop();
+          logWarn(
+            "dispatcher",
+            `${label} failed ${consecutiveFailures}x in a row — no typing indicator for the rest of this turn: ${reason}`,
+          );
+          return;
+        }
+        logWarn("dispatcher", `${label} failed: ${reason}`);
+      },
+    );
+  };
+
   send("sendTyping");
-  const timer = setInterval(() => send("sendTyping interval"), intervalMs);
-  return () => clearInterval(timer);
+  timer = setInterval(() => send("sendTyping interval"), intervalMs);
+  return stop;
 }
