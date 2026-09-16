@@ -13,15 +13,14 @@ import '../theme.dart';
 /// The message input. Enter sends; Shift+Enter inserts a newline. Grows with
 /// content up to a cap, then scrolls. Any number of files of any type can be
 /// attached — picked with the paperclip, or dropped onto the chat on desktop
-/// — and they upload on send before the message goes out.
+/// — and each uploads the moment it is staged. The send button stays greyed
+/// until every one of them is on the daemon, so a message can never go out
+/// ahead of its files.
 class Composer extends StatefulWidget {
   /// Sends the message; resolves false when the daemon rejected it (dead
   /// bridge, network error) so the draft can be handed back to the user.
   final Future<bool> Function(String text, {List<Attachment> attachments})
       onSend;
-
-  /// Uploads one staged file, reporting progress. Null on failure.
-  final UploadFile onUpload;
 
   /// Files staged for the next send. Owned by the chat view so the desktop
   /// drop target can stage into the same list this renders.
@@ -45,7 +44,6 @@ class Composer extends StatefulWidget {
   const Composer({
     super.key,
     required this.onSend,
-    required this.onUpload,
     required this.attachments,
     required this.enabled,
     this.running = false,
@@ -61,7 +59,6 @@ class _ComposerState extends State<Composer> {
   final _controller = TextEditingController();
   final _focus = FocusNode();
   bool _canSend = false;
-  bool _uploading = false;
   bool _focused = false;
 
   @override
@@ -111,7 +108,7 @@ class _ComposerState extends State<Composer> {
   /// here (`withData: false`): the send streams each file from its path, so
   /// attaching a large archive costs nothing until it is actually sent.
   Future<void> _pickFiles() async {
-    if (!widget.enabled || _uploading) return;
+    if (!widget.enabled || widget.attachments.uploading) return;
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.any,
@@ -139,35 +136,17 @@ class _ComposerState extends State<Composer> {
     );
   }
 
-  /// Upload every staged file, in order, reporting progress per file.
-  /// Returns null as soon as one fails — the caller restores the draft.
-  Future<List<Attachment>?> _uploadStaged(List<StagedFile> staged) async {
-    final uploaded = <Attachment>[];
-    for (final file in staged) {
-      final handle = File(file.path);
-      if (!handle.existsSync()) {
-        _notify('${file.name} is no longer on disk.');
-        return null;
-      }
-      final result = await widget.onUpload(
-        handle.openRead(),
-        file.size,
-        file.name,
-        file.mimeType,
-        onProgress: (sent) {
-          if (mounted) widget.attachments.markProgress(file, sent);
-        },
-      );
-      if (result == null) return null;
-      uploaded.add(result);
-    }
-    return uploaded;
-  }
-
   Future<void> _send() async {
     final text = _controller.text.trim();
     final staged = widget.attachments.files.toList();
-    if ((text.isEmpty && staged.isEmpty) || !widget.enabled || _uploading) {
+    if ((text.isEmpty && staged.isEmpty) || !widget.enabled) return;
+    // Files upload as they are staged; until every one is up (or a failed one
+    // is retried or removed) there is nothing to name, so the send button is
+    // disabled and this is only reachable via the Enter key.
+    if (!widget.attachments.ready) {
+      _notify(widget.attachments.hasFailures
+          ? 'Some files did not upload — retry or remove them.'
+          : 'Still uploading…');
       return;
     }
     // A send is the one irreversible thing this control does: acknowledge it
@@ -178,25 +157,9 @@ class _ComposerState extends State<Composer> {
     setState(() => _canSend = false);
     _focus.requestFocus();
 
-    var attachments = const <Attachment>[];
-    if (staged.isNotEmpty) {
-      setState(() => _uploading = true);
-      final uploaded = await _uploadStaged(staged);
-      if (mounted) setState(() => _uploading = false);
-      if (uploaded == null) {
-        // Upload failed (a system note explains why). Hand the draft back so
-        // the message and its files aren't silently thrown away — unless the
-        // user already started typing a new one.
-        widget.attachments.restore(staged);
-        if (mounted && _controller.text.trim().isEmpty && text.isNotEmpty) {
-          _controller.text = text;
-        }
-        _recomputeCanSend();
-        return;
-      }
-      attachments = uploaded;
-    }
-    // Uploaded and about to go out: clear the staging strip.
+    // Already on the daemon — the send only names them.
+    final attachments = widget.attachments.uploadedAttachments;
+    // About to go out: clear the staging strip.
     widget.attachments.clear();
 
     final ok = await widget.onSend(text, attachments: attachments);
@@ -227,7 +190,13 @@ class _ComposerState extends State<Composer> {
 
   @override
   Widget build(BuildContext context) {
-    final canSend = _canSend && widget.enabled && !_uploading;
+    // Greyed while any staged file is still going up, and while one has
+    // failed — the message would otherwise go out without it.
+    final uploading = widget.attachments.uploading;
+    final canSend = _canSend &&
+        widget.enabled &&
+        !uploading &&
+        widget.attachments.ready;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 7, 12, 12),
       // The input is the app's one persistent control, so it floats: layered
@@ -266,7 +235,7 @@ class _ComposerState extends State<Composer> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 _AttachButton(
-                  enabled: widget.enabled && !_uploading,
+                  enabled: widget.enabled && !uploading,
                   onTap: _pickFiles,
                 ),
                 Expanded(
@@ -309,12 +278,12 @@ class _ComposerState extends State<Composer> {
                   ),
                   child: (widget.running &&
                           !canSend &&
-                          !_uploading &&
+                          !uploading &&
                           widget.onStop != null)
                       ? _StopButton(
                           key: const ValueKey('stop'), onTap: widget.onStop!)
                       : (!canSend &&
-                              !_uploading &&
+                              !uploading &&
                               widget.enabled &&
                               !widget.running &&
                               widget.onVoice != null)
@@ -327,7 +296,7 @@ class _ComposerState extends State<Composer> {
                           : _SendButton(
                               key: const ValueKey('send'),
                               enabled: canSend,
-                              busy: _uploading,
+                              busy: uploading,
                               onTap: _send,
                             ),
                 ),
@@ -354,12 +323,17 @@ class _ComposerState extends State<Composer> {
             for (final file in files)
               _StagedTile(
                 file: file,
-                onRemove: _uploading
-                    ? null
-                    : () {
-                        widget.attachments.remove(file);
-                        _recomputeCanSend();
-                      },
+                // Removable even mid-upload: staging starts the upload
+                // immediately, so "I dragged the wrong 200 MB file" has to
+                // stay cancellable. The in-flight upload drops its result
+                // when it finds the file gone from the list.
+                onRemove: () {
+                  widget.attachments.remove(file);
+                  _recomputeCanSend();
+                },
+                onRetry: file.failed
+                    ? () => widget.attachments.retry(file)
+                    : null,
               ),
           ],
         ),
@@ -373,13 +347,19 @@ class _ComposerState extends State<Composer> {
 class _StagedTile extends StatelessWidget {
   final StagedFile file;
   final VoidCallback? onRemove;
-  const _StagedTile({required this.file, this.onRemove});
+
+  /// Retry this file's failed upload. Null unless it failed.
+  final VoidCallback? onRetry;
+  const _StagedTile({required this.file, this.onRemove, this.onRetry});
 
   @override
   Widget build(BuildContext context) {
     final progress = file.progress;
     return Semantics(
-      label: 'Attached ${file.name}, ${file.sizeLabel}',
+      label: file.failed
+          ? 'Attached ${file.name}, ${file.sizeLabel}, upload failed — '
+              'tap to retry'
+          : 'Attached ${file.name}, ${file.sizeLabel}',
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -391,6 +371,21 @@ class _StagedTile extends StatelessWidget {
                 fit: StackFit.passthrough,
                 children: [
                   file.isImage ? _thumbnail() : _fileChip(),
+                  // A file whose upload failed blocks the send, so it says so
+                  // on the tile itself and retries on tap — otherwise the
+                  // greyed button has no visible explanation.
+                  if (file.failed)
+                    Positioned.fill(
+                      child: GestureDetector(
+                        onTap: onRetry,
+                        child: Container(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          alignment: Alignment.center,
+                          child: const Icon(Icons.refresh,
+                              size: 22, color: Colors.white),
+                        ),
+                      ),
+                    ),
                   if (progress != null)
                     Positioned(
                       left: 0,

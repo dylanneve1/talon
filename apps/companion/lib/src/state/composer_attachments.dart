@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -122,11 +123,22 @@ class StagedFile {
   final int size;
   final String mimeType;
 
-  /// Bytes uploaded so far, while a send is in flight.
+  /// Bytes uploaded so far, while the upload is in flight.
   int sent = 0;
 
-  /// True once this file's upload has started.
+  /// True while this file's bytes are going up.
   bool uploading = false;
+
+  /// The daemon's record of this file, once its upload finished. Files upload
+  /// as soon as they are staged, so by the time the user hits send this is
+  /// already populated — the send itself only has to name what is on the
+  /// daemon, never push bytes.
+  Attachment? uploaded;
+
+  /// Why the upload failed, when it did. A failed file blocks the send until
+  /// it is retried or removed, rather than going out as a silently missing
+  /// attachment.
+  String? error;
 
   StagedFile({
     required this.path,
@@ -152,7 +164,13 @@ class StagedFile {
 
   bool get isImage => mimeType.startsWith('image/');
 
-  /// 0–1 upload progress, or null before the upload starts.
+  /// Ready to be named in a send.
+  bool get isUploaded => uploaded != null;
+
+  /// The upload failed and has not been retried.
+  bool get failed => error != null;
+
+  /// 0–1 upload progress, or null once there is nothing in flight to show.
   double? get progress =>
       uploading ? (size <= 0 ? 0 : (sent / size).clamp(0.0, 1.0)) : null;
 
@@ -162,8 +180,22 @@ class StagedFile {
 /// The composer's staged attachments. Held outside the composer widget so the
 /// desktop drop target — which wraps the whole chat pane — can stage files
 /// into the same list the composer renders and sends.
+///
+/// Staging a file starts its upload immediately. Uploading on send instead
+/// meant the bytes only started moving once the user committed, so a 9 MB
+/// deck sat there doing nothing until send and then appeared to hang; worse,
+/// every retry of a failed send re-uploaded every file (four copies of one
+/// deck landed in the uploads dir on 2026-09-16). Uploading at stage time
+/// makes the wait visible where the file is, costs one upload per file, and
+/// lets the composer simply refuse to send until the bytes are up.
 class ComposerAttachments extends ChangeNotifier {
   final List<StagedFile> _files = [];
+
+  /// Uploader for staged files. Set once by the pane that owns this list;
+  /// until it is set, files stage but do not upload (the send button stays
+  /// disabled, which is the honest state — nothing can be attached without a
+  /// daemon to attach it to).
+  UploadFile? uploader;
 
   /// Files staged for the next send, in the order they were added.
   List<StagedFile> get files => List.unmodifiable(_files);
@@ -171,8 +203,23 @@ class ComposerAttachments extends ChangeNotifier {
   bool get isNotEmpty => _files.isNotEmpty;
   int get length => _files.length;
 
-  /// True while a send is uploading the staged files.
+  /// True while any staged file's bytes are still going up.
   bool get uploading => _files.any((f) => f.uploading);
+
+  /// True when every staged file is on the daemon — the send may go out.
+  /// Vacuously true with nothing staged, so a text-only message is unaffected.
+  bool get ready => _files.every((f) => f.isUploaded);
+
+  /// Staged files whose upload failed; the send stays blocked until each is
+  /// retried or removed.
+  bool get hasFailures => _files.any((f) => f.failed);
+
+  /// The daemon records for every uploaded file, in staging order — what a
+  /// send names.
+  List<Attachment> get uploadedAttachments => [
+        for (final file in _files)
+          if (file.uploaded != null) file.uploaded!,
+      ];
 
   /// Stage files by path, skipping directories, empty files and any path
   /// already staged. Returns how many were added.
@@ -185,7 +232,10 @@ class ComposerAttachments extends ChangeNotifier {
       _files.add(staged);
       added += 1;
     }
-    if (added > 0) notifyListeners();
+    if (added > 0) {
+      notifyListeners();
+      _uploadPending();
+    }
     return added;
   }
 
@@ -197,8 +247,19 @@ class ComposerAttachments extends ChangeNotifier {
       _files.add(file);
       added += 1;
     }
-    if (added > 0) notifyListeners();
+    if (added > 0) {
+      notifyListeners();
+      _uploadPending();
+    }
     return added;
+  }
+
+  /// Re-attempt one file whose upload failed.
+  void retry(StagedFile file) {
+    if (!_files.contains(file) || file.uploading) return;
+    file.error = null;
+    notifyListeners();
+    _uploadPending();
   }
 
   void remove(StagedFile file) {
@@ -212,29 +273,67 @@ class ComposerAttachments extends ChangeNotifier {
   }
 
   /// Put files back after a failed send so nothing is silently thrown away.
+  /// Their uploads are kept: the bytes are already on the daemon and its
+  /// records stay valid, so a retried send costs no second upload.
   void restore(List<StagedFile> files) {
-    for (final file in files) {
-      file.uploading = false;
-      file.sent = 0;
-    }
     _files
       ..clear()
       ..addAll(files);
     notifyListeners();
+    // Anything that had not finished uploading when the send failed still
+    // needs to.
+    _uploadPending();
   }
 
-  /// Mark progress for one file's in-flight upload.
-  void markProgress(StagedFile file, int sent) {
-    file.uploading = true;
-    file.sent = sent;
-    notifyListeners();
-  }
-
-  /// Clear every in-flight marker (upload finished, or gave up).
-  void clearProgress() {
+  /// Start every staged file that is not uploaded, uploading, or failed.
+  void _uploadPending() {
+    if (uploader == null) return;
     for (final file in _files) {
-      file.uploading = false;
-      file.sent = 0;
+      if (file.isUploaded || file.uploading || file.failed) continue;
+      unawaited(_upload(file));
+    }
+  }
+
+  /// Stream one staged file to the daemon, keeping its progress and outcome
+  /// on the file itself so the composer can render it.
+  Future<void> _upload(StagedFile file) async {
+    final upload = uploader;
+    if (upload == null) return;
+    final handle = File(file.path);
+    if (!handle.existsSync()) {
+      file.error = 'no longer on disk';
+      notifyListeners();
+      return;
+    }
+    file.uploading = true;
+    file.sent = 0;
+    notifyListeners();
+    Attachment? result;
+    try {
+      result = await upload(
+        handle.openRead(),
+        file.size,
+        file.name,
+        file.mimeType,
+        onProgress: (sent) {
+          // Removed mid-flight: stop repainting a tile that is gone.
+          if (!_files.contains(file)) return;
+          file.sent = sent;
+          notifyListeners();
+        },
+      );
+    } catch (e) {
+      result = null;
+    }
+    // The user removed it (or cleared the composer) while it was going up —
+    // the daemon keeps the bytes, but this list no longer speaks for them.
+    if (!_files.contains(file)) return;
+    file.uploading = false;
+    if (result == null) {
+      file.error = 'upload failed';
+    } else {
+      file.uploaded = result;
+      file.sent = file.size;
     }
     notifyListeners();
   }

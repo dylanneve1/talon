@@ -35,7 +35,6 @@ void main() {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(host(Composer(
       onSend: (_, {attachments = const []}) async => true,
-      onUpload: (_, __, ___, ____, {onProgress}) async => null,
       attachments: ComposerAttachments(),
       enabled: true,
     )));
@@ -60,7 +59,6 @@ void main() {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(host(Composer(
       onSend: (_, {attachments = const []}) async => true,
-      onUpload: (_, __, ___, ____, {onProgress}) async => null,
       attachments: ComposerAttachments(),
       enabled: true,
       running: true,

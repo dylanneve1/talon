@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -35,13 +36,9 @@ void main() {
         home: Scaffold(body: child),
       );
 
-  /// Tap send and let it finish. The upload streams bytes off a real file, so
-  /// the I/O has to run outside the fake-async zone before the resulting
-  /// frames can be pumped.
-  Future<void> settleSend(WidgetTester tester) async {
-    await tester.tap(find.bySemanticsLabel('Send message'));
-    // Uploads run one file at a time, each awaiting real I/O: alternate
-    // real-time windows with frames so both halves make progress.
+  /// Staged files upload off real files on disk, so the I/O has to run
+  /// outside the fake-async zone before the resulting frames can be pumped.
+  Future<void> settle(WidgetTester tester) async {
     for (var i = 0; i < 8; i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 40)),
@@ -50,14 +47,31 @@ void main() {
     }
   }
 
-  Attachment uploaded(StagedFile file) => Attachment(
-        path: '/uploads/${file.name}',
-        name: file.name,
-        size: file.size,
-        mimeType: file.mimeType,
-        url: '/media?id=${file.name}',
-        image: file.isImage,
-      );
+  Future<void> settleSend(WidgetTester tester) async {
+    await tester.tap(find.bySemanticsLabel('Send message'));
+    await settle(tester);
+  }
+
+  /// An uploader that answers with the daemon record the real bridge would.
+  UploadFile uploaderRecording(
+    List<String> names, {
+    List<int>? streamedBytes,
+    bool Function(String filename)? failFor,
+  }) =>
+      (bytes, length, filename, contentType, {onProgress}) async {
+        names.add(filename);
+        streamedBytes?.add(await bytes.expand((c) => c).length);
+        if (failFor?.call(filename) ?? false) return null;
+        onProgress?.call(length);
+        return Attachment(
+          path: '/uploads/$filename',
+          name: filename,
+          size: length,
+          mimeType: contentType,
+          url: '/media?id=$filename',
+          image: contentType.startsWith('image/'),
+        );
+      };
 
   group('mime typing', () {
     test('types the files people actually attach, images apart', () {
@@ -123,14 +137,13 @@ void main() {
       expect(attachments.isEmpty, isTrue);
     });
 
-    test('removing and restoring keeps the list and clears progress', () {
-      final attachments = ComposerAttachments();
+    test('removing and restoring keeps the list', () async {
+      final names = <String>[];
+      final attachments = ComposerAttachments()
+        ..uploader = uploaderRecording(names);
       attachments.addPaths([write('a.zip').path, write('b.zip').path]);
       final staged = attachments.files.toList();
-
-      attachments.markProgress(staged.first, 16);
-      expect(attachments.uploading, isTrue);
-      expect(staged.first.progress, closeTo(0.5, 0.001));
+      await Future<void>.delayed(const Duration(milliseconds: 60));
 
       attachments.remove(staged.first);
       expect(attachments.files.map((f) => f.name), ['b.zip']);
@@ -138,16 +151,72 @@ void main() {
       attachments.restore(staged);
       expect(attachments.files.map((f) => f.name), ['a.zip', 'b.zip']);
       expect(attachments.uploading, isFalse);
-      expect(staged.first.sent, 0);
+    });
+
+    test('uploads each file as it is staged, exactly once', () async {
+      final names = <String>[];
+      final attachments = ComposerAttachments()
+        ..uploader = uploaderRecording(names);
+
+      attachments.addPaths([write('a.zip').path, write('b.zip').path]);
+      // Nothing is sendable until the bytes are actually up.
+      expect(attachments.ready, isFalse);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      expect(names, ['a.zip', 'b.zip']);
+      expect(attachments.ready, isTrue);
+      expect(
+        attachments.uploadedAttachments.map((a) => a.name),
+        ['a.zip', 'b.zip'],
+      );
+
+      // A failed send hands the files back. Their uploads are still good, so
+      // nothing goes up a second time — the bug that put four copies of one
+      // deck in the uploads dir.
+      final staged = attachments.files.toList();
+      attachments.clear();
+      attachments.restore(staged);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(names, ['a.zip', 'b.zip']);
+    });
+
+    test('a failed upload blocks the send until it is retried', () async {
+      final names = <String>[];
+      var attempts = 0;
+      final attachments = ComposerAttachments()
+        ..uploader = uploaderRecording(names, failFor: (_) => ++attempts == 1);
+
+      attachments.addPaths([write('a.zip').path]);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(attachments.hasFailures, isTrue);
+      expect(attachments.ready, isFalse);
+      expect(attachments.files.single.failed, isTrue);
+
+      attachments.retry(attachments.files.single);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(attachments.ready, isTrue);
+      expect(attachments.hasFailures, isFalse);
+      expect(names.length, 2);
+    });
+
+    test('stages but does not upload without an uploader', () async {
+      final attachments = ComposerAttachments();
+      attachments.addPaths([write('a.zip').path]);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(attachments.length, 1);
+      expect(attachments.ready, isFalse);
+      expect(attachments.uploading, isFalse);
     });
   });
 
   group('the composer', () {
     testWidgets('sends every staged file and clears the strip', (tester) async {
-      final attachments = ComposerAttachments();
-      attachments.addPaths([write('archive.zip', 64).path, write('s.png').path]);
       final uploadedNames = <String>[];
       final streamedBytes = <int>[];
+      final attachments = ComposerAttachments()
+        ..uploader =
+            uploaderRecording(uploadedNames, streamedBytes: streamedBytes);
+      attachments.addPaths([write('archive.zip', 64).path, write('s.png').path]);
       List<Attachment>? sentWith;
 
       await tester.pumpWidget(host(Composer(
@@ -155,37 +224,26 @@ void main() {
           sentWith = attachments;
           return true;
         },
-        onUpload: (bytes, length, filename, contentType,
-            {onProgress}) async {
-          uploadedNames.add(filename);
-          streamedBytes.add(await bytes.expand((c) => c).length);
-          onProgress?.call(length);
-          return Attachment(
-            path: '/uploads/$filename',
-            name: filename,
-            size: length,
-            mimeType: contentType,
-            url: '/media?id=$filename',
-            image: contentType.startsWith('image/'),
-          );
-        },
         attachments: attachments,
         enabled: true,
       )));
 
-      // Both staged files are visible before anything is sent.
+      // Both staged files are visible, and both went up on staging — before
+      // anything was sent.
       expect(find.text('archive.zip'), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp('Remove archive.zip')),
           findsOneWidget);
+      await settle(tester);
+      expect(uploadedNames, ['archive.zip', 's.png']);
+      expect(streamedBytes, [64, 32]);
 
       await tester.enterText(find.byType(TextField), 'have a look');
       await tester.pump();
       await settleSend(tester);
 
-      // Every file streamed up, in staging order, with its real bytes.
+      // The send carried what the daemon handed back, and uploaded nothing
+      // more.
       expect(uploadedNames, ['archive.zip', 's.png']);
-      expect(streamedBytes, [64, 32]);
-      // …and the send carried what the daemon handed back.
       expect(sentWith?.map((a) => a.name), ['archive.zip', 's.png']);
       expect(sentWith?.last.image, isTrue);
       // The strip is empty again and the draft is gone.
@@ -193,8 +251,51 @@ void main() {
       expect(find.text('archive.zip'), findsNothing);
     });
 
-    testWidgets('hands the files back when an upload fails', (tester) async {
-      final attachments = ComposerAttachments();
+    testWidgets('will not send while a file is still uploading',
+        (tester) async {
+      final release = Completer<Attachment?>();
+      final attachments = ComposerAttachments()
+        ..uploader = (bytes, length, filename, contentType, {onProgress}) =>
+            release.future;
+      attachments.addPaths([write('slow.zip').path]);
+      var sends = 0;
+
+      await tester.pumpWidget(host(Composer(
+        onSend: (text, {attachments = const []}) async {
+          sends += 1;
+          return true;
+        },
+        attachments: attachments,
+        enabled: true,
+      )));
+      await settle(tester);
+
+      // The send slot says it is busy rather than offering a live button.
+      expect(attachments.uploading, isTrue);
+      expect(find.bySemanticsLabel('Sending, files uploading'), findsOneWidget);
+      expect(find.bySemanticsLabel('Send message'), findsNothing);
+
+      release.complete(const Attachment(
+        path: '/uploads/slow.zip',
+        name: 'slow.zip',
+        size: 32,
+        mimeType: 'application/zip',
+        url: '/media?id=slow.zip',
+        image: false,
+      ));
+      await settle(tester);
+
+      // Upload done → the button is live again and the send goes out.
+      expect(find.bySemanticsLabel('Send message'), findsOneWidget);
+      await settleSend(tester);
+      expect(sends, 1);
+    });
+
+    testWidgets('keeps the files when a failed upload blocks the send',
+        (tester) async {
+      final names = <String>[];
+      final attachments = ComposerAttachments()
+        ..uploader = uploaderRecording(names, failFor: (_) => true);
       attachments.addPaths([write('archive.zip').path]);
       var sends = 0;
 
@@ -203,24 +304,26 @@ void main() {
           sends += 1;
           return true;
         },
-        onUpload: (bytes, length, filename, contentType,
-                {onProgress}) async =>
-            null,
         attachments: attachments,
         enabled: true,
       )));
 
       await tester.enterText(find.byType(TextField), 'take this');
       await tester.pump();
-      await settleSend(tester);
+      await settle(tester);
 
+      // The tile says it failed, the send is refused, nothing is lost.
+      expect(attachments.hasFailures, isTrue);
+      expect(find.bySemanticsLabel(RegExp('upload failed')), findsOneWidget);
       expect(sends, 0, reason: 'a failed upload must not send the message');
       expect(attachments.files.map((f) => f.name), ['archive.zip']);
       expect(find.text('take this'), findsOneWidget);
     });
 
     testWidgets('can send files with no message text', (tester) async {
-      final attachments = ComposerAttachments();
+      final names = <String>[];
+      final attachments = ComposerAttachments()
+        ..uploader = uploaderRecording(names);
       attachments.addPaths([write('solo.zip').path]);
       String? sentText;
       List<Attachment>? sentWith;
@@ -231,15 +334,12 @@ void main() {
           sentWith = attachments;
           return true;
         },
-        onUpload: (bytes, length, filename, contentType,
-                {onProgress}) async =>
-            uploaded(attachments.files.first),
         attachments: attachments,
         enabled: true,
       )));
 
       // Staging alone arms the send button — no text needed.
-      await tester.pump();
+      await settle(tester);
       await settleSend(tester);
 
       expect(sentText, '');

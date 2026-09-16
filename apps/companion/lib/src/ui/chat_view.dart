@@ -81,6 +81,9 @@ class _ChatViewState extends State<ChatView> {
   @override
   void initState() {
     super.initState();
+    // Staged files upload immediately, so the list needs the uploader before
+    // anything can be dropped or picked into it.
+    _attachments.uploader = widget.state.uploadAttachment;
     _scroll.addListener(_onScrolled);
     if (VoiceService.supported) {
       VoiceService.instance.isSttAvailable().then((ok) {
@@ -255,7 +258,6 @@ class _ChatViewState extends State<ChatView> {
                       _QueuedBar(state: widget.state, chatId: chat.id),
                       Composer(
                         onSend: widget.state.sendMessage,
-                        onUpload: widget.state.uploadAttachment,
                         attachments: _attachments,
                         enabled: widget.state.conn == ConnState.connected,
                         running: widget.state.isTurnRunning(chat.id),
