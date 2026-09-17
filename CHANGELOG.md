@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.2.0](https://github.com/dylanneve1/talon/compare/v4.1.0...v4.2.0) (2026-09-17)
+
+
+### Features
+
+* **companion:** the app updates itself ([#920](https://github.com/dylanneve1/talon/issues/920)) ([37a4b8c](https://github.com/dylanneve1/talon/commit/37a4b8c26d16872ef5efd5051e2922be84a3fa1b))
+
 ## [4.1.0](https://github.com/dylanneve1/talon/compare/v4.0.1...v4.1.0) (2026-09-17)
 
 
