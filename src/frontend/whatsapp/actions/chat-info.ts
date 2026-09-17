@@ -7,7 +7,7 @@
  * retrieval (get_message_by_id, download_media) lives in history.ts.
  */
 
-import { toUserJid, tryAction } from "./shared.js";
+import { readStatusText, toUserJid, tryAction } from "./shared.js";
 import type { WhatsAppActionHandlers } from "./types.js";
 
 /** Render one participant the way the other frontends render members. */
@@ -117,14 +117,7 @@ export const chatInfoHandlers: WhatsAppActionHandlers = {
       const status: unknown = await ctx.sock
         .fetchStatus(jid)
         .catch(() => undefined);
-      // fetchStatus has returned both a bare object and a one-element
-      // array across Baileys versions; accept either shape.
-      const entry = (Array.isArray(status) ? status[0] : status) as
-        { status?: string | { status?: string } } | undefined;
-      const statusText =
-        typeof entry?.status === "string"
-          ? entry.status
-          : entry?.status?.status;
+      const statusText = readStatusText(status);
       if (statusText) lines.push(`about: ${statusText}`);
       const picture = await ctx.sock
         .profilePictureUrl(jid, "image")

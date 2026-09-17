@@ -2589,4 +2589,96 @@ describe("per-job model override + discovery actions", () => {
       expect(String(result?.error)).toContain("does not implement send_photo");
     });
   });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // whatsapp_account — cross-frontend account management
+  // ════════════════════════════════════════════════════════════════════════
+
+  describe("whatsapp_account (cross-frontend account management)", () => {
+    afterEach(() => {
+      registerCrossSendTarget("whatsapp", null);
+      registerCrossSendTarget("telegram", null);
+    });
+
+    it("is chat-free: the account is not a conversation", () => {
+      expect(isChatFreeAction("whatsapp_account")).toBe(true);
+    });
+
+    it("dispatches to the whatsapp handler with the no-chat sentinel", async () => {
+      const handler = vi.fn(async () => ({ ok: true, text: "name: Claudius" }));
+      registerCrossSendTarget("whatsapp", handler);
+      const result = await handleChatFreeAction({
+        action: "whatsapp_account",
+        op: "get_profile",
+      });
+      expect(result).toEqual({ ok: true, text: "name: Claudius" });
+      expect(handler).toHaveBeenCalledWith(
+        { action: "whatsapp_account", op: "get_profile" },
+        0,
+      );
+    });
+
+    it("forwards the op's own arguments untouched", async () => {
+      const handler = vi.fn(
+        async (_body: Record<string, unknown>, _chatId: number) => ({
+          ok: true,
+        }),
+      );
+      registerCrossSendTarget("whatsapp", handler);
+      await handleChatFreeAction({
+        action: "whatsapp_account",
+        op: "set_privacy",
+        setting: "last_seen",
+        value: "contacts",
+      });
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ setting: "last_seen", value: "contacts" }),
+        0,
+      );
+      // No target: the frontend reads body.target as a chat-routing key,
+      // and these ops address the logged-in identity instead.
+      expect(handler.mock.calls[0]?.[0]).not.toHaveProperty("target");
+    });
+
+    it("requires an op", async () => {
+      registerCrossSendTarget(
+        "whatsapp",
+        vi.fn(async () => ({ ok: true })),
+      );
+      const result = await handleChatFreeAction({
+        action: "whatsapp_account",
+      });
+      expect(result?.ok).toBe(false);
+      expect(String(result?.error)).toContain("op is required");
+    });
+
+    it("errors cleanly when WhatsApp is not enabled", async () => {
+      registerCrossSendTarget(
+        "telegram",
+        vi.fn(async () => ({ ok: true })),
+      );
+      const result = await handleChatFreeAction({
+        action: "whatsapp_account",
+        op: "get_profile",
+      });
+      expect(result?.ok).toBe(false);
+      expect(String(result?.error)).toContain(
+        "whatsapp frontend is not enabled",
+      );
+      expect(String(result?.error)).toContain("telegram");
+    });
+
+    it("surfaces a frontend too old to serve the action", async () => {
+      registerCrossSendTarget(
+        "whatsapp",
+        vi.fn(async () => null),
+      );
+      const result = await handleChatFreeAction({
+        action: "whatsapp_account",
+        op: "get_profile",
+      });
+      expect(result?.ok).toBe(false);
+      expect(String(result?.error)).toContain("older build");
+    });
+  });
 });

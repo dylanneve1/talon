@@ -98,6 +98,22 @@ function extensionOf(source: string): string {
   return dot > slash ? path.slice(dot).toLowerCase() : "";
 }
 
+/**
+ * Look up a registered frontend handler by name. Exported for the other
+ * cross-frontend actions (account management), which need the same
+ * broker and the same "is it enabled?" answer.
+ */
+export function crossSendTarget(
+  name: string,
+): FrontendActionHandler | undefined {
+  return targets.get(name);
+}
+
+/** Enabled frontend names, for a "not enabled (enabled: …)" error. */
+export function crossSendTargetNames(): string[] {
+  return [...targets.keys()].sort();
+}
+
 export const crossSendHandlers: SharedActionHandlers = {
   send_via: async (body) => {
     const frontend = String(body.frontend ?? "")
@@ -123,9 +139,9 @@ export const crossSendHandlers: SharedActionHandlers = {
           "or file_id)",
       };
     }
-    const handler = targets.get(frontend);
+    const handler = crossSendTarget(frontend);
     if (!handler) {
-      const enabled = [...targets.keys()].sort().join(", ") || "none";
+      const enabled = crossSendTargetNames().join(", ") || "none";
       return {
         ok: false,
         error: `send_via: the ${frontend} frontend is not enabled (enabled: ${enabled})`,

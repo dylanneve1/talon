@@ -37,6 +37,10 @@ import {
   chatFreeActions as meshChatFreeActions,
 } from "./mesh.js";
 import { crossSendHandlers, crossSendChatFreeActions } from "./cross-send.js";
+import {
+  whatsappAccountHandlers,
+  whatsappAccountChatFreeActions,
+} from "./whatsapp-account.js";
 import { nativeHandlers } from "./native.js";
 
 // Null-prototype so a request `action` of "toString" / "constructor" / etc.
@@ -54,6 +58,7 @@ const handlers: SharedActionHandlers = Object.assign(Object.create(null), {
   ...modelHandlers,
   ...meshHandlers,
   ...crossSendHandlers,
+  ...whatsappAccountHandlers,
   ...nativeHandlers,
 });
 
@@ -64,6 +69,7 @@ const handlers: SharedActionHandlers = Object.assign(Object.create(null), {
 const chatFreeActions: ReadonlySet<string> = new Set([
   ...meshChatFreeActions,
   ...crossSendChatFreeActions,
+  ...whatsappAccountChatFreeActions,
 ]);
 
 export async function handleSharedAction(

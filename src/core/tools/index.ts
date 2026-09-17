@@ -23,6 +23,7 @@ import { adminTools } from "./admin.js";
 import { modelTools } from "./models.js";
 import { meshTools } from "./mesh.js";
 import { crossSendTools } from "./cross-send.js";
+import { whatsappTools } from "./whatsapp.js";
 import { moderationTools } from "./moderation.js";
 import { nativeTools } from "./native.js";
 
@@ -44,6 +45,7 @@ export const ALL_TOOLS: readonly ToolDefinition[] = [
   ...modelTools,
   ...meshTools,
   ...crossSendTools,
+  ...whatsappTools,
   ...moderationTools,
 ];
 

@@ -9,6 +9,7 @@
  * WhatsApp-specific implementation.
  *
  * Split by responsibility (mirrors the telegram/discord actions/ layout):
+ *   - account    — the bot's own profile, privacy, blocklist, presence
  *   - shared     — tryAction, media/quote resolution, send helpers
  *   - messaging  — text, replies, reactions, edits, deletes, pins, presence
  *   - media      — images, video, audio, documents, polls, locations, …
@@ -25,6 +26,7 @@ import {
   resolveWhatsAppTarget,
   type WhatsAppChatInfo,
 } from "../registry.js";
+import { accountHandlers } from "./account.js";
 import { chatInfoHandlers } from "./chat-info.js";
 import { historyHandlers } from "./history.js";
 import { mediaHandlers } from "./media.js";
@@ -35,6 +37,7 @@ import type { WhatsAppActionContext, WhatsAppActionHandlers } from "./types.js";
 // Null-prototype so a request `action` of "toString" / "constructor" can't
 // resolve an inherited Object.prototype method via `handlers[action]`.
 const handlers: WhatsAppActionHandlers = Object.assign(Object.create(null), {
+  ...accountHandlers,
   ...messagingHandlers,
   ...mediaHandlers,
   ...chatInfoHandlers,
@@ -42,8 +45,16 @@ const handlers: WhatsAppActionHandlers = Object.assign(Object.create(null), {
   ...moderationHandlers,
 });
 
-/** Actions that operate on the store alone and need no resolved chat. */
-const CHATLESS_ACTIONS = new Set(["cancel_scheduled", "list_scheduled"]);
+/**
+ * Actions that need no resolved chat: the store-only scheduling pair,
+ * and the account surface, which addresses the logged-in identity
+ * rather than any conversation.
+ */
+const CHATLESS_ACTIONS = new Set([
+  "cancel_scheduled",
+  "list_scheduled",
+  "whatsapp_account",
+]);
 
 export function createWhatsAppActionHandler(
   getSock: () => WASocket | null,
