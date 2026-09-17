@@ -1,5 +1,23 @@
 # Changelog
 
+## [4.3.0](https://github.com/dylanneve1/talon/compare/v4.2.0...v4.3.0) (2026-09-17)
+
+
+### Features
+
+* **relay:** fold cross-chat replies into the sending chat's next turn ([#918](https://github.com/dylanneve1/talon/issues/918)) ([977d487](https://github.com/dylanneve1/talon/commit/977d487958bee543ca76a2b27659b011f21401ac))
+
+
+### Bug Fixes
+
+* **mesh:** bound streamed device transfers so a stalled one can't wedge a chat ([#900](https://github.com/dylanneve1/talon/issues/900)) ([d5a9d7c](https://github.com/dylanneve1/talon/commit/d5a9d7c824f4c879bdd76469d0c8d0d7870837a5))
+* **plugins:** bump native runtime pins (mempalace 3.10.0,github-mcp v1.12.2) ([#901](https://github.com/dylanneve1/talon/issues/901)) ([38812a0](https://github.com/dylanneve1/talon/commit/38812a08f3bbe349b3537c65792aea4c58bc6f32))
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump @clack/prompts from 1.8.0 to 1.8.1 in the production-dependencies group ([#915](https://github.com/dylanneve1/talon/issues/915)) ([1dd22ed](https://github.com/dylanneve1/talon/commit/1dd22ed1618aa3b2974d055ad42cd10786671b4b))
+
 ## [4.2.0](https://github.com/dylanneve1/talon/compare/v4.1.0...v4.2.0) (2026-09-17)
 
 
