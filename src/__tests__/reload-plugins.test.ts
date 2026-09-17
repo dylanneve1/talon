@@ -245,16 +245,26 @@ describe("reload_plugins gateway action", () => {
     expect(mockRefreshMcpServers).toHaveBeenCalledWith("12345");
   });
 
-  it("uses body._chatId over numeric chatId when present", async () => {
+  it("refreshes tools under the canonical chat key the gateway supplies", async () => {
     await handleSharedAction(
-      { action: "reload_plugins", _chatId: "teams_chat_abc123" },
+      { action: "reload_plugins" },
       12345,
       mockBackend,
+      "teams_chat_abc123",
     );
     expect(mockRefreshMcpServers).toHaveBeenCalledWith("teams_chat_abc123");
   });
 
-  it("falls back to String(chatId) when body._chatId is absent", async () => {
+  it("ignores a caller-supplied body._chatId — the key comes from the gateway", async () => {
+    await handleSharedAction(
+      { action: "reload_plugins", _chatId: "teams_chat_spoofed" },
+      12345,
+      mockBackend,
+    );
+    expect(mockRefreshMcpServers).toHaveBeenCalledWith("12345");
+  });
+
+  it("defaults to String(chatId) when no key is supplied", async () => {
     await handleSharedAction({ action: "reload_plugins" }, 99999, mockBackend);
     expect(mockRefreshMcpServers).toHaveBeenCalledWith("99999");
   });
