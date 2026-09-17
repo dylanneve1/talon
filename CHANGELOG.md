@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.1.0](https://github.com/dylanneve1/talon/compare/v4.0.1...v4.1.0) (2026-09-17)
+
+
+### Features
+
+* **send_via:** carry media across frontends ([#916](https://github.com/dylanneve1/talon/issues/916)) ([d50b788](https://github.com/dylanneve1/talon/commit/d50b788f472bfab9cd2597705230bdff895d8ec1))
+* **whatsapp:** manage the bot's own account from any frontend ([#917](https://github.com/dylanneve1/talon/issues/917)) ([dfbbebd](https://github.com/dylanneve1/talon/commit/dfbbebd2736bcff73fc33b430630211309c9c52d))
+
 ## [4.0.1](https://github.com/dylanneve1/talon/compare/v4.0.0...v4.0.1) (2026-09-16)
 
 
