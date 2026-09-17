@@ -328,7 +328,7 @@ On first boot Talon creates a venv at `~/.talon/mempalace-venv` and installs the
     "backend": "mempalace",
     "mempalace": {
       "palacePath": "~/.talon/workspace/palace",
-      "version": "3.9.0",
+      "version": "3.10.0",
       "autoUpdate": true,
       "autoProvision": true
     }
