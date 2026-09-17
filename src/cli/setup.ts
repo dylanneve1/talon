@@ -29,14 +29,20 @@ const trimmedOrUndefined = (raw: string) => raw.trim() || undefined;
  * the unguarded remainder still needed an `as string` cast. clack only
  * ever resolves a symbol to mean "cancelled", so narrowing on `typeof`
  * here removes both.
+ *
+ * The answer type is subtracted with `Exclude` rather than inferred from a
+ * `Promise<T | symbol>` parameter: clack 1.8.1 retyped `CANCEL_SYMBOL` as a
+ * `unique symbol`, which no longer cancels out against a plain `symbol` in
+ * the target, so every caller inferred `T` as the whole `answer | symbol`
+ * union and leaked the symbol into the config.
  */
-async function askOrExit<T>(prompt: Promise<T | symbol>): Promise<T> {
+async function askOrExit<T>(prompt: Promise<T>): Promise<Exclude<T, symbol>> {
   const value = await prompt;
   if (typeof value === "symbol") {
     p.cancel("Cancelled.");
     process.exit(0);
   }
-  return value;
+  return value as Exclude<T, symbol>;
 }
 
 // ── Steps: each prompts for one section and returns its slice of the answers ──
