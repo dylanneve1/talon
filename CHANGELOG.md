@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.3.1](https://github.com/dylanneve1/talon/compare/v4.3.0...v4.3.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **gateway:** route cron jobs and triggers by the chat's canonical string id ([#923](https://github.com/dylanneve1/talon/issues/923)) ([1c200a1](https://github.com/dylanneve1/talon/commit/1c200a13965e0f06395dfca2e688637d2631be96))
+
 ## [4.3.0](https://github.com/dylanneve1/talon/compare/v4.2.0...v4.3.0) (2026-09-17)
 
 
