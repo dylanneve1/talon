@@ -82,6 +82,8 @@ export type MeshServiceOptions = {
   pollIntervalMs?: number;
   /** How long a device command waits for its result before timing out. */
   commandTimeoutMs?: number;
+  /** How often a long command re-checks that its device is still present. */
+  presenceWatchIntervalMs?: number;
   /** Node-binary resolver override (tests — the real one builds/downloads). */
   nodeBinaryResolver?: NodeBinaryResolver;
 };
@@ -100,6 +102,8 @@ const MAX_HISTORY_LINES = 24;
 const DEFAULT_EXEC_TIMEOUT_MS = 60_000;
 /** Hard ceiling on a caller-requested exec timeout. */
 const MAX_EXEC_TIMEOUT_MS = 300_000;
+/** How often a long-running command re-checks that its device is still up. */
+const PRESENCE_WATCH_INTERVAL_MS = 15_000;
 export class MeshService {
   private readonly waiters = new Set<() => void>();
   private readonly transports = new Set<MeshTransport>();
@@ -126,6 +130,7 @@ export class MeshService {
   private readonly freshFixTimeoutMs: number;
   private readonly pollIntervalMs: number;
   private readonly commandTimeoutMs: number;
+  private readonly presenceWatchIntervalMs: number;
   private loading: Promise<void> | null = null;
 
   constructor(
@@ -137,6 +142,8 @@ export class MeshService {
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.commandTimeoutMs =
       options.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
+    this.presenceWatchIntervalMs =
+      options.presenceWatchIntervalMs ?? PRESENCE_WATCH_INTERVAL_MS;
     this.resolveNode = options.nodeBinaryResolver ?? resolveNodeBinary;
     this.files = new DeviceFiles({
       load: () => this.load(),
@@ -265,6 +272,38 @@ export class MeshService {
   }
 
   /**
+   * Fail a pending command early when its device stops heartbeating.
+   *
+   * A device that drops mid-command will never answer, so waiting out the
+   * remaining budget only buys silence — and on a transfer budget that
+   * silence is minutes of a tool call, and therefore a chat, wedged behind
+   * a device that is plainly gone. Presence is derived from `lastSeen`, so
+   * this reports one presence grace period after the device goes quiet
+   * rather than instantly; short budgets aren't watched at all, since their
+   * own timeout lands first. Returns a stop function.
+   */
+  private watchPresence(
+    deviceId: string,
+    timeoutMs: number,
+    onGone: (device: DeviceInfo) => void,
+  ): () => void {
+    const every = this.presenceWatchIntervalMs;
+    if (timeoutMs <= every) return () => {};
+    const timer = setInterval(() => {
+      const current = this.registry
+        .list()
+        .devices.find((d) => d.id === deviceId);
+      // Unknown device: leave it to the timeout — an entry evicted from the
+      // registry is not evidence that the device stopped answering.
+      if (!current || current.online) return;
+      clearInterval(timer);
+      onGone(current);
+    }, every);
+    timer.unref?.();
+    return () => clearInterval(timer);
+  }
+
+  /**
    * Push one command to a device and await its result (or time out). The
    * low-level primitive under every command tool; exposed for tests and
    * future tools.
@@ -282,8 +321,10 @@ export class MeshService {
       params,
     };
     return new Promise<DeviceCommandResult>((resolve) => {
+      let stopWatch: () => void = () => {};
       const timer = setTimeout(() => {
         this.pendingCommands.delete(command.id);
+        stopWatch();
         resolve({
           commandId: command.id,
           deviceId: device.id,
@@ -292,10 +333,21 @@ export class MeshService {
         });
       }, timeoutMs);
       timer.unref?.();
+      stopWatch = this.watchPresence(device.id, timeoutMs, (current) => {
+        if (!this.pendingCommands.delete(command.id)) return;
+        clearTimeout(timer);
+        resolve({
+          commandId: command.id,
+          deviceId: device.id,
+          ok: false,
+          message: `${device.name} went offline (last seen ${age(Date.now() - current.lastSeen)}) before answering "${name}".`,
+        });
+      });
       this.pendingCommands.set(command.id, {
         deviceId: device.id,
         resolve: (result) => {
           clearTimeout(timer);
+          stopWatch();
           resolve(result);
         },
       });

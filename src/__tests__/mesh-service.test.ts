@@ -446,6 +446,44 @@ describe("MeshService presence + clock-skew hardening", () => {
     expect(Date.now() - started).toBeLessThan(1_500);
   });
 
+  it("gives up on a command when the device drops mid-flight", async () => {
+    // The pre-flight offline check only sees presence as it was BEFORE
+    // dispatch. A device that is online when the command goes out and dies a
+    // second later (ignition off, hotspot gone) leaves the promise waiting on
+    // a reply that can never come — for the whole budget, which on a file
+    // transfer is minutes, with every later message in that chat queued
+    // behind it. Presence has to be re-checked while the wait is in flight.
+    const service = await tempService({
+      commandTimeoutMs: 60_000,
+      presenceWatchIntervalMs: 25,
+    });
+    await registerPhone(service);
+    service.registerTransport({
+      locate: () => {},
+      command: () => {
+        // Accepted, then the device goes dark: lastSeen falls outside the
+        // presence window and no result is ever posted back.
+        void service.register(
+          {
+            id: "phone",
+            name: "Pixel 9",
+            platform: "android",
+            appVersion: "1.0.0",
+            capabilities: ["ring"],
+          },
+          Date.now() - 200_000,
+        );
+      },
+    });
+
+    const started = Date.now();
+    const res = await service.ringDevice("phone");
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("went offline");
+    // Without the watchdog this sits for the full 60s budget.
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
   it("does not wait out the fresh-fix window for an offline device", async () => {
     const service = await tempService({
       freshFixTimeoutMs: 5_000,
