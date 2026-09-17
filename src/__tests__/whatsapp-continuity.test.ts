@@ -197,6 +197,8 @@ describe("read_history fallback paging", () => {
     const res = (await historyHandlers.read_history(
       { offset_id: 1_000_005, limit: 3 },
       CHAT as never,
+      undefined,
+      String(CHAT as never),
     )) as { ok: boolean; text: string };
     expect(res.ok).toBe(true);
     expect(res.text).toContain("message 2");
@@ -209,6 +211,8 @@ describe("read_history fallback paging", () => {
     const res = (await historyHandlers.read_history(
       { before: "2026-08-01T00:03:00Z", limit: 10 },
       CHAT as never,
+      undefined,
+      String(CHAT as never),
     )) as { ok: boolean; text: string };
     expect(res.text).toContain("message 2");
     expect(res.text).not.toContain("message 3");
@@ -218,6 +222,8 @@ describe("read_history fallback paging", () => {
     const res = (await historyHandlers.read_history(
       { limit: 2 },
       CHAT as never,
+      undefined,
+      String(CHAT as never),
     )) as {
       ok: boolean;
       text: string;
@@ -230,6 +236,8 @@ describe("read_history fallback paging", () => {
     const res = (await historyHandlers.read_history(
       { before: "not-a-date", limit: 2 },
       CHAT as never,
+      undefined,
+      String(CHAT as never),
     )) as { ok: boolean; text: string };
     expect(res.ok).toBe(true);
     expect(res.text).toContain("message 9");

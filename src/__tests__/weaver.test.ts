@@ -466,6 +466,19 @@ describe("loom context registry", () => {
     expect(loom.activeContextCount()).toBe(2);
   });
 
+  it("resolves a numeric id back to its string chat id only while a context is held", () => {
+    const loom = new Loom();
+    expect(loom.stringIdForNumeric(456)).toBeNull();
+
+    loom.acquireContext(456, "d_abc");
+    expect(loom.stringIdForNumeric(456)).toBe("d_abc");
+    loom.acquireContext(123);
+    expect(loom.stringIdForNumeric(123)).toBe("123");
+
+    loom.releaseContext(456);
+    expect(loom.stringIdForNumeric(456)).toBeNull();
+  });
+
   it("resolves to the same Thread the Weaver serializes the turn on", () => {
     const loom = new Loom();
     const serial = loom.thread("chat:abc"); // runTurn keys here (params.chatId)

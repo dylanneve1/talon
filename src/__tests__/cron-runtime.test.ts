@@ -8,6 +8,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CronJob } from "../storage/cron-store.js";
+import { deriveNumericChatId } from "../util/chat-id.js";
 
 const mocks = vi.hoisted(() => ({
   existsSync: vi.fn(() => false),
@@ -263,6 +264,19 @@ describe("runJobNow — routing", () => {
     expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
     expect(mocks.sendMessage).toHaveBeenCalledWith(777, "ping", "777");
     expect(mocks.runJobOneShot).not.toHaveBeenCalled();
+  });
+
+  it("a message job for a non-Telegram chat routes with the frontend's derived numeric id", async () => {
+    const job = seed({ type: "message", chatId: "d_native", content: "ping" });
+
+    const res = await runJobNow(job.id);
+
+    expect(res.ok).toBe(true);
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      deriveNumericChatId("d_native"),
+      "ping",
+      "d_native",
+    );
   });
 
   it("a query job runs as an isolated one-shot, not a chat message", async () => {

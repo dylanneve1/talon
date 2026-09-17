@@ -4,6 +4,7 @@ import {
   deriveNumericChatId,
   generateTerminalChatId,
   isTerminalChatId,
+  numericChatIdFor,
 } from "../util/chat-id.js";
 
 describe("deriveNumericChatId", () => {
@@ -87,5 +88,24 @@ describe("isTerminalChatId", () => {
   it('returns false for "10" and other strings starting with 1', () => {
     expect(isTerminalChatId("10")).toBe(false);
     expect(isTerminalChatId("100")).toBe(false);
+  });
+});
+
+describe("numericChatIdFor", () => {
+  it("passes Telegram ids through as numbers, negative supergroups included", () => {
+    expect(numericChatIdFor("352042062")).toBe(352042062);
+    expect(numericChatIdFor("-1001426819337")).toBe(-1001426819337);
+  });
+
+  it("derives every other frontend's id the way that frontend does", () => {
+    for (const id of [
+      "d_1789500775292_df4e0n",
+      "wa_dm_353863715529",
+      "discord_1",
+      "teams_chat_19:abc",
+      "t_1",
+    ]) {
+      expect(numericChatIdFor(id)).toBe(deriveNumericChatId(id));
+    }
   });
 });

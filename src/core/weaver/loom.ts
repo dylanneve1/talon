@@ -22,6 +22,8 @@ export interface ContextRegistry {
   activeContextCount(): number;
   /** Resolve a string chat id to the numeric id of its active context. */
   numericForStringId(stringId: string): number | null;
+  /** Resolve a numeric id to the string chat id of its active context. */
+  stringIdForNumeric(numericChatId: number): string | null;
   /** Number of live Threads in the registry. */
   size(): number;
 }
@@ -144,6 +146,15 @@ export class Loom implements ContextRegistry {
   numericForStringId(stringId: string): number | null {
     const thread = this.threads.get(stringId);
     return thread?.contextActive ? (thread.numericChatId ?? null) : null;
+  }
+
+  /**
+   * Resolve a numeric id to the string chat id of its active context — the
+   * Thread key, which is the dispatcher's `chatId` (see `acquireContext`).
+   * Null outside a turn: the numeric index only mirrors held contexts.
+   */
+  stringIdForNumeric(numericChatId: number): string | null {
+    return this.byNumeric.get(numericChatId)?.chatId ?? null;
   }
 
   private resolve(id: number | string): Thread | undefined {

@@ -307,6 +307,11 @@ export class Gateway {
     const action = typeof body.action === "string" ? body.action : "";
     if (!action) return { ok: false, error: "Missing action" };
     const t0 = Date.now();
+    // The canonical string id for this chat. The bridge only carries the
+    // numeric id, but the turn's Thread is keyed by the dispatcher's string
+    // chatId — hand that to the handlers so a `d_…`/`wa_…` chat's cron jobs,
+    // triggers and history land under the id the rest of the engine uses.
+    const chatKey = this.loom.stringIdForNumeric(chatId) ?? String(chatId);
 
     try {
       // Try frontend first — it has richer implementations (e.g. userbot history)
@@ -326,7 +331,7 @@ export class Gateway {
       }
 
       // Try plugin actions (loaded from external plugin packages)
-      const pluginResult = await handlePluginAction(body, String(chatId));
+      const pluginResult = await handlePluginAction(body, chatKey);
       if (pluginResult) {
         logDebug(
           "gateway",
@@ -336,7 +341,12 @@ export class Gateway {
       }
 
       // Shared actions last — provides in-memory fallbacks for history, cron, etc.
-      const shared = await handleSharedAction(body, chatId, this.backend);
+      const shared = await handleSharedAction(
+        body,
+        chatId,
+        this.backend,
+        chatKey,
+      );
       if (shared) {
         logDebug(
           "gateway",

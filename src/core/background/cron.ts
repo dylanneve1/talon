@@ -34,6 +34,7 @@ import {
 } from "../../storage/cron-store.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { log, logError, logWarn } from "../../util/log.js";
+import { numericChatIdFor } from "../../util/chat-id.js";
 import { runJobOneShot } from "./job-oneshot.js";
 import {
   jobAllowsRun,
@@ -464,10 +465,7 @@ const CRON_JOB_TIMEOUT_MS = 10 * 60_000; // 10-minute max per job
 export async function executeJob(job: CronJob): Promise<ExecuteJobResult> {
   if (!deps) return { status: "skipped", reason: "cron is not initialised" };
 
-  const numericChatId = Number(job.chatId);
-  if (!Number.isFinite(numericChatId)) {
-    throw new Error(`Invalid chatId for job "${job.name}": ${job.chatId}`);
-  }
+  const numericChatId = numericChatIdFor(job.chatId);
 
   if (job.type === "message") {
     await deps.sendMessage(numericChatId, job.content, job.chatId);

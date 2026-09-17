@@ -568,9 +568,12 @@ export async function initBackendAndDispatcher(
     const { crossSendHandlers } =
       await import("./core/engine/gateway-actions/cross-send.js");
     void deliverPendingProvisionReport(async (frontend, target, text) => {
+      // Chat-free: the same "no chat" sentinels handleChatFreeAction passes.
       const result = await crossSendHandlers.send_via(
         { frontend, target, text },
         0,
+        undefined,
+        "0",
       );
       return Boolean(result && (result as { ok?: unknown }).ok === true);
     });

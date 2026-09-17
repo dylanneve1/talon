@@ -16,8 +16,8 @@ import {
 import type { SharedActionHandlers } from "./types.js";
 
 export const modelHandlers: SharedActionHandlers = {
-  list_models: async (body, chatId) => {
-    const chatIdStr = String(chatId);
+  list_models: async (body, chatId, _backend, chatKey) => {
+    const chatIdStr = chatKey;
     const currentId = getBackendIdForChat(chatIdStr);
     const requested = body.backend ? String(body.backend).trim() : "";
     const targetId = requested || currentId;
@@ -100,8 +100,8 @@ export const modelHandlers: SharedActionHandlers = {
 
   // Account-level, so it falls back to the pooled Claude backend when
   // another provider is serving this chat.
-  plan_usage: async (_body, chatId) => {
-    const current = getPooledBackend(getBackendIdForChat(String(chatId)));
+  plan_usage: async (_body, chatId, _backend, chatKey) => {
+    const current = getPooledBackend(getBackendIdForChat(chatKey));
     const source = current?.usage?.getPlanUsage
       ? current
       : getPooledBackend("claude");
@@ -131,8 +131,8 @@ export const modelHandlers: SharedActionHandlers = {
     };
   },
 
-  list_backends: (body, chatId) => {
-    const currentId = getBackendIdForChat(String(chatId));
+  list_backends: (body, chatId, _backend, chatKey) => {
+    const currentId = getBackendIdForChat(chatKey);
     const backends = getAvailableBackends().map((b) => ({
       id: b.id,
       label: b.label,

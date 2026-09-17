@@ -10,6 +10,19 @@ export function deriveNumericChatId(chatId: string): number {
   return hash.readUInt32BE(0);
 }
 
+/**
+ * The numeric id a frontend uses for a chat. Telegram ids are numeric
+ * already; every other frontend (native, WhatsApp, Discord, Teams, terminal)
+ * derives its numeric id from the string one with `deriveNumericChatId`.
+ * This is the inverse the background runtimes need to address a stored
+ * string chat id the way its frontend does.
+ */
+export function numericChatIdFor(chatId: string): number {
+  return isTelegramChatId(chatId)
+    ? Number(chatId)
+    : deriveNumericChatId(chatId);
+}
+
 /** Generate a unique terminal chat ID. */
 export function generateTerminalChatId(): string {
   return `t_${Date.now()}`;

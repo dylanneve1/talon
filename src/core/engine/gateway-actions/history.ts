@@ -15,9 +15,9 @@ import { formatMediaIndex } from "../../../storage/media-index.js";
 import type { SharedActionHandlers } from "./types.js";
 
 export const historyHandlers: SharedActionHandlers = {
-  read_history: (body, chatId) => {
+  read_history: (body, chatId, _backend, chatKey) => {
     const limit = Math.min(100, Number(body.limit ?? 30));
-    const cid = String(chatId);
+    const cid = chatKey;
     // The tool schema advertises `offset_id` and `before` for paging back;
     // this fallback used to ignore both and hand back the same newest
     // window no matter what the model asked, so "go further back" was a
@@ -36,7 +36,7 @@ export const historyHandlers: SharedActionHandlers = {
     return { ok: true, text: getRecentFormatted(cid, limit) };
   },
 
-  search_history: (body, chatId) => {
+  search_history: (body, chatId, _backend, chatKey) => {
     const limit = Math.min(100, Number(body.limit ?? 20));
     // Optional ISO date bounds; an unparseable one is ignored rather
     // than silently narrowing the search to nothing.
@@ -48,35 +48,28 @@ export const historyHandlers: SharedActionHandlers = {
     };
     return {
       ok: true,
-      text: searchHistory(String(chatId), String(body.query ?? ""), limit, {
+      text: searchHistory(chatKey, String(body.query ?? ""), limit, {
         after: bound(body.after),
         before: bound(body.before),
       }),
     };
   },
 
-  get_user_messages: (body, chatId) => {
+  get_user_messages: (body, chatId, _backend, chatKey) => {
     const limit = Math.min(50, Number(body.limit ?? 20));
     return {
       ok: true,
-      text: getMessagesByUser(
-        String(chatId),
-        String(body.user_name ?? ""),
-        limit,
-      ),
+      text: getMessagesByUser(chatKey, String(body.user_name ?? ""), limit),
     };
   },
 
-  list_known_users: (body, chatId) => ({
+  list_known_users: (body, chatId, _backend, chatKey) => ({
     ok: true,
-    text: getKnownUsers(String(chatId)),
+    text: getKnownUsers(chatKey),
   }),
 
-  list_media: (body, chatId) => ({
+  list_media: (body, chatId, _backend, chatKey) => ({
     ok: true,
-    text: formatMediaIndex(
-      String(chatId),
-      Math.min(20, Number(body.limit ?? 10)),
-    ),
+    text: formatMediaIndex(chatKey, Math.min(20, Number(body.limit ?? 10))),
   }),
 };

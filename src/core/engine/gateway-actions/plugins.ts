@@ -43,7 +43,7 @@ export async function performPluginReload(
 }
 
 export const pluginHandlers: SharedActionHandlers = {
-  reload_plugins: async (body, chatId, backend) => {
+  reload_plugins: async (body, chatId, backend, chatKey) => {
     try {
       const { names } = await performPluginReload(backend);
 
@@ -52,13 +52,7 @@ export const pluginHandlers: SharedActionHandlers = {
       let mcpInfo = "";
       if (backend?.tools?.refreshTools) {
         try {
-          // Prefer body._chatId (string chat ID passed by frontends that use
-          // non-numeric IDs, e.g. Teams/terminal) over the numeric context ID.
-          const refreshChatId =
-            typeof body._chatId === "string" && body._chatId.length > 0
-              ? body._chatId
-              : String(chatId);
-          const result = await backend.tools.refreshTools(refreshChatId);
+          const result = await backend.tools.refreshTools(chatKey);
           if (result) {
             const parts: string[] = [];
             if (result.added.length > 0)

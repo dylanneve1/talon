@@ -31,7 +31,7 @@ import { validateJobModelOverride } from "./shared.js";
 import type { SharedActionHandlers } from "./types.js";
 
 export const triggerHandlers: SharedActionHandlers = {
-  trigger_create: async (body, chatId) => {
+  trigger_create: async (body, chatId, _backend, chatKey) => {
     const name = String(body.name ?? "").trim();
     const language = body.language;
     const script = String(body.script ?? "");
@@ -55,14 +55,13 @@ export const triggerHandlers: SharedActionHandlers = {
     const timeoutErr = validateTimeout(timeoutSeconds);
     if (timeoutErr) return { ok: false, error: timeoutErr };
 
-    const chatIdStr = String(chatId);
-    if (getTriggerByName(chatIdStr, name)) {
+    if (getTriggerByName(chatKey, name)) {
       return {
         ok: false,
         error: `A trigger named "${name}" already exists in this chat. Cancel it first or pick a different name.`,
       };
     }
-    const active = getActiveTriggersForChat(chatIdStr);
+    const active = getActiveTriggersForChat(chatKey);
     if (active.length >= MAX_ACTIVE_PER_CHAT) {
       return {
         ok: false,
@@ -70,18 +69,10 @@ export const triggerHandlers: SharedActionHandlers = {
       };
     }
 
-    const numericChatId = Number(chatId);
-    if (!Number.isFinite(numericChatId)) {
-      return {
-        ok: false,
-        error: `Cannot derive numeric chatId from ${chatId}`,
-      };
-    }
-
     // Validate the model up front so a bad id is rejected here instead of
     // silently failing at fire time.
     if (model) {
-      const modelErr = await validateJobModelOverride(chatId, model);
+      const modelErr = await validateJobModelOverride(chatKey, model);
       if (modelErr) return { ok: false, error: modelErr };
     }
 
@@ -89,19 +80,19 @@ export const triggerHandlers: SharedActionHandlers = {
     const lang = language as TriggerLanguage;
     let scriptPath: string;
     try {
-      scriptPath = writeScriptFile(chatIdStr, id, lang, script);
+      scriptPath = writeScriptFile(chatKey, id, lang, script);
     } catch (err) {
       return {
         ok: false,
         error: `Failed to write script: ${err instanceof Error ? err.message : err}`,
       };
     }
-    const logPath = triggerLogPath(chatIdStr, id);
+    const logPath = triggerLogPath(chatKey, id);
 
     const trigger = {
       id,
-      chatId: chatIdStr,
-      numericChatId,
+      chatId: chatKey,
+      numericChatId: chatId,
       name,
       language: lang,
       scriptPath,
@@ -151,8 +142,8 @@ export const triggerHandlers: SharedActionHandlers = {
     };
   },
 
-  trigger_list: (body, chatId) => {
-    const triggers = getTriggersForChat(String(chatId));
+  trigger_list: (body, chatId, _backend, chatKey) => {
+    const triggers = getTriggersForChat(chatKey);
     if (triggers.length === 0)
       return { ok: true, text: "No triggers in this chat." };
     const lines = triggers.map((t) => {
@@ -181,12 +172,12 @@ export const triggerHandlers: SharedActionHandlers = {
     };
   },
 
-  trigger_cancel: (body, chatId) => {
+  trigger_cancel: (body, chatId, _backend, chatKey) => {
     const triggerId = String(body.trigger_id ?? "");
     if (!triggerId) return { ok: false, error: "Missing trigger_id" };
     const t = getTrigger(triggerId);
     if (!t) return { ok: false, error: `Trigger ${triggerId} not found` };
-    if (t.chatId !== String(chatId))
+    if (t.chatId !== chatKey)
       return { ok: false, error: "Trigger belongs to a different chat" };
     const wasRunning = cancelTrigger(triggerId);
     if (!wasRunning) {
@@ -201,12 +192,12 @@ export const triggerHandlers: SharedActionHandlers = {
     };
   },
 
-  trigger_logs: (body, chatId) => {
+  trigger_logs: (body, chatId, _backend, chatKey) => {
     const triggerId = String(body.trigger_id ?? "");
     if (!triggerId) return { ok: false, error: "Missing trigger_id" };
     const t = getTrigger(triggerId);
     if (!t) return { ok: false, error: `Trigger ${triggerId} not found` };
-    if (t.chatId !== String(chatId))
+    if (t.chatId !== chatKey)
       return { ok: false, error: "Trigger belongs to a different chat" };
     const lines = Math.min(500, Math.max(1, Number(body.lines ?? 80)));
     const { tail, truncated } = readTriggerLogTail(t.logPath, lines);
@@ -219,12 +210,12 @@ export const triggerHandlers: SharedActionHandlers = {
     };
   },
 
-  trigger_delete: (body, chatId) => {
+  trigger_delete: (body, chatId, _backend, chatKey) => {
     const triggerId = String(body.trigger_id ?? "");
     if (!triggerId) return { ok: false, error: "Missing trigger_id" };
     const t = getTrigger(triggerId);
     if (!t) return { ok: false, error: `Trigger ${triggerId} not found` };
-    if (t.chatId !== String(chatId))
+    if (t.chatId !== chatKey)
       return { ok: false, error: "Trigger belongs to a different chat" };
     // Cancel first if it's still running so we don't orphan a child
     cancelTrigger(triggerId);

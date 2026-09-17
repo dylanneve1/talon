@@ -28,7 +28,12 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  await nativeHandlers.teleport_back({ action: "teleport_back" }, 1);
+  await nativeHandlers.teleport_back(
+    { action: "teleport_back" },
+    1,
+    undefined,
+    "1",
+  );
   resetTeleportCache();
   setMeshService(null);
 });
@@ -82,6 +87,8 @@ describe("native tools — local execution", () => {
     const res = await nativeHandlers.native_bash(
       { action: "native_bash", command: "echo hello-native" },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(true);
     expect(res.text).toContain("hello-native");
@@ -92,6 +99,8 @@ describe("native tools — local execution", () => {
     const res = await nativeHandlers.native_bash(
       { action: "native_bash", command: "exit 3" },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(false);
     expect(res.text).toContain("exit 3");
@@ -106,6 +115,8 @@ describe("native tools — local execution", () => {
         content: "function x() {\n\treturn compute(a, b) + 1;\n}\n",
       },
       1,
+      undefined,
+      "1",
     );
     // Same code, but space-indented — the classic invisible mismatch.
     const res = await nativeHandlers.native_edit(
@@ -116,6 +127,8 @@ describe("native tools — local execution", () => {
         new_string: "  return compute(a, b) + 2;",
       },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(false);
     expect(res.text).toContain("not found");
@@ -131,6 +144,8 @@ describe("native tools — local execution", () => {
         timeout_sec: 1,
       },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(false);
     expect(res.text).toContain("timed out after 1s");
@@ -150,6 +165,8 @@ describe("native tools — local execution", () => {
           background: true,
         },
         1,
+        undefined,
+        "1",
       );
       expect(res.ok).toBe(true);
       expect(res.text).toContain("Started in background");
@@ -187,6 +204,8 @@ describe("native tools — local execution", () => {
           background: true,
         },
         1,
+        undefined,
+        "1",
       );
       expect(res.ok).toBe(false);
       expect(res.text).toContain("exit 7");
@@ -201,6 +220,8 @@ describe("native tools — local execution", () => {
       const res = await nativeHandlers.native_bash(
         { action: "native_bash", command: "echo hi", background: true },
         1,
+        undefined,
+        "1",
       );
       expect(res.ok).toBe(false);
       expect(res.text).toContain("isn't supported on a Windows");
@@ -212,12 +233,16 @@ describe("native tools — local execution", () => {
     const w = await nativeHandlers.native_write(
       { action: "native_write", path: f, content: "alpha\nbeta\ngamma\n" },
       1,
+      undefined,
+      "1",
     );
     expect(w.ok).toBe(true);
 
     const r = await nativeHandlers.native_read(
       { action: "native_read", path: f },
       1,
+      undefined,
+      "1",
     );
     expect(r.ok).toBe(true);
     expect(r.text).toContain("alpha");
@@ -231,12 +256,16 @@ describe("native tools — local execution", () => {
         new_string: "BETA!",
       },
       1,
+      undefined,
+      "1",
     );
     expect(e.ok).toBe(true);
 
     const r2 = await nativeHandlers.native_read(
       { action: "native_read", path: f },
       1,
+      undefined,
+      "1",
     );
     expect(r2.text).toContain("BETA!");
     expect(r2.text).not.toContain("beta");
@@ -255,6 +284,8 @@ describe("native tools — local execution", () => {
     const r = await nativeHandlers.native_read(
       { action: "native_read", path: f },
       1,
+      undefined,
+      "1",
     );
     expect(r.ok).toBe(true);
     expect(r.text).toContain("image (image/png");
@@ -268,10 +299,14 @@ describe("native tools — local execution", () => {
     await nativeHandlers.native_write(
       { action: "native_write", path: f, content: "x x x" },
       1,
+      undefined,
+      "1",
     );
     const ambiguous = await nativeHandlers.native_edit(
       { action: "native_edit", path: f, old_string: "x", new_string: "y" },
       1,
+      undefined,
+      "1",
     );
     expect(ambiguous.ok).toBe(false);
     expect(ambiguous.text).toContain("appears 3×");
@@ -285,6 +320,8 @@ describe("native tools — local execution", () => {
         replace_all: true,
       },
       1,
+      undefined,
+      "1",
     );
     expect(all.ok).toBe(true);
     expect(all.text).toContain("3 replacements");
@@ -295,10 +332,14 @@ describe("native tools — local execution", () => {
     await nativeHandlers.native_write(
       { action: "native_write", path: f, content: "find-this-token here\n" },
       1,
+      undefined,
+      "1",
     );
     const s = await nativeHandlers.native_search(
       { action: "native_search", pattern: "find-this-token", path: workdir },
       1,
+      undefined,
+      "1",
     );
     expect(s.ok).toBe(true);
     expect(s.text).toContain("find-this-token");
@@ -306,6 +347,8 @@ describe("native tools — local execution", () => {
     const g = await nativeHandlers.native_glob(
       { action: "native_glob", pattern: "needle.txt", path: workdir },
       1,
+      undefined,
+      "1",
     );
     expect(g.ok).toBe(true);
     expect(g.text).toContain("needle.txt");
@@ -316,12 +359,16 @@ describe("native tools — local execution", () => {
     await nativeHandlers.native_write(
       { action: "native_write", path: f, content: "fallback-token here\n" },
       1,
+      undefined,
+      "1",
     );
     process.env.TALON_NATIVE_RG = join(workdir, "no-such-rg-binary");
     try {
       const s = await nativeHandlers.native_search(
         { action: "native_search", pattern: "fallback-token", path: workdir },
         1,
+        undefined,
+        "1",
       );
       expect(s.ok).toBe(true);
       // Must be a REAL match line (path:line:content), not a vacuous
@@ -336,6 +383,8 @@ describe("native tools — local execution", () => {
           path: workdir,
         },
         1,
+        undefined,
+        "1",
       );
       expect(g.ok).toBe(true);
       expect(g.text).toContain("match(es)");
@@ -354,6 +403,8 @@ describe("native tools — local execution", () => {
         content: "prefix-line\nREPLACE_ME\nsuffix-line\n",
       },
       1,
+      undefined,
+      "1",
     );
     // $&, $', $`, $$ are String.replace substitution directives — a literal
     // edit must write them through untouched, not expand them.
@@ -365,6 +416,8 @@ describe("native tools — local execution", () => {
         new_string: 'echo "$& $\' $` $$PID"',
       },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(true);
     const content = await readFile(f, "utf8");
@@ -377,6 +430,8 @@ describe("native tools — local execution", () => {
     const res = await nativeHandlers.native_write(
       { action: "native_write", path: f, content: body },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(true);
     expect(res.text).toContain(
@@ -390,12 +445,16 @@ describe("native tools — local execution", () => {
     const neg = await nativeHandlers.native_read(
       { action: "native_read", path: f, offset: -5, limit: 2 },
       1,
+      undefined,
+      "1",
     );
     expect(neg.ok).toBe(true);
     expect(neg.text).toContain("1\talpha"); // top of file, numbered from 1
     const zero = await nativeHandlers.native_read(
       { action: "native_read", path: f, offset: 0, limit: 0 },
       1,
+      undefined,
+      "1",
     );
     expect(zero.ok).toBe(true);
     expect(zero.text).toContain("alpha"); // at least one line, not a fake-empty read
@@ -407,6 +466,8 @@ describe("native tools — local execution", () => {
     const res = await nativeHandlers.native_read(
       { action: "native_read", path: f, offset: 50 },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(false);
     expect(res.text).toContain("past the end");
@@ -418,6 +479,8 @@ describe("native tools — local execution", () => {
     const res = await nativeHandlers.native_read(
       { action: "native_read", path: f },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(false);
     expect(res.text).toContain("binary");
@@ -429,6 +492,8 @@ describe("native tools — local execution", () => {
     const res = await nativeHandlers.native_read(
       { action: "native_read", path: f },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(false);
     expect(res.text).toContain("read limit");
@@ -442,6 +507,8 @@ describe("native tools — local execution", () => {
         cwd: join(workdir, "no-such-dir"),
       },
       1,
+      undefined,
+      "1",
     );
     expect(missing.ok).toBe(false);
     expect(missing.text).toContain("Working directory does not exist");
@@ -451,6 +518,8 @@ describe("native tools — local execution", () => {
     const notDir = await nativeHandlers.native_bash(
       { action: "native_bash", command: "echo hi", cwd: f },
       1,
+      undefined,
+      "1",
     );
     expect(notDir.ok).toBe(false);
     expect(notDir.text).toContain("not a directory");
@@ -462,6 +531,8 @@ describe("native tools — local execution", () => {
     const res = await nativeHandlers.native_edit(
       { action: "native_edit", path: f, old_string: "ABC", new_string: "XYZ" },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(false);
     expect(res.text).toContain("binary");
@@ -476,6 +547,8 @@ describe("native tools — local execution", () => {
     const res = await nativeHandlers.native_edit(
       { action: "native_edit", path: f, old_string: "three", new_string: "3" },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(true);
     expect(res.text).toContain("first at line 3");
@@ -490,6 +563,8 @@ describe("native tools — local execution", () => {
     const res = await nativeHandlers.native_glob(
       { action: "native_glob", pattern: "*.sorted", path: dir },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(true);
     const text = res.text ?? "";
@@ -536,6 +611,8 @@ describe("native tools — teleport routing", () => {
     const tp = await nativeHandlers.teleport(
       { action: "teleport", device: "phone" },
       1,
+      undefined,
+      "1",
     );
     expect(tp.ok).toBe(true);
     expect(tp.text).toContain("Pixel 9");
@@ -543,6 +620,8 @@ describe("native tools — teleport routing", () => {
     const res = await nativeHandlers.native_bash(
       { action: "native_bash", command: "ls" },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(true);
     expect(res.text).toContain("[Pixel 9 via shizuku] exit 0");
@@ -555,6 +634,8 @@ describe("native tools — teleport routing", () => {
     await nativeHandlers.native_bash(
       { action: "native_bash", command: "ls again" },
       1,
+      undefined,
+      "1",
     );
     expect(sentCmds[1]).toContain("cd '/sdcard/Download'");
   });
@@ -586,10 +667,17 @@ describe("native tools — teleport routing", () => {
         }),
     });
 
-    await nativeHandlers.teleport({ action: "teleport", device: "phone" }, 1);
+    await nativeHandlers.teleport(
+      { action: "teleport", device: "phone" },
+      1,
+      undefined,
+      "1",
+    );
     const res = await nativeHandlers.native_bash(
       { action: "native_bash", command: "logcat" },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(false);
     expect(res.text).toContain("some log lines"); // partial output survives
@@ -628,12 +716,16 @@ describe("native tools — teleport routing", () => {
     const tp = await nativeHandlers.teleport(
       { action: "teleport", device: "phone" },
       1,
+      undefined,
+      "1",
     );
     expect(tp.ok).toBe(true);
 
     const local = await nativeHandlers.native_bash(
       { action: "native_bash", command: "echo local-chat" },
       2,
+      undefined,
+      "2",
     );
     expect(local.ok).toBe(true);
     expect(local.text).toContain("[local] exit 0");
@@ -643,6 +735,8 @@ describe("native tools — teleport routing", () => {
     const remote = await nativeHandlers.native_bash(
       { action: "native_bash", command: "echo remote-chat" },
       1,
+      undefined,
+      "1",
     );
     expect(remote.ok).toBe(true);
     expect(remote.text).toContain("[Pixel 9] exit 0");
@@ -673,10 +767,17 @@ describe("native tools — teleport routing", () => {
           });
         }),
     });
-    await nativeHandlers.teleport({ action: "teleport", device: "phone" }, 1);
+    await nativeHandlers.teleport(
+      { action: "teleport", device: "phone" },
+      1,
+      undefined,
+      "1",
+    );
     await nativeHandlers.native_glob(
       { action: "native_glob", pattern: "*.apk", path: "/sdcard" },
       1,
+      undefined,
+      "1",
     );
     expect(sentCmds.length).toBe(1);
     // rg --files never lists directories; the find fallback must agree.
@@ -697,6 +798,8 @@ describe("native tools — teleport routing", () => {
     const tp = await nativeHandlers.teleport(
       { action: "teleport", device: "watch" },
       1,
+      undefined,
+      "1",
     );
     expect(tp.ok).toBe(false);
     expect(tp.text).toContain('does not advertise the "exec"');

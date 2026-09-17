@@ -33,19 +33,19 @@ import type { SharedActionHandlers } from "./types.js";
  * Returns an error string, or null when valid.
  */
 async function validateCronModelOverride(
-  chatId: number,
+  chatKey: string,
   model?: string,
   provider?: string,
 ): Promise<string | null> {
-  const chatBackendId = getBackendIdForChat(String(chatId));
+  const chatBackendId = getBackendIdForChat(chatKey);
   if (!provider || provider === chatBackendId) {
     const capabilityErr = validateCronBackgroundCapability(
       chatBackendId,
-      getBackendForChat(String(chatId)),
+      getBackendForChat(chatKey),
     );
     if (capabilityErr) return capabilityErr;
     if (!model) return null;
-    return validateJobModelOverride(chatId, model);
+    return validateJobModelOverride(chatKey, model);
   }
 
   let acquired: Awaited<ReturnType<typeof acquireBackendInstance>> | null =
@@ -85,7 +85,7 @@ function validateCronBackgroundCapability(
 }
 
 export const cronHandlers: SharedActionHandlers = {
-  create_cron_job: async (body, chatId) => {
+  create_cron_job: async (body, chatId, _backend, chatKey) => {
     const parsed = parseCronSpec(body);
     if (!parsed.ok) return { ok: false, error: parsed.error };
     const spec = parsed.effective;
@@ -103,7 +103,7 @@ export const cronHandlers: SharedActionHandlers = {
     // backend is rejected here instead of silently failing at fire time.
     if (jobType === "query") {
       const modelErr = await validateCronModelOverride(
-        chatId,
+        chatKey,
         spec.model,
         spec.provider,
       );
@@ -114,7 +114,7 @@ export const cronHandlers: SharedActionHandlers = {
     addCronJob({
       ...spec,
       id,
-      chatId: String(chatId),
+      chatId: chatKey,
       enabled: true,
       createdAt: Date.now(),
       runCount: 0,
@@ -147,8 +147,8 @@ export const cronHandlers: SharedActionHandlers = {
     };
   },
 
-  list_cron_jobs: (body, chatId) => {
-    const jobs = getCronJobsForChat(String(chatId));
+  list_cron_jobs: (body, chatId, _backend, chatKey) => {
+    const jobs = getCronJobsForChat(chatKey);
     if (jobs.length === 0)
       return { ok: true, text: "No cron jobs in this chat." };
     const fmt = (ms: number) =>
@@ -191,12 +191,12 @@ export const cronHandlers: SharedActionHandlers = {
     };
   },
 
-  edit_cron_job: async (body, chatId) => {
+  edit_cron_job: async (body, chatId, _backend, chatKey) => {
     const jobId = String(body.job_id ?? "");
     if (!jobId) return { ok: false, error: "Missing job_id" };
     const job = getCronJob(jobId);
     if (!job) return { ok: false, error: `Job ${jobId} not found` };
-    if (job.chatId !== String(chatId))
+    if (job.chatId !== chatKey)
       return { ok: false, error: "Job belongs to a different chat" };
 
     const parsed = parseCronSpec(body, job);
@@ -210,7 +210,7 @@ export const cronHandlers: SharedActionHandlers = {
       ("model" in updates || "provider" in updates || "type" in updates)
     ) {
       const modelErr = await validateCronModelOverride(
-        chatId,
+        chatKey,
         effective.model,
         effective.provider,
       );
@@ -233,12 +233,12 @@ export const cronHandlers: SharedActionHandlers = {
     };
   },
 
-  run_cron_job: async (body, chatId) => {
+  run_cron_job: async (body, chatId, _backend, chatKey) => {
     const jobId = String(body.job_id ?? "");
     if (!jobId) return { ok: false, error: "Missing job_id" };
     const job = getCronJob(jobId);
     if (!job) return { ok: false, error: `Job ${jobId} not found` };
-    if (job.chatId !== String(chatId))
+    if (job.chatId !== chatKey)
       return { ok: false, error: "Job belongs to a different chat" };
     const result = await runJobNow(jobId);
     if (!result.ok) return { ok: false, error: result.error ?? "Run failed" };
@@ -246,12 +246,12 @@ export const cronHandlers: SharedActionHandlers = {
     return { ok: true, text: `Ran job "${job.name}" (${jobId}) now.` };
   },
 
-  delete_cron_job: (body, chatId) => {
+  delete_cron_job: (body, chatId, _backend, chatKey) => {
     const jobId = String(body.job_id ?? "");
     if (!jobId) return { ok: false, error: "Missing job_id" };
     const job = getCronJob(jobId);
     if (!job) return { ok: false, error: `Job ${jobId} not found` };
-    if (job.chatId !== String(chatId))
+    if (job.chatId !== chatKey)
       return { ok: false, error: "Job belongs to a different chat" };
     deleteCronJob(jobId);
     return { ok: true, text: `Deleted cron job "${job.name}" (${jobId})` };

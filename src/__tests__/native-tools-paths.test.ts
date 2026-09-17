@@ -42,6 +42,8 @@ describe("native tools path handling", () => {
     const written = await nativeHandlers.native_write(
       { path: p, content: "v1" },
       1,
+      undefined,
+      "1",
     );
     expect(written.ok).toBe(true);
     expect(readFileSync(p, "utf8")).toBe("v1");
@@ -49,11 +51,18 @@ describe("native tools path handling", () => {
     const edited = await nativeHandlers.native_edit(
       { path: p, old_string: "v1", new_string: "v2" },
       1,
+      undefined,
+      "1",
     );
     expect(edited.ok).toBe(true);
     expect(readFileSync(p, "utf8")).toBe("v2");
 
-    const read = await nativeHandlers.native_read({ path: p }, 1);
+    const read = await nativeHandlers.native_read(
+      { path: p },
+      1,
+      undefined,
+      "1",
+    );
     expect(read.ok).toBe(true);
     expect(read.text).toContain("v2");
   });
@@ -62,6 +71,8 @@ describe("native tools path handling", () => {
     const res = await nativeHandlers.native_read(
       { path: "~/talon-definitely-not-here-4242" },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(false);
     // The fs error names the expanded real path, proving `~` was resolved.
@@ -74,6 +85,8 @@ describe("native tools path handling", () => {
     const res = await nativeHandlers.native_read(
       { path: "talon://home/whatever" },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(false);
     // No scheme resolution: the literal string reaches the fs layer verbatim
@@ -86,6 +99,8 @@ describe("native tools path handling", () => {
     const globbed = await nativeHandlers.native_glob(
       { pattern: "findme.ts", path: workdir },
       1,
+      undefined,
+      "1",
     );
     expect(globbed.ok).toBe(true);
     expect(globbed.text).toContain("findme.ts");
@@ -93,6 +108,8 @@ describe("native tools path handling", () => {
     const searched = await nativeHandlers.native_search(
       { pattern: "needle", path: workdir },
       1,
+      undefined,
+      "1",
     );
     expect(searched.ok).toBe(true);
     expect(searched.text).toContain("findme.ts");

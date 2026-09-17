@@ -228,6 +228,16 @@ describe("gateway shared actions", () => {
       expect(mockGetRecentFormatted).toHaveBeenCalledWith("42", 30);
     });
 
+    it("reads under the canonical chat key when the gateway supplies one", async () => {
+      await handleSharedAction(
+        { action: "read_history" },
+        42,
+        undefined,
+        "d_native",
+      );
+      expect(mockGetRecentFormatted).toHaveBeenCalledWith("d_native", 30);
+    });
+
     it("passes custom limit", async () => {
       await handleSharedAction({ action: "read_history", limit: 10 }, 42);
       expect(mockGetRecentFormatted).toHaveBeenCalledWith("42", 10);

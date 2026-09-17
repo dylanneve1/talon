@@ -108,6 +108,7 @@ import type { ActionResult } from "../core/types.js";
 const { handleSharedAction } =
   await import("../core/engine/gateway-actions/index.js");
 const { getCronJob, addCronJob } = await import("../storage/cron-store.js");
+const { getTrigger } = await import("../storage/trigger-store.js");
 
 const CHAT_ID = 4242;
 
@@ -616,5 +617,67 @@ describe("run_cron_job", () => {
     const res = await run({ job_id: job.id });
     expect(res.ok).toBe(false);
     expect(res.error).toBe("boom");
+  });
+});
+
+// ── Canonical chat key ───────────────────────────────────────────────────────
+// The bridge only carries a numeric chat id. For native/WhatsApp/Discord chats
+// the gateway resolves the real string id and passes it as `chatKey`; jobs and
+// triggers must be stored under that key. Stored under the numeric one they
+// fire into Telegram, which has no such chat — a `d_…` chat's trigger wake-up
+// was lost exactly that way (`sendChatAction … chat not found`, 2026-09-16).
+
+describe("canonical chat key", () => {
+  it("create_cron_job stores the chat's string id, not the numeric one", async () => {
+    const res = await handleSharedAction(
+      {
+        action: "create_cron_job",
+        name: "Native job",
+        type: "message",
+        content: "hi",
+        schedule: "0 9 * * *",
+      },
+      CHAT_ID,
+      undefined,
+      "d_native",
+    );
+    expect(res?.ok).toBe(true);
+    expect(getCronJob(idFromCreate(res as ActionResult))?.chatId).toBe(
+      "d_native",
+    );
+
+    // The same chat seen through its numeric-only key owns nothing.
+    const numericView = await handleSharedAction(
+      { action: "list_cron_jobs" },
+      CHAT_ID,
+    );
+    expect(numericView?.text).not.toContain("Native job");
+    const keyedView = await handleSharedAction(
+      { action: "list_cron_jobs" },
+      CHAT_ID,
+      undefined,
+      "d_native",
+    );
+    expect(keyedView?.text).toContain("Native job");
+  });
+
+  it("trigger_create keys the trigger by the string id and keeps the numeric id for routing", async () => {
+    const res = await handleSharedAction(
+      {
+        action: "trigger_create",
+        name: "native-watch",
+        language: "bash",
+        script: "echo hi",
+      },
+      CHAT_ID,
+      undefined,
+      "d_native",
+    );
+    expect(res?.ok).toBe(true);
+    const id = /id: (trig_[0-9a-f-]+)\)/.exec(res?.text ?? "")?.[1];
+    expect(id).toBeDefined();
+    const trigger = getTrigger(id!);
+    expect(trigger?.chatId).toBe("d_native");
+    expect(trigger?.numericChatId).toBe(CHAT_ID);
   });
 });

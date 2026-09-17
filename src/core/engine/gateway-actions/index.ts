@@ -72,15 +72,22 @@ const chatFreeActions: ReadonlySet<string> = new Set([
   ...whatsappAccountChatFreeActions,
 ]);
 
+/**
+ * `chatKey` is the chat's canonical string id (see `SharedActionHandler`).
+ * It defaults to `String(chatId)`, which is exact for Telegram and for the
+ * numeric-only callers (tests, chat-free dispatch); the gateway passes the
+ * real string id it holds for the active turn.
+ */
 export async function handleSharedAction(
   body: Record<string, unknown>,
   chatId: number,
   backend?: Backend | null,
+  chatKey: string = String(chatId),
 ): Promise<ActionResult | null> {
   const action = body.action as string;
   const handler = handlers[action];
   if (!handler) return null; // not a shared action — delegate to frontend
-  return handler(body, chatId, backend);
+  return handler(body, chatId, backend, chatKey);
 }
 
 /**
@@ -104,5 +111,5 @@ export async function handleChatFreeAction(
   if (!isChatFreeAction(action)) return null;
   const handler = handlers[action];
   if (!handler) return null;
-  return handler(body, 0);
+  return handler(body, 0, undefined, "0");
 }

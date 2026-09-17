@@ -94,7 +94,12 @@ describe("mesh shared gateway actions", () => {
       ts: Date.now(),
     });
 
-    const list = await meshHandlers.list_devices({ action: "list_devices" }, 1);
+    const list = await meshHandlers.list_devices(
+      { action: "list_devices" },
+      1,
+      undefined,
+      "1",
+    );
     expect(list.ok).toBe(true);
     expect(list.text).toContain("Pixel 9");
     expect(list.text).toContain("[id: phone]");
@@ -103,6 +108,8 @@ describe("mesh shared gateway actions", () => {
     const loc = await meshHandlers.get_device_location(
       { action: "get_device_location", device: "pixel" },
       1,
+      undefined,
+      "1",
     );
     expect(loc.ok).toBe(true);
     expect(loc.text).toContain("Pixel 9 is at 53.100000, -6.200000");
@@ -270,6 +277,8 @@ describe("MeshService locate flow", () => {
     const viaAction = await meshHandlers.get_device_history(
       { action: "get_device_history", device: "phone", hours: 6 },
       1,
+      undefined,
+      "1",
     );
     expect(viaAction.text).toContain("4 fixes");
   });
@@ -401,6 +410,8 @@ describe("MeshService locate flow", () => {
     const ring = await meshHandlers.ring_device(
       { action: "ring_device", device: "mac" },
       1,
+      undefined,
+      "1",
     );
     expect(ring.ok).toBe(true);
     expect(ring.text).toContain("MacBook is ringing");
@@ -408,6 +419,8 @@ describe("MeshService locate flow", () => {
     const status = await meshHandlers.get_device_status(
       { action: "get_device_status", device: "mac" },
       1,
+      undefined,
+      "1",
     );
     expect(status.ok).toBe(true);
     expect(status.text).toContain("battery: 93%");
@@ -1308,6 +1321,8 @@ describe("MeshService registry hygiene", () => {
     const res = await meshHandlers.remove_device(
       { action: "remove_device", device: "mac-old" },
       1,
+      undefined,
+      "1",
     );
     expect(res.ok).toBe(true);
     expect(res.text).toContain("Removed Dylan's MacBook Pro [id: mac-old]");

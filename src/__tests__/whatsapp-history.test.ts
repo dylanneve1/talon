@@ -160,6 +160,8 @@ describe("search_history with a date range", () => {
     const all = await coreHistory.search_history(
       { query: "flight" },
       CHAT as never,
+      undefined,
+      String(CHAT as never),
     );
     expect(all?.text).toContain("flight early");
     expect(all?.text).toContain("flight late");
@@ -167,6 +169,8 @@ describe("search_history with a date range", () => {
     const windowed = await coreHistory.search_history(
       { query: "flight", after: "2026-03-11", before: "2026-03-12" },
       CHAT as never,
+      undefined,
+      String(CHAT as never),
     );
     expect(windowed?.text).toContain("flight middle");
     expect(windowed?.text).not.toContain("flight early");
@@ -175,6 +179,8 @@ describe("search_history with a date range", () => {
     const open = await coreHistory.search_history(
       { query: "flight", after: "2026-03-12" },
       CHAT as never,
+      undefined,
+      String(CHAT as never),
     );
     expect(open?.text).toContain("flight late");
     expect(open?.text).not.toContain("flight middle");

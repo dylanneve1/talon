@@ -30,15 +30,14 @@ export function parseDueDate(value: unknown): number | undefined {
  * when it isn't, or `null` when it's valid.
  */
 export async function validateJobModelOverride(
-  chatId: number,
+  chatKey: string,
   model: string,
 ): Promise<string | null> {
   try {
-    const chatIdStr = String(chatId);
     const ref = await resolveExplicitModelRef(
       model,
-      getBackendForChat(chatIdStr),
-      getBackendIdForChat(chatIdStr),
+      getBackendForChat(chatKey),
+      getBackendIdForChat(chatKey),
     );
     if (!ref) {
       return (

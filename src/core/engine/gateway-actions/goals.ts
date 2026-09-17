@@ -26,7 +26,7 @@ import { parseDueDate } from "./shared.js";
 import type { SharedActionHandlers } from "./types.js";
 
 export const goalHandlers: SharedActionHandlers = {
-  add_goal: (body, chatId) => {
+  add_goal: (body, chatId, _backend, chatKey) => {
     const title = String(body.title ?? "").trim();
     const description = body.description ? String(body.description) : undefined;
     const priority = body.priority ?? "normal";
@@ -48,7 +48,7 @@ export const goalHandlers: SharedActionHandlers = {
         };
     }
 
-    const chatIdStr = String(chatId);
+    const chatIdStr = chatKey;
     // No open-goal cap: goals grow freely. The heartbeat re-reads every open
     // goal, so keep them tidy by closing finished ones (completed/abandoned).
 
@@ -75,10 +75,10 @@ export const goalHandlers: SharedActionHandlers = {
     };
   },
 
-  list_goals: (body, chatId) => {
+  list_goals: (body, chatId, _backend, chatKey) => {
     const includeClosed = body.include_closed === true;
     const goals = getGoalsForChat(
-      String(chatId),
+      chatKey,
       includeClosed ? GOAL_STATUSES : OPEN_GOAL_STATUSES,
     );
     if (goals.length === 0)
@@ -94,12 +94,12 @@ export const goalHandlers: SharedActionHandlers = {
     };
   },
 
-  update_goal: (body, chatId) => {
+  update_goal: (body, chatId, _backend, chatKey) => {
     const goalId = String(body.goal_id ?? "");
     if (!goalId) return { ok: false, error: "Missing goal_id" };
     const goal = getGoal(goalId);
     if (!goal) return { ok: false, error: `Goal ${goalId} not found` };
-    if (goal.chatId !== String(chatId))
+    if (goal.chatId !== chatKey)
       return { ok: false, error: "Goal belongs to a different chat" };
 
     const updates: Parameters<typeof updateGoal>[1] = {};
@@ -158,12 +158,12 @@ export const goalHandlers: SharedActionHandlers = {
     };
   },
 
-  delete_goal: (body, chatId) => {
+  delete_goal: (body, chatId, _backend, chatKey) => {
     const goalId = String(body.goal_id ?? "");
     if (!goalId) return { ok: false, error: "Missing goal_id" };
     const goal = getGoal(goalId);
     if (!goal) return { ok: false, error: `Goal ${goalId} not found` };
-    if (goal.chatId !== String(chatId))
+    if (goal.chatId !== chatKey)
       return { ok: false, error: "Goal belongs to a different chat" };
     deleteGoal(goalId);
     return { ok: true, text: `Deleted goal "${goal.title}" (${goalId})` };
