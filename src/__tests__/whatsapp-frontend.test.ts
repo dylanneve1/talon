@@ -271,6 +271,9 @@ describe("WhatsApp action adapter", () => {
     );
     expect(result?.ok).toBe(true);
     expect(sent[0].jid).toBe("353871234567@s.whatsapp.net");
+    // The caller named a phone number; report back the chat id it became,
+    // so a cross-frontend caller can follow the thread it just started.
+    expect(result?.chat_id).toBe(chatIdForJid("353871234567@s.whatsapp.net"));
     // Registered on the fly, so numeric-id routing and replies now work.
     const info = lookupWhatsAppChatByString("wa_dm_353871234567");
     expect(info?.jid).toBe("353871234567@s.whatsapp.net");

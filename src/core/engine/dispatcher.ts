@@ -9,6 +9,7 @@
  */
 
 import type { ExecuteParams, ExecuteResult } from "../types.js";
+import { formatRelayBlock, takePendingRelay } from "./cross-chat-relay.js";
 import { log } from "../../util/log.js";
 import { taskTable, type KillOutcome } from "../tasks/index.js";
 import { initWeaver, type Weaver, type WeaverDeps } from "../weaver/index.js";
@@ -66,8 +67,16 @@ export function stopAllTurns(): number {
  * Execute an AI query with full lifecycle management.
  * Same-chat queries are serialized (FIFO) to avoid session conflicts.
  * Different-chat queries run in true parallel.
+ *
+ * Every turn for every frontend and every source funnels through here,
+ * which makes it the one place a cross-chat reply can be folded in
+ * without teaching each frontend about the relay.
  */
 export async function execute(params: ExecuteParams): Promise<ExecuteResult> {
   if (!weaver) throw new Error("Dispatcher not initialized");
-  return weaver.runTurn(params);
+  const relayed = takePendingRelay(params.chatId);
+  const prompt = relayed.length
+    ? formatRelayBlock(relayed) + params.prompt
+    : params.prompt;
+  return weaver.runTurn(relayed.length ? { ...params, prompt } : params);
 }

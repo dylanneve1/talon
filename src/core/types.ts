@@ -258,6 +258,13 @@ export type ActionResult = {
    */
   message_id?: number | string;
   /**
+   * The canonical Talon chat id the action actually addressed. Set when
+   * a frontend resolved an explicit `target` (a phone number, a JID) to
+   * one of its chats, so the caller learns where its message landed —
+   * the cross-chat relay needs it to subscribe to the replies.
+   */
+  chat_id?: string;
+  /**
    * Set by tools that return a viewable image (e.g. `read` on a photo). The
    * MCP layer turns this into an image content block so the model sees the
    * picture instead of base64 text.

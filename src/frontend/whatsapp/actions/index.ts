@@ -99,6 +99,12 @@ export function createWhatsAppActionHandler(
       chat,
       scheduledMessages,
     };
-    return handler(body, chatId, ctx);
+    const result = await handler(body, chatId, ctx);
+    // An explicitly targeted action resolved a chat the caller could not
+    // name itself (a phone number is not a chat id). Report where the
+    // message landed so cross-frontend callers can follow the thread.
+    return result && chat && body.target !== undefined
+      ? { ...result, chat_id: chat.chatId }
+      : result;
   };
 }

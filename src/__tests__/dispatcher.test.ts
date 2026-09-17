@@ -12,6 +12,12 @@ import {
 } from "./helpers/stub-backend.js";
 import { makeBareModelRef } from "../core/agent-runtime/model-ref.js";
 import { bus } from "../core/bus/index.js";
+import {
+  noteCrossSend,
+  relayInbound,
+  resetCrossChatRelay,
+  takePendingRelay,
+} from "../core/engine/cross-chat-relay.js";
 
 function createMockDeps() {
   const acquired: number[] = [];
@@ -94,6 +100,49 @@ describe("dispatcher", () => {
         text: "hello",
       }),
     );
+  });
+
+  it("folds a cross-chat reply into the front of the next turn", async () => {
+    const deps = createMockDeps();
+    initDispatcher(deps as never);
+    resetCrossChatRelay();
+    // This chat messaged a WhatsApp number earlier; she has now replied.
+    noteCrossSend("123", "wa_dm_353863715529");
+    relayInbound("wa_dm_353863715529", "Nyika", "on my way");
+
+    await execute({
+      chatId: "123",
+      numericChatId: 123,
+      prompt: "did she reply?",
+      senderName: "User",
+      isGroup: false,
+      source: "message",
+    });
+
+    const text = String(deps.query.mock.calls.at(-1)?.[0]?.text);
+    expect(text).toContain("Cross-chat");
+    expect(text).toContain("Nyika (in wa_dm_353863715529): on my way");
+    // The user's own prompt still terminates the block, unmodified.
+    expect(text.endsWith("did she reply?")).toBe(true);
+    // Drained: a second turn must not re-read the same reply.
+    expect(takePendingRelay("123")).toEqual([]);
+  });
+
+  it("leaves the prompt untouched when nothing was relayed", async () => {
+    const deps = createMockDeps();
+    initDispatcher(deps as never);
+    resetCrossChatRelay();
+
+    await execute({
+      chatId: "123",
+      numericChatId: 123,
+      prompt: "hello",
+      senderName: "User",
+      isGroup: false,
+      source: "message",
+    });
+
+    expect(deps.query.mock.calls.at(-1)?.[0]?.text).toBe("hello");
   });
 
   it("uses the per-run model override when it resolves", async () => {

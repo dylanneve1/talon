@@ -11,6 +11,7 @@ import { execute } from "../../core/engine/dispatcher.js";
 import { toolInputToRecord } from "../../core/agent-runtime/events.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { pushMessage } from "../../storage/history.js";
+import { relayInbound } from "../../core/engine/cross-chat-relay.js";
 import {
   recordMessageProcessed,
   recordMessageReceived,
@@ -175,6 +176,12 @@ async function recordInbound(
     ...(replyTo ? { replyToMsgId: replyTo.msgId } : {}),
     ...(media ? { mediaType: media.type, filePath: media.filePath } : {}),
   });
+
+  // If another chat's session messaged this one via send_via, it is
+  // waiting to hear back — hand it the reply for its next turn. A no-op
+  // (and one Map miss) for every chat nobody cross-sent into.
+  relayInbound(chat.chatId, senderName, text || `[${media?.type ?? "media"}]`);
+
   return { ...admitted, chat, msgId, text, media, senderName, platformTs };
 }
 

@@ -21,6 +21,7 @@
  */
 
 import type { FrontendActionHandler } from "../../types.js";
+import { noteCrossSend } from "../cross-chat-relay.js";
 import type { SharedActionHandlers } from "./types.js";
 
 const targets = new Map<string, FrontendActionHandler>();
@@ -75,6 +76,14 @@ export const crossSendHandlers: SharedActionHandlers = {
         ok: false,
         error: `send_via: the ${frontend} frontend does not implement send_message`,
       };
+    }
+    // Subscribe the calling session to whatever comes back. `_chatId` is
+    // the bridge's own caller tag, and the frontend reports the canonical
+    // id it resolved — a phone number is not a chat id, so without that
+    // report there would be nothing to subscribe to.
+    if (result.ok) {
+      const origin = body._chatId ? String(body._chatId) : "";
+      noteCrossSend(origin, result.chat_id ?? target);
     }
     return result;
   },
