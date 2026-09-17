@@ -92,6 +92,12 @@ dependencies {
     // safe to ship unconditionally. See docs/companion-shizuku.md.
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+
+    // FileProvider, for handing a downloaded update APK to Android's package
+    // installer (a file:// URI throws FileUriExposedException on N+). Already
+    // on the classpath transitively via the Flutter embedding; declared so the
+    // self-updater doesn't silently depend on someone else's dependency.
+    implementation("androidx.core:core-ktx:1.13.1")
 }
 
 flutter {

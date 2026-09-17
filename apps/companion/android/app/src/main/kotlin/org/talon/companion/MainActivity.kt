@@ -9,6 +9,7 @@ class MainActivity : FlutterActivity() {
     private var shizuku: ShizukuBridge? = null
     private var root: RootBridge? = null
     private var pair: PairBridge? = null
+    private var update: UpdateBridge? = null
     private var voice: VoiceBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -44,6 +45,18 @@ class MainActivity : FlutterActivity() {
             ),
         )
         if (isPairIntent(intent)) pair?.offer(intent.dataString)
+
+        // Self-update fallback: staging dir + the package-installer handoff
+        // for when root/Shizuku aren't there to install silently. Application
+        // context — the install intent is started with NEW_TASK and must
+        // survive this activity going away behind the system dialog.
+        update = UpdateBridge(
+            MethodChannel(
+                flutterEngine.dartExecutor.binaryMessenger,
+                UpdateBridge.CHANNEL,
+            ),
+            applicationContext,
+        )
 
         // Voice mode: STT/TTS + default-assistant plumbing. Activity-scoped
         // (unlike Shizuku) because it drives runtime-permission prompts and

@@ -123,6 +123,41 @@ class _SidebarState extends State<Sidebar> {
         ),
       );
 
+  /// The settings glyph, wearing a dot while a new release is waiting. This
+  /// is the updater's only presence outside Settings on purpose: a banner over
+  /// the conversation would interrupt the thing people opened the app for,
+  /// and the check that feeds it never downloads anything on its own.
+  Widget _settingsGlyph({required double size}) => AnimatedBuilder(
+        animation: widget.state.updates,
+        builder: (context, _) {
+          final glyph = Icon(
+            Icons.settings_outlined,
+            size: size,
+            color: TalonColors.textDim,
+          );
+          if (!widget.state.updates.updateAvailable) return glyph;
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              glyph,
+              Positioned(
+                right: -1,
+                top: -1,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: TalonColors.accent,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: TalonColors.surface, width: 1.5),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+
   /// The wordmark, wearing the brand gradient — one deliberate hero moment,
   /// matching the falcon tile beside it.
   Widget _wordmark({required double size}) => ShaderMask(
@@ -182,8 +217,7 @@ class _SidebarState extends State<Sidebar> {
                   IconButton(
                     tooltip: 'Settings',
                     onPressed: () => _openSettings(context),
-                    icon: Icon(Icons.settings_outlined,
-                        size: 20, color: TalonColors.textDim),
+                    icon: _settingsGlyph(size: 20),
                   ),
                 ],
               ),
@@ -251,8 +285,7 @@ class _SidebarState extends State<Sidebar> {
                           width: TalonDensity.tap,
                           height: TalonDensity.tap,
                         ),
-                        icon: Icon(Icons.settings_outlined,
-                            color: TalonColors.textDim),
+                        icon: _settingsGlyph(size: 24),
                       ),
                     ],
                   ),

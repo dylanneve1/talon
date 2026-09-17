@@ -16,6 +16,7 @@ import 'settings/appearance_card.dart';
 import 'settings/mesh_card.dart';
 import 'settings/overview_cards.dart';
 import 'settings/settings_widgets.dart';
+import 'settings/updates_card.dart';
 import 'settings/voice_card.dart';
 
 /// Talon control panel: live daemon status, the daemon's own settings (synced
@@ -396,6 +397,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 16),
         AboutCard(state: widget.state, cfg: cfg),
         const SizedBox(height: 16),
+        UpdatesCard(state: widget.state),
+        const SizedBox(height: 16),
         ConnectionCard(state: widget.state),
         const SizedBox(height: 24),
       ],
@@ -441,6 +444,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
             [
               AboutCard(state: widget.state, cfg: cfg),
+              UpdatesCard(state: widget.state),
               ConnectionCard(state: widget.state)
             ],
           ],

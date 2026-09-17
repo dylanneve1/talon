@@ -18,6 +18,7 @@ import '../services/menu_bar.dart';
 import '../services/mesh_background.dart';
 import '../services/mesh_service.dart';
 import '../services/prefs.dart';
+import '../services/updater.dart';
 
 enum ConnState { idle, connecting, connected, error }
 
@@ -170,6 +171,13 @@ class AppState extends ChangeNotifier {
     aliveAtMs: null,
     startedAtMs: null,
   );
+
+  UpdateService? _updates;
+
+  /// The self-updater. Created on first use (a widget test that never opens
+  /// Settings shouldn't spin up an HTTP client), and owned here so its
+  /// six-hourly timer lives exactly as long as the app does.
+  UpdateService get updates => _updates ??= UpdateService(prefs: prefs);
 
   List<ClientMessage> messagesFor(String chatId) =>
       _messages[chatId] ?? const [];
@@ -1601,6 +1609,7 @@ class AppState extends ChangeNotifier {
     _continuingTimers.clear();
     _sub?.cancel();
     _mesh?.stop();
+    _updates?.dispose();
     _client?.dispose();
     super.dispose();
   }

@@ -84,6 +84,33 @@ class Prefs {
   bool get haptics => _sp.getBool(_kHaptics) ?? true;
   Future<void> setHaptics(bool v) => _sp.setBool(_kHaptics, v);
 
+  // ── Updates ───────────────────────────────────────────────────────────────
+
+  static const _kUpdateAuto = 'update.autoCheck.v1';
+  static const _kUpdateLastCheck = 'update.lastCheckAt.v1';
+  static const _kUpdateSkipped = 'update.skippedVersion.v1';
+
+  /// Look for a newer release on launch and every few hours. Default on —
+  /// checking is a ~2 KB request; nothing is downloaded without a tap.
+  bool get autoUpdateCheck => _sp.getBool(_kUpdateAuto) ?? true;
+  Future<void> setAutoUpdateCheck(bool v) => _sp.setBool(_kUpdateAuto, v);
+
+  /// When the release feed was last read, so a relaunch doesn't re-check.
+  DateTime? get updateLastCheckedAt {
+    final ms = _sp.getInt(_kUpdateLastCheck);
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  Future<void> setUpdateLastCheckedAt(DateTime t) =>
+      _sp.setInt(_kUpdateLastCheck, t.millisecondsSinceEpoch);
+
+  /// A version the user chose to skip; it stays unoffered until a newer one
+  /// lands (or they press Check now, which ignores the skip).
+  String? get skippedUpdateVersion => _sp.getString(_kUpdateSkipped);
+  Future<void> setSkippedUpdateVersion(String? v) => v == null
+      ? _sp.remove(_kUpdateSkipped).then((_) {})
+      : _sp.setString(_kUpdateSkipped, v);
+
   // ── Voice mode ────────────────────────────────────────────────────────────
 
   static const _kVoiceCaptions = 'voice.captions.v1';

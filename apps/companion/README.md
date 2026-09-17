@@ -29,6 +29,9 @@ that speaks the protocol works.
 - `⌘K` command palette — run an action, jump to a chat, search messages
 - Remote bridge profiles for phones or other machines
 - Light and dark palettes with a personalizable accent
+- **Self-updating** — the app watches Talon's releases and installs the next
+  one itself (silently on a rooted/Shizuku phone, swap-and-relaunch on
+  desktop). See [Updates](#updates).
 
 See [docs/companion-ui.md](../../docs/companion-ui.md) for a visual tour of the
 main surfaces and the reasoning behind their layout.
@@ -46,6 +49,25 @@ Developer account), so Gatekeeper warns on first launch. Either:
 
 The DMG art (`assets/dmg/`, rendered by `scripts/render-dmg-background.py`)
 and the volume icon are wired up in `.github/workflows/companion.yml`.
+
+## Updates
+
+*Settings → Updates* shows what's running, what's available, and one button to
+move between the two. The app checks Talon's GitHub releases on launch and
+every six hours; **nothing downloads until you press Download & install**, and
+a waiting update shows up elsewhere only as a dot on the settings glyph.
+
+On desktop the update is unpacked next to the install and applied by a small
+detached helper when you press **Restart now** — a running binary can't
+overwrite itself. On Android it installs silently with root or Shizuku, and
+otherwise goes through Android's own package installer (one tap; Talon asks
+for *install unknown apps* only at that point).
+
+Downloads are checked against the release's published SHA-256 before anything
+is installed, and a managed install the app can't write to (Homebrew, `/opt`,
+`C:\Program Files`) is reported rather than half-overwritten.
+
+Full mechanism: [docs/companion-updates.md](../../docs/companion-updates.md).
 
 ## Running it
 

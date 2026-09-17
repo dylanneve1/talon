@@ -75,9 +75,14 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
     TalonTheme.mode.addListener(_onThemeChanged);
     TalonTheme.accentSeed.addListener(_onThemeChanged);
     TalonTheme.textScale.addListener(_onThemeChanged);
-    // Connect on launch using the saved profile (or platform default).
+    // Connect on launch using the saved profile (or platform default), and
+    // let the updater notice a new release in the background — it only ever
+    // reads the release feed here; downloading and installing stay a tap in
+    // Settings.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.state.prefs.onboarded) widget.state.start();
+      if (!widget.state.prefs.onboarded) return;
+      widget.state.start();
+      unawaited(widget.state.updates.start());
     });
     // Material You: the wallpaper palette can change while the app is away,
     // so re-read it now and on every resume.
