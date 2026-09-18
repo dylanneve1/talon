@@ -21,7 +21,7 @@ across four hand-maintained copies of the same if/else chain:
 | Creation switch                            | `app.ts` (`switch (name)` over dynamic imports)                                  |
 | Dispatch routing (chat id → live frontend) | `bootstrap.ts` `resolveFrontendName`                                             |
 | Gateway action routing                     | `core/engine/gateway.ts` `resolveOwnedFrontendName`                              |
-| MCP tool scoping                           | `backend/shared/frontends.ts` `frontendForChatId` + literal `"terminal"` filters |
+| MCP tool scoping                           | `backend/runtime/frontends.ts` `frontendForChatId` + literal `"terminal"` filters |
 
 Adding a frontend meant touching all four, and they could silently drift.
 
@@ -108,7 +108,7 @@ terminal claims the legacy chat id `"1"` ahead of telegram (10).
 5. Expose the tools it implements: add the id to `ToolFrontend`
    (`core/tools/types.ts`), to `VALID_TOOL_FRONTENDS`
    (`core/mcp-hub/talon-server.ts`), to `FRONTEND_TOOLS`
-   (`backend/shared/delivery-contract.ts`), and to the `frontends: [...]`
+   (`backend/runtime/prompt/delivery-contract.ts`), and to the `frontends: [...]`
    array of every tool in `core/tools/` it can serve. A tool listed for a
    frontend whose action handler doesn't implement it is a tool the model
    will call and get "unknown action" from — gate deliberately.

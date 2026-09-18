@@ -6,11 +6,14 @@
  * MCP bundle, iterating the `StreamedRunResult` (see `events.ts`), and
  * `.cancel()` on terminator. The post-stream phases — accounting, the
  * trailing-prose flow-violation retry, the result — are the shared ones in
- * `backend/shared/turn-phases.ts`.
+ * `backend/runtime/turn/turn-phases.ts`.
  */
 
 import { Agent, run } from "@openai/agents";
-import type { QueryParams, QueryResult } from "../../shared/handler-types.js";
+import type {
+  QueryParams,
+  QueryResult,
+} from "../../runtime/turn/handler-types.js";
 import { getSession, incrementTurns } from "../../../storage/sessions.js";
 import { getChatSettings } from "../../../storage/chat-settings.js";
 import { log, logError, logWarn } from "../../../util/log.js";
@@ -33,7 +36,7 @@ import {
   enforceTrailingProse,
   finishCallbackTurn,
   type StreamState,
-} from "../../shared/index.js";
+} from "../../runtime/index.js";
 
 import {
   buildOpenAiAgentsSuffix,
@@ -43,7 +46,7 @@ import {
 } from "../constants.js";
 import { getState, getOrCreateSession } from "../state.js";
 import { getActiveFrontends } from "../init.js";
-import { frontendsForChat } from "../../shared/frontends.js";
+import { frontendsForChat } from "../../runtime/frontends.js";
 import { getOrCreateBundle } from "../mcp-pool.js";
 import { OPENAI_AGENTS_BUILTIN_TOOLS } from "../builtins.js";
 import { activeAborts } from "./state.js";

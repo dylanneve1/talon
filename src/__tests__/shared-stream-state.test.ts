@@ -10,7 +10,7 @@ import {
   recordToolUse,
   recordTokens,
   finalizeResponseText,
-} from "../backend/shared/stream-state.js";
+} from "../backend/runtime/turn/stream-state.js";
 
 describe("createStreamState", () => {
   it("returns a zeroed state object", () => {

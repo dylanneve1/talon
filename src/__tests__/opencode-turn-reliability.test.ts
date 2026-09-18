@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { runRemoteTurn } from "../backend/remote-server/turn.js";
-import { createStreamState } from "../backend/shared/index.js";
+import { createStreamState } from "../backend/runtime/index.js";
 import {
   awaitRemoteTurn,
   RemoteTurnTimeoutError,

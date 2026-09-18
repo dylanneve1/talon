@@ -8,9 +8,9 @@
  *   - `workspace-listing` — lazy workspace tree for the dynamic tail
  *
  * The per-session freezing/caching of assembled prompts lives in
- * `backend/shared/system-prompt.ts` (it is a backend concern); the
+ * `backend/runtime/prompt/system-prompt.ts` (it is a backend concern); the
  * delivery-contract suffix builders live in
- * `backend/shared/delivery-contract.ts`.
+ * `backend/runtime/prompt/delivery-contract.ts`.
  */
 
 export { loadSystemTemplate } from "./templates.js";

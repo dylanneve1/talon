@@ -273,7 +273,7 @@ export function buildCacheDisplay(input: {
       ? input.cacheWrite
       : 0;
 
-  // Match the canonical formula in `src/backend/shared/usage.ts:cacheHitPercent`:
+  // Match the canonical formula in `src/backend/runtime/usage.ts:cacheHitPercent`:
   // cache_write is tokens being *written to* cache on this call, not served
   // from it, so it must not dilute the hit ratio. The denominator is
   // `input + read` ("effective input"), regardless of whether the backend

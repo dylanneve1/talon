@@ -118,7 +118,7 @@ session" intent); migrate to a table only if query needs demand it.
 ### 3. Collection — a Weaver collaborator + injected hook
 
 > **As built:** collection landed via §6's option (b) instead — the existing
-> `backend/shared/metrics.ts` entry points (`recordTurnMetrics`,
+> `backend/runtime/metrics.ts` entry points (`recordTurnMetrics`,
 > `recordToolCall`, `recordFlowViolation`, `recordFailedTurnAccounting`) became
 > thin shims over the session store, each threading `chatId`. Every backend
 > already calls them on both success and failure paths, so no new Weaver
@@ -200,7 +200,7 @@ thread*.ts`) with a per-session metrics summary so a single chat's numbers
 ### 6. Removal of the global store
 
 - Delete `src/util/metrics.ts` (or reduce to nothing) and its callers:
-  - `src/backend/shared/metrics.ts` stops calling `incrementCounter`/
+  - `src/backend/runtime/metrics.ts` stops calling `incrementCounter`/
     `recordHistogram`. `recordTurnMetrics`/`recordToolCall`/
     `recordFlowViolation`/`recordFailedTurnAccounting` either (a) move their
     signal onto the per-turn summary the Weaver collects, or (b) become

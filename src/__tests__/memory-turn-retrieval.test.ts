@@ -35,7 +35,7 @@ import {
 } from "../core/memory/turn-retrieval.js";
 import { onPromptInputsChanged } from "../core/prompt/invalidation.js";
 import { assembleSystemPrompt } from "../core/prompt/assemble.js";
-import { formatUserPrompt } from "../backend/shared/prompt-format.js";
+import { formatUserPrompt } from "../backend/runtime/prompt/prompt-format.js";
 import { Weaver } from "../core/weaver/index.js";
 import { stubResolveActiveModel } from "./helpers/stub-backend.js";
 import { composeBackend } from "../core/agent-runtime/capabilities.js";

@@ -4,7 +4,7 @@
  * skill toggle).
  *
  * Whoever caches assembled prompts registers a hook here (today: the
- * per-session snapshot store in backend/shared/system-prompt.ts, at its
+ * per-session snapshot store in backend/runtime/prompt/system-prompt.ts, at its
  * module load). Core and frontends call `notifyPromptInputsChanged()`
  * and never import the cache — the dependency points backend → core,
  * as the layer rule requires.

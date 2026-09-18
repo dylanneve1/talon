@@ -19,7 +19,7 @@ import {
   pushLiveUsage,
   recordTokens,
   type StreamState,
-} from "../../shared/index.js";
+} from "../../runtime/index.js";
 import { CODEX_LIVE_POLL_INTERVAL_MS } from "../constants.js";
 import {
   readLastRolloutSnapshot,

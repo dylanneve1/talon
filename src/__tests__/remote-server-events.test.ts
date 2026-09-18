@@ -15,7 +15,7 @@ import {
   STREAM_INTERVAL_MS,
 } from "../backend/remote-server/events.js";
 import { extractPartsSummary } from "../backend/remote-server/session-helpers.js";
-import { createStreamState } from "../backend/shared/index.js";
+import { createStreamState } from "../backend/runtime/index.js";
 
 const SESSION_ID = "sess_abc";
 

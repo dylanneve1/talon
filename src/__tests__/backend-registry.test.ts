@@ -14,7 +14,7 @@ import {
   hasBackend,
   type BackendFactory,
 } from "../core/agent-runtime/backend-registry.js";
-import type { QueryResult } from "../backend/shared/handler-types.js";
+import type { QueryResult } from "../backend/runtime/turn/handler-types.js";
 import { stubBackend } from "./helpers/stub-backend.js";
 import type { BackendId } from "../core/agent-runtime/model-ref.js";
 

@@ -20,8 +20,8 @@
  */
 
 import { captureDeliveredText } from "./delivered-text.js";
-import { isTurnTerminator, stripMcpPrefix } from "../../core/tools/index.js";
-import { updateLiveTurn } from "../../storage/sessions.js";
+import { isTurnTerminator, stripMcpPrefix } from "../../../core/tools/index.js";
+import { updateLiveTurn } from "../../../storage/sessions.js";
 
 // ── State shape ─────────────────────────────────────────────────────────────
 

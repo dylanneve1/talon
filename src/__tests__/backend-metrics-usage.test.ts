@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { recordTurnMetrics } from "../backend/shared/metrics.js";
+import { recordTurnMetrics } from "../backend/runtime/metrics.js";
 import {
   getMetrics,
   getTodayMetrics,

@@ -25,7 +25,7 @@ import { Codex } from "@openai/codex-sdk";
 import type { TalonConfig } from "../../core/config/index.js";
 import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
 import { log, logWarn } from "../../util/log.js";
-import { nonTerminalFrontends } from "../shared/frontends.js";
+import { nonTerminalFrontends } from "../runtime/frontends.js";
 import { getState } from "./state.js";
 import { asCodexConfig, buildCodexMcpServers } from "./mcp-config.js";
 import { detectCodexAuth, type CodexAuthInfo } from "./auth.js";

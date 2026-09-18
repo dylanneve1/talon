@@ -2,7 +2,7 @@
  * Codex backend constants.
  */
 
-import { buildDeliveryContract } from "../shared/delivery-contract.js";
+import { buildDeliveryContract } from "../runtime/prompt/delivery-contract.js";
 
 /**
  * System-prompt suffix appended to the user-configured system prompt.

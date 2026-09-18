@@ -19,7 +19,7 @@ those into three PRs, measurement first.
 - The Claude Agent SDK owns `cache_control` placement and the TTL
   (`cache_ttl: '5m' | '1h'` in its hook inputs; Talon's sparse chats want
   `1h`). Talon's levers are prefix bytes, prefix size, and what it sends
-  after the boundary. `backend/shared/cache-telemetry.ts` (#PR 3 of the
+  after the boundary. `backend/runtime/cache/cache-telemetry.ts` (#PR 3 of the
   memory rollout) already computes the per-turn verdict; it is not yet
   rolled up anywhere an operator can read.
 - After the TTL lapses, the next turn re-writes the whole prefix **and

@@ -35,7 +35,7 @@ const processHistograms = new Map<string, MetricsLatencyAgg>();
  * A chat's last cross-turn cache verdict — did the turn's FIRST request
  * read the previous turn's prefix (`hit`), pay to re-write it (`miss`), or
  * was nothing cacheable at all (`none`)? Mirrors `CrossTurnVerdict` in
- * backend/shared/cache-telemetry.ts, which owns the classification; the
+ * backend/runtime/cache/cache-telemetry.ts, which owns the classification; the
  * union is restated here because `/status` renders it and frontends may
  * not import backend/ (.dependency-cruiser.cjs: frontend-not-to-backend).
  */

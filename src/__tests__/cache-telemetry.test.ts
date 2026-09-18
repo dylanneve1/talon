@@ -28,7 +28,7 @@ import {
   turnCacheStats,
   warnIfBelowCacheMinimum,
   type CacheIteration,
-} from "../backend/shared/cache-telemetry.js";
+} from "../backend/runtime/cache/cache-telemetry.js";
 
 const iter = (read: number, write: number): CacheIteration => ({
   cache_read_input_tokens: read,

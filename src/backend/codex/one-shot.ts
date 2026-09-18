@@ -19,7 +19,7 @@
 
 import type { OneShotAgentParams, OneShotUsage } from "../../core/types.js";
 import { log, logWarn } from "../../util/log.js";
-import { appendBackendSuffix } from "../shared/index.js";
+import { appendBackendSuffix } from "../runtime/index.js";
 import { ensureCodex, getCodexAuthInfo } from "./init.js";
 import {
   CODEX_SYSTEM_PROMPT_SUFFIX,

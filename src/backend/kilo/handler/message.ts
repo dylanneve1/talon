@@ -3,7 +3,10 @@
  * Kilo's server bindings.
  */
 
-import type { QueryParams, QueryResult } from "../../shared/handler-types.js";
+import type {
+  QueryParams,
+  QueryResult,
+} from "../../runtime/turn/handler-types.js";
 import { runRemoteChatTurn } from "../../remote-server/chat-turn.js";
 import {
   ensureServer,

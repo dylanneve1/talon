@@ -13,7 +13,7 @@ import {
   normalizeForDedupe,
   isDuplicateOfDelivered,
   captureDeliveredText,
-} from "../backend/shared/delivered-text.js";
+} from "../backend/runtime/turn/delivered-text.js";
 
 describe("normalizeForDedupe", () => {
   it("trims + lowercases", () => {

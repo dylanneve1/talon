@@ -21,8 +21,8 @@
  * model swap) because those touch backend-specific storage.
  */
 
-import type { TalonError } from "../../core/errors.js";
-import { getFallbackModel } from "../../core/models/catalog.js";
+import type { TalonError } from "../../../core/errors.js";
+import { getFallbackModel } from "../../../core/models/catalog.js";
 
 // ── Public API ──────────────────────────────────────────────────────────────
 

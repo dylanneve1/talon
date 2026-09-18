@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { formatUserPrompt } from "../backend/shared/prompt-format.js";
+import { formatUserPrompt } from "../backend/runtime/prompt/prompt-format.js";
 
 // We can't easily mock `formatFullDatetime` without setting up a vitest
 // spy; instead we accept the dynamic time tag and just assert the SHAPE.

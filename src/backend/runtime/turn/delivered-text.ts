@@ -25,7 +25,7 @@
  * whether to surface a flow violation.
  */
 
-import { stripMcpPrefix } from "../../core/tools/index.js";
+import { stripMcpPrefix } from "../../../core/tools/index.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 

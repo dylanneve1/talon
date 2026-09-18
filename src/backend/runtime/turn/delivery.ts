@@ -35,8 +35,8 @@
 
 import type { StreamState } from "./stream-state.js";
 import { undeliveredResponseText } from "./stream-state.js";
-import { logWarn } from "../../util/log.js";
-import { incrementCounter } from "../../storage/metrics.js";
+import { logWarn } from "../../../util/log.js";
+import { incrementCounter } from "../../../storage/metrics.js";
 
 /** Route the delivery decision selected. */
 export type DeliveryRoute =

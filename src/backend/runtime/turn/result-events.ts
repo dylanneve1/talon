@@ -5,8 +5,8 @@
  * logging imports so the adapter stays a pure event translator.
  */
 
-import type { AgentEvent } from "../../core/agent-runtime/events.js";
-import type { TokenUsageSnapshot } from "./usage.js";
+import type { AgentEvent } from "../../../core/agent-runtime/events.js";
+import type { TokenUsageSnapshot } from "../usage.js";
 
 export function buildResultEvents(inputs: {
   text: string;

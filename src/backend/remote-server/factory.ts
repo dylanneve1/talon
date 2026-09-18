@@ -28,9 +28,12 @@ import type { OneShotAgentParams, OneShotUsage } from "../../core/types.js";
 import type { TalonConfig } from "../../core/config/index.js";
 import { binaryOnPath } from "../../util/binary-on-path.js";
 import { log } from "../../util/log.js";
-import { handlerToEvents } from "../shared/handler-to-events.js";
-import type { QueryParams, QueryResult } from "../shared/handler-types.js";
-import { interruptChatTurn } from "../shared/turn-interrupt.js";
+import { handlerToEvents } from "../runtime/turn/handler-to-events.js";
+import type {
+  QueryParams,
+  QueryResult,
+} from "../runtime/turn/handler-types.js";
+import { interruptChatTurn } from "../runtime/turn/turn-interrupt.js";
 import type { RemoteModelProvider } from "./model-catalog/provider.js";
 import type { RemoteSessionSnapshot } from "./session-helpers.js";
 

@@ -10,7 +10,7 @@
  * orchestration) with MCP servers wired from the plugin system.
  */
 
-import { buildDeliveryContract } from "../shared/delivery-contract.js";
+import { buildDeliveryContract } from "../runtime/prompt/delivery-contract.js";
 
 /**
  * Agents-specific addendum to the shared tool-only delivery contract:

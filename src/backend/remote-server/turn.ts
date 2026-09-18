@@ -13,7 +13,7 @@
  */
 
 import { logWarn } from "../../util/log.js";
-import { createStreamState, recordTokens, sleep } from "../shared/index.js";
+import { createStreamState, recordTokens, sleep } from "../runtime/index.js";
 import { processStreamEvent, finalizePartsIntoState } from "./events.js";
 import { findLastAssistantMessage } from "./messages.js";
 import {

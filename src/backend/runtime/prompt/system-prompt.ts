@@ -39,10 +39,10 @@ import {
   joinSystemPromptParts,
   type SystemPromptParts,
   type TalonConfig,
-} from "../../core/config/index.js";
-import { getPluginPromptAdditions } from "../../core/plugin/index.js";
-import { onPromptInputsChanged } from "../../core/prompt/invalidation.js";
-import { frontendForChatId, nonTerminalFrontends } from "./frontends.js";
+} from "../../../core/config/index.js";
+import { getPluginPromptAdditions } from "../../../core/plugin/index.js";
+import { onPromptInputsChanged } from "../../../core/prompt/invalidation.js";
+import { frontendForChatId, nonTerminalFrontends } from "../frontends.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

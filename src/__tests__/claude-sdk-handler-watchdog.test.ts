@@ -172,8 +172,8 @@ vi.mock("../storage/metrics.js", () => ({
 
 // The shared post-stream phases run for real (against the storage stubs
 // above); only the prompt assembly is stubbed out.
-vi.mock("../backend/shared/index.js", async (importActual) => ({
-  ...(await importActual<typeof import("../backend/shared/index.js")>()),
+vi.mock("../backend/runtime/index.js", async (importActual) => ({
+  ...(await importActual<typeof import("../backend/runtime/index.js")>()),
   formatUserPrompt: ({ text }: { text: string }) => text,
   prepareSystemPrompt: vi.fn(),
   buildDeliveryContract: () => "",

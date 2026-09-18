@@ -253,7 +253,7 @@ That is why memory ships before persona, not beside it.
 
 This is already solved, and the plan must not un-solve it.
 
-`prepareSystemPrompt` (`backend/shared/system-prompt.ts`) freezes the **entire**
+`prepareSystemPrompt` (`backend/runtime/prompt/system-prompt.ts`) freezes the **entire**
 prepared prompt — static *and* dynamic — per `(chatId, sessionEpoch)`. So within a
 session the system prompt is byte-stable, and `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` makes
 the static prefix cacheable *across* sessions on top of that. The docstring records

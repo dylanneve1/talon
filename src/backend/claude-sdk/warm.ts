@@ -11,7 +11,7 @@ import { getSession } from "../../storage/sessions.js";
 import { log, logWarn } from "../../util/log.js";
 import { getConfig } from "./state.js";
 import { buildSdkOptions } from "./options.js";
-import { prepareSystemPrompt } from "../shared/index.js";
+import { prepareSystemPrompt } from "../runtime/index.js";
 
 export async function warmSession(chatId: string): Promise<void> {
   // Guard against being called before initAgent()

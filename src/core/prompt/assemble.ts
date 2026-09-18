@@ -30,7 +30,7 @@
  *   6. Plugin additions                     plugin.systemPrompt() contributions
  *   (7. Delivery contract — appended by the backend as its suffix,
  *       AFTER plugins, so it is the last thing the model reads.
- *       See backend/shared/delivery-contract.ts.)
+ *       See backend/runtime/prompt/delivery-contract.ts.)
  *
  *   DYNAMIC
  *   1. Daily-memory pointer                 prompts/system/daily-memory.md
@@ -52,7 +52,7 @@
  * ## Deliberate omissions
  *
  * No "Current Date & Time" section: every user message already
- * carries a `[YYYY-MM-DD HH:MM:SS]` tag (see shared/prompt-format),
+ * carries a `[YYYY-MM-DD HH:MM:SS]` tag (see backend/runtime/prompt/prompt-format),
  * the daily-memory pointer names today's file, and the `check_time`
  * tool covers timezone queries. A minute-precision timestamp here was
  * the single biggest cache-buster — it guaranteed every rebuild

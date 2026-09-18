@@ -831,7 +831,7 @@ export function primaryFrontend(config: TalonConfig): string {
  * the config. Multi-frontend deployments need per-chat prompt
  * flavours (a native-app chat must get native.md guidance, not the
  * telegram.md that `frontends[0]` happens to be) — the per-session
- * snapshot layer (backend/shared/system-prompt.ts) calls this with the
+ * snapshot layer (backend/runtime/prompt/system-prompt.ts) calls this with the
  * chat's owning frontend and freezes the result per session.
  */
 export function buildSystemPromptPartsFor(

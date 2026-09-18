@@ -39,7 +39,7 @@ import type {
   UsageTelemetry,
 } from "../../core/agent-runtime/capabilities.js";
 import { composeBackend } from "../../core/agent-runtime/capabilities.js";
-import { handlerToEvents } from "../../backend/shared/handler-to-events.js";
+import { handlerToEvents } from "../../backend/runtime/turn/handler-to-events.js";
 import type { BackendId } from "../../core/agent-runtime/model-ref.js";
 import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
 import type {
@@ -54,7 +54,7 @@ import type {
 import type {
   QueryParams,
   QueryResult,
-} from "../../backend/shared/handler-types.js";
+} from "../../backend/runtime/turn/handler-types.js";
 
 export interface StubBackendInput {
   id?: BackendId;

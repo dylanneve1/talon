@@ -16,7 +16,7 @@ import {
   recordToolUse,
   recordToolCall,
   type StreamState,
-} from "../../shared/index.js";
+} from "../../runtime/index.js";
 
 export interface HandleEventContext {
   state: StreamState;

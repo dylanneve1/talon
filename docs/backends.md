@@ -19,39 +19,48 @@ etc. work identically against any backend.
 
 ## Shared infrastructure
 
-### `backend/shared/` — backend-agnostic helpers
+### `backend/runtime/` — backend-agnostic helpers
+
+The library every backend builds on. `index.ts` is its barrel; the
+modules group into `turn/` (what a turn does once the SDK loop is
+running), `prompt/` (the text handed to the model) and `cache/`
+(prompt-cache telemetry), with the cross-cutting vocabulary at the root.
 
 Every backend uses these:
 
-- `stream-state.ts` — accumulator for text deltas, tool calls,
+- `turn/stream-state.ts` — accumulator for text deltas, tool calls,
   delivered-text norms, synthetic-error markers.
-- `delivery.ts` — `routeDelivery` decides between
+- `turn/delivery.ts` — `routeDelivery` decides between
   `tool` / `synthetic-error` / `text-part` / `empty` at end of turn.
-- `delivery-contract.ts` — per-backend response-flow contract built
-  from `prompts/system/contract-*.md` templates, plus the
+- `prompt/delivery-contract.ts` — per-backend response-flow contract
+  built from `prompts/system/contract-*.md` templates, plus the
   frontend-aware flow-violation reminder and first-turn nudge.
-- `flow-violation.ts` — detect trailing prose without delivery tool
+- `turn/flow-violation.ts` — detect trailing prose without delivery tool
   call, build the synthetic re-prompt.
 - `metrics.ts` — the shared metric vocabulary (`tool_calls.*`,
   `queries_total`, per-turn histograms, `backend.<id>.*` dimensions).
   Backends never call `incrementCounter` for these directly.
-- `prompt-format.ts` — `[YYYY-MM-DD HH:MM:SS] [Name] [msg_id:N]`
+- `prompt/prompt-format.ts` — `[YYYY-MM-DD HH:MM:SS] [Name] [msg_id:N]`
   prefix on user prompts.
-- `system-prompt.ts` — per-session frozen prompt snapshots +
+- `prompt/system-prompt.ts` — per-session frozen prompt snapshots +
   per-backend suffix join (assembly itself lives in `core/prompt/`).
 - `frontends.ts` — `nonTerminalFrontends` config normaliser.
-- `model-retry.ts` — classify retryable errors into reset / fallback /
-  bubble decisions.
+- `turn/model-retry.ts` — classify retryable errors into reset /
+  fallback / bubble decisions.
 - `session-name.ts` — first-message → short session title.
 - `usage.ts` — cache-hit % + log summariser.
-- `turn-phases.ts` — the post-stream phases every handler runs after its
-  SDK loop: `accountTurn` / `accountFailedTurn` (metrics + session usage
-  + session id), `nameSessionFromFirstMessage`, `enforceTrailingProse`
-  (the tool-only contract + flow-violation retry decision), and
-  `finishCallbackTurn` (the summary log lines + `QueryResult`).
-- `result-events.ts` — `buildResultEvents`, the `usage` + `completed`
-  pair every chat-turn stream ends with; dependency-free so
-  `handler-to-events.ts` stays a pure adapter.
+- `cache/cache-telemetry.ts` + `cache/cache-metrics.ts` — the per-turn
+  cache verdict, tool fingerprint and lookback risk, and the counters
+  they roll up into.
+- `turn/turn-phases.ts` — the post-stream phases every handler runs after
+  its SDK loop: `accountTurn` / `accountFailedTurn` (metrics + session
+  usage + session id), `nameSessionFromFirstMessage`,
+  `enforceTrailingProse` (the tool-only contract + flow-violation retry
+  decision), and `finishCallbackTurn` (the summary log lines +
+  `QueryResult`).
+- `turn/result-events.ts` — `buildResultEvents`, the `usage` +
+  `completed` pair every chat-turn stream ends with; dependency-free so
+  `turn/handler-to-events.ts` stays a pure adapter.
 
 ### `backend/remote-server/` — for HTTP-server backends (Kilo, OpenCode)
 

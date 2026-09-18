@@ -207,7 +207,7 @@ export async function assertCompletedUsageMatchesUsageEvent(
  * pre-retrieval field was honoured by two backends and dropped in
  * silence by the other four, a divergence that would have become a
  * real bug the day a retriever existed. Now there is one renderer
- * (`backend/shared/prompt-format.ts`) that every backend already calls
+ * (`backend/runtime/prompt/prompt-format.ts`) that every backend already calls
  * for its time tag and `msg_id` framing — and this assertion is what
  * stops a backend from quietly building its prompt some other way.
  *

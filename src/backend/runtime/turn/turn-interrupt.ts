@@ -17,8 +17,8 @@
  * partial text and real usage — never as an error, never as a retry.
  */
 
-import { log, logWarn } from "../../util/log.js";
-import { incrementCounter } from "../../storage/metrics.js";
+import { log, logWarn } from "../../../util/log.js";
+import { incrementCounter } from "../../../storage/metrics.js";
 
 const interrupts = new Map<string, () => void | Promise<void>>();
 

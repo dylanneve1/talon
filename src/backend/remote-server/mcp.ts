@@ -50,7 +50,7 @@ import { ALL_TOOLS, nativeTools } from "../../core/tools/index.js";
 import {
   frontendForChatId,
   nonTerminalFrontends,
-} from "../shared/frontends.js";
+} from "../runtime/frontends.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 

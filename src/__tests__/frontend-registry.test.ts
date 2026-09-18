@@ -27,7 +27,7 @@ import {
   frontendForChatId,
   frontendsForChat,
   nonTerminalFrontends,
-} from "../backend/shared/frontends.js";
+} from "../backend/runtime/frontends.js";
 import type { TalonConfig } from "../core/config/index.js";
 import type { Gateway } from "../core/engine/gateway.js";
 
@@ -188,7 +188,7 @@ describe("create seam", () => {
   });
 });
 
-describe("backend/shared/frontends.ts stays a thin view of the registry", () => {
+describe("backend/runtime/frontends.ts stays a thin view of the registry", () => {
   it("nonTerminalFrontends filters by the messaging trait, keeps unknowns", () => {
     expect(
       nonTerminalFrontends(["telegram", "terminal", "native", "mystery"]),

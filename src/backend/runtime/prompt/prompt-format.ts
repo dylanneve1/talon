@@ -15,7 +15,7 @@
  *   DM (no msg_id): "[2026-05-15 11:01:23] actual text"
  */
 
-import { formatFullDatetime } from "../../util/time.js";
+import { formatFullDatetime } from "../../../util/time.js";
 
 // ── Public API ──────────────────────────────────────────────────────────────
 

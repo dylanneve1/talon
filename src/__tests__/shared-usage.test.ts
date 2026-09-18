@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { cacheHitPercent, summarizeUsage } from "../backend/shared/usage.js";
+import { cacheHitPercent, summarizeUsage } from "../backend/runtime/usage.js";
 
 describe("cacheHitPercent", () => {
   it("returns 0 when input + cache is zero", () => {

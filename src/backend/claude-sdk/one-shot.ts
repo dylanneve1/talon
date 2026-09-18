@@ -19,7 +19,7 @@ import { log, logWarn } from "../../util/log.js";
 import { ALLOWED_TOOLS_BACKGROUND } from "../../core/constants.js";
 import { EFFORT_MAP } from "./constants.js";
 import { buildMcpServers, buildPluginMcpServers } from "./options.js";
-import { warnIfBelowCacheMinimum } from "../shared/cache-telemetry.js";
+import { warnIfBelowCacheMinimum } from "../runtime/cache/cache-telemetry.js";
 
 const DEFAULT_SUBPROCESS_KILL_GRACE_MS = 5 * 1000;
 

@@ -17,7 +17,7 @@ vi.mock("../util/log.js", () => ({
 import {
   interruptChatTurn,
   registerTurnInterrupt,
-} from "../backend/shared/turn-interrupt.js";
+} from "../backend/runtime/turn/turn-interrupt.js";
 
 describe("turn-interrupt registry", () => {
   it("reports false when no turn is in flight", async () => {

@@ -41,7 +41,7 @@ import {
   type RemoteSessionClient,
   type RemoteAssistantInfo,
 } from "./session-helpers.js";
-import { appendBackendSuffix, sleep } from "../shared/index.js";
+import { appendBackendSuffix, sleep } from "../runtime/index.js";
 import { buildPermissionRuleset } from "./sessions.js";
 
 // ── Client surface ──────────────────────────────────────────────────────────

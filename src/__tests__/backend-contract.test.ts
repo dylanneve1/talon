@@ -47,7 +47,7 @@ import {
 import {
   formatUserPrompt,
   RECALLED_MEMORY_HEADER,
-} from "../backend/shared/prompt-format.js";
+} from "../backend/runtime/prompt/prompt-format.js";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 

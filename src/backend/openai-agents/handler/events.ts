@@ -9,7 +9,7 @@ import {
   createStreamState,
   recordToolUse,
   recordToolCall,
-} from "../../shared/index.js";
+} from "../../runtime/index.js";
 
 export interface HandleRunItemContext {
   state: ReturnType<typeof createStreamState>;

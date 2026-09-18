@@ -35,8 +35,8 @@ import {
   createStreamState,
   recordTokens,
   pushLiveUsage,
-} from "../backend/shared/stream-state.js";
-import { recordFailedTurnAccounting } from "../backend/shared/metrics.js";
+} from "../backend/runtime/turn/stream-state.js";
+import { recordFailedTurnAccounting } from "../backend/runtime/metrics.js";
 import { getMetrics, resetMetrics } from "../storage/metrics.js";
 
 let chatN = 0;

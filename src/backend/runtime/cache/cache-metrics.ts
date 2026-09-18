@@ -27,12 +27,12 @@
  *     PR C's idle-compaction policy is measured against.
  */
 
-import { log } from "../../util/log.js";
+import { log } from "../../../util/log.js";
 import {
   incrementCounter,
   noteCacheVerdict,
   recordHistogram,
-} from "../../storage/metrics.js";
+} from "../../../storage/metrics.js";
 import {
   crossTurnVerdict,
   fingerprintHash,

@@ -22,9 +22,9 @@ import {
   handleEvent,
   type HandleEventContext,
 } from "../backend/codex/handler/events.js";
-import { createStreamState } from "../backend/shared/index.js";
-import { handlerToEvents } from "../backend/shared/handler-to-events.js";
-import type { QueryParams } from "../backend/shared/handler-types.js";
+import { createStreamState } from "../backend/runtime/index.js";
+import { handlerToEvents } from "../backend/runtime/turn/handler-to-events.js";
+import type { QueryParams } from "../backend/runtime/turn/handler-types.js";
 import type { AgentEvent } from "../core/agent-runtime/events.js";
 import { makeBareModelRef } from "../core/agent-runtime/model-ref.js";
 

@@ -18,7 +18,7 @@
  * This is the seam #639 deleted, rebuilt without the divergence that
  * justified deleting it. The old `retrievedMemory` field was read by
  * two backends out of six and silently dropped by the rest; now there
- * is exactly ONE consumer — `backend/shared/prompt-format.ts` — that
+ * is exactly ONE consumer — `backend/runtime/prompt/prompt-format.ts` — that
  * every backend already calls, so a backend cannot forget to inject it
  * without also losing its time tag and `msg_id` framing.
  *

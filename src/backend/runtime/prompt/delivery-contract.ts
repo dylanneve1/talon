@@ -34,7 +34,7 @@
  * logic-adjacent strings, like log messages.
  */
 
-import { loadSystemTemplate } from "../../core/prompt/templates.js";
+import { loadSystemTemplate } from "../../../core/prompt/templates.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

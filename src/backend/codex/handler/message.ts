@@ -7,11 +7,14 @@
  * `codex.resumeThread(id)`, the rollout-JSONL live/settle usage accounting
  * (`rollout-accounting.ts`), and the ChatGPT-OAuth model-mismatch recovery
  * ladder. The post-stream phases are the shared ones in
- * `backend/shared/turn-phases.ts`.
+ * `backend/runtime/turn/turn-phases.ts`.
  */
 
 import type { Thread, Usage } from "@openai/codex-sdk";
-import type { QueryParams, QueryResult } from "../../shared/handler-types.js";
+import type {
+  QueryParams,
+  QueryResult,
+} from "../../runtime/turn/handler-types.js";
 import {
   getSession,
   incrementTurns,
@@ -37,7 +40,7 @@ import {
   nameSessionFromFirstMessage,
   finishCallbackTurn,
   type StreamState,
-} from "../../shared/index.js";
+} from "../../runtime/index.js";
 
 import {
   codexSystemPromptSuffix,
@@ -48,7 +51,7 @@ import {
 import {
   frontendsForChat,
   nonTerminalFrontends,
-} from "../../shared/frontends.js";
+} from "../../runtime/frontends.js";
 import { getState } from "../state.js";
 import { ensureCodex, getCodexAuthInfo } from "../init.js";
 import {
@@ -217,7 +220,7 @@ async function maybeFallbackForChatGptMismatch(
  * The turn's user prompt: the shared framing every backend emits, plus
  * whatever this turn's memory retrieval produced. `formatUserPrompt` is
  * the one place `retrievedMemory` is rendered — see
- * `backend/shared/prompt-format.ts`.
+ * `backend/runtime/prompt/prompt-format.ts`.
  */
 function buildTurnPrompt(params: QueryParams): string {
   return formatUserPrompt({

@@ -6,7 +6,7 @@
  * (session expired / context overflow / model fallback via
  * `applyRetryDecisionStream`) and the post-result watchdog. The phases
  * after the stream — accounting, the trailing-prose contract, the result
- * events — are the shared ones in `backend/shared/turn-phases.ts`.
+ * events — are the shared ones in `backend/runtime/turn/turn-phases.ts`.
  *
  * The exported async generator `runChatTurn` is what the factory wires
  * onto `ChatBackend.runChatTurn` — no wrapper, no callback shim.
@@ -34,13 +34,13 @@ import {
 } from "../../core/agent-runtime/events.js";
 import type { ChatRunParams } from "../../core/agent-runtime/capabilities.js";
 import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
-import { applyRetryDecisionStream } from "../shared/handle-retry.js";
+import { applyRetryDecisionStream } from "../runtime/turn/handle-retry.js";
 import { getConfig } from "./state.js";
 import { buildSdkOptions, getActiveFrontends } from "./options.js";
 import { waitForMcpServersReady } from "./mcp-ready.js";
 import { invalidatePlanUsage } from "./plan-usage.js";
-import { frontendsForChat } from "../shared/frontends.js";
-import { rollUpTurnCache } from "../shared/cache-metrics.js";
+import { frontendsForChat } from "../runtime/frontends.js";
+import { rollUpTurnCache } from "../runtime/cache/cache-metrics.js";
 import {
   createStreamState,
   isSystemInit,
@@ -77,7 +77,7 @@ import {
   enforceTrailingProse,
   buildResultEvents,
   turnUsageSnapshot,
-} from "../shared/index.js";
+} from "../runtime/index.js";
 
 // ── Post-result watchdog ────────────────────────────────────────────────────
 // The SDK's PostToolBatch hook is the canonical loop-terminator — it returns
@@ -455,7 +455,7 @@ function accountFailedClaudeTurn(
 /**
  * The aggregate `cache=NN%` can't distinguish a turn that reused the
  * previous turn's prefix from one that re-wrote it — see
- * shared/cache-telemetry.ts. A lookback overflow only *predicts* a miss,
+ * runtime/cache/cache-telemetry.ts. A lookback overflow only *predicts* a miss,
  * so warn when this turn's verdict proves the previous turn's overflow
  * cost a prefix re-write, then record this turn's overflow for the next.
  *

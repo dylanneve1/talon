@@ -181,8 +181,8 @@ module.exports = {
         "ENFORCED: frontends consume turn results through the engine, never " +
         "by importing backend/ directly. The last violation was " +
         "`extractSessionName`, a 41-line import-free string helper that was " +
-        "simply misfiled under backend/shared; it now lives in " +
-        "util/session-name.ts (still re-exported from the backend/shared " +
+        "simply misfiled under backend/runtime; it now lives in " +
+        "util/session-name.ts (still re-exported from the backend/runtime " +
         "barrel, so backends keep one import site). With that gone the " +
         "boundary is clean, so this is an error rather than a target.",
       severity: "error",

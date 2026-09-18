@@ -14,7 +14,7 @@ import {
   appendBackendSuffix,
   clearSystemPromptSnapshots,
   prepareSystemPrompt,
-} from "../backend/shared/system-prompt.js";
+} from "../backend/runtime/prompt/system-prompt.js";
 import {
   rebuildSystemPrompt,
   buildSystemPromptPartsFor,

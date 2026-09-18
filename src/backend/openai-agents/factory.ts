@@ -13,8 +13,8 @@ import { registerBackend } from "../../core/agent-runtime/backend-registry.js";
 import { openAIAgentsDoctorChecks } from "./doctor.js";
 import type { BackendFactory } from "../../core/agent-runtime/backend-registry.js";
 import { log } from "../../util/log.js";
-import { handlerToEvents } from "../shared/handler-to-events.js";
-import { interruptChatTurn } from "../shared/turn-interrupt.js";
+import { handlerToEvents } from "../runtime/turn/handler-to-events.js";
+import { interruptChatTurn } from "../runtime/turn/turn-interrupt.js";
 import {
   composeBackend,
   type ChatBackend,

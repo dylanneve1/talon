@@ -9,11 +9,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { handlerToEvents } from "../backend/shared/handler-to-events.js";
+import { handlerToEvents } from "../backend/runtime/turn/handler-to-events.js";
 import type {
   QueryParams,
   QueryResult,
-} from "../backend/shared/handler-types.js";
+} from "../backend/runtime/turn/handler-types.js";
 import type { AgentEvent } from "../core/agent-runtime/events.js";
 
 import { makeBareModelRef } from "../core/agent-runtime/model-ref.js";

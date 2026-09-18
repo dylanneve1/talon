@@ -23,8 +23,8 @@ import { checkModelDrift } from "./model-drift.js";
 import {
   turnCacheStats,
   type TurnCacheStats,
-} from "../shared/cache-telemetry.js";
-import { recordCompactBoundary } from "../shared/cache-metrics.js";
+} from "../runtime/cache/cache-telemetry.js";
+import { recordCompactBoundary } from "../runtime/cache/cache-metrics.js";
 
 // ── Stream state accumulator ────────────────────────────────────────────────
 
@@ -48,7 +48,7 @@ export type StreamState = {
    * `usage.iterations`. Undefined when the provider reported none — the
    * aggregate totals above cannot distinguish a turn that read the previous
    * turn's prefix from one that re-wrote it, and that distinction is the
-   * whole cost signal (see shared/cache-telemetry.ts).
+   * whole cost signal (see runtime/cache/cache-telemetry.ts).
    */
   cacheStats: TurnCacheStats | undefined;
   lastStreamUpdate: number;
@@ -477,4 +477,4 @@ export function processResultMessage(
 export {
   normalizeForDedupe,
   isDuplicateOfDelivered,
-} from "../shared/delivered-text.js";
+} from "../runtime/turn/delivered-text.js";

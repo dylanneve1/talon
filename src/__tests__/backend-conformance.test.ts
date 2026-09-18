@@ -7,7 +7,7 @@
  *   The Kilo and OpenCode backends both wrap forks of the same upstream
  *   HTTP API. Their MCP registration, session lifecycle, SSE event
  *   processing, and delivery routing all live in shared modules
- *   (`backend/remote-server/` and `backend/shared/`). Conformance tests
+ *   (`backend/remote-server/` and `backend/runtime/`). Conformance tests
  *   prove that the wiring at each backend's edge — its configurator,
  *   its `extractPartsSummary`, its delivery suffix — composes with the
  *   shared modules to produce the same end state.
@@ -42,7 +42,7 @@ import {
   getRegisteredMcpServerNames,
   type RemoteAgentClient,
 } from "../backend/remote-server/index.js";
-import { routeDelivery, createStreamState } from "../backend/shared/index.js";
+import { routeDelivery, createStreamState } from "../backend/runtime/index.js";
 import { extractPartsSummary as kiloExtract } from "../backend/kilo/sessions.js";
 import { extractPartsSummary as opencodeExtract } from "../backend/opencode/sessions.js";
 

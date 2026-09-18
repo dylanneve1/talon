@@ -33,7 +33,7 @@ import {
   recordToolUse,
   recordToolCall,
   type StreamState,
-} from "../shared/index.js";
+} from "../runtime/index.js";
 import {
   extractAssistantUsage,
   type RemoteAssistantInfo,
@@ -68,7 +68,7 @@ export interface EventProcessingContext {
   chatId: string;
   /** Session id we're scoped to — events for other sessions are dropped. */
   sessionId: string;
-  /** Stream state accumulator (shared/). */
+  /** Stream state accumulator (runtime/turn/). */
   state: StreamState;
   /** Tool-call ids we've already fired callbacks for. */
   seenToolCallIds: Set<string>;
@@ -164,7 +164,7 @@ export async function processStreamEvent(
  * lands so token/context stats are live mid-turn instead of appearing
  * only at the post-loop accounting. `recordTokens` also mirrors the
  * counts into the chat's live-turn overlay when the state is bound to a
- * chat (see `shared/stream-state.ts: pushLiveUsage`).
+ * chat (see `runtime/turn/stream-state.ts: pushLiveUsage`).
  *
  * Values are the message's totals (not deltas), matching what the
  * post-loop `extractAssistantUsage(lastAssistant.info)` reads — so the

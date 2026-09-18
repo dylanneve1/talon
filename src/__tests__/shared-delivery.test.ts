@@ -1,5 +1,5 @@
 /**
- * Unit tests for the unified delivery router (`backend/shared/delivery.ts`).
+ * Unit tests for the unified delivery router (`backend/runtime/turn/delivery.ts`).
  *
  * Both the Kilo and OpenCode handlers route their end-of-turn delivery
  * through `routeDelivery`. The four routes (tool / synthetic-error /
@@ -15,7 +15,7 @@ import {
   createStreamState,
   TextBlockDeliveryError,
   type StreamState,
-} from "../backend/shared/index.js";
+} from "../backend/runtime/index.js";
 
 function makeState(overrides: Partial<StreamState> = {}): StreamState {
   const state = createStreamState();

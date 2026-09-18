@@ -11,7 +11,7 @@ have been deleted.
 ```
 backend handler (onStreamDelta/onTextBlock/onToolUse, SDK-native)
         │
-        │  backend/shared/handler-to-events.ts   (callbacks → AgentEvent)
+        │  backend/runtime/turn/handler-to-events.ts   (callbacks → AgentEvent)
         ▼
   AsyncIterable<AgentEvent>   ← the canonical contract (ChatBackend.runChatTurn)
         │

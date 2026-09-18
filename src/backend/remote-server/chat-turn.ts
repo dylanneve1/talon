@@ -5,7 +5,7 @@
  * Resolves the active model against the server's catalog, makes sure the
  * server, session, and this chat's MCP servers exist, builds the prompt
  * pair, drives the turn (`./turn.ts`), then runs the shared post-turn
- * phases (`backend/shared/turn-phases.ts`) with the one family-specific
+ * phases (`backend/runtime/turn/turn-phases.ts`) with the one family-specific
  * step in between: the usage fallback from the session summary.
  *
  * Kilo and OpenCode ran byte-for-byte copies of this (modulo the backend
@@ -18,8 +18,14 @@ import { getSession, incrementTurns } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { log, logError } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
-import type { QueryParams, QueryResult } from "../shared/handler-types.js";
-import { frontendsForChat, nonTerminalFrontends } from "../shared/frontends.js";
+import type {
+  QueryParams,
+  QueryResult,
+} from "../runtime/turn/handler-types.js";
+import {
+  frontendsForChat,
+  nonTerminalFrontends,
+} from "../runtime/frontends.js";
 import {
   createStreamState,
   recordTokens,
@@ -33,7 +39,7 @@ import {
   accountFailedTurn,
   nameSessionFromFirstMessage,
   finishCallbackTurn,
-} from "../shared/index.js";
+} from "../runtime/index.js";
 import type { RemoteAgentClient } from "./client.js";
 import type { RemoteServerBindings } from "./server-bindings.js";
 import { getTurnSummary, type RemoteSessionClient } from "./session-helpers.js";
@@ -257,7 +263,7 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
  * The turn's user prompt: the shared framing every backend emits, plus
  * whatever this turn's memory retrieval produced. `formatUserPrompt` is
  * the one place `retrievedMemory` is rendered — see
- * `backend/shared/prompt-format.ts`.
+ * `backend/runtime/prompt/prompt-format.ts`.
  */
 function buildTurnPrompt(params: QueryParams): string {
   return formatUserPrompt({

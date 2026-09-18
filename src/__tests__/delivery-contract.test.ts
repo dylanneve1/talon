@@ -13,9 +13,9 @@ import {
   buildFirstTurnReminder,
   deliveryToolsForFrontend,
   registerFrontendDeliveryTools,
-} from "../backend/shared/delivery-contract.js";
+} from "../backend/runtime/prompt/delivery-contract.js";
 import { renderTemplate } from "../core/prompt/templates.js";
-import { detectFlowViolation } from "../backend/shared/flow-violation.js";
+import { detectFlowViolation } from "../backend/runtime/turn/flow-violation.js";
 
 describe("renderTemplate", () => {
   it("substitutes variables and drops unknowns", () => {

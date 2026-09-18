@@ -1843,7 +1843,7 @@ describe("codex / handleMessage — terminal failure accounting", () => {
 
 describe("codex / handleMessage — error recovery", () => {
   // The classifyRetry-driven recovery ladder is shared with every other
-  // backend (see backend/shared/model-retry.ts). These tests verify that
+  // backend (see backend/runtime/turn/model-retry.ts). These tests verify that
   // the Codex handler routes its errors through it correctly — resets
   // the session on session_expired / context_length, falls back on
   // retryable, propagates after a single retry.

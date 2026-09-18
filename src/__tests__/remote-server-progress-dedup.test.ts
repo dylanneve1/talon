@@ -35,8 +35,8 @@ import {
   markProgressDelivered,
   finalizeResponseText,
   undeliveredResponseText,
-} from "../backend/shared/stream-state.js";
-import { routeDelivery } from "../backend/shared/delivery.js";
+} from "../backend/runtime/turn/stream-state.js";
+import { routeDelivery } from "../backend/runtime/turn/delivery.js";
 
 /** Simulate one tool boundary: flush the segment as a progress message. */
 async function flushProgress(

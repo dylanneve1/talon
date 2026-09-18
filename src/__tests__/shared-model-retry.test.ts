@@ -4,7 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { classifyRetry } from "../backend/shared/model-retry.js";
+import { classifyRetry } from "../backend/runtime/turn/model-retry.js";
 import { TalonError } from "../core/errors.js";
 
 // Mock getFallbackModel — we don't want to depend on the actual model

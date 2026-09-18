@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { QueryParams } from "../backend/shared/handler-types.js";
-import { handlerToEvents } from "../backend/shared/handler-to-events.js";
+import type { QueryParams } from "../backend/runtime/turn/handler-types.js";
+import { handlerToEvents } from "../backend/runtime/turn/handler-to-events.js";
 import { Loom, Thread, Weaver } from "../core/weaver/index.js";
 import { bus } from "../core/bus/index.js";
 import { taskTable, type TaskRecord } from "../core/tasks/index.js";

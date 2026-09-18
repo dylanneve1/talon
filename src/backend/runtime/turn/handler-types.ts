@@ -10,7 +10,7 @@
  * stream loop that `handler-to-events.ts` adapts onto the native
  * `AsyncIterable<AgentEvent>` shape at the factory boundary.
  *
- * Living in `backend/shared/` keeps `core/types.ts` clean of any
+ * Living in `backend/runtime/turn/` keeps `core/types.ts` clean of any
  * implementation-detail shapes, so the dispatcher / cron / triggers /
  * frontends never accidentally couple to the callback contract.
  */
@@ -38,7 +38,7 @@ export type QueryParams = {
   /**
    * Per-turn retrieved memory, carried verbatim from `ChatRunParams`.
    * The handler passes it to `formatUserPrompt` and does nothing else
-   * with it — see `backend/shared/prompt-format.ts`.
+   * with it — see `backend/runtime/prompt/prompt-format.ts`.
    */
   retrievedMemory?: string;
   onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;

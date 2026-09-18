@@ -30,7 +30,7 @@ import {
   hubPluginServerNames,
 } from "../../core/mcp-hub/index.js";
 import type { ToolExclusionConfig } from "../../core/tools/mcp-env.js";
-import { frontendsForChat } from "../shared/frontends.js";
+import { frontendsForChat } from "../runtime/frontends.js";
 
 /**
  * AppToolApproval values accepted by Codex's `mcp_servers.<name>` table.

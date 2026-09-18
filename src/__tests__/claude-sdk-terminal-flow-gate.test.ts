@@ -143,16 +143,16 @@ vi.mock("../storage/metrics.js", () => ({
 // above); only the prompt assembly is stubbed out. The flow-violation
 // detector is spied at its own module so the spy sees the call the shared
 // `enforceTrailingProse` phase makes.
-vi.mock("../backend/shared/flow-violation.js", async (importActual) => ({
+vi.mock("../backend/runtime/turn/flow-violation.js", async (importActual) => ({
   ...(await importActual<
-    typeof import("../backend/shared/flow-violation.js")
+    typeof import("../backend/runtime/turn/flow-violation.js")
   >()),
   detectFlowViolation: (...args: Parameters<typeof detectFlowViolationSpy>) =>
     detectFlowViolationSpy(...args),
 }));
 
-vi.mock("../backend/shared/index.js", async (importActual) => ({
-  ...(await importActual<typeof import("../backend/shared/index.js")>()),
+vi.mock("../backend/runtime/index.js", async (importActual) => ({
+  ...(await importActual<typeof import("../backend/runtime/index.js")>()),
   formatUserPrompt: ({ text }: { text: string }) => text,
   prepareSystemPrompt: vi.fn(),
   buildDeliveryContract: () => "",

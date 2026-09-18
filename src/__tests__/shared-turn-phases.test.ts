@@ -1,6 +1,6 @@
 /**
  * Unit tests for the shared post-stream turn phases
- * (`backend/shared/turn-phases.ts`).
+ * (`backend/runtime/turn/turn-phases.ts`).
  *
  * Every backend handler runs these after its SDK stream loop: accounting,
  * session naming, the trailing-prose contract, and the result tail. The
@@ -36,8 +36,8 @@ import {
   nameSessionFromFirstMessage,
   turnUsageSnapshot,
   type StreamState,
-} from "../backend/shared/index.js";
-import { FLOW_VIOLATION_MAX_RETRIES } from "../backend/shared/flow-violation.js";
+} from "../backend/runtime/index.js";
+import { FLOW_VIOLATION_MAX_RETRIES } from "../backend/runtime/turn/flow-violation.js";
 
 const CHAT = "turn-phases-chat";
 

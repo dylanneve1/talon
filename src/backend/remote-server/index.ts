@@ -28,7 +28,7 @@
  * What's NOT here (intentionally):
  *
  *   - Tool definitions, frontend prompt format — those are backend-
- *     agnostic and live in `core/` and `backend/shared/`.
+ *     agnostic and live in `core/` and `backend/runtime/`.
  *
  * This barrel exposes the helper layer for tests and the conformance
  * suite; the bindings modules import from the concrete files directly.

@@ -80,7 +80,7 @@ describe("cache display", () => {
     // Effective input = inputTokens + cacheRead = 100 + 50 = 150
     // cacheWrite (25) must NOT dilute the denominator — those tokens are
     // being written TO the cache, not served FROM it. Matches the
-    // canonical formula in src/backend/shared/usage.ts:cacheHitPercent.
+    // canonical formula in src/backend/runtime/usage.ts:cacheHitPercent.
     const display = buildCacheDisplay({
       cacheMetrics: "readwrite",
       inputTokens: 100,

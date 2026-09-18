@@ -34,7 +34,7 @@ abort settles as `done` — a kill only "takes" when the run actually dies.
 Chat turns kill through `ChatBackend.interruptChatTurn` — the same
 capability behind the frontend stop affordance, implemented by every
 backend (the Claude SDK's native `Query.interrupt()`; the callback
-backends via the shared `backend/shared/turn-interrupt.ts` registry, where
+backends via the shared `backend/runtime/turn/turn-interrupt.ts` registry, where
 a user interrupt is a synthetic turn terminator: the stream closes as a
 normal completion carrying the partial text and real usage, never as an
 error or a retry). The weaver settles the killed turn's task as `killed`

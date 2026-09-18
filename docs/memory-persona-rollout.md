@@ -88,8 +88,8 @@ what the 2026-07-30 investigation settled: **the Agent SDK exposes no cache-TTL
 knob**, so the 1-hour TTL is an upstream ask and prompt size is the only lever
 Talon controls. No behaviour change in this PR.
 
-**Landed** as `backend/shared/cache-telemetry.ts` (25 tests). The accounting line
-now carries `xturn=hit|miss|none reqs=N rw=R`, derived from the result message's
+**Landed** as `backend/runtime/cache/cache-telemetry.ts` (25 tests). The accounting
+line now carries `xturn=hit|miss|none reqs=N rw=R`, derived from the result message's
 per-request `usage.iterations` — `xturn` is the field that tracks cost, since the
 turn's first request is the only one that reports whether the previous turn's
 prefix survived. Plus mid-session tool-set change warnings that name the delta,
@@ -299,13 +299,13 @@ rather than finish it. The rebuild routes everything through
 time tag, sender label and `msg_id` framing — so a backend cannot drop the block
 without also losing the framing its tests pin:
 
-| layer                                 | change                                                       |
-| ------------------------------------- | ------------------------------------------------------------ |
-| `core/agent-runtime/capabilities.ts`  | `ChatRunParams.retrievedMemory?: string`                     |
-| `core/weaver/weaver.ts`               | the only producer: `resolveTurnMemory` before `runChatTurn`  |
-| `backend/shared/handler-to-events.ts` | `turnFields()` carries the data half of the params verbatim  |
-| `backend/shared/prompt-format.ts`     | the only renderer: appends the block after the message text  |
-| the four handlers                     | pass `retrievedMemory` into `formatUserPrompt`, nothing else |
+| layer                                       | change                                                       |
+| ------------------------------------------- | ------------------------------------------------------------ |
+| `core/agent-runtime/capabilities.ts`        | `ChatRunParams.retrievedMemory?: string`                     |
+| `core/weaver/weaver.ts`                     | the only producer: `resolveTurnMemory` before `runChatTurn`  |
+| `backend/runtime/turn/handler-to-events.ts` | `turnFields()` carries the data half of the params verbatim  |
+| `backend/runtime/prompt/prompt-format.ts`   | the only renderer: appends the block after the message text  |
+| the four handlers                           | pass `retrievedMemory` into `formatUserPrompt`, nothing else |
 
 Rendered as `\n\n[Recalled from memory — verify before relying on it]\n<rows>`,
 appended **after** the user's text, one `formatMemory` line per row. With the

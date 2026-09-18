@@ -25,7 +25,7 @@ import type { FrontendName } from "../../core/agent-runtime/backend-registry.js"
 import {
   buildDeliveryContract,
   type DeliveryMode,
-} from "../shared/delivery-contract.js";
+} from "../runtime/prompt/delivery-contract.js";
 import type { RemoteAgentClient } from "./client.js";
 import { createRemoteServerState, errMsg } from "./state.js";
 import { ensureRemoteServer, stopRemoteServer } from "./lifecycle.js";

@@ -1,30 +1,36 @@
 /**
- * Shared backend framework — barrel re-export.
+ * Backend runtime library — barrel re-export.
  *
  * Helpers used by every concrete backend (`claude-sdk`, `codex`,
  * `kilo`, `opencode`, `openai-agents`) to keep behaviour aligned and
- * avoid copy-paste drift.
+ * avoid copy-paste drift. The modules sit in three groups — `turn/`
+ * (what a turn does once the SDK loop is running), `prompt/` (the text
+ * handed to the model) and `cache/` (prompt-cache telemetry) — with the
+ * cross-cutting vocabulary (`usage`, `metrics`, `frontends`, `sleep`)
+ * at the root beside this barrel.
  *
  * What's here:
- *   - `delivered-text` — scratchpad/dedup primitives.
- *   - `delivery-contract` — per-backend response-flow contract
+ *   - `turn/delivered-text` — scratchpad/dedup primitives.
+ *   - `prompt/delivery-contract` — per-backend response-flow contract
  *     (rendered from prompts/system templates), frontend-aware
  *     flow-violation reminder, first-turn nudge.
- *   - `flow-violation` — flow-violation detection + reminder text.
+ *   - `turn/flow-violation` — flow-violation detection + reminder text.
  *   - `metrics` — the shared metric vocabulary (tool calls, per-turn
  *     rollups, flow violations) with backend dimensions.
- *   - `prompt-format` — user-prompt formatter ([time] [Name] [msg_id:N]).
+ *   - `prompt/prompt-format` — user-prompt formatter
+ *     ([time] [Name] [msg_id:N]).
  *   - `frontends` — config `frontend` → messaging-frontend list.
  *   - `extractSessionName` — re-exported from `util/session-name` so the
  *     backends keep one import site; the helper itself is frontend-neutral.
  *   - `usage` — cache-hit % + log summarisers.
- *   - `system-prompt` — per-session prompt snapshots + backend suffix
- *     (assembly itself lives in `core/prompt/`).
- *   - `model-retry` — session-expiry / context-overflow / fallback decisions.
- *   - `stream-state` — backend-agnostic accumulator for stream loops.
- *   - `turn-interrupt` — user-driven mid-turn interrupt registry (the
+ *   - `prompt/system-prompt` — per-session prompt snapshots + backend
+ *     suffix (assembly itself lives in `core/prompt/`).
+ *   - `turn/model-retry` — session-expiry / context-overflow / fallback
+ *     decisions.
+ *   - `turn/stream-state` — backend-agnostic accumulator for stream loops.
+ *   - `turn/turn-interrupt` — user-driven mid-turn interrupt registry (the
  *     shared `ChatBackend.interruptChatTurn` for callback backends).
- *   - `turn-phases` — the post-stream phases (accounting, session name,
+ *   - `turn/turn-phases` — the post-stream phases (accounting, session name,
  *     trailing-prose contract, result tail) every handler runs.
  *
  * What's NOT here (intentionally):
@@ -34,17 +40,17 @@
  *     (the spawn/env contract they share is `core/tools/mcp-env.ts`).
  */
 
-export { captureDeliveredText } from "./delivered-text.js";
+export { captureDeliveredText } from "./turn/delivered-text.js";
 
-export { registerTurnInterrupt } from "./turn-interrupt.js";
+export { registerTurnInterrupt } from "./turn/turn-interrupt.js";
 
-export { formatUserPrompt } from "./prompt-format.js";
+export { formatUserPrompt } from "./prompt/prompt-format.js";
 
 export {
   buildDeliveryContract,
   buildFlowViolationReminder,
   buildFirstTurnReminder,
-} from "./delivery-contract.js";
+} from "./prompt/delivery-contract.js";
 
 export { summarizeUsage } from "./usage.js";
 
@@ -57,9 +63,12 @@ export {
   priorLookbackOverflow,
   noteLookbackRisk,
   CACHE_LOOKBACK_BLOCKS,
-} from "./cache-telemetry.js";
+} from "./cache/cache-telemetry.js";
 
-export { prepareSystemPrompt, appendBackendSuffix } from "./system-prompt.js";
+export {
+  prepareSystemPrompt,
+  appendBackendSuffix,
+} from "./prompt/system-prompt.js";
 
 export {
   createStreamState,
@@ -71,19 +80,19 @@ export {
   pushLiveUsage,
   finalizeResponseText,
   type StreamState,
-} from "./stream-state.js";
+} from "./turn/stream-state.js";
 
 export {
   routeDelivery,
   buildDeliveryFailureReminder,
   TextBlockDeliveryError,
-} from "./delivery.js";
+} from "./turn/delivery.js";
 
 export { sleep } from "./sleep.js";
 
 export { recordToolCall } from "./metrics.js";
 
-export { applyRetryDecision } from "./handle-retry.js";
+export { applyRetryDecision } from "./turn/handle-retry.js";
 
 export {
   accountTurn,
@@ -92,6 +101,6 @@ export {
   enforceTrailingProse,
   finishCallbackTurn,
   turnUsageSnapshot,
-} from "./turn-phases.js";
+} from "./turn/turn-phases.js";
 
-export { buildResultEvents } from "./result-events.js";
+export { buildResultEvents } from "./turn/result-events.js";

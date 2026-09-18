@@ -15,8 +15,8 @@ import { describe, expect, it } from "vitest";
 import {
   detectFlowViolation,
   FLOW_VIOLATION_REMINDER,
-} from "../backend/shared/flow-violation.js";
-import { normalizeForDedupe } from "../backend/shared/delivered-text.js";
+} from "../backend/runtime/turn/flow-violation.js";
+import { normalizeForDedupe } from "../backend/runtime/turn/delivered-text.js";
 
 describe("detectFlowViolation", () => {
   it("does NOT trigger when trailing text is empty", () => {

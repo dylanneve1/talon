@@ -19,9 +19,9 @@
 import {
   type AgentEvent,
   classifiedToAgentError,
-} from "../../core/agent-runtime/events.js";
-import { classify } from "../../core/errors.js";
-import type { ChatRunParams } from "../../core/agent-runtime/capabilities.js";
+} from "../../../core/agent-runtime/events.js";
+import { classify } from "../../../core/errors.js";
+import type { ChatRunParams } from "../../../core/agent-runtime/capabilities.js";
 import type { QueryParams, QueryResult } from "./handler-types.js";
 import { buildResultEvents } from "./result-events.js";
 

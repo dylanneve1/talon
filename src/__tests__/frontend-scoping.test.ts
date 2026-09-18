@@ -14,7 +14,7 @@ import {
   frontendForChatId,
   frontendsForChat,
   nonTerminalFrontends,
-} from "../backend/shared/frontends.js";
+} from "../backend/runtime/frontends.js";
 
 const ALL = ["telegram", "discord", "teams", "native", "whatsapp"] as const;
 

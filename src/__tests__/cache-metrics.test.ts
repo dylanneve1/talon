@@ -19,12 +19,12 @@ import {
   recordCompactBoundary,
   reportToolFingerprint,
   rollUpTurnCache,
-} from "../backend/shared/cache-metrics.js";
+} from "../backend/runtime/cache/cache-metrics.js";
 import {
   resetToolFingerprints,
   turnCacheStats,
   type TurnCacheStats,
-} from "../backend/shared/cache-telemetry.js";
+} from "../backend/runtime/cache/cache-telemetry.js";
 import {
   isCompactBoundary,
   processCompactBoundary,

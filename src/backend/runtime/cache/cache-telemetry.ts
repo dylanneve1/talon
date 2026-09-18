@@ -38,7 +38,7 @@
 
 import { createHash } from "node:crypto";
 
-import { logWarn } from "../../util/log.js";
+import { logWarn } from "../../../util/log.js";
 
 // ── Per-turn cache stats ────────────────────────────────────────────────────
 

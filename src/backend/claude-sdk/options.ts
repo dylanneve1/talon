@@ -15,7 +15,7 @@ import type {
   HookCallback,
   HookJSONOutput,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { PreparedSystemPrompt } from "../shared/system-prompt.js";
+import type { PreparedSystemPrompt } from "../runtime/prompt/system-prompt.js";
 import { getSession } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { resolveModelId } from "../../core/models/catalog.js";
@@ -25,9 +25,12 @@ import {
   pluginHubUrl,
   hubPluginServerNames,
 } from "../../core/mcp-hub/index.js";
-import { nonTerminalFrontends, frontendsForChat } from "../shared/frontends.js";
-import { toolFingerprint } from "../shared/cache-telemetry.js";
-import { reportToolFingerprint } from "../shared/cache-metrics.js";
+import {
+  nonTerminalFrontends,
+  frontendsForChat,
+} from "../runtime/frontends.js";
+import { toolFingerprint } from "../runtime/cache/cache-telemetry.js";
+import { reportToolFingerprint } from "../runtime/cache/cache-metrics.js";
 import { log, logError } from "../../util/log.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { ALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";

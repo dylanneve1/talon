@@ -95,7 +95,7 @@ frontend, so it never belongs in the frontend `.md` files:
 The delivery TOOL NAMES are per-frontend (`end_turn`/`send`/`react` on
 telegram & discord, `end_turn`/`send_message`/`react` on native,
 `end_turn`/`send_message` on teams) and are injected into the templates
-by `src/backend/shared/delivery-contract.ts`, which is also where the
+by `src/backend/runtime/prompt/delivery-contract.ts`, which is also where the
 frontend-aware `[FLOW VIOLATION]` reminder and the first-turn nudge
 (appended to the turn-0 user message) are built.
 
