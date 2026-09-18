@@ -1,5 +1,45 @@
 # Changelog
 
+## [5.0.0](https://github.com/dylanneve1/talon/compare/v4.6.1...v5.0.0) (2026-09-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **memory:** remove the soul kernel; message taps feed the memory store ([#953](https://github.com/dylanneve1/talon/issues/953))
+
+### Features
+
+* **memory:** turn-time retrieval from the store behind TALON_MEMORY_STORE ([#952](https://github.com/dylanneve1/talon/issues/952)) ([8d5694b](https://github.com/dylanneve1/talon/commit/8d5694b1bd07760fc4c3351d99573e78c536a51a))
+* **metrics:** boot, resident-memory and per-turn CPU accounting ([#961](https://github.com/dylanneve1/talon/issues/961)) ([2579d2c](https://github.com/dylanneve1/talon/commit/2579d2c91955c272e897292346fb5e31fe5e9ad8))
+* **metrics:** roll up prompt-cache verdicts, compaction boundaries and last-turn age ([#954](https://github.com/dylanneve1/talon/issues/954)) ([6e05bd8](https://github.com/dylanneve1/talon/commit/6e05bd823ab13953516bb9e6dc3d0936693a0462))
+* **tools:** remember, recall and forget over the memory store ([#948](https://github.com/dylanneve1/talon/issues/948)) ([c743cbe](https://github.com/dylanneve1/talon/commit/c743cbe03c9c31dabd8bf79e518850e05a2992c5))
+
+
+### Documentation
+
+* cache economics plan — shared prefix, cold-session compaction ([#950](https://github.com/dylanneve1/talon/issues/950)) ([7137c76](https://github.com/dylanneve1/talon/commit/7137c767802967ee0b93707295fb8052b01e6f31))
+* **cache:** compact while warm, infer the TTL, verify the boundary ([#955](https://github.com/dylanneve1/talon/issues/955)) ([503d026](https://github.com/dylanneve1/talon/commit/503d026c0f4e8a7116cb08beb9723b6b9abb1531))
+* **lang:** boundaries before rewrites — the per-component verdict ([#957](https://github.com/dylanneve1/talon/issues/957)) ([959638f](https://github.com/dylanneve1/talon/commit/959638f203f19927589df2f1bdf3660943695f07))
+
+
+### Miscellaneous Chores
+
+* **tree:** the tree contract and its ratchet ([#956](https://github.com/dylanneve1/talon/issues/956)) ([26af41f](https://github.com/dylanneve1/talon/commit/26af41fe448a420b297fc415d3dc6a674d9cbb5b))
+
+
+### Code Refactoring
+
+* **backend:** backend/shared → backend/runtime with turn/, prompt/, cache/ ([#962](https://github.com/dylanneve1/talon/issues/962)) ([5fec736](https://github.com/dylanneve1/talon/commit/5fec73692561d41210dce417dc769c6f51b39a50))
+* **core:** tree background/ into cron/, dream/, pulse/; fold scripting/ into scripts/ ([#959](https://github.com/dylanneve1/talon/issues/959)) ([4c4893a](https://github.com/dylanneve1/talon/commit/4c4893acb942e7f2ebeb316bb9257b430dddf1a2))
+* **memory:** remove the soul kernel; message taps feed the memory store ([#953](https://github.com/dylanneve1/talon/issues/953)) ([c996377](https://github.com/dylanneve1/talon/commit/c9963773993d2be41e401847081c650492c22217))
+* **native:** tree the bridge frontend into bridge/, chats/, turn/, surface/, media/ ([#960](https://github.com/dylanneve1/talon/issues/960)) ([f500306](https://github.com/dylanneve1/talon/commit/f500306568032cfa3032c50091565a69b013b095))
+* **whatsapp:** tree the frontend into connection/ and messages/ ([#958](https://github.com/dylanneve1/talon/issues/958)) ([8518113](https://github.com/dylanneve1/talon/commit/8518113b99e2f7c04d3a64dfbc003ef44bd67492))
+
+
+### Tests
+
+* **native:** cover the turn, chat-lifecycle and handler seams ([#949](https://github.com/dylanneve1/talon/issues/949)) ([3bbd0f7](https://github.com/dylanneve1/talon/commit/3bbd0f7b75d2e36fa978f8fdf4b5f0bae526194c))
+
 ## [4.6.1](https://github.com/dylanneve1/talon/compare/v4.6.0...v4.6.1) (2026-09-18)
 
 
