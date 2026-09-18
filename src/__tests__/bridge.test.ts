@@ -21,7 +21,7 @@ vi.mock("undici", () => ({
     (globalThis.fetch as (...a: unknown[]) => unknown)(...args),
 }));
 
-import { createBridge } from "../core/tools/bridge.js";
+import { createBridge } from "../core/tools/ops/bridge.js";
 
 describe("createBridge", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
@@ -244,7 +244,7 @@ describe("createBridge", () => {
 
 describe("textResult", () => {
   it("marks ok:false gateway results as tool errors", async () => {
-    const { textResult } = await import("../core/tools/bridge.js");
+    const { textResult } = await import("../core/tools/ops/bridge.js");
     const fail = textResult({ ok: false, text: "device offline" });
     expect(fail.isError).toBe(true);
     const failText = fail.content[0];
@@ -260,7 +260,7 @@ describe("textResult", () => {
   });
 
   it("surfaces an image result as an MCP image content block", async () => {
-    const { textResult } = await import("../core/tools/bridge.js");
+    const { textResult } = await import("../core/tools/ops/bridge.js");
     const res = textResult({
       ok: true,
       text: "/tmp/pic.jpg [local] — image (image/jpeg, 3 bytes)",
@@ -279,7 +279,7 @@ describe("textResult", () => {
   });
 
   it("ignores a malformed image field (no bogus block)", async () => {
-    const { textResult } = await import("../core/tools/bridge.js");
+    const { textResult } = await import("../core/tools/ops/bridge.js");
     const res = textResult({
       ok: true,
       text: "plain",

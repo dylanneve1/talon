@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ToolDefinition } from "./types.js";
+import type { ToolDefinition } from "../types.js";
 
 /**
  * Cross-frontend send. Deliberately NOT frontend-restricted (the meshTools

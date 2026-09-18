@@ -10,8 +10,8 @@
  */
 
 import { z } from "zod";
-import type { ToolDefinition } from "./types.js";
-import { chatIdSchema } from "./schemas.js";
+import type { ToolDefinition } from "../types.js";
+import { chatIdSchema } from "../schemas.js";
 
 /**
  * Heartbeat-mode routing: like `send`, every goal tool threads an

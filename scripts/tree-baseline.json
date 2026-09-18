@@ -44,11 +44,6 @@
   },
   {
     "kind": "flat",
-    "path": "src/core/tools",
-    "files": 25
-  },
-  {
-    "kind": "flat",
     "path": "src/frontend/discord",
     "files": 14
   },

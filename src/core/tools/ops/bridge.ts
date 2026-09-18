@@ -6,8 +6,8 @@
  */
 
 import { Agent, fetch as undiciFetch } from "undici";
-import { isBunRuntime } from "../../util/runtime.js";
-import type { BridgeFunction } from "./types.js";
+import { isBunRuntime } from "../../../util/runtime.js";
+import type { BridgeFunction } from "../types.js";
 
 /** Default wall-clock budget for a bridge action. */
 const DEFAULT_TIMEOUT_MS = 120_000;

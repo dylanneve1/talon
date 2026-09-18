@@ -2,7 +2,114 @@ import { describe, it, expect } from "vitest";
 import { ALL_TOOLS, composeTools } from "../core/tools/index.js";
 import type { ToolFrontend, ToolTag } from "../core/tools/types.js";
 
+/**
+ * The exact tool list, in order, as the model sees it.
+ *
+ * `ALL_TOOLS` is serialised into every request's tool block, which sits
+ * in the prompt-cache prefix: reordering it — or adding/removing an
+ * entry anywhere but the end — invalidates the cached prefix of every
+ * live chat and re-bills the whole system prompt. Grouping the catalogue
+ * into `chat/`, `ops/` and `content/` was meant to be a pure file move,
+ * so this list is pinned here. A deliberate catalogue change updates it
+ * in the same commit and accepts the cache miss; an accidental regroup
+ * fails here instead of silently on everyone's next turn.
+ */
+const ALL_TOOLS_ORDER = [
+  "end_turn",
+  "send",
+  "send_message",
+  "send_message_with_buttons",
+  "react",
+  "edit_message",
+  "delete_message",
+  "forward_message",
+  "copy_message",
+  "pin_message",
+  "unpin_message",
+  "stop_poll",
+  "get_chat_info",
+  "get_chat_admins",
+  "get_chat_member_count",
+  "set_chat_title",
+  "set_chat_description",
+  "read_chat_history",
+  "search_chat_history",
+  "get_user_messages",
+  "get_message_by_id",
+  "download_media",
+  "list_chat_members",
+  "get_member_info",
+  "online_count",
+  "get_pinned_messages",
+  "list_media",
+  "get_sticker_pack",
+  "download_sticker",
+  "save_sticker_pack",
+  "create_sticker_set",
+  "add_sticker_to_set",
+  "delete_sticker_from_set",
+  "set_sticker_set_title",
+  "delete_sticker_set",
+  "cancel_scheduled",
+  "list_scheduled",
+  "create_cron_job",
+  "list_cron_jobs",
+  "edit_cron_job",
+  "run_cron_job",
+  "delete_cron_job",
+  "trigger_create",
+  "trigger_list",
+  "trigger_cancel",
+  "trigger_logs",
+  "trigger_delete",
+  "add_goal",
+  "list_goals",
+  "update_goal",
+  "delete_goal",
+  "remember",
+  "recall",
+  "forget",
+  "save_script",
+  "list_scripts",
+  "run_script",
+  "delete_script",
+  "save_skill",
+  "list_skills",
+  "find_skills",
+  "read_skill",
+  "delete_skill",
+  "fetch_url",
+  "reload_plugins",
+  "list_models",
+  "plan_usage",
+  "list_backends",
+  "list_devices",
+  "get_device_location",
+  "get_device_history",
+  "ring_device",
+  "remove_device",
+  "get_device_status",
+  "device_exec",
+  "device_list_dir",
+  "device_read_file",
+  "device_write_file",
+  "device_pull_file",
+  "device_push_file",
+  "update_device",
+  "update_node",
+  "get_node_binary",
+  "make_node_install_link",
+  "send_via",
+  "whatsapp_account",
+  "moderate",
+  "get_user_profile_photos",
+];
+
 describe("ALL_TOOLS registry", () => {
+  it("keeps the exact prompt-cache prefix order", () => {
+    expect(ALL_TOOLS.map((t) => t.name)).toEqual(ALL_TOOLS_ORDER);
+  });
+
   it("contains tools from every domain", () => {
     const tags = new Set(ALL_TOOLS.map((t) => t.tag));
     expect(tags).toContain("messaging");

@@ -9,7 +9,7 @@
  */
 
 import { z } from "zod";
-import type { ToolDefinition } from "./types.js";
+import type { ToolDefinition } from "../types.js";
 
 const TRIGGER_DESCRIPTION = `Create a long-running watcher script. The script runs as a supervised
 subprocess and signals back via stdout or its exit code.

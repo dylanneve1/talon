@@ -84,7 +84,7 @@
     "cx": 29
   },
   {
-    "file": "src/core/tools/messaging.ts",
+    "file": "src/core/tools/chat/messaging.ts",
     "name": ".execute#2",
     "lines": 191,
     "cx": 20

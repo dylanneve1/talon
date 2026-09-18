@@ -7,26 +7,26 @@
 
 import type { ToolDefinition, ToolFrontend, ToolTag } from "./types.js";
 
-import { messagingTools } from "./messaging.js";
-import { chatTools } from "./chat.js";
-import { historyTools } from "./history.js";
-import { memberTools } from "./members.js";
-import { mediaTools } from "./media.js";
-import { stickerTools } from "./stickers.js";
-import { schedulingTools } from "./scheduling.js";
-import { triggerTools } from "./triggers.js";
-import { goalTools } from "./goals.js";
-import { memoryTools } from "./memory.js";
-import { scriptTools } from "./scripts.js";
-import { skillTools } from "./skills.js";
-import { webTools } from "./web.js";
-import { adminTools } from "./admin.js";
-import { modelTools } from "./models.js";
-import { meshTools } from "./mesh.js";
-import { crossSendTools } from "./cross-send.js";
-import { whatsappTools } from "./whatsapp.js";
-import { moderationTools } from "./moderation.js";
-import { nativeTools } from "./native.js";
+import { messagingTools } from "./chat/messaging.js";
+import { chatTools } from "./chat/chat.js";
+import { historyTools } from "./chat/history.js";
+import { memberTools } from "./chat/members.js";
+import { mediaTools } from "./chat/media.js";
+import { stickerTools } from "./chat/stickers.js";
+import { schedulingTools } from "./ops/scheduling.js";
+import { triggerTools } from "./ops/triggers.js";
+import { goalTools } from "./ops/goals.js";
+import { memoryTools } from "./content/memory.js";
+import { scriptTools } from "./ops/scripts.js";
+import { skillTools } from "./ops/skills.js";
+import { webTools } from "./content/web.js";
+import { adminTools } from "./ops/admin.js";
+import { modelTools } from "./ops/models.js";
+import { meshTools } from "./ops/mesh.js";
+import { crossSendTools } from "./chat/cross-send.js";
+import { whatsappTools } from "./chat/whatsapp.js";
+import { moderationTools } from "./chat/moderation.js";
+import { nativeTools } from "./ops/native.js";
 
 /** All built-in tool definitions. */
 export const ALL_TOOLS: readonly ToolDefinition[] = [

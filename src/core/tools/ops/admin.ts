@@ -5,7 +5,7 @@
  * messaging or content. Available on all frontends.
  */
 
-import type { ToolDefinition } from "./types.js";
+import type { ToolDefinition } from "../types.js";
 
 export const adminTools: ToolDefinition[] = [
   {

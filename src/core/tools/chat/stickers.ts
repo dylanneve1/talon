@@ -3,8 +3,8 @@
  */
 
 import { z } from "zod";
-import type { ToolDefinition } from "./types.js";
-import { idSchema } from "./schemas.js";
+import type { ToolDefinition } from "../types.js";
+import { idSchema } from "../schemas.js";
 
 export const stickerTools: ToolDefinition[] = [
   {

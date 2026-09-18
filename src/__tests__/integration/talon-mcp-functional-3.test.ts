@@ -174,7 +174,7 @@ describe.skipIf(!stubReady)("Member and chat info tool dispatch", () => {
       bootstrap: { frontend: "telegram", gatewayHandler: recording.handler },
     });
 
-    // Bridge action is "list_known_users" per src/core/tools/members.ts
+    // Bridge action is "list_known_users" per src/core/tools/chat/members.ts
     expect(recording.byAction("list_known_users").length).toBe(1);
     expect(recording.byAction("list_known_users")[0].body.limit).toBe(20);
 

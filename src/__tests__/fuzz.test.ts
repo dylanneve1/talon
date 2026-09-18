@@ -55,7 +55,7 @@ const { registerClaudeModelsStatic, CLAUDE_MODELS_STATIC } =
   await import("../backend/claude-sdk/models/index.js");
 registerClaudeModelsStatic(CLAUDE_MODELS_STATIC);
 const { Cron } = await import("croner");
-const { messagingTools } = await import("../core/tools/messaging.js");
+const { messagingTools } = await import("../core/tools/chat/messaging.js");
 const { stripMcpPrefix, isTurnTerminator, ALL_TOOLS } =
   await import("../core/tools/index.js");
 const { markdownToTelegramHtml, escapeHtml } =

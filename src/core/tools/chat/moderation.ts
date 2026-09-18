@@ -5,8 +5,8 @@
  */
 
 import { z } from "zod";
-import type { ToolDefinition } from "./types.js";
-import { chatIdSchema, snowflakeOrIdSchema } from "./schemas.js";
+import type { ToolDefinition } from "../types.js";
+import { chatIdSchema, snowflakeOrIdSchema } from "../schemas.js";
 
 export const moderationTools: ToolDefinition[] = [
   {

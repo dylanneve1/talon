@@ -17,7 +17,7 @@ import {
   processAssistantMessage,
 } from "../backend/claude-sdk/stream.js";
 import type { SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
-import { messagingTools } from "../core/tools/messaging.js";
+import { messagingTools } from "../core/tools/chat/messaging.js";
 import {
   isDeliveryTool,
   isTurnTerminator,

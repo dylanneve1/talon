@@ -9,7 +9,7 @@
  * Routes:
  *
  *   - `tool` — a delivery tool (`end_turn` / `send` / `react`) already
- *     bridged the message to the platform via `core/tools/messaging.ts`.
+ *     bridged the message to the platform via `core/tools/chat/messaging.ts`.
  *     The message is already in the chat; we don't re-emit. We may
  *     have captured `deliveredTextNorms` for dedup, or just have
  *     `hadBridgeDelivery` set (e.g. `send(type="photo")` — non-text

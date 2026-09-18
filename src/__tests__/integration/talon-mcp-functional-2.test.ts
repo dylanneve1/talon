@@ -196,7 +196,7 @@ describe.skipIf(!stubReady)("History and info tool dispatch", () => {
       bootstrap: { frontend: "telegram", gatewayHandler: recording.handler },
     });
 
-    // The bridge action name is "read_history" (see src/core/tools/history.ts).
+    // The bridge action name is "read_history" (see src/core/tools/chat/history.ts).
     const historyReads = recording.byAction("read_history");
     expect(historyReads.length).toBe(1);
     expect(historyReads[0].body.limit).toBe(10);
@@ -274,7 +274,7 @@ describe.skipIf(!stubReady)("History and info tool dispatch", () => {
       bootstrap: { frontend: "telegram", gatewayHandler: recording.handler },
     });
 
-    // The bridge action name is "read_history" (see src/core/tools/history.ts).
+    // The bridge action name is "read_history" (see src/core/tools/chat/history.ts).
     expect(recording.byAction("read_history").length).toBe(1);
     expect(recording.byAction("get_chat_info").length).toBe(1);
     expect(recording.byAction("send_message").length).toBeGreaterThanOrEqual(1);

@@ -9,8 +9,8 @@
  */
 
 import { z } from "zod";
-import type { ToolDefinition } from "./types.js";
-import type { MemoryKind } from "../../storage/memory.js";
+import type { ToolDefinition } from "../types.js";
+import type { MemoryKind } from "../../../storage/memory.js";
 
 /**
  * The store's kinds, spelled out here rather than imported.

@@ -20,7 +20,7 @@ Repo conventions every PR here obeys:
   anticipated by the existing `core/memory/retrieval.ts` seam.
 - Prompt text lives in `prompts/`, never in TS. New prompt assets need
   `npm run build:prompts` (`prompts-embed.test.ts` fails on drift).
-- Tools are two files: `core/tools/<area>.ts` (zod schema + `bridge("action")`) and
+- Tools are two files: `core/tools/<group>/<area>.ts` (zod schema + `bridge("action")`) and
   `core/engine/gateway-actions/<area>.ts` (the action).
 - Every PR ships consumers, or `knip` flags the unused exports. That gate is doing
   real work here — respect it rather than suppressing it.
@@ -182,7 +182,7 @@ flag flip and the core view stay PR 8/9.
 
 ### PR 6 — `feat(tools): remember / forget / recall` ✅ done
 
-- `core/tools/memory.ts` + `core/engine/gateway-actions/memory.ts`.
+- `core/tools/content/memory.ts` + `core/engine/gateway-actions/memory.ts`.
 - `remember(kind, text, subject?, key?)` — on assert, FTS near-dupe check turns a
   near-match into a **supersede candidate** instead of a second row. Mechanically the
   highest-leverage reconciliation in the plan, and it lives in the write path.
@@ -195,7 +195,7 @@ flag flip and the core view stay PR 8/9.
   is the mistake someone will otherwise make on purpose.
 - Verify Discord.
 
-**Landed** as #948. `core/tools/memory.ts` + `core/engine/gateway-actions/memory.ts`
+**Landed** as #948. `core/tools/content/memory.ts` + `core/engine/gateway-actions/memory.ts`
 export three actions: `remember(kind, text, subject?, key?, confidence?,
 replace_id?, force?)` → `{ ok, id, line }`, `recall(query, kind?, limit?)` →
 `{ ok, rows[] }` (limit capped at 20, each returned row touched so `hit_count`

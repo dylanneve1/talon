@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ToolDefinition } from "./types.js";
+import type { ToolDefinition } from "../types.js";
 
 /**
  * Device-mesh tools. Deliberately NOT frontend-restricted: the mesh is

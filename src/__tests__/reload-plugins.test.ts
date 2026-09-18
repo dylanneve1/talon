@@ -320,7 +320,7 @@ describe("reload_plugins gateway action", () => {
 
 describe("admin tool description", () => {
   it("does not mention session reset or MCP subprocesses", async () => {
-    const { adminTools } = await import("../core/tools/admin.js");
+    const { adminTools } = await import("../core/tools/ops/admin.js");
     const reloadTool = adminTools.find((t) => t.name === "reload_plugins");
     expect(reloadTool).toBeDefined();
     expect(reloadTool!.description).not.toContain("resets sessions");
@@ -331,13 +331,13 @@ describe("admin tool description", () => {
   });
 
   it("mentions env var cleanup", async () => {
-    const { adminTools } = await import("../core/tools/admin.js");
+    const { adminTools } = await import("../core/tools/ops/admin.js");
     const reloadTool = adminTools.find((t) => t.name === "reload_plugins");
     expect(reloadTool!.description).toContain("env vars");
   });
 
   it("has admin tag", async () => {
-    const { adminTools } = await import("../core/tools/admin.js");
+    const { adminTools } = await import("../core/tools/ops/admin.js");
     const reloadTool = adminTools.find((t) => t.name === "reload_plugins");
     expect(reloadTool!.tag).toBe("admin");
   });

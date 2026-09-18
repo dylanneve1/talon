@@ -4,8 +4,8 @@
  */
 
 import { z } from "zod";
-import type { ToolDefinition } from "./types.js";
-import { chatIdSchema, idSchema, snowflakeOrIdSchema } from "./schemas.js";
+import type { ToolDefinition } from "../types.js";
+import { chatIdSchema, idSchema, snowflakeOrIdSchema } from "../schemas.js";
 
 /**
  * Throw a typed Error when a bridge response reports failure

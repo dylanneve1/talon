@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ToolDefinition } from "./types.js";
+import type { ToolDefinition } from "../types.js";
 
 /**
  * WhatsApp account management. Deliberately NOT frontend-restricted

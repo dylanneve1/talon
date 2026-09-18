@@ -11,7 +11,7 @@
  */
 
 import { z } from "zod";
-import type { ToolDefinition } from "./types.js";
+import type { ToolDefinition } from "../types.js";
 
 export const skillTools: ToolDefinition[] = [
   {

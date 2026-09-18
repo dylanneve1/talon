@@ -54,7 +54,7 @@ import {
   describeMissingSecrets,
 } from "./telegram-live/secrets-loader.js";
 import { makeTestBot, messageExists } from "./telegram-live/test-bot.js";
-import { messagingTools } from "../../core/tools/messaging.js";
+import { messagingTools } from "../../core/tools/chat/messaging.js";
 import { stripMcpPrefix } from "../../core/tools/index.js";
 
 // ── Skip gating ────────────────────────────────────────────────────────────
