@@ -22,24 +22,6 @@ export function postCard(
 }
 
 /**
- * Split, card and POST a text; throws on the first chunk the webhook
- * rejects so tool callers see the failure.
- */
-export async function postToTeams(
-  webhookUrl: string,
-  text: string,
-): Promise<void> {
-  const chunks = splitTeamsMessage(text);
-  for (const chunk of chunks) {
-    const resp = await postCard(webhookUrl, buildAdaptiveCard(chunk));
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => "");
-      throw new Error(`Teams webhook POST failed: ${resp.status} ${body}`);
-    }
-  }
-}
-
-/**
  * Out-of-turn delivery (cron / pulse / heartbeat). Failures are logged and
  * swallowed — the callers have nowhere to surface them.
  */

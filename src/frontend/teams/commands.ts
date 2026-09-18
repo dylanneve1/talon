@@ -108,23 +108,34 @@ function buildStatusCard(
   };
 }
 
+type CommandHandler = (
+  runtime: TeamsRuntime,
+  msg: ChatMessage,
+  talonChatId: string,
+) => Promise<void>;
+
+/** Exact-match table: the whole message, trimmed and lowercased, is the key. */
+export const TEAMS_COMMANDS: Record<string, CommandHandler> = Object.assign(
+  Object.create(null) as Record<string, CommandHandler>,
+  {
+    "/reset": handleReset,
+    "/status": async (runtime, _msg, talonChatId) => {
+      await reply(runtime, buildStatusCard(runtime, talonChatId));
+    },
+    "/help": async (runtime) => {
+      await reply(runtime, buildAdaptiveCard(HELP_TEXT));
+    },
+  } satisfies Record<string, CommandHandler>,
+);
+
 /** Returns true when `msg` was a slash command and has been answered. */
 export async function handleSlashCommand(
   runtime: TeamsRuntime,
   msg: ChatMessage,
   talonChatId: string,
 ): Promise<boolean> {
-  switch (msg.text.trim().toLowerCase()) {
-    case "/reset":
-      await handleReset(runtime, msg, talonChatId);
-      return true;
-    case "/status":
-      await reply(runtime, buildStatusCard(runtime, talonChatId));
-      return true;
-    case "/help":
-      await reply(runtime, buildAdaptiveCard(HELP_TEXT));
-      return true;
-    default:
-      return false;
-  }
+  const handler = TEAMS_COMMANDS[msg.text.trim().toLowerCase()];
+  if (!handler) return false;
+  await handler(runtime, msg, talonChatId);
+  return true;
 }

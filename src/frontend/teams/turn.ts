@@ -10,8 +10,8 @@ import {
   type AgentEvent,
 } from "../../core/agent-runtime/events.js";
 import { execute } from "../../core/engine/dispatcher.js";
+import { postToTeams } from "./actions.js";
 import type { ChatMessage } from "./graph.js";
-import { postToTeams } from "./outbound.js";
 import type { TeamsRuntime } from "./runtime.js";
 
 function logToolCall(event: Extract<AgentEvent, { type: "tool_call" }>): void {

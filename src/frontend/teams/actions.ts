@@ -4,9 +4,29 @@
 
 import type { ActionResult, FrontendActionHandler } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
-import { buildAdaptiveCard } from "./formatting.js";
+import { buildAdaptiveCard, splitTeamsMessage } from "./formatting.js";
 import { log, logError } from "../../util/log.js";
-import { postCard, postToTeams } from "./outbound.js";
+import { proxyFetch } from "./proxy-fetch.js";
+
+/**
+ * POST an Adaptive Card to the Power Automate workflow webhook URL.
+ */
+async function postToTeams(webhookUrl: string, text: string): Promise<void> {
+  const chunks = splitTeamsMessage(text);
+  for (const chunk of chunks) {
+    const card = buildAdaptiveCard(chunk);
+    const resp = await proxyFetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(card),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      throw new Error(`Teams webhook POST failed: ${resp.status} ${body}`);
+    }
+  }
+}
 
 export function createTeamsActionHandler(
   webhookUrl: string,
@@ -37,10 +57,13 @@ export function createTeamsActionHandler(
           Array<Array<{ text: string; url?: string }>> | undefined;
         const buttons = rows?.flat().map((b) => ({ text: b.text, url: b.url }));
         try {
-          const resp = await postCard(
-            webhookUrl,
-            buildAdaptiveCard(text, buttons),
-          );
+          const card = buildAdaptiveCard(text, buttons);
+          const resp = await proxyFetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(card),
+            signal: AbortSignal.timeout(15_000),
+          });
           if (!resp.ok) throw new Error(`${resp.status}`);
           gateway.incrementMessages(chatId);
           return { ok: true, message_id: Date.now() };
@@ -78,3 +101,5 @@ export function createTeamsActionHandler(
     }
   };
 }
+
+export { postToTeams };
