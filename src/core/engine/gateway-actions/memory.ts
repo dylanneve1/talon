@@ -12,7 +12,12 @@
  *   - **Trust comes from the chat, not the caller.** Anything learned on
  *     a multi-party surface is `group_chat` — never pinnable, never in
  *     the core view (plan §5) — and a `directive` cannot be planted from
- *     one at all.
+ *     one at all. The tier also gates what a context may *overwrite*:
+ *     a claim may only be superseded or forgotten from a context at its
+ *     own tier or stronger. Without that, both `replace_id` and `forget`
+ *     are escalations — the first because `supersedeMemory` copies the
+ *     old row's trust onto the successor, the second because the store
+ *     drops whatever id it is handed.
  *   - **Writes never invalidate the prompt cache.** This module must not
  *     import `core/prompt/invalidation.js`. A `remember` that dropped
  *     every live session's prompt snapshot would turn a ~50-token claim
@@ -70,6 +75,36 @@ const KIND_LIST = MEMORY_KINDS.join(", ");
  */
 function trustForChat(chatKey: string): MemoryTrust {
   return chatScope(chatKey) === "dm" ? "agent" : "group_chat";
+}
+
+/** The trust tiers, weakest first. */
+const TRUST_ORDER: readonly MemoryTrust[] = [
+  "group_chat",
+  "user_claim",
+  "agent",
+  "operator",
+];
+
+function trustRank(trust: MemoryTrust): number {
+  const rank = TRUST_ORDER.indexOf(trust);
+  // A tier this module does not know is treated as the strongest, so an
+  // unrecognised row is protected rather than freely overwritten.
+  return rank === -1 ? TRUST_ORDER.length : rank;
+}
+
+/**
+ * Whether a claim made in `context` may overwrite or retire a row
+ * recorded at `row` trust — its own tier or weaker, never stronger.
+ *
+ * This is what keeps `replace_id` from being an escalation:
+ * `supersedeMemory` inherits the old row's frame, trust included, so
+ * without this check a group participant could hand new text to an
+ * `agent` row and have it land live at `agent` trust. `forget` needs the
+ * same guard for the mirror reason — the store drops whatever id it is
+ * given, so the policy has to sit here.
+ */
+function outranks(context: MemoryTrust, row: MemoryTrust): boolean {
+  return trustRank(context) >= trustRank(row);
 }
 
 function fail(error: string): ActionResult {
@@ -185,6 +220,10 @@ function rememberReplacing(
     return fail(
       `Memory #${replaceId} is already superseded by #${target.supersededBy}`,
     );
+  if (!outranks(claim.trust, target.trust))
+    return fail(
+      `Memory #${replaceId} was recorded at ${target.trust} trust; a ${claim.trust} context cannot replace it — record a separate claim instead`,
+    );
   if (target.kind !== claim.kind)
     return fail(
       `Memory #${replaceId} is a ${target.kind}, not a ${claim.kind} — a supersede keeps the row's kind`,
@@ -252,7 +291,23 @@ function recallRows(body: Record<string, unknown>): ActionResult {
   return { ok: true, rows: rows.map((row) => formatMemory(row)) };
 }
 
-function forgetRow(body: Record<string, unknown>): ActionResult {
+/** Why a context is not allowed to retire this row. */
+function forgetRefusal(
+  id: number,
+  rowTrust: MemoryTrust,
+  context: MemoryTrust,
+): string {
+  // No chat context ever reaches `operator`, so an operator row can only
+  // be retired out of band — name the command rather than stonewalling.
+  if (rowTrust === "operator")
+    return `Memory #${id} is an operator memory — only the operator can forget it (talon memory forget ${id})`;
+  return `Memory #${id} was recorded at ${rowTrust} trust; a ${context} context cannot forget it`;
+}
+
+function forgetRow(
+  body: Record<string, unknown>,
+  chatKey: string,
+): ActionResult {
   const id = Number(body.id);
   if (!Number.isInteger(id) || id <= 0)
     return fail(`Invalid id "${String(body.id ?? "")}"`);
@@ -261,6 +316,11 @@ function forgetRow(body: Record<string, unknown>): ActionResult {
     return fail(
       "A reason is required — every drop is auditable and reversible",
     );
+  const row = getMemory(id);
+  if (!row) return fail(`No memory with id ${id}`);
+  const context = trustForChat(chatKey);
+  if (!outranks(context, row.trust))
+    return fail(forgetRefusal(id, row.trust, context));
   dropMemory(id, reason);
   log("gateway", `forget: #${id} (${reason})`);
   return { ok: true, id, text: `Dropped #${id} to the graveyard: ${reason}` };
@@ -270,5 +330,6 @@ export const memoryHandlers: SharedActionHandlers = {
   remember: (body, _chatId, _backend, chatKey) =>
     attempt(() => rememberClaim(body, chatKey)),
   recall: (body) => attempt(() => recallRows(body)),
-  forget: (body) => attempt(() => forgetRow(body)),
+  forget: (body, _chatId, _backend, chatKey) =>
+    attempt(() => forgetRow(body, chatKey)),
 };

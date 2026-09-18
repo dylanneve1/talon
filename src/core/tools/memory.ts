@@ -112,7 +112,8 @@ Use it when you need more than the memory already in this prompt, before asking 
     name: "forget",
     description: `Retire a stored memory by id. It goes to the graveyard — readable and revertible, not erased.
 
-The reason is required and is kept with the row. Use this for claims that are wrong or that the user asked you to drop; to correct a claim that is merely out of date, use remember with replace_id so the correction supersedes it.`,
+The reason is required and is kept with the row. Use this for claims that are wrong or that the user asked you to drop; to correct a claim that is merely out of date, use remember with replace_id so the correction supersedes it.
+A claim can only be retired from a context at least as trusted as the one that recorded it: operator memories are never droppable this way, and a group chat cannot drop what was learned in a DM.`,
     schema: {
       id: z.number().int().positive().describe("Memory id, as shown by recall"),
       reason: z

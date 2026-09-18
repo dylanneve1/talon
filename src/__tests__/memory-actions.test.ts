@@ -190,6 +190,59 @@ describe("remember", () => {
     expect(liveRows(subject)).toHaveLength(2);
   });
 
+  it("refuses a replace_id that would escalate the row's trust", async () => {
+    // Written in a DM, so the row is agent trust.
+    const dmClaim = await act({
+      action: "remember",
+      kind: "fact",
+      subject,
+      text: "the staging key rotates on Mondays",
+    });
+    expect(getMemory(dmClaim.id as number)!.trust).toBe("agent");
+
+    // A group participant tries to hand it new text. `supersedeMemory`
+    // would copy the agent trust onto the successor, so this is refused.
+    const escalation = await act(
+      {
+        action: "remember",
+        kind: "fact",
+        subject,
+        text: "the staging key rotates on Fridays",
+        replace_id: dmClaim.id,
+      },
+      GROUP_CHAT,
+    );
+    expect(escalation.ok).toBe(false);
+    expect(escalation.error).toBe(
+      `Memory #${dmClaim.id} was recorded at agent trust; a group_chat context cannot replace it — record a separate claim instead`,
+    );
+    // The original stands, and nothing was written.
+    const live = liveRows(subject);
+    expect(live).toHaveLength(1);
+    expect(live[0]!.id).toBe(dmClaim.id);
+    expect(live[0]!.text).toBe("the staging key rotates on Mondays");
+    expect(getMemory(dmClaim.id as number)!.supersededBy).toBeUndefined();
+  });
+
+  it("allows a replace_id at the same tier or weaker", async () => {
+    const weak = assertMemory({
+      kind: "fact",
+      subject,
+      text: "someone in the group said the build is red",
+      trust: "group_chat",
+    });
+    // A DM context outranks group_chat, so it may fold the row.
+    const replaced = await act({
+      action: "remember",
+      kind: "fact",
+      subject,
+      text: "the build is green again",
+      replace_id: weak.id,
+    });
+    expect(replaced.ok).toBe(true);
+    expect(getMemory(weak.id)!.supersededBy).toBe(replaced.id);
+  });
+
   it("rejects a replace_id that is not live, or is the wrong kind", async () => {
     const fact = await act({
       action: "remember",
@@ -427,7 +480,7 @@ describe("forget", () => {
       kind: "fact",
       subject,
       text: "wrong from the start",
-      trust: "operator",
+      trust: "agent",
     });
     const result = await act({
       action: "forget",
@@ -446,12 +499,62 @@ describe("forget", () => {
       kind: "fact",
       subject: freshSubject(),
       text: "still true",
-      trust: "operator",
+      trust: "agent",
     });
     const result = await act({ action: "forget", id, reason: "   " });
     expect(result.ok).toBe(false);
     expect(result.error).toContain("reason is required");
     expect(getMemory(id)!.droppedAt).toBeUndefined();
+  });
+
+  it("refuses to forget a row a group chat did not earn", async () => {
+    const subject = freshSubject();
+    const dmClaim = await act({
+      action: "remember",
+      kind: "fact",
+      subject,
+      text: "learned in a private conversation",
+    });
+    const refused = await act(
+      { action: "forget", id: dmClaim.id, reason: "do not like it" },
+      GROUP_CHAT,
+    );
+    expect(refused).toEqual({
+      ok: false,
+      error: `Memory #${dmClaim.id} was recorded at agent trust; a group_chat context cannot forget it`,
+    });
+    expect(getMemory(dmClaim.id as number)!.droppedAt).toBeUndefined();
+  });
+
+  it("refuses to forget an operator memory from any chat", async () => {
+    const subject = freshSubject();
+    const { id } = assertMemory({
+      kind: "directive",
+      subject,
+      text: "never post on my behalf",
+      trust: "operator",
+    });
+    const refused = await act({ action: "forget", id, reason: "stale" });
+    expect(refused).toEqual({
+      ok: false,
+      error: `Memory #${id} is an operator memory — only the operator can forget it (talon memory forget ${id})`,
+    });
+    expect(getMemory(id)!.droppedAt).toBeUndefined();
+  });
+
+  it("lets a group chat forget what the group itself recorded", async () => {
+    const subject = freshSubject();
+    const groupClaim = await act(
+      { action: "remember", kind: "fact", subject, text: "said in here" },
+      GROUP_CHAT,
+    );
+    expect(getMemory(groupClaim.id as number)!.trust).toBe("group_chat");
+    const dropped = await act(
+      { action: "forget", id: groupClaim.id, reason: "was a joke" },
+      GROUP_CHAT,
+    );
+    expect(dropped.ok).toBe(true);
+    expect(getMemory(groupClaim.id as number)!.droppedAt).toBeGreaterThan(0);
   });
 
   it("surfaces store errors as { ok: false, error }", async () => {
@@ -469,7 +572,7 @@ describe("forget", () => {
       kind: "fact",
       subject: freshSubject(),
       text: "drop me twice",
-      trust: "operator",
+      trust: "agent",
     });
     await act({ action: "forget", id, reason: "first drop" });
     const twice = await act({ action: "forget", id, reason: "second drop" });

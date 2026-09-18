@@ -213,7 +213,15 @@ canonical chat-id grammar through a new `chatScope` in `util/chat-id.ts` —
 positive Telegram / `t_…` / `d_…` are DMs, and `teams_chat_…` names 1:1 and group
 chats alike, so it is "unknown". Group *or* unknown → `group_chat` trust (fail
 closed: never pinnable, never in the core view, plan §5); a `directive` from a
-group context is refused outright. Every store error surfaces as
+group context is refused outright. The tier also gates *overwrites*: a claim may
+only be superseded (`replace_id`) or forgotten from a context at its own tier or
+stronger, because `supersedeMemory` inherits the old row's trust and `dropMemory`
+drops whatever id it is handed — without it, both are escalation paths out of a
+group chat. Operator rows can never be retired from a chat at all (`talon memory
+forget <id>` instead). **`recall` stays global and unfiltered** — whether an
+explicit pull should be trust-filtered the way `filterAutoInjectable` filters
+auto-injection is a **PR 8 decision**, taken with the retriever rather than ahead
+of it. Every store error surfaces as
 `{ ok: false, error }` — nothing throws through `handleSharedAction`. The cache
 invariant is a test: the module never imports `core/prompt/invalidation.js`, and
 `memory-actions.test.ts` mocks it with a spy and asserts all three actions leave
