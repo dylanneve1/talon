@@ -11,6 +11,8 @@
  *   - `fetch-url` — fetch a URL (text extraction or binary download)
  *   - `cron`      — scheduled-job CRUD
  *   - `triggers`  — long-running watcher-script CRUD
+ *   - `agents`    — sub-agent spawn / inspect / message, and the agent-side
+ *                   report / inbox tools
  *   - `goals`     — persistent multi-turn objectives
  *   - `memory`    — remember / recall / forget over the typed memory store
  *   - `scripts`   — reusable agent-authored scripts
@@ -28,6 +30,7 @@ import { historyHandlers } from "./history.js";
 import { fetchUrlHandlers } from "./fetch-url.js";
 import { cronHandlers } from "./cron.js";
 import { triggerHandlers } from "./triggers.js";
+import { agentContextActions, agentHandlers } from "./agents/index.js";
 import { goalHandlers } from "./goals.js";
 import { memoryHandlers } from "./memory.js";
 import { scriptHandlers } from "./scripts.js";
@@ -53,6 +56,7 @@ const handlers: SharedActionHandlers = Object.assign(Object.create(null), {
   ...fetchUrlHandlers,
   ...cronHandlers,
   ...triggerHandlers,
+  ...agentHandlers,
   ...goalHandlers,
   ...memoryHandlers,
   ...scriptHandlers,
@@ -100,6 +104,32 @@ export async function handleSharedAction(
  */
 export function isChatFreeAction(action: string): boolean {
   return chatFreeActions.has(action);
+}
+
+/**
+ * True when the action belongs to the sub-agent family, i.e. the gateway may
+ * dispatch it for an `agent:<id>` chat key (which has an identity but no
+ * chat). Anything else stays chat-routed.
+ */
+export function isAgentContextAction(action: string): boolean {
+  return agentContextActions.has(action);
+}
+
+/**
+ * Dispatch a sub-agent action on behalf of a running agent. `contextKey` is
+ * the agent's `agent:<id>` label, handed through as the `chatKey` so the
+ * handlers can identify the caller; `0` is the explicit "no chat" chatId,
+ * same sentinel the chat-free path uses.
+ */
+export async function handleAgentContextAction(
+  body: Record<string, unknown>,
+  contextKey: string,
+): Promise<ActionResult | null> {
+  const action = body.action as string;
+  if (!isAgentContextAction(action)) return null;
+  const handler = handlers[action];
+  if (!handler) return null;
+  return handler(body, 0, undefined, contextKey);
 }
 
 /**

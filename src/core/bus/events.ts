@@ -6,11 +6,15 @@
  * a one-line union change; each addition should land together with its
  * publisher (and ideally its first subscriber).
  *
- * Two families exist today:
+ * Three families exist today:
  *
  *   - `task.*` — lifecycle of agent work, published by the task table
  *     (core/tasks). Uniform across kinds: a heartbeat pass, a dream run, an
  *     isolated cron/trigger job, and a chat turn all surface here.
+ *   - `agent.*` — the sub-agent lifecycle, published by `core/agents`:
+ *     `agent.spawned` when an isolated sub-agent run starts, `agent.settled`
+ *     when it reaches a terminal state, `agent.message` when a note or a
+ *     report crosses between an agent and its parent.
  *   - `turn.*` — the chat-domain moments inside a turn that other
  *     subsystems key off: `turn.started` fires once the warp is bound and
  *     the backend is about to run (never for a no-model refusal);
@@ -18,6 +22,7 @@
  */
 
 import type { TaskRecord } from "../tasks/types.js";
+import type { AgentState } from "../agents/types.js";
 
 /** A task left the queue and began running. */
 export interface TaskStartedEvent {
@@ -50,8 +55,50 @@ interface TurnCompletedEvent {
   readonly outputTokens: number;
 }
 
+/** A sub-agent was registered and its isolated run began. */
+export interface AgentSpawnedEvent {
+  readonly type: "agent.spawned";
+  readonly agentId: string;
+  readonly label: string;
+  readonly parentKind: "chat" | "agent";
+  /** Chat key or parent agent id — an identifier, never content. */
+  readonly parent: string;
+  readonly backendId: string;
+  readonly model: string;
+  readonly depth: number;
+}
+
+/** A sub-agent reached a terminal state. */
+export interface AgentSettledEvent {
+  readonly type: "agent.settled";
+  readonly agentId: string;
+  readonly label: string;
+  readonly state: AgentState;
+  readonly durationMs: number;
+}
+
+/**
+ * A message crossed between a sub-agent and its parent: an explicit note
+ * (`message`), or the settlement report (`result`). Ids only — the text
+ * itself never rides the bus.
+ */
+interface AgentMessageEvent {
+  readonly type: "agent.message";
+  /** Chat key or agent id. */
+  readonly from: string;
+  /** Chat key or agent id. */
+  readonly to: string;
+  readonly kind: "message" | "result";
+}
+
 export type TalonEvent =
-  TaskStartedEvent | TaskSettledEvent | TurnStartedEvent | TurnCompletedEvent;
+  | TaskStartedEvent
+  | TaskSettledEvent
+  | TurnStartedEvent
+  | TurnCompletedEvent
+  | AgentSpawnedEvent
+  | AgentSettledEvent
+  | AgentMessageEvent;
 
 export type TalonEventType = TalonEvent["type"];
 

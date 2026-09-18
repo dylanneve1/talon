@@ -108,6 +108,7 @@ export async function runRemoteOneShotAgent<
     contextLabel,
     abortController,
     appendLog,
+    onAssistantText,
   } = params;
   const { label, errMsg } = bindings;
 
@@ -211,6 +212,13 @@ export async function runRemoteOneShotAgent<
 
     for (const part of parts) {
       await appendResponsePart(appendLog, part);
+      if (
+        onAssistantText &&
+        part.type === "text" &&
+        typeof part.text === "string"
+      ) {
+        onAssistantText(part.text);
+      }
     }
 
     // The prompt response's assistant info carries the run's token usage —

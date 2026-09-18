@@ -2,7 +2,7 @@
  * Task table vocabulary — the daemon's registry of agent work.
  *
  * A task is one bounded run of agent work: a chat turn, a heartbeat pass, a
- * dream consolidation, or an isolated cron/trigger job. The table gives every
+ * dream consolidation, an isolated cron/trigger job, or a sub-agent run. The table gives every
  * such run an id, a lifecycle, an owner chat, and — where the run can be
  * aborted — a kill switch. It is the process-table analogue for the agent
  * runtime, with tokens (not CPU) as the accounted resource.
@@ -13,7 +13,7 @@
  */
 
 /** Which unit of agent work a task represents. */
-type TaskKind = "turn" | "heartbeat" | "dream" | "cron" | "trigger";
+type TaskKind = "turn" | "heartbeat" | "dream" | "cron" | "trigger" | "agent";
 
 /** Task lifecycle. `done`, `failed`, and `killed` are terminal. */
 export type TaskState = "queued" | "running" | "done" | "failed" | "killed";

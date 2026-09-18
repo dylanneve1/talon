@@ -433,6 +433,31 @@ const configSchema = z.object({
    * silently ignored by Kilo / OpenCode, which have none.
    */
   heartbeatEffort: z.enum(REASONING_EFFORT_ENUM).optional(),
+  /**
+   * Sub-agents — the caps on Talon's own delegation mechanism (see
+   * `docs/agents.md`). There is no on/off switch: the tools are always
+   * present, and a deployment that doesn't want fan-out sets
+   * `maxConcurrent: 1` / `maxDepth: 0`.
+   *
+   *   - `maxConcurrent` — live agents daemon-wide. Each one is a real
+   *     backend run, so this is the token-spend lever.
+   *   - `maxDepth` — how far delegation may nest. 0 = chats only, 2 (the
+   *     default) = chat → agent → agent.
+   *   - `defaultTimeoutMs` — hard wall-clock cap when a spawn doesn't pass
+   *     its own. Per-spawn values are clamped to [30s, 60min].
+   */
+  agents: z
+    .object({
+      maxConcurrent: z.number().int().min(1).max(64).default(6),
+      maxDepth: z.number().int().min(0).max(5).default(2),
+      defaultTimeoutMs: z
+        .number()
+        .int()
+        .min(30_000)
+        .max(3_600_000)
+        .default(15 * 60 * 1000),
+    })
+    .optional(),
   braveApiKey: z.string().optional(),
   /**
    * Codex-specific OpenAI API key. Prefer this, CODEX_API_KEY, or

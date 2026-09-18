@@ -19,8 +19,10 @@ import { log, logError, logDebug } from "../../util/log.js";
 import {
   handleSharedAction,
   handleChatFreeAction,
+  handleAgentContextAction,
   isChatFreeAction,
 } from "./gateway-actions/index.js";
+import { AGENT_CONTEXT_PREFIX } from "../agents/context.js";
 import { registerCrossSendTarget } from "./gateway-actions/cross-send.js";
 import { getHubSessionCount } from "../mcp-hub/index.js";
 import {
@@ -238,6 +240,50 @@ export class Gateway {
 
   // ── Action dispatch ────────────────────────────────────────────────────────
 
+  /**
+   * Dispatch the actions that resolve without a chat, or `null` when the
+   * request needs one after all.
+   *
+   * Two families qualify, and they short-circuit routing for the same
+   * reason: there is no chat to route to.
+   *
+   *   - **Chat-free** actions (the device mesh, cross-send) read daemon-wide
+   *     state and ignore chatId. Gating them behind an active chat made the
+   *     whole mesh unreachable from background runs — and unlike send/react
+   *     they carry no `chat_id` param to promote.
+   *   - **Sub-agent** actions arrive from a run whose `contextLabel` is
+   *     `agent:<id>`; the MCP hub binds that to the tool session and the
+   *     bridge sends it back as `_chatId`. Such a caller has an identity but
+   *     no chat, so the key is handed through as the chatKey — which is how
+   *     `report_result` knows which agent reported. Everything else a
+   *     sub-agent calls still routes by an explicit `chat_id`, exactly as a
+   *     heartbeat run does.
+   */
+  private async dispatchWithoutChat(
+    body: Record<string, unknown>,
+    rawChatId: string,
+  ): Promise<unknown | null> {
+    const action = typeof body.action === "string" ? body.action : "";
+    const agentContext = rawChatId.startsWith(AGENT_CONTEXT_PREFIX);
+    if (!action || (!agentContext && !isChatFreeAction(action))) return null;
+    const where = agentContext ? rawChatId : "chat-free";
+    const t0 = Date.now();
+    try {
+      const result = agentContext
+        ? await handleAgentContextAction(body, rawChatId)
+        : await handleChatFreeAction(body);
+      if (result) {
+        logDebug("gateway", `${action} ${where} ${Date.now() - t0}ms`);
+        return result;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError("gateway", `${action} (${where}) failed: ${msg}`);
+      return { ok: false, error: `${action}: ${msg}` };
+    }
+    return null;
+  }
+
   private async handleAction(body: Record<string, unknown>): Promise<unknown> {
     // Route by _chatId from the MCP subprocess request.
     // _chatId may be a string (Teams: "teams_chat_19:...") or numeric string
@@ -251,32 +297,12 @@ export class Gateway {
     // active-context-required check — the action handler will reach the
     // chat directly via the Telegram Bot API. The legacy context-required
     // path remains for chat-mode calls where `chat_id` is absent.
-    // Chat-free actions (the device mesh) short-circuit routing entirely:
-    // they read daemon-wide state, ignore chatId, and are the only command
-    // channel a heartbeat run has to a remote box. Gating them behind an
-    // active chat made the whole mesh unreachable from background runs —
-    // and unlike send/react they carry no `chat_id` param to promote.
-    const requestedAction =
-      typeof body.action === "string" ? body.action : undefined;
-    if (requestedAction && isChatFreeAction(requestedAction)) {
-      const t0 = Date.now();
-      try {
-        const result = await handleChatFreeAction(body);
-        if (result) {
-          logDebug(
-            "gateway",
-            `${requestedAction} chat=none ${Date.now() - t0}ms (chat-free)`,
-          );
-          return result;
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        logError("gateway", `${requestedAction} (chat-free) failed: ${msg}`);
-        return { ok: false, error: `${requestedAction}: ${msg}` };
-      }
-    }
-
+    // Actions that need no chat at all (the device mesh, and a sub-agent's
+    // own tool family) short-circuit routing — see `dispatchWithoutChat`.
     const rawChatId = body._chatId ? String(body._chatId) : "";
+    const unrouted = await this.dispatchWithoutChat(body, rawChatId);
+    if (unrouted) return unrouted;
+
     const numericId = Number(rawChatId);
     const explicitChatIdProvided = typeof body.chat_id !== "undefined";
     let chatId: number | null = null;

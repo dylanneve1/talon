@@ -79,6 +79,7 @@ export async function runOneShotAgent(
     contextLabel,
     abortController,
     appendLog,
+    onAssistantText,
   } = params;
 
   const codex = ensureCodex(contextLabel);
@@ -144,6 +145,7 @@ export async function runOneShotAgent(
     for await (const event of events) {
       if (abortController.signal.aborted) break;
       await appendCodexEvent(appendLog, event);
+      captureAssistantText(event, onAssistantText);
       if (event.type === "turn.completed") {
         const u = (event as { usage?: Record<string, number> }).usage;
         if (u) {
@@ -199,6 +201,24 @@ export async function runOneShotAgent(
     logWarn("agent", `Codex one-shot run failed: ${msg}`);
     const ts = new Date().toISOString().slice(11, 19);
     await appendLog(`\n### [${ts}] Error\n${msg}\n`);
+  }
+}
+
+/**
+ * Feed a completed `agent_message` item to the run's assistant-text hook.
+ *
+ * Codex has no "final text" event — the last completed agent message is the
+ * run's answer, so background callers that need a fallback result (notably
+ * sub-agents that never called `report_result`) take the last one seen.
+ */
+function captureAssistantText(
+  event: { type: string } & Record<string, unknown>,
+  onAssistantText?: (text: string) => void,
+): void {
+  if (!onAssistantText || event.type !== "item.completed") return;
+  const item = (event as { item?: { type?: string; text?: unknown } }).item;
+  if (item?.type === "agent_message" && typeof item.text === "string") {
+    onAssistantText(item.text);
   }
 }
 

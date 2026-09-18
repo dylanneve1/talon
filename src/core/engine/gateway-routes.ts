@@ -6,6 +6,7 @@
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { bus } from "../bus/index.js";
 import { taskTable } from "../tasks/index.js";
+import { agentRegistry } from "../agents/index.js";
 import { handleHubRequest, HUB_PATH_PREFIX } from "../mcp-hub/index.js";
 import { log, logError } from "../../util/log.js";
 
@@ -94,6 +95,17 @@ const ROUTES: readonly GatewayRoute[] = [
     path: "/tasks",
     handle: ({ res }) =>
       sendJson(res, 200, { ok: true, tasks: taskTable.list() }),
+  },
+  {
+    // The sub-agent registry — live agents plus the settled ring. Same
+    // content-free contract as /tasks: ids, labels, states, never briefs.
+    method: "GET",
+    path: "/agents",
+    handle: ({ res }) =>
+      sendJson(res, 200, {
+        ok: true,
+        agents: agentRegistry.list().map(({ brief: _brief, ...rest }) => rest),
+      }),
   },
   {
     // Abort one killable task by id — the transport for `talon kill`.

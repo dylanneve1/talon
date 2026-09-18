@@ -10,7 +10,7 @@ import { dirs } from "../../../util/paths.js";
 export type JobKind = "trigger" | "cron";
 
 /** Where job run logs live. */
-export const JOB_LOGS_DIR = resolve(dirs.logs, "jobs");
+const JOB_LOGS_DIR = resolve(dirs.logs, "jobs");
 
 /**
  * The one context label every backend wires for the full outbound frontend tool

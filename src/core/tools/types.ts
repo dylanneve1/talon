@@ -21,6 +21,7 @@ export type ToolTag =
   | "stickers"
   | "scheduling"
   | "triggers"
+  | "agents"
   | "goals"
   | "memory"
   | "scripts"

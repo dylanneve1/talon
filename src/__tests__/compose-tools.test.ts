@@ -103,6 +103,17 @@ const ALL_TOOLS_ORDER = [
   "whatsapp_account",
   "moderate",
   "get_user_profile_photos",
+  // Sub-agents (#feat/sub-agents) — appended, so the cached prefix of every
+  // live chat stays valid.
+  "spawn_agent",
+  "list_agents",
+  "agent_status",
+  "wait_for_agent",
+  "send_to_agent",
+  "kill_agent",
+  "report_result",
+  "message_parent",
+  "check_inbox",
 ];
 
 describe("ALL_TOOLS registry", () => {

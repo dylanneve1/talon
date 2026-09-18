@@ -33,6 +33,7 @@ import {
   initTriggers,
   resumeAfterRestart as resumeTriggersAfterRestart,
 } from "./core/background/triggers/index.js";
+import { initAgents } from "./core/agents/index.js";
 import { initDream, maybeStartDream } from "./core/background/dream/index.js";
 import { initHeartbeat } from "./core/background/heartbeat/index.js";
 import { log, logWarn, logDebug } from "./util/log.js";
@@ -464,7 +465,7 @@ export async function initBackendAndDispatcher(
       model: config.heartbeatModel ?? config.model ?? null,
     }),
   });
-  initTriggers({ execute: dispatcherExecute });
+  initWakeSubsystems(config);
   resumeTriggersAfterRestart().catch((err) =>
     log("triggers", `resumeAfterRestart failed: ${err}`),
   );
@@ -565,6 +566,19 @@ export async function initBackendAndDispatcher(
   }
 
   return { backend };
+}
+
+/**
+ * Wire the two subsystems that wake a chat with a synthetic turn: trigger
+ * scripts firing, and sub-agents reporting. Same dependency (the dispatcher),
+ * same delivery shape, so they are wired together.
+ */
+function initWakeSubsystems(config: TalonConfig): void {
+  initTriggers({ execute: dispatcherExecute });
+  initAgents({
+    execute: dispatcherExecute,
+    ...(config.agents ? { caps: config.agents } : {}),
+  });
 }
 
 /**

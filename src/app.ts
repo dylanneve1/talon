@@ -26,6 +26,7 @@ import {
   runStartupCatchup,
 } from "./core/background/cron/scheduler.js";
 import { shutdownTriggers } from "./core/background/triggers/index.js";
+import { shutdownAgents } from "./core/agents/index.js";
 import { pruneSettledTriggers } from "./storage/triggers.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { spawnSuccessor } from "./core/daemon/respawn.js";
@@ -209,6 +210,9 @@ async function gracefulShutdown(signal: string): Promise<void> {
     triggerPruneTimer = null;
   });
   await shutdownStep("triggers", shutdownTriggers);
+  // Sub-agents are isolated one-shot runs: aborting them is all the daemon
+  // can do, and their parents are gone with the process anyway.
+  await shutdownStep("sub-agents", shutdownAgents);
   await shutdownStep("watchdog", stopWatchdog);
   await shutdownStep("resource sampler", stopResourceSampler);
   await shutdownStep("upload cleanup", stopUploadCleanup);

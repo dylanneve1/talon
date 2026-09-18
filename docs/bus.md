@@ -16,12 +16,15 @@ The vocabulary is deliberately honest: an event type exists only when
 something in the runtime actually publishes it, and each addition should
 land together with its publisher and first subscriber.
 
-| Event            | Published by              | Meaning                                                                             |
-| ---------------- | ------------------------- | ----------------------------------------------------------------------------------- |
-| `task.started`   | task table (`core/tasks`) | any unit of agent work left the queue and began running                             |
-| `task.settled`   | task table                | a task reached `done` / `failed` / `killed`                                         |
-| `turn.started`   | Weaver                    | a chat turn bound its warp and is about to run (never fires for a no-model refusal) |
-| `turn.completed` | Weaver                    | a chat turn finished successfully (failures throw past it)                          |
+| Event            | Published by               | Meaning                                                                             |
+| ---------------- | -------------------------- | ----------------------------------------------------------------------------------- |
+| `task.started`   | task table (`core/tasks`)  | any unit of agent work left the queue and began running                             |
+| `task.settled`   | task table                 | a task reached `done` / `failed` / `killed`                                         |
+| `turn.started`   | Weaver                     | a chat turn bound its warp and is about to run (never fires for a no-model refusal) |
+| `turn.completed` | Weaver                     | a chat turn finished successfully (failures throw past it)                          |
+| `agent.spawned`  | sub-agents (`core/agents`) | an isolated sub-agent run started (id, label, parent, backend, model, depth)        |
+| `agent.settled`  | sub-agents                 | a sub-agent reached `done` / `failed` / `killed` / `timed_out`                      |
+| `agent.message`  | sub-agents                 | a note or a report crossed between an agent and its parent (ids and direction only) |
 
 ## Absorbed seams
 
@@ -69,6 +72,6 @@ daemon:
   per-process task ids repeat between daemon runs).
 
 The division of truth is deliberate: the task table and ring describe a
-live process and stay in-memory; the journal records what *happened* —
+live process and stay in-memory; the journal records what _happened_ —
 and everything that happens already crosses the bus as a typed,
 content-free event, so one subscriber journals the entire runtime.

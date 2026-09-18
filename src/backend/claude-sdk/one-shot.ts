@@ -19,6 +19,7 @@ import { log, logWarn } from "../../util/log.js";
 import { ALLOWED_TOOLS_BACKGROUND } from "../../core/constants.js";
 import { EFFORT_MAP } from "./constants.js";
 import { buildMcpServers, buildPluginMcpServers } from "./options.js";
+import { isBackgroundToolContext } from "../../core/agents/context.js";
 import { warnIfBelowCacheMinimum } from "../runtime/cache/cache-telemetry.js";
 
 const DEFAULT_SUBPROCESS_KILL_GRACE_MS = 5 * 1000;
@@ -65,6 +66,7 @@ export async function runOneShotAgent(
     contextLabel,
     abortController,
     appendLog,
+    onAssistantText,
   } = params;
 
   // Reasoning effort is opt-in for background runs (config `heartbeatEffort`
@@ -127,6 +129,13 @@ export async function runOneShotAgent(
   let usage: OneShotUsage | undefined;
   for await (const msg of qi) {
     await formatAndAppendMessage(appendLog, msg);
+    if (onAssistantText && msg.type === "assistant") {
+      for (const block of msg.message.content) {
+        if (block.type === "text" && "text" in block) {
+          onAssistantText((block as { text: string }).text);
+        }
+      }
+    }
     if (msg.type === "result") {
       const u = msg.usage;
       usage = {
@@ -142,8 +151,12 @@ export async function runOneShotAgent(
 
 /**
  * Per-context MCP server selection.
- * - "heartbeat": frontend tools + all loaded plugins (full surface so the
- *   heartbeat agent can post messages, react, read history, etc.).
+ * - background tool contexts (`heartbeat`, and every `agent:<id>` sub-agent
+ *   run — see `core/agents/context.ts`): frontend tools + all loaded plugins,
+ *   the full surface these runs need to post messages, react, read history
+ *   and reach their own agent tools. The servers are keyed by the context
+ *   label itself, so each sub-agent gets its own hub session and its tool
+ *   calls arrive at the gateway identified as that agent.
  * - "dream": only mempalace (when configured) — dream is a memory
  *   consolidation pass and shouldn't be doing outbound messaging.
  * - anything else: empty (treat unknown contexts as plugin-free).
@@ -154,16 +167,19 @@ export async function runOneShotAgent(
  * servers still load and the agent runs normally.
  */
 function assembleMcpServers(contextLabel: string): Record<string, unknown> {
-  if (contextLabel === "heartbeat") {
+  if (isBackgroundToolContext(contextLabel)) {
     let frontendServers: Record<string, unknown> = {};
     try {
-      frontendServers = buildMcpServers("heartbeat") as Record<string, unknown>;
+      frontendServers = buildMcpServers(contextLabel) as Record<
+        string,
+        unknown
+      >;
     } catch {
       frontendServers = {};
     }
     let pluginServers: Record<string, unknown> = {};
     try {
-      pluginServers = buildPluginMcpServers("heartbeat");
+      pluginServers = buildPluginMcpServers(contextLabel);
     } catch {
       pluginServers = {};
     }

@@ -161,6 +161,15 @@ export type OneShotAgentParams = {
   abortController: AbortController;
   /** Append a string to the run log (markdown). */
   appendLog: (text: string) => Promise<void>;
+  /**
+   * Called with each assistant text block the run produces, in order.
+   *
+   * Background callers use the last one as a fallback result: a sub-agent
+   * that finishes without calling `report_result` still has *something* to
+   * hand its parent. Host-local like `appendLog` — it does not cross the
+   * agent-host process boundary (see `core/agent-runtime/agent-host.ts`).
+   */
+  onAssistantText?: (text: string) => void;
 };
 
 /** How much cache telemetry a backend can surface in /status. */
@@ -219,7 +228,7 @@ export type ExecuteParams = {
   isGroup: boolean;
   /** Provider message ID. Numeric for Telegram, string snowflake for Discord. */
   messageId?: number | string;
-  source: "message" | "pulse" | "cron" | "trigger";
+  source: "message" | "pulse" | "cron" | "trigger" | "agent";
   /**
    * Optional per-run model override (a model id valid on the chat's backend).
    * When set and resolvable, the turn runs on this model instead of the chat's

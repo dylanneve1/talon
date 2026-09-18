@@ -14,12 +14,24 @@
  * unset to avoid sweeping the other context's subprocesses.
  */
 
-import type { BackgroundRunner } from "../../agent-runtime/capabilities.js";
-import type { OneShotAgentParams, OneShotUsage } from "../../types.js";
-import { logWarn, logError } from "../../../util/log.js";
+import type { BackgroundRunner } from "../agent-runtime/capabilities.js";
+import type { OneShotAgentParams, OneShotUsage } from "../types.js";
+import { logWarn, logError, type LogComponent } from "../../util/log.js";
 
 /** Default bounded grace after an abort before giving up on the backend. */
 const DEFAULT_ABORT_GRACE_MS = 30 * 1000;
+
+/**
+ * Thrown when the hard timeout fires. A distinct class (rather than a string
+ * match on the message) so a caller can tell "ran out of wall-clock" apart
+ * from "the backend failed" and settle its own state accordingly.
+ */
+export class IsolatedAgentTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`isolated agent timed out after ${timeoutMs}ms`);
+    this.name = "IsolatedAgentTimeoutError";
+  }
+}
 
 export interface IsolatedRunOptions {
   readonly background: BackgroundRunner;
@@ -34,6 +46,8 @@ export interface IsolatedRunOptions {
    * ignores the abort. Leave unset when the tag is shared with another context.
    */
   readonly evictLabel?: string;
+  /** Log category for the abort/eviction diagnostics (default "triggers"). */
+  readonly logCategory?: LogComponent;
 }
 
 /** Resolves to the value, or the string "timed_out" if `ms` elapses first. */
@@ -63,20 +77,24 @@ export async function runIsolatedAgent(
 ): Promise<OneShotUsage | void> {
   const { background, params, timeoutMs } = opts;
   const graceMs = opts.abortGraceMs ?? DEFAULT_ABORT_GRACE_MS;
+  const category = opts.logCategory ?? "triggers";
 
-  let timedOut = false;
+  // Doubles as the "did we time out?" flag: set before the abort, so a
+  // backend that rejects synchronously from its abort handler can't make the
+  // run look like an ordinary failure.
+  let timeoutError: IsolatedAgentTimeoutError | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const agentPromise = background.runOneShotAgent(params);
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
-      timedOut = true;
+      timeoutError = new IsolatedAgentTimeoutError(timeoutMs);
       try {
         params.abortController.abort();
       } catch {
         /* ignore */
       }
-      reject(new Error(`isolated agent timed out after ${timeoutMs}ms`));
+      reject(timeoutError);
     }, timeoutMs);
     timer.unref();
   });
@@ -86,30 +104,33 @@ export async function runIsolatedAgent(
   } catch (err) {
     // Snapshot + clear before any await so a late timer can't reclassify a
     // non-timeout failure as a timeout (heartbeat learned this the hard way).
-    const wasTimeout = timedOut;
+    const wasTimeout = timeoutError;
     if (timer) {
       clearTimeout(timer);
       timer = undefined;
     }
-    if (wasTimeout) {
-      const settled = await raceWithTimeout(
-        agentPromise.catch(() => "settled"),
-        graceMs,
-      );
-      if (settled === "timed_out" && opts.evictLabel) {
-        const evict = background.evictOrphanSubprocesses;
-        if (evict) {
-          evict(opts.evictLabel).catch((sweepErr: unknown) => {
-            logError("triggers", "orphan subprocess sweep failed", sweepErr);
-          });
-        } else {
-          logWarn("triggers", "backend ignored abort and has no eviction hook");
-        }
-      }
-    } else {
+    if (!wasTimeout) {
       await agentPromise.catch(() => {});
+      throw err;
     }
-    throw err;
+    const settled = await raceWithTimeout(
+      agentPromise.catch(() => "settled"),
+      graceMs,
+    );
+    if (settled === "timed_out" && opts.evictLabel) {
+      const evict = background.evictOrphanSubprocesses;
+      if (evict) {
+        evict(opts.evictLabel).catch((sweepErr: unknown) => {
+          logError(category, "orphan subprocess sweep failed", sweepErr);
+        });
+      } else {
+        logWarn(category, "backend ignored abort and has no eviction hook");
+      }
+    }
+    // A backend that honours the abort rejects with its own error, which can
+    // win the race against the timeout's rejection. The run still ran out of
+    // wall-clock, so that is what the caller is told either way.
+    throw wasTimeout;
   } finally {
     if (timer) clearTimeout(timer);
   }

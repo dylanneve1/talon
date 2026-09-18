@@ -10,10 +10,9 @@
  *
  * This module is deliberately thin: it owns acquisition + log wiring, and
  * delegates the prompt shape to {@link ./job-prompt} and the timeout/abort
- * discipline to {@link ./isolated-agent}.
+ * discipline to {@link ../isolated-agent}.
  */
 
-import { mkdir, appendFile } from "node:fs/promises";
 import { dirs } from "../../../util/paths.js";
 import { log, logWarn } from "../../../util/log.js";
 import {
@@ -22,12 +21,12 @@ import {
 } from "../../engine/backend-controller/index.js";
 import { taskTable } from "../../tasks/index.js";
 import type { OneShotAgentParams } from "../../types.js";
-import { runIsolatedAgent } from "./isolated-agent.js";
+import { runIsolatedAgent } from "../isolated-agent.js";
+import { openRunLog } from "../run-log.js";
 import {
   buildJobSystemPrompt,
   jobLogPath,
   JOB_CONTEXT_LABEL,
-  JOB_LOGS_DIR,
   type JobKind,
 } from "./job-prompt.js";
 
@@ -70,22 +69,17 @@ export type JobOneShotResult =
   { status: "ran" } | { status: "skipped"; reason: string };
 
 /** Open a per-run log file and return an appender bound to it. */
-async function openJobLog(
+function openJobLog(
   kind: JobKind,
   label: string,
   backendId: string,
   model: string,
 ): Promise<(text: string) => Promise<void>> {
-  await mkdir(JOB_LOGS_DIR, { recursive: true }).catch(() => {});
-  const file = jobLogPath(kind, label);
-  const appendLog = async (text: string) => {
-    await appendFile(file, text).catch(() => {});
-  };
-  await appendLog(
+  return openRunLog(
+    jobLogPath(kind, label),
     `# ${kind} job "${label}" — ${new Date().toISOString()}\n` +
       `**Backend:** ${backendId} **Model:** ${model}\n\n`,
   );
-  return appendLog;
 }
 
 // The warning is deferred to runJobOneShot: an attempt that fails here may
@@ -182,6 +176,7 @@ async function attemptJobOneShot(
         background,
         params: oneShot,
         timeoutMs: params.timeoutMs ?? DEFAULT_JOB_TIMEOUT_MS,
+        logCategory: params.kind === "cron" ? "cron" : "triggers",
         // No evictLabel: the job context label is shared with heartbeat, so a
         // sweep here could kill a concurrent heartbeat's subprocess. Bounded
         // abort-grace is enough.

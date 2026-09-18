@@ -6,15 +6,16 @@
 
 ## The model
 
-A **task** is one bounded run of agent work. Four kinds exist today, one per
+A **task** is one bounded run of agent work. Five kinds exist today, one per
 place the runtime actually starts an agent:
 
-| Kind               | Registered by                                          | Killable | Usage captured |
-| ------------------ | ------------------------------------------------------ | -------- | -------------- |
-| `turn`             | `core/weaver` (every chat turn)                        | yes      | yes            |
-| `heartbeat`        | `core/background/heartbeat/agent.ts`                   | yes      | no             |
-| `dream`            | `core/background/dream/index.ts`                             | yes      | no             |
-| `cron` / `trigger` | `core/background/cron/job-oneshot.ts` (isolated query jobs) | yes      | no             |
+| Kind               | Registered by                                                  | Killable | Usage captured |
+| ------------------ | -------------------------------------------------------------- | -------- | -------------- |
+| `turn`             | `core/weaver` (every chat turn)                                | yes      | yes            |
+| `heartbeat`        | `core/background/heartbeat/agent.ts`                           | yes      | no             |
+| `dream`            | `core/background/dream/index.ts`                               | yes      | no             |
+| `cron` / `trigger` | `core/background/cron/job-oneshot.ts` (isolated query jobs)    | yes      | no             |
+| `agent`            | `core/agents/runner.ts` (sub-agent runs, see `docs/agents.md`) | yes      | yes            |
 
 Deliberately **not** tasks: trigger watcher scripts (long-lived OS processes
 the trigger store already tracks, pid and all), cron `message` jobs (a single
@@ -44,10 +45,11 @@ and never interrupts the same chat's currently running turn.
 
 The table is observational: it never schedules, retries, or times out a run.
 Those disciplines stay with the owning module (weaver, heartbeat scheduler,
-dream, job-oneshot). The live table is in-memory — a task is a live run, and
-a daemon restart ends every run — with a bounded settled ring (50 entries)
-for the recent past. Durable history lives in the event journal: every
-`task.settled` event is appended to talon.db (see `docs/bus.md`), so
+dream, job-oneshot, the sub-agent runner). The live table is in-memory — a
+task is a live run, and a daemon restart ends every run — with a bounded
+settled ring (50 entries) for the recent past. Durable history lives in the
+event journal: every `task.settled` event is appended to talon.db (see
+`docs/bus.md`), so
 `talon ps --all` answers across restarts.
 
 ## Token accounting

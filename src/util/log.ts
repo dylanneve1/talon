@@ -30,6 +30,7 @@ export type LogComponent =
   | "media"
   | "notify"
   | "agent"
+  | "agents"
   | "pulse"
   | "userbot"
   | "users"

@@ -35,6 +35,15 @@ function describe(event: TalonEvent): string {
       return `chat=${event.chatId} ${event.backendId}/${event.model} (${event.source})`;
     case "turn.completed":
       return `chat=${event.chatId} ${event.durationMs}ms in=${event.inputTokens} out=${event.outputTokens}`;
+    case "agent.spawned":
+      return (
+        `${event.agentId} "${event.label}" ${event.backendId}/${event.model} ` +
+        `depth=${event.depth} parent=${event.parent}`
+      );
+    case "agent.settled":
+      return `${event.agentId} "${event.label}" → ${event.state} (${event.durationMs}ms)`;
+    case "agent.message":
+      return `${event.from} → ${event.to} (${event.kind})`;
   }
 }
 

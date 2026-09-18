@@ -31,10 +31,11 @@
  * They are deliberately not the same types. Two client arguments do not
  * survive a process boundary and the wire shapes say so:
  *
- *   - `OneShotAgentParams` carries an `AbortController` and an
- *     `appendLog` callback. `HostOneShotParams` is the serialisable
- *     subset; Phase 2 maps `appendLog` onto `log` notices and the
- *     abort onto an `interrupt`-shaped request.
+ *   - `OneShotAgentParams` carries an `AbortController` and the
+ *     `appendLog` / `onAssistantText` callbacks. `HostOneShotParams` is the
+ *     serialisable subset; Phase 2 maps `appendLog` onto `log` notices,
+ *     `onAssistantText` onto the assistant `event`s the host already
+ *     streams, and the abort onto an `interrupt`-shaped request.
  *   - `hello.config` is the `claude-sdk` slice of `TalonConfig` as
  *     JSON. The in-process client takes the real `TalonConfig` object.
  *
@@ -59,9 +60,9 @@ export const AGENT_HOST_PROTOCOL_VERSION = 1;
 // ── Shared payload shapes ───────────────────────────────────────────────────
 
 /**
- * The serialisable half of `OneShotAgentParams`. `abortController` and
- * `appendLog` are host-local concerns (see the file header); everything
- * else is exactly what a background run needs.
+ * The serialisable half of `OneShotAgentParams`. `abortController`,
+ * `appendLog` and `onAssistantText` are host-local concerns (see the file
+ * header); everything else is exactly what a background run needs.
  *
  * Unexported on purpose — it is reachable as
  * `Extract<HostRequest, { type: "one_shot" }>["params"]`, and a second
