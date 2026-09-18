@@ -1,0 +1,102 @@
+[
+  {
+    "kind": "flat",
+    "path": "src/backend/claude-sdk",
+    "files": 14
+  },
+  {
+    "kind": "flat",
+    "path": "src/backend/codex",
+    "files": 14
+  },
+  {
+    "kind": "flat",
+    "path": "src/backend/remote-server",
+    "files": 17
+  },
+  {
+    "kind": "banned-dir",
+    "path": "src/backend/shared"
+  },
+  {
+    "kind": "flat",
+    "path": "src/backend/shared",
+    "files": 20
+  },
+  {
+    "kind": "flat",
+    "path": "src/cli",
+    "files": 18
+  },
+  {
+    "kind": "flat",
+    "path": "src/core/engine/gateway-actions",
+    "files": 17
+  },
+  {
+    "kind": "flat",
+    "path": "src/core/mesh",
+    "files": 13
+  },
+  {
+    "kind": "banned-file",
+    "path": "src/core/mesh/common.ts"
+  },
+  {
+    "kind": "flat",
+    "path": "src/core/tools",
+    "files": 25
+  },
+  {
+    "kind": "flat",
+    "path": "src/frontend/discord",
+    "files": 14
+  },
+  {
+    "kind": "flat",
+    "path": "src/frontend/native",
+    "files": 30
+  },
+  {
+    "kind": "banned-dir",
+    "path": "src/frontend/shared"
+  },
+  {
+    "kind": "flat",
+    "path": "src/frontend/telegram",
+    "files": 14
+  },
+  {
+    "kind": "banned-dir",
+    "path": "src/frontend/telegram/helpers"
+  },
+  {
+    "kind": "flat",
+    "path": "src/frontend/whatsapp",
+    "files": 19
+  },
+  {
+    "kind": "flat",
+    "path": "src/native",
+    "files": 15
+  },
+  {
+    "kind": "flat",
+    "path": "src/storage",
+    "files": 21
+  },
+  {
+    "kind": "flat",
+    "path": "src/storage/repositories",
+    "files": 13
+  },
+  {
+    "kind": "banned-dir",
+    "path": "src/util"
+  },
+  {
+    "kind": "flat",
+    "path": "src/util",
+    "files": 22
+  }
+]
