@@ -19,6 +19,13 @@ updates:
       # major by hand together with the agents SDK.
       - dependency-name: "openai"
         update-types: ["version-update:semver-major"]
+      # @playwright/mcp bundles playwright-core, and the Camoufox endpoint
+      # (python playwright, capped <1.61 by camoufox) rejects any client on
+      # a different playwright MINOR with "428 Precondition Required" — every
+      # browser tool call fails. #617 pinned 0.0.56 (= playwright 1.58) and
+      # #634 bumped it the next day, silently killing the plugin. Bump BOTH
+      # sides together by hand; see src/plugins/playwright/index.ts.
+      - dependency-name: "@playwright/mcp"
     reviewers:
       - "dylanneve1"
     labels:
