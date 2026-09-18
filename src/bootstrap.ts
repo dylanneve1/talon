@@ -489,21 +489,6 @@ export async function initBackendAndDispatcher(
   // alerts above.
   wireAdminNotifier(config, frontends);
 
-  // Soul — initialize the identity kernel singleton from config so the prompt
-  // injection / dream hooks see the right enabled state. Off by default; a
-  // failure here must never block startup.
-  try {
-    const { SoulService, setSoul } = await import("./core/soul/service.js");
-    setSoul(
-      SoulService.create({
-        enabled: config.soul?.enabled ?? false,
-        ...(config.soul?.path ? { path: config.soul.path } : {}),
-      }),
-    );
-  } catch (err) {
-    log("soul", `init skipped: ${String(err)}`);
-  }
-
   // Only enable mempalace dream integration if the plugin actually registered
   let mempalaceCfg: { pythonPath: string; palacePath: string } | undefined;
   if (config.mempalace?.enabled) {

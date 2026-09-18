@@ -161,7 +161,10 @@ Recorded here only so a future pass doesn't re-report them as new:
 - **`noUncheckedIndexedAccess` (666 errors) and `exactOptionalPropertyTypes`
   (303)** are measured and deliberately off, with the counts written into
   `tsconfig.json`. Each is its own fix wave.
-- **`naked-throw-in-core` sits at its baseline of 38** (`scripts/check-ratchets.mjs`).
+- **`naked-throw-in-core` sits at its baseline of 36** (`scripts/check-ratchets.mjs`),
+  down from 40 once the soul kernel went (#953).
+- **The soul kernel is gone** (#953, consolidation-plan §7): ~4,900 lines and
+  30 test files deleted; its message taps survive as `core/memory/taps.ts`.
 - **Node `engines` requires `>=24.15`** and `.npmrc` sets `engine-strict=true`,
   so `npm ci` refuses on older toolchains by design (it protects the lockfile —
   see the comment in `.npmrc`). On Node 22 three suites fail locally because

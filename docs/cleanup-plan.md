@@ -135,7 +135,7 @@ same fixes:
 
 ## Out of scope
 
-Soul kernel (slated for teardown, see memory-persona-plan.md). The
+Soul kernel — torn down in #953, so no longer anyone's cleanup. The
 Companion app (`settings_screen.dart` split is tracked in
 consolidation-plan.md §8). Test suite restructuring — `src/__tests__/`
 is flat and large but it is not what is slowing anyone down.

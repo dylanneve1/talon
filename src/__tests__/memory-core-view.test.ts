@@ -256,6 +256,18 @@ describe("assembleSystemPrompt with TALON_MEMORY_STORE", () => {
     expect(absent.staticText).not.toContain("store has rows");
   });
 
+  it("carries no soul section — the kernel is gone", () => {
+    // What survives of `soul-prompt-injection.test.ts`: the soul's §1.5
+    // block only ever emitted with `TALON_SOUL_ENABLED` on, which was off
+    // by default, so removing it leaves the default prompt's bytes
+    // untouched. This case is what would catch it coming back.
+    process.env.TALON_SOUL_ENABLED = "1";
+    const parts = assembleSystemPrompt({ frontend: "terminal" });
+    delete process.env.TALON_SOUL_ENABLED;
+    expect(parts.staticText).not.toContain("compiled identity (soul)");
+    expect(parts.dynamicText).not.toContain("compiled identity (soul)");
+  });
+
   it("puts the core view in staticText only, never in dynamicText", async () => {
     process.env.TALON_MEMORY_STORE = "1";
     const { parts } = await assembleWithRows([

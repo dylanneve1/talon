@@ -10,6 +10,7 @@
 
 import type { ExecuteParams, ExecuteResult } from "../types.js";
 import { formatRelayBlock, takePendingRelay } from "./cross-chat-relay.js";
+import { recordMessageSignal } from "../memory/taps.js";
 import { log } from "../../util/log.js";
 import { taskTable, type KillOutcome } from "../tasks/index.js";
 import { initWeaver, type Weaver, type WeaverDeps } from "../weaver/index.js";
@@ -71,9 +72,24 @@ export function stopAllTurns(): number {
  * Every turn for every frontend and every source funnels through here,
  * which makes it the one place a cross-chat reply can be folded in
  * without teaching each frontend about the relay.
+ *
+ * It is also where the memory tap lives, for the same reason: a
+ * directive is a directive whether it arrives over Telegram, Discord,
+ * WhatsApp, Teams, the native bridge or the terminal, and the tap used
+ * to see only one of them. Only `source: "message"` is tapped — a pulse,
+ * a cron job or a trigger is Talon prompting itself, and "always reply
+ * in one line" written by a scheduler is not standing human intent.
  */
 export async function execute(params: ExecuteParams): Promise<ExecuteResult> {
   if (!weaver) throw new Error("Dispatcher not initialized");
+  // Fire-and-forget: the tap is a synchronous store write that must not
+  // be able to delay or fail the turn (it swallows its own errors).
+  if (params.source === "message")
+    recordMessageSignal({
+      text: params.prompt,
+      chatKey: params.chatId,
+      ...(params.senderName ? { actor: params.senderName } : {}),
+    });
   const relayed = takePendingRelay(params.chatId);
   const prompt = relayed.length
     ? formatRelayBlock(relayed) + params.prompt

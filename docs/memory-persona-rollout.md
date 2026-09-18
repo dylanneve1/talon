@@ -231,7 +231,7 @@ section), not protocol prose. **Reads are still flag-gated** behind
 always live**, so the store fills up and becomes measurable before the read path
 turns on.
 
-### PR 7 — `refactor(soul): taps into the shared engine seam`
+### PR 7 — `refactor(soul): taps into the shared engine seam` ✅ done
 
 The PR that makes persona learning frontend-agnostic — what the soul never got.
 
@@ -242,6 +242,29 @@ The PR that makes persona learning frontend-agnostic — what the soul never got
 - Taps write `directive` / `correction` rows to the store. The soul kernel call
   stays behind its own flag until Stage 6.
 - Verify Discord.
+
+**Landed** as #953, folded into PR 15 — there was no reason to keep the
+kernel alive for one release when the only thing feeding it was moving out.
+`core/memory/taps.ts` exports `classifyMessage` (the `DIRECTIVE_PATTERNS` /
+`CORRECTION_PATTERNS` regexes, verbatim from the soul) and
+`recordMessageSignal({ text, chatKey, actor? })`, which writes to the store:
+a directive becomes `{ kind: "directive", subject: "operator" }` and a
+correction `{ kind: "episode", subject: "correction" }`, both with
+`source.actor = "tap"`. Trust is read off the chat id with `chatScope` — a DM
+is `operator` (a human typed it, which is *stronger* than `remember`'s `agent`),
+anything else is `group_chat`, and a **directive from a group is classified and
+dropped**, the same rule `remember` enforces. A near-duplicate probe
+(`findSimilarMemories` as the FTS prefilter, then an 0.8 Jaccard threshold —
+needed because every directive shares one subject) keeps a repeated phrase to
+one row, and any store error is one warning, never a failed turn.
+
+The call site is `dispatcher.execute`, guarded on `source === "message"`: every
+frontend (Telegram, Discord, WhatsApp, Teams, native, terminal) now feeds it,
+and Talon's own pulse / cron / trigger prompts do not. **The reaction tap was
+not generalized — it was deleted**: emoji valence only ever meant anything to
+the Hebbian lattice, which is gone. That took `BOT_MESSAGE_ACTIONS` /
+`noteBotMessage` out of `gateway.ts` and both frontends' reaction listeners with
+it, plus `message_reaction` from Telegram's `allowed_updates`.
 
 ---
 
@@ -364,9 +387,9 @@ Prompt-only; independent of every other PR; could ship at any point.
 
 ---
 
-## Stage 6 — Teardown
+## Stage 6 — Teardown ✅ done
 
-### PR 15 — `refactor(soul): remove the kernel`
+### PR 15 — `refactor(soul): remove the kernel` ✅ done
 
 Pure deletion, easy review. Everything worth keeping was relocated by PRs 7, 13, 14.
 
@@ -379,6 +402,32 @@ Pure deletion, easy review. Everything worth keeping was relocated by PRs 7, 13,
   in `background/dream.ts`, and the `/soul` admin command (repoint at `/memory`).
 - Remove the `TALON_MEMORY_STORE` flag in the same window.
 - `knip` + `depcruise` + `ratchets` confirm nothing dangles.
+
+**Landed** as #953, together with PR 7. All 29 modules went, plus
+`README.md` / `RESEARCH.md` and all 30 `soul-*` test files — 4,869 source lines
+and 2,859 test lines. `critic.ts` and `lens.ts` went with them: PRs 13 and 14
+will re-express both against the store rather than port the kernel's versions,
+and keeping 270 lines of dead code as a reference that git already holds is not
+worth a knip suppression.
+
+Three things deviate from the sketch above:
+
+- **The `TALON_MEMORY_STORE` flag stays**, because the core view is still
+  default-off pending Decision 4's prompt-size comparison. Removing it is the
+  flag flip, not the teardown.
+- **`/soul` is deleted, not repointed.** `/memory` already exists on Telegram,
+  Discord and the native bridge (PR 5), so there is nothing to repoint.
+- **`config.soul` survives as `z.unknown().optional()`.** The root schema is
+  `.strict()`, so a key that simply vanished would make every existing
+  `config.json` fail to load. It parses, it is ignored, and the loader warns
+  once. Removing it for real is a future breaking release.
+
+**The prompt cache is untouched** (plan §3.6). The soul's `assemble.ts` §1.5
+block only ever emitted with `TALON_SOUL_ENABLED` on — off by default — so the
+default `staticText` / `dynamicText` are byte-identical before and after;
+`memory-core-view.test.ts` keeps the surviving assertion from
+`soul-prompt-injection.test.ts`. The new tap writes rows and nothing else: it
+never imports `core/prompt/invalidation.js`, asserted by spy.
 
 ---
 

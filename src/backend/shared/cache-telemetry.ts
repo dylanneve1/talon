@@ -244,7 +244,7 @@ export function cacheMinimumTokens(model: string): number | undefined {
   return best?.min;
 }
 
-/** Cheap tokenizer-free estimate (~4 chars/token), matching soul/projector. */
+/** Cheap tokenizer-free estimate (~4 chars/token), the house heuristic. */
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }

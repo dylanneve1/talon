@@ -20,7 +20,6 @@ import {
   renderDoctorMessages,
 } from "../render.js";
 import { collectDoctorReport } from "../../../core/doctor/index.js";
-import { getSoul } from "../../../core/soul/service.js";
 import { getMetrics, getTodayMetrics } from "../../../storage/metrics.js";
 import { handleAdminSubcommand } from "../admin.js";
 import { isAdmin } from "../handlers/index.js";
@@ -128,39 +127,6 @@ export async function handleDoctor(
     const msg = err instanceof Error ? err.message : String(err);
     await i.editReply(`🩺 Doctor failed: ${msg}`);
   }
-}
-
-/**
- * /soul — read-only introspection of the compiled identity. `action:dream`
- * runs the organic maintenance pass and is admin-only. Inert while the soul
- * is disabled, so it is safe to ship dormant.
- */
-export async function handleSoul(
-  i: ChatInputCommandInteraction,
-): Promise<void> {
-  const soul = getSoul();
-  if (!soul.enabled) {
-    await reply(
-      i,
-      "Soul is disabled (set TALON_SOUL_ENABLED to enable).",
-      true,
-    );
-    return;
-  }
-  if (i.options.getString("action") === "dream") {
-    if (!isAdmin(i.user.id)) {
-      await reply(i, "Not authorized.", true);
-      return;
-    }
-    await i.deferReply({ flags: MessageFlags.Ephemeral });
-    await i.editReply("🧠 Soul dreaming...");
-    soul
-      .dream()
-      .then(() => i.editReply("🧠 Soul dream complete."))
-      .catch(() => undefined);
-    return;
-  }
-  await reply(i, suppressMentions(soul.introspect()), true);
 }
 
 export async function handleDream(

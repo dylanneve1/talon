@@ -13,7 +13,6 @@ import { setMessageFilePath } from "../../../storage/history.js";
 import { addMedia } from "../../../storage/media-index.js";
 import { appendDailyLog } from "../../../storage/daily-log.js";
 import { logError } from "../../../util/log.js";
-import { recordMessageSignal } from "../../../core/soul/taps.js";
 import {
   getSenderName,
   getReplyContext,
@@ -177,15 +176,6 @@ export async function handleTextMessage(
     ctx.message as Parameters<typeof getForwardContext>[0],
   );
   const prompt = fwdCtx + replyCtx + replyPhotoCtx + (ctx.message.text ?? "");
-
-  // Soul tap: a message reaching here is addressed to Talon (DM, mention, or
-  // reply). If it reads as a standing directive or a correction, record it as
-  // evidence. No-op unless the soul is enabled.
-  recordMessageSignal({
-    text: ctx.message.text ?? "",
-    actor: sender,
-    addressedToBot: true,
-  });
 
   enqueueMessage(bot, config, chatId, ctx.chat.id, {
     prompt,

@@ -116,12 +116,11 @@ describe("voice lives in one place", () => {
 
 describe("prompt norms match mechanical enforcement", () => {
   /**
-   * The phrases `soul/critic.ts` scores as sycophancy. Duplicated here as a
-   * literal rather than imported: that module is scheduled for teardown (its
-   * classifier moves to `core/persona/` when it is actually wired), and
-   * adding an export to it now would leave an import for the teardown PR to
-   * clean up. The real cross-check belongs with the PR that wires the critic
-   * as an output guard — this asserts the prompt side only.
+   * The phrases a sycophancy classifier scores. Kept as a literal: the
+   * soul's `critic.ts` was deleted with the rest of the kernel, and rollout
+   * PR 14 re-expresses it under `core/persona/` against the memory store.
+   * The real cross-check belongs with the PR that wires the critic as an
+   * output guard — this asserts the prompt side only.
    */
   const CRITIC_SYCOPHANCY = [
     "great question",

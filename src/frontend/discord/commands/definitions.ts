@@ -114,17 +114,6 @@ function buildCommandDefinitions(devBuild = false): unknown[] {
       .setName("mesh")
       .setDescription("Ping and list mesh devices")
       .toJSON(),
-    new SlashCommandBuilder()
-      .setName("soul")
-      .setDescription("Inspect the compiled identity")
-      .addStringOption((o) =>
-        o
-          .setName("action")
-          .setDescription("Leave empty to introspect")
-          .setRequired(false)
-          .addChoices({ name: "dream", value: "dream" }),
-      )
-      .toJSON(),
     // /update only exists on developer builds running from a git checkout —
     // a packaged binary has no source tree to pull into, so the command is
     // never registered there (same gate as the Telegram handler).

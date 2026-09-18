@@ -10,7 +10,6 @@ import { Bot, InputFile, API_CONSTANTS } from "grammy";
 import { autoRetry } from "@grammyjs/auto-retry";
 import { apiThrottler } from "@grammyjs/transformer-throttler";
 import type { TalonConfig } from "../../core/config/index.js";
-import { soulEnabled } from "../../core/soul/settings.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { createTelegramActionHandler, sendText } from "./actions/index.js";
@@ -127,13 +126,10 @@ export function createTelegramFrontend(
       });
       // Beyond grammY's defaults: `chat_join_request` feeds the moderation
       // tool's pending-join cache (inert unless the bot admins an
-      // approval-gated chat), and `message_reaction` feeds the soul's
-      // reaction tap — subscribed only when the soul is enabled, so a
-      // soulless deployment's reaction behaviour is unchanged.
+      // approval-gated chat).
       const allowedUpdates = [
         ...API_CONSTANTS.DEFAULT_UPDATE_TYPES,
         "chat_join_request" as const,
-        ...(soulEnabled(config.soul) ? ["message_reaction" as const] : []),
       ];
       await bot.start({
         allowed_updates: allowedUpdates,

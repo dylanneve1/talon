@@ -43,7 +43,6 @@ import {
   handleDream,
   handleAdmin,
   handleDoctor,
-  handleSoul,
   handleUpdate,
 } from "./admin.js";
 
@@ -159,8 +158,6 @@ async function routeSlashCommand(
       return handleDoctor(interaction, config);
     case "mesh":
       return handleMesh(interaction);
-    case "soul":
-      return handleSoul(interaction);
     case "update":
       return handleUpdate(interaction, config);
     case "admin":

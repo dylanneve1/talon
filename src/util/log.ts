@@ -62,7 +62,7 @@ export type LogComponent =
   | "mempalace"
   | "mem0"
   | "playwright"
-  | "soul"
+  | "memory"
   | "stickers"
   | "backend-controller";
 

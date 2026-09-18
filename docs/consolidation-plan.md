@@ -139,7 +139,9 @@ Already documented there; listed here so the order is explicit.
   design per `docs/weaver.md`; do not add importers. Revisit when the
   Weaver gets a write-capable `ThreadSession`.
 
-### 7. Soul kernel — no investment
+### 7. Soul kernel — no investment ✅ done
+
+**Done** — torn out in #953; the taps live on in `core/memory/taps.ts`.
 
 `core/soul/` is 4,657 lines at 93% coverage with ten importers
 (bootstrap, dream, gateway, prompt assembly, and admin/middleware in

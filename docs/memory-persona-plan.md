@@ -68,6 +68,8 @@ with no voice at all. Meanwhile voice is duplicated and drifting across
 
 ## 2. Verdict on the Soul Kernel: repurpose ~10%, delete the rest
 
+**Landed as #953** — the kernel is gone and the taps write to the store.
+
 **The ideas are right. The implementation is ~30× oversized for the signal it is
 fed.** That is the whole judgement, and it is measurable.
 

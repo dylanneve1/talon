@@ -23,9 +23,9 @@ const RATCHETS = [
     name: "naked-throw-in-core",
     dir: "src/core",
     needle: "throw new Error(",
-    // 37 + the three config-validation guards that moved in with
-    // util/config.ts → core/config/index.ts (#936); none are new throws.
-    baseline: 40,
+    // 40 before the soul kernel was removed (#949), which took four of
+    // its own throws with it.
+    baseline: 36,
     why:
       "core/ should throw classified errors (core/errors.ts) so retry and " +
       "interrupt behaviour stays well-defined at the engine boundary. " +

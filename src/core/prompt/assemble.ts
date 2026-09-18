@@ -72,7 +72,6 @@ import { renderStickerLibraryPrompt } from "../../storage/stickers.js";
 import { recordHistogram } from "../../storage/metrics.js";
 import { renderCoreView } from "../memory/core-view.js";
 import { memoryStoreEnabled } from "../memory/flag.js";
-import { getSoul } from "../soul/service.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -211,15 +210,6 @@ export function assembleSystemPrompt(
     const identityParts = [identityPrompt, identityUser].filter(Boolean);
     staticParts.push(`## Identity\n\n${identityParts.join("\n\n")}`);
     loaded.push("identity");
-  }
-
-  // 1.5. Soul — the compiled identity surface, when the soul is enabled.
-  //      Off by default (TALON_SOUL_ENABLED); inert deployments add nothing.
-  //      Selection-based and verbatim, so it never injects invented self-text.
-  const soulSection = getSoul().renderPromptSection();
-  if (soulSection) {
-    staticParts.push(soulSection);
-    loaded.push("soul");
   }
 
   // 2. Core behaviour — custom.md replaces base.md wholesale when present.

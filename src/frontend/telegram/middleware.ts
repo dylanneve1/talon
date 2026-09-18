@@ -18,7 +18,6 @@ import { getSenderName } from "./handlers/index.js";
 import { noteUpdateId } from "./update-offset.js";
 import { noteInboundThread } from "./topics.js";
 import { recordJoinRequest } from "./join-requests.js";
-import { newlyAddedEmojis, recordReactionToBot } from "../../core/soul/taps.js";
 import {
   handleTextMessage,
   handlePhotoMessage,
@@ -147,18 +146,6 @@ function captureHistory(
   return next();
 }
 
-// ── Reaction tap — feed reactions on Talon's own messages to the soul ────
-// Telegram only delivers `message_reaction` updates when subscribed via
-// allowed_updates (see index.ts) and, in groups, when the bot is an admin.
-// The handler is inert unless the soul is enabled.
-function tapReaction(ctx: Filter<Context, "message_reaction">): void {
-  const mr = ctx.messageReaction;
-  // Ignore the bot reacting to messages itself.
-  if (mr.user?.id === ctx.me.id) return;
-  const added = newlyAddedEmojis(mr.old_reaction, mr.new_reaction);
-  recordReactionToBot(mr.chat.id, mr.message_id, added);
-}
-
 // ── Join requests — cache for moderate(op="list_join_requests") ─────────
 // Delivered only when subscribed via allowed_updates (see index.ts) and
 // the bot admins a chat whose invite link requires approval. Stored, not
@@ -208,7 +195,6 @@ function registerMessageHandlers(bot: Bot, config: TalonConfig): void {
 export function registerMiddleware(bot: Bot, config: TalonConfig): void {
   bot.use(trackUpdateOffset);
   bot.on("message", captureHistory);
-  bot.on("message_reaction", tapReaction);
   bot.on("chat_join_request", cacheJoinRequest);
   bot.on("my_chat_member", revokeOnRemoval);
   registerMessageHandlers(bot, config);

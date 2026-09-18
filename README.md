@@ -119,7 +119,7 @@ index.ts                    Composition root
   |   +-- bus/              Typed pub-sub spine + event journal
   |   +-- vfs/              The talon:// namespace (~/.talon/ns), FUSE-backed
   |   +-- mesh/             Device mesh: presence, exec/fs channel, teleport
-  |   +-- soul/             Soul kernel — associative recall over memory
+  |   +-- memory/           Typed memory store policy: core view, import, taps
   |   +-- scripts/          Run-to-completion execution of saved scripts
   |   +-- scripting/        WASM-sandboxed Lua runner for trigger scripts
   |   +-- daemon/           Start / stop / restart, pidfile, discovery

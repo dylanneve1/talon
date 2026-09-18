@@ -1,5 +1,5 @@
 /**
- * Admin + maintenance commands — /admin, /metrics, /doctor, /dream, /soul,
+ * Admin + maintenance commands — /admin, /metrics, /doctor, /dream,
  * /restart, /update — plus the unknown-command "did you mean…?" suggester.
  *
  * Most commands here gate on the configured admin user id via
@@ -15,7 +15,6 @@ import {
   runSelfUpdate,
 } from "../../../core/update/self-update.js";
 import { forceDream } from "../../../core/background/dream.js";
-import { getSoul } from "../../../core/soul/service.js";
 import { escapeHtml } from "../formatting.js";
 import { closestMatch } from "../../../native/strsim.js";
 import {
@@ -123,39 +122,6 @@ function registerDreamCommand(bot: Bot): void {
           { parse_mode: "HTML" },
         );
       });
-  });
-}
-
-// /soul — introspect the compiled identity (read-only). `/soul dream`
-// (admin) runs the organic maintenance pass. Inert when the soul is
-// disabled (TALON_SOUL_ENABLED), so it's safe to ship dormant.
-function registerSoulCommand(bot: Bot): void {
-  bot.command("soul", async (ctx) => {
-    const soul = getSoul();
-    if (!soul.enabled) {
-      await ctx.reply("Soul is disabled (set TALON_SOUL_ENABLED to enable).");
-      return;
-    }
-    const arg = (ctx.match ?? "").trim().toLowerCase();
-    if (arg === "dream") {
-      if (!isAuthorizedAdmin(ctx)) {
-        await ctx.reply("Not authorized.");
-        return;
-      }
-      const sent = await ctx.reply("🧠 Soul dreaming...");
-      void soul
-        .dream()
-        .then(() =>
-          bot.api.editMessageText(
-            ctx.chat.id,
-            sent.message_id,
-            "🧠 Soul dream complete.",
-          ),
-        )
-        .catch(() => undefined);
-      return;
-    }
-    await ctx.reply(soul.introspect());
   });
 }
 
@@ -275,7 +241,6 @@ export function registerAdminCommands(
   registerUsageCommand(bot, config);
   registerDoctorCommand(bot, config);
   registerDreamCommand(bot);
-  registerSoulCommand(bot);
   registerRestartCommand(bot);
   const updateRepoRoot = config.devBuild ? getRepoRoot() : null;
   if (updateRepoRoot) registerUpdateCommand(bot, config, updateRepoRoot);

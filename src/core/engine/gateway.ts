@@ -30,7 +30,6 @@ import {
 } from "./gateway-routes.js";
 import { handlePluginAction } from "../plugin/index.js";
 import type { FrontendActionHandler } from "../types.js";
-import { BOT_MESSAGE_ACTIONS, noteBotMessage } from "../soul/taps.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
 import { resolveOwnerFrontendId } from "../frontend-runtime/routing.js";
 
@@ -320,11 +319,6 @@ export class Gateway {
       if (frontendHandler) {
         const result = await frontendHandler(body, chatId);
         if (result) {
-          // Soul tap: remember our own outgoing message ids so a later
-          // reaction update can be attributed to one of Talon's messages.
-          // No-op unless the soul is enabled.
-          if (BOT_MESSAGE_ACTIONS.has(action) && result.ok && result.message_id)
-            noteBotMessage(chatId, Number(result.message_id));
           logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms`);
           return result;
         }

@@ -557,16 +557,11 @@ const configSchema = z.object({
   // Playwright — headless browser automation via MCP
   playwright: playwrightConfigSchema.optional(),
 
-  // Soul — compiled, self-organizing identity kernel (experimental).
-  // Off by default; when enabled, the projected identity surface is injected
-  // into the system prompt and the organic pass runs on the dream cadence.
-  soul: z
-    .object({
-      enabled: z.boolean().default(false),
-      /** Kernel persistence path (default: ~/.talon/data/soul.json) */
-      path: z.string().min(1).optional(),
-    })
-    .optional(),
+  // Soul — the compiled identity kernel, removed in #953. The root schema
+  // is `.strict()`, so a key that simply disappeared would make every
+  // existing config.json fail to parse; accepted and ignored instead, with
+  // one warning at load so the operator knows to drop it.
+  soul: z.unknown().optional(),
 
   // Discord — discord.js v14-based frontend
   discord: discordConfigSchema.optional(),
@@ -740,6 +735,15 @@ export function loadConfig(): TalonConfig {
   }
 
   const parsed = configSchema.parse(fileConfig);
+
+  // The soul kernel is gone (#953). Its config block still parses so an
+  // existing config.json keeps loading, but it no longer does anything —
+  // say so once rather than silently ignoring it.
+  if (parsed.soul !== undefined) {
+    console.warn(
+      `Ignoring "soul" in ${CONFIG_FILE}: the soul kernel was removed; its message taps now write to the memory store. Remove the key.`,
+    );
+  }
 
   // Unified memory section: mirror the selected backend onto the per-plugin
   // section the loaders consume (builtins.ts reads config.mempalace /

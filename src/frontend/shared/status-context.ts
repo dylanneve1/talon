@@ -6,7 +6,7 @@ import { formatSmartTimestamp, formatRelativeAge } from "../../util/time.js";
 
 /**
  * Rough token estimate — ~4 chars/token, the house heuristic used everywhere
- * (soul/projector, cache-telemetry). No real tokenizer is wired, so every
+ * (cache-telemetry, and the prompt budgets). No real tokenizer is wired, so every
  * measured figure in the breakdown below is an estimate at this fidelity.
  */
 export function estimateContextTokens(text: string): number {

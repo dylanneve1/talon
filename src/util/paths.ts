@@ -116,8 +116,6 @@ export const files = {
   triggers: resolve(TALON_ROOT, "data", "triggers.json"),
   /** Legacy JSON native turn meta (imported into talon.db on first boot) */
   nativeTurnMeta: resolve(TALON_ROOT, "data", "native-turn-meta.json"),
-  /** Soul kernel state: ~/.talon/data/soul.json (overridable via config.soul.path) */
-  soul: resolve(TALON_ROOT, "data", "soul.json"),
   /** Legacy JSON media index (imported into talon.db on first boot) */
   mediaIndex: resolve(TALON_ROOT, "data", "media-index.json"),
   /** Persistent memory: ~/.talon/workspace/memory/memory.md */

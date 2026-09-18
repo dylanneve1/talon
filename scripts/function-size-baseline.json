@@ -44,8 +44,8 @@
   {
     "file": "src/bootstrap.ts",
     "name": "initBackendAndDispatcher",
-    "lines": 316,
-    "cx": 16
+    "lines": 301,
+    "cx": 13
   },
   {
     "file": "src/cli/index.ts",
@@ -76,12 +76,6 @@
     "name": ".fetch_url",
     "lines": 94,
     "cx": 26
-  },
-  {
-    "file": "src/core/engine/gateway.ts",
-    "name": ".handleAction",
-    "lines": 126,
-    "cx": 28
   },
   {
     "file": "src/core/errors.ts",

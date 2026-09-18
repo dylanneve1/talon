@@ -3,7 +3,7 @@
  *
  * Most suites tear down their own temp dirs, but a dozen or so create one in
  * `beforeAll` and never remove it (native-tools, native-frontend, mesh-service,
- * the soul-* suites, node-binaries, native-tls, harden, protocol-conformance …).
+ * node-binaries, native-tls, harden, protocol-conformance …).
  * Each full `vitest run` therefore leaves a fresh pile behind in `os.tmpdir()`,
  * and `native-tools.test.ts` alone writes ~33 MB of fixtures (`big.log`,
  * `blob.bin`) per run. On a dev box that runs the suite repeatedly this is a
@@ -24,7 +24,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** Prefixes owned by this repo's suites (see `mkdtemp` calls in src/__tests__). */
-const OWNED = /^(talon|soul|blake3-napi-test|blake3-wasm|trigger-log-err)-/;
+const OWNED = /^(talon|blake3-napi-test|blake3-wasm|trigger-log-err)-/;
 
 async function listTmp(): Promise<Set<string>> {
   try {

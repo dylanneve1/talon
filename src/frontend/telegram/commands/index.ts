@@ -8,7 +8,7 @@
  *   - `memory`      — /memory (read-only view of the typed memory store)
  *   - `session`     — /reset /status
  *   - `settings`    — /model /effort /pulse /settings
- *   - `admin`       — /admin /metrics /doctor /dream /soul /restart /update
+ *   - `admin`       — /admin /metrics /doctor /dream /restart /update
  *                     + the unknown-command suggester
  *
  * `registerCommands` wires every group onto the bot in an order that ends

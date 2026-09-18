@@ -352,8 +352,9 @@ export function importMemoryFile(path: string = files.memory): ImportCounts {
 
 /**
  * Import the daily notes: one `episode` per `YYYY-MM-DD.md`, subject the
- * date. `diary-*.md` is the soul's first-person writing — a reflection,
- * never a fact source (plan §3.1) — so the filename pattern excludes it.
+ * date. `diary-*.md` is first-person writing — a reflection, never a fact
+ * source (plan §3.1) — so the filename pattern excludes it. The soul kernel
+ * that wrote those files is gone, but its output is still on disk.
  */
 export function importDailyNotes(dir: string = dirs.dailyMemory): ImportCounts {
   if (!existsSync(dir)) return emptyCounts();

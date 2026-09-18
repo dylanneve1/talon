@@ -34,8 +34,7 @@ function createClient(): Client {
       GatewayIntentBits.DirectMessageReactions,
     ],
     // Partials.Reaction is what makes reactions on messages that predate the
-    // current cache arrive at all — without it the soul's reaction tap only
-    // ever sees freshly-cached messages.
+    // current cache arrive at all, rather than being dropped silently.
     partials: [
       Partials.Channel,
       Partials.Message,
