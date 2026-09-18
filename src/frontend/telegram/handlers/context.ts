@@ -4,7 +4,7 @@
  */
 
 import type { Bot } from "grammy";
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../../core/config/index.js";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { logWarn } from "../../../util/log.js";

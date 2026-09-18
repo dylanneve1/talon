@@ -4,7 +4,7 @@
  */
 
 import type { Bot } from "grammy";
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../../core/config/index.js";
 import { execute } from "../../../core/engine/dispatcher.js";
 import { toolInputToRecord } from "../../../core/agent-runtime/events.js";
 import { appendDailyLogResponse } from "../../../storage/daily-log.js";

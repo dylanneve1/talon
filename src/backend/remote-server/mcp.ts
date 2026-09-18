@@ -44,7 +44,7 @@ import {
 import type { RemoteAgentClient } from "./client.js";
 import type { RemoteServerState } from "./state.js";
 import { errMsg } from "./state.js";
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
 import { ALL_TOOLS, nativeTools } from "../../core/tools/index.js";
 import {

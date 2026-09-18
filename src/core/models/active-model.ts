@@ -73,7 +73,7 @@ import {
   type ModelSource,
 } from "../agent-runtime/model-ref.js";
 import type { UnifiedModelInfo } from "../types.js";
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../config/index.js";
 import { logWarn } from "../../util/log.js";
 
 /**

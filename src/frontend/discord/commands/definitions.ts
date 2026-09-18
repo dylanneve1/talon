@@ -13,7 +13,7 @@
  */
 
 import { type Client, REST, Routes, SlashCommandBuilder } from "discord.js";
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../../core/config/index.js";
 import { log, logError, logWarn } from "../../../util/log.js";
 import { getRepoRoot } from "../../../core/update/self-update.js";
 

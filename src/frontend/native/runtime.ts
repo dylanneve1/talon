@@ -8,7 +8,7 @@
  * message-id minter and the broadcast sink; the modules own the behaviour.
  */
 
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { getMeshService, type MeshService } from "../../core/mesh/index.js";
 import { NativeChats } from "./chats.js";

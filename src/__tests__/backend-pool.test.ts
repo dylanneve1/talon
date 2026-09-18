@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { Backend } from "../core/agent-runtime/capabilities.js";
 import { stubBackend } from "./helpers/stub-backend.js";
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 import {
   registerBackend,
   clearBackends,

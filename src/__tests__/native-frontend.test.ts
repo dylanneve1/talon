@@ -40,7 +40,7 @@ import {
 import { summarizeToolResult } from "../frontend/native/index.js";
 import { files } from "../util/paths.js";
 import type { Gateway } from "../core/engine/gateway.js";
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 
 describe("native protocol mappers", () => {
   it("previewOf collapses whitespace and clips long text", () => {

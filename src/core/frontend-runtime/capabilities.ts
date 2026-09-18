@@ -25,7 +25,7 @@
  */
 
 import type { ContextManager } from "../types.js";
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../config/index.js";
 import type { Gateway } from "../engine/gateway.js";
 import type { FrontendDescriptor } from "./registry.js";
 

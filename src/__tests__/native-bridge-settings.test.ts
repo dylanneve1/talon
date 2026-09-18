@@ -45,7 +45,7 @@ const { startPulseTimer, stopPulseTimer } =
   await import("../core/background/pulse.js");
 const { startHeartbeatTimer, stopHeartbeatTimer } =
   await import("../core/background/heartbeat/index.js");
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 
 function fakeConfig(): TalonConfig {
   return {

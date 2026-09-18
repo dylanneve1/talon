@@ -36,7 +36,7 @@ type Runtime = Awaited<
 >;
 const { toClientChat } = await import("../frontend/native/chat-wire.js");
 const { setQueued, takeQueued } = await import("../frontend/native/queue.js");
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 import type { Gateway } from "../core/engine/gateway.js";
 import type { BridgeEvent } from "../frontend/native/protocol.js";
 

@@ -22,7 +22,7 @@
  */
 
 import { MessageFlags } from "discord.js";
-import type { TalonConfig } from "../../../../util/config.js";
+import type { TalonConfig } from "../../../../core/config/index.js";
 import type { Gateway } from "../../../../core/engine/gateway.js";
 import { deriveNumericChatId } from "../../../../util/chat-id.js";
 import { logError } from "../../../../util/log.js";

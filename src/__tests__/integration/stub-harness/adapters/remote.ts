@@ -5,7 +5,7 @@
  * so the adapter starts the in-process fake on a DYNAMIC port and assigns it
  * into the env before the composition root imports the backend module.
  */
-import type { TalonConfig } from "../../../../util/config.js";
+import type { TalonConfig } from "../../../../core/config/index.js";
 import type { StubBackendAdapter } from "../types.js";
 import {
   startFakeRemoteServer,

@@ -6,7 +6,7 @@
  * are loaded dynamically — only the selected platform's dependencies are required.
  */
 
-import { getFrontends } from "./util/config.js";
+import { getFrontends } from "./core/config/index.js";
 import { startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
 import { flushDatabase } from "./storage/db.js";
 import { getActiveCount, stopAllTurns } from "./core/engine/dispatcher.js";

@@ -7,7 +7,7 @@
  * poll, commands, turn, outbound) takes as its first parameter.
  */
 
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import type { GraphClient } from "./graph.js";
 

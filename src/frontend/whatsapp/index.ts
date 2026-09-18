@@ -19,7 +19,7 @@
  * (socket lifecycle, reconnect, park-until-paired).
  */
 
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { log, logError, logWarn } from "../../util/log.js";

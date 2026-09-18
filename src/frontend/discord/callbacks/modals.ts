@@ -3,7 +3,7 @@
  */
 
 import { type ModalSubmitInteraction, MessageFlags } from "discord.js";
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../../core/config/index.js";
 import type { Gateway } from "../../../core/engine/gateway.js";
 import { setChatPulseInterval } from "../../../storage/chat-settings.js";
 import { registerChat, enablePulse } from "../../../core/background/pulse.js";

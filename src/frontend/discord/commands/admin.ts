@@ -10,7 +10,7 @@ import {
   ButtonStyle,
   MessageFlags,
 } from "discord.js";
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../../core/config/index.js";
 import type { Gateway } from "../../../core/engine/gateway.js";
 import { respawnSelf } from "../../../util/respawn.js";
 import { forceDream } from "../../../core/background/dream.js";

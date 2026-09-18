@@ -4,7 +4,7 @@
  * the SDK to `chat_completions` mode (standard OpenAI streaming), which the
  * fake server speaks.
  */
-import type { TalonConfig } from "../../../../util/config.js";
+import type { TalonConfig } from "../../../../core/config/index.js";
 import type { StubBackendAdapter } from "../types.js";
 import {
   startFakeOpenAIServer,

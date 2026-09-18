@@ -107,7 +107,7 @@ describe("config", () => {
     it("loads config with terminal frontend (no token needed)", async () => {
       mockFs({ frontend: "terminal" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.frontend).toBe("terminal");
       expect(config.model).toBe("default");
@@ -120,7 +120,7 @@ describe("config", () => {
         desktop: { host: "0.0.0.0", port: 19999, token: "bridge-token" },
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.frontend).toBe("native");
       expect(config.native).toEqual({
@@ -137,14 +137,14 @@ describe("config", () => {
     it("throws when telegram frontend has no botToken", async () => {
       mockFs({ frontend: "telegram" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       expect(() => loadConfig()).toThrow("botToken");
     });
 
     it("loads config from talon.json", async () => {
       mockFs({ botToken: "test-token-123", model: "claude-opus-4-6" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.botToken).toBe("test-token-123");
       expect(config.model).toBe("claude-opus-4-6");
@@ -153,7 +153,7 @@ describe("config", () => {
     it("applies defaults for missing fields", async () => {
       mockFs({ botToken: "test-token" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.model).toBe("default");
       expect(config.maxMessageLength).toBe(4000);
@@ -169,7 +169,7 @@ describe("config", () => {
         dreamEffort: "low",
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.heartbeatEffort).toBe("high");
       expect(config.dreamEffort).toBe("low");
@@ -178,7 +178,7 @@ describe("config", () => {
     it("leaves background effort unset by default (model default)", async () => {
       mockFs({ botToken: "test-token" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.heartbeatEffort).toBeUndefined();
       expect(config.dreamEffort).toBeUndefined();
@@ -187,14 +187,14 @@ describe("config", () => {
     it("rejects an unknown effort level", async () => {
       mockFs({ botToken: "test-token", heartbeatEffort: "ludicrous" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       expect(() => loadConfig()).toThrow(/heartbeatEffort/);
     });
 
     it("reads custom maxMessageLength", async () => {
       mockFs({ botToken: "test-token", maxMessageLength: 8000 });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.maxMessageLength).toBe(8000);
     });
@@ -202,7 +202,7 @@ describe("config", () => {
     it("defaults concurrency to 1", async () => {
       mockFs({ botToken: "test-token" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.concurrency).toBe(1);
     });
@@ -210,7 +210,7 @@ describe("config", () => {
     it("reads adminUserId from config", async () => {
       mockFs({ botToken: "test-token", adminUserId: 352042062 });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.adminUserId).toBe(352042062);
     });
@@ -218,7 +218,7 @@ describe("config", () => {
     it("reads apiId and apiHash from config", async () => {
       mockFs({ botToken: "test-token", apiId: 12345, apiHash: "abc123" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.apiId).toBe(12345);
       expect(config.apiHash).toBe("abc123");
@@ -227,7 +227,7 @@ describe("config", () => {
     it("reads pulse settings from config", async () => {
       mockFs({ botToken: "test-token", pulse: false, pulseIntervalMs: 600000 });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.pulse).toBe(false);
       expect(config.pulseIntervalMs).toBe(600000);
@@ -236,7 +236,7 @@ describe("config", () => {
     it("accepts frontend as an array", async () => {
       mockFs({ frontend: ["telegram", "terminal"], botToken: "test-token" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(Array.isArray(config.frontend)).toBe(true);
       expect(config.frontend).toEqual(["telegram", "terminal"]);
@@ -245,7 +245,7 @@ describe("config", () => {
     it("throws when frontend array includes telegram without botToken", async () => {
       mockFs({ frontend: ["telegram", "terminal"] });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       expect(() => loadConfig()).toThrow("botToken");
     });
 
@@ -258,7 +258,7 @@ describe("config", () => {
         ],
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.plugins).toHaveLength(2);
       const [firstPlugin, secondPlugin] = config.plugins;
@@ -289,7 +289,7 @@ describe("config", () => {
         ],
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
 
       expect(config.plugins).toEqual([
@@ -314,7 +314,7 @@ describe("config", () => {
         ],
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.plugins).toHaveLength(2);
       expect(config.plugins.map((p) => p.enabled)).toEqual([false, false]);
@@ -332,7 +332,7 @@ describe("config", () => {
         ],
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       expect(() => loadConfig()).toThrow("exactly one format");
     });
 
@@ -342,7 +342,7 @@ describe("config", () => {
         plugins: [{ name: "polymarket" }],
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       expect(() => loadConfig()).toThrow(
         "MCP plugin entries must include 'command'",
       );
@@ -360,7 +360,7 @@ describe("config", () => {
         ],
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       expect(() => loadConfig()).toThrow(
         "MCP plugin entries cannot include 'config'",
       );
@@ -369,7 +369,7 @@ describe("config", () => {
     it("defaults plugins to empty array", async () => {
       mockFs({ frontend: "terminal" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.plugins).toEqual([]);
     });
@@ -378,7 +378,7 @@ describe("config", () => {
       const writeFileAtomic = await import("write-file-atomic");
       mockFs(null);
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       // loadConfig will call ensureConfigFile which writes defaults, then reads (but file won't exist so reads empty)
       // Since no botToken and default frontend is telegram, it will throw
       expect(() => loadConfig()).toThrow("botToken");
@@ -388,7 +388,7 @@ describe("config", () => {
     it("sets workspace to resolved workspace path", async () => {
       mockFs({ frontend: "terminal" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.workspace).toContain("workspace");
     });
@@ -396,7 +396,7 @@ describe("config", () => {
     it("loads config with terminal-only frontend array (no token needed)", async () => {
       mockFs({ frontend: ["terminal"] });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.frontend).toEqual(["terminal"]);
     });
@@ -412,7 +412,7 @@ describe("config", () => {
         },
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
 
       expect(config.playwright).toEqual({
@@ -434,7 +434,7 @@ describe("config", () => {
         },
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.mempalace).toEqual({
         enabled: true,
@@ -453,7 +453,7 @@ describe("config", () => {
         },
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.mem0).toEqual({
         enabled: true,
@@ -470,7 +470,7 @@ describe("config", () => {
         memory: { enabled: true, backend: "mem0", mem0: { apiKey: "m0-x" } },
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.mem0?.enabled).toBe(true);
       expect(config.mempalace?.enabled).toBe(false);
@@ -482,7 +482,7 @@ describe("config", () => {
         mempalace: { enabled: true, palacePath: "/old/palace" },
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.mempalace?.enabled).toBe(true);
       expect(config.mempalace?.palacePath).toBe("/old/palace");
@@ -494,7 +494,7 @@ describe("config", () => {
         memory: { enabled: false, backend: "mem0", mem0: { apiKey: "m0-x" } },
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.mem0?.enabled).not.toBe(true);
       expect(config.mempalace?.enabled).not.toBe(true);
@@ -506,7 +506,7 @@ describe("config", () => {
         memory: { enabled: true, backend: "postgres" },
       });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       expect(() => loadConfig()).toThrow();
     });
   });
@@ -518,7 +518,7 @@ describe("config", () => {
         { "identity.md": "I am Talon.", "base.md": "Be helpful." },
       );
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("I am Talon.");
       expect(config.systemPrompt).toContain("Be helpful.");
@@ -527,7 +527,7 @@ describe("config", () => {
     it("includes current date in system prompt", async () => {
       mockFs({ botToken: "test-token" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       const today = toYMD(new Date());
       expect(config.systemPrompt).toContain(today);
@@ -544,7 +544,7 @@ describe("config", () => {
       );
 
       const { loadConfig, joinSystemPromptParts } =
-        await import("../util/config.js");
+        await import("../core/config/index.js");
       const config = loadConfig();
 
       expect(config.systemPromptParts).toBeDefined();
@@ -572,7 +572,7 @@ describe("config", () => {
     it("omits the minute-precision datetime section (cache-buster)", async () => {
       mockFs({ botToken: "test-token" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.systemPrompt).not.toContain("Current Date & Time");
       // Time-of-day belongs in per-message tags, not the system prompt.
@@ -583,7 +583,7 @@ describe("config", () => {
     it("includes workspace instructions in system prompt", async () => {
       mockFs({ botToken: "test-token" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("workspace");
       expect(config.systemPrompt).toContain("Scheduled jobs (cron)");
@@ -592,7 +592,7 @@ describe("config", () => {
     it("includes recall-before-asking and file-memory fallback instructions", async () => {
       mockFs({ frontend: "terminal" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("Recall before asking");
       expect(config.systemPrompt).toContain(
@@ -616,7 +616,7 @@ describe("config", () => {
         { "terminal.md": "You are running in terminal mode." },
       );
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain(
         "You are running in terminal mode.",
@@ -629,7 +629,7 @@ describe("config", () => {
         { "native.md": "You are running in native mode." },
       );
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("You are running in native mode.");
     });
@@ -640,7 +640,7 @@ describe("config", () => {
         { "telegram.md": "You are a Telegram bot." },
       );
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("You are a Telegram bot.");
     });
@@ -648,7 +648,7 @@ describe("config", () => {
     it("uses default fallback when no base.md or custom.md exist", async () => {
       mockFs({ frontend: "terminal" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain(
         "You are a sharp and helpful AI assistant.",
@@ -664,7 +664,7 @@ describe("config", () => {
         },
       );
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("Custom prompt override.");
       expect(config.systemPrompt).not.toContain("Default base prompt.");
@@ -676,7 +676,7 @@ describe("config", () => {
         { "identity.md": "Identity section.", "base.md": "Base instructions." },
       );
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       // identity.md should come before base.md in the prompt
       const identityIdx = config.systemPrompt.indexOf("Identity section.");
@@ -691,7 +691,7 @@ describe("config", () => {
         { "memory.md": "User prefers dark mode." },
       );
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("Persistent Memory");
       expect(config.systemPrompt).toContain("User prefers dark mode.");
@@ -702,7 +702,7 @@ describe("config", () => {
       const bigMemory = line.repeat(600); // ~19k chars > MEMORY_INJECT_MAX_CHARS
       mockFs({ frontend: "terminal" }, { "memory.md": bigMemory });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const { MEMORY_INJECT_MAX_CHARS } =
         await import("../core/prompt/memory-view.js");
       const config = loadConfig();
@@ -730,7 +730,7 @@ describe("config", () => {
         { name: "data.csv", isDir: false, size: 2048 },
       ]);
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("notes.txt");
       expect(config.systemPrompt).toContain("512B");
@@ -746,7 +746,7 @@ describe("config", () => {
         { name: "visible.txt", isDir: false, size: 200 },
       ]);
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("visible.txt");
       expect(config.systemPrompt).not.toContain(".hidden");
@@ -767,7 +767,7 @@ describe("config", () => {
         { name: "bigdir", isDir: true, children: manyChildren },
       ]);
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("bigdir/ (10 files)");
     });
@@ -786,7 +786,7 @@ describe("config", () => {
         { name: "top.txt", isDir: false, size: 256 },
       ]);
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
 
       // Collapsed summary is shown; the top-level file is stat'd for its size.
@@ -813,7 +813,7 @@ describe("config", () => {
         },
       ]);
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("smalldir/a.txt");
       expect(config.systemPrompt).toContain("smalldir/b.txt");
@@ -827,7 +827,7 @@ describe("config", () => {
         { name: "notes.txt", isDir: false, size: 100 },
       ]);
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       // The empty subdirectory should NOT appear in listing
       expect(config.systemPrompt).not.toContain("emptydir");
@@ -839,7 +839,8 @@ describe("config", () => {
     it("returns array when frontend is a single string", async () => {
       mockFs({ frontend: "terminal" });
 
-      const { loadConfig, getFrontends } = await import("../util/config.js");
+      const { loadConfig, getFrontends } =
+        await import("../core/config/index.js");
       const config = loadConfig();
       const frontends = getFrontends(config);
       expect(frontends).toEqual(["terminal"]);
@@ -848,7 +849,8 @@ describe("config", () => {
     it("returns array as-is when frontend is already an array", async () => {
       mockFs({ frontend: ["telegram", "terminal"], botToken: "test-token" });
 
-      const { loadConfig, getFrontends } = await import("../util/config.js");
+      const { loadConfig, getFrontends } =
+        await import("../core/config/index.js");
       const config = loadConfig();
       const frontends = getFrontends(config);
       expect(frontends).toEqual(["telegram", "terminal"]);
@@ -860,7 +862,7 @@ describe("config", () => {
       mockFs({ frontend: "terminal" });
 
       const { loadConfig, rebuildSystemPrompt } =
-        await import("../util/config.js");
+        await import("../core/config/index.js");
       const config = loadConfig();
       const originalPrompt = config.systemPrompt;
       rebuildSystemPrompt(config, []);
@@ -871,7 +873,7 @@ describe("config", () => {
       mockFs({ frontend: "terminal" });
 
       const { loadConfig, rebuildSystemPrompt } =
-        await import("../util/config.js");
+        await import("../core/config/index.js");
       const config = loadConfig();
       rebuildSystemPrompt(config, [
         "## Plugin A\nPlugin A instructions.",
@@ -885,7 +887,7 @@ describe("config", () => {
       mockFs({ frontend: "terminal" });
 
       const { loadConfig, rebuildSystemPrompt } =
-        await import("../util/config.js");
+        await import("../core/config/index.js");
       const config = loadConfig();
       rebuildSystemPrompt(config, [
         "## Example Memory Provider\nTreat this provider as your canonical durable-memory store.",
@@ -906,7 +908,7 @@ describe("config", () => {
       );
 
       const { loadConfig, rebuildSystemPrompt } =
-        await import("../util/config.js");
+        await import("../core/config/index.js");
       const config = loadConfig();
       rebuildSystemPrompt(config, ["## Test Plugin\nTest addition."]);
       // Should use terminal (first in array) as the active frontend
@@ -921,7 +923,7 @@ describe("config", () => {
       );
 
       const { loadConfig, rebuildSystemPrompt } =
-        await import("../util/config.js");
+        await import("../core/config/index.js");
       const config = loadConfig();
       rebuildSystemPrompt(config, ["## My Plugin\nDo special things."]);
       expect(config.systemPrompt).toContain("Terminal mode active.");
@@ -932,7 +934,7 @@ describe("config", () => {
       mockFs({ frontend: "terminal" });
 
       const { loadConfig, rebuildSystemPrompt } =
-        await import("../util/config.js");
+        await import("../core/config/index.js");
       const config = loadConfig();
       // Force frontend to undefined to trigger the ?? "telegram" fallback on line 132
       (config as Record<string, unknown>).frontend = undefined;
@@ -945,28 +947,28 @@ describe("config", () => {
     it("rejects concurrency above max 20", async () => {
       mockFs({ frontend: "terminal", concurrency: 25 });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       expect(() => loadConfig()).toThrow();
     });
 
     it("rejects concurrency below min 1", async () => {
       mockFs({ frontend: "terminal", concurrency: 0 });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       expect(() => loadConfig()).toThrow();
     });
 
     it("rejects maxMessageLength below min 100", async () => {
       mockFs({ frontend: "terminal", maxMessageLength: 50 });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       expect(() => loadConfig()).toThrow();
     });
 
     it("defaults the canonical Claude model to default", async () => {
       mockFs({ frontend: "terminal" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.model).toBe("default");
     });
@@ -974,7 +976,7 @@ describe("config", () => {
     it("default pulse is exactly true", async () => {
       mockFs({ frontend: "terminal" });
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
       expect(config.pulse).toBe(true);
     });
@@ -1000,7 +1002,7 @@ describe("config", () => {
         statSync: vi.fn(() => ({ size: 0 })),
       }));
 
-      const { loadConfig } = await import("../util/config.js");
+      const { loadConfig } = await import("../core/config/index.js");
       // With corrupt config, it falls back to empty config => default frontend=telegram => no botToken => throws
       expect(() => loadConfig()).toThrow("botToken");
     });
@@ -1036,7 +1038,7 @@ describe("loadConfig — teams webhook validation", () => {
       statSync: vi.fn(() => ({ size: 0 })),
     }));
 
-    const { loadConfig } = await import("../util/config.js");
+    const { loadConfig } = await import("../core/config/index.js");
     expect(() => loadConfig()).toThrow("teamsWebhookUrl");
   });
 });

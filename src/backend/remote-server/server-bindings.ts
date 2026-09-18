@@ -20,7 +20,7 @@
  * `vi.mock("../backend/<name>/server.js")` all address.
  */
 
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
 import {
   buildDeliveryContract,

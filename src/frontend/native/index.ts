@@ -14,7 +14,7 @@
  * delegate to — chat-wire, context, emit, turn, models, history, ….
  */
 
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { log, logError } from "../../util/log.js";

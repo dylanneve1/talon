@@ -14,7 +14,7 @@
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import writeFileAtomic from "write-file-atomic";
 import { dirname } from "node:path";
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import { files as pathFiles } from "../../util/paths.js";
 import { setTimezone } from "../../util/time.js";
 import { resolveModel } from "../../core/models/catalog.js";

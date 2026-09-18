@@ -31,7 +31,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 
 import { Gateway } from "../../core/engine/gateway.js";
 import { resetSession } from "../../storage/sessions.js";
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 
 import { initOpenAIAgentsAgent } from "../../backend/openai-agents/init.js";
 import { fetchEndpointModels } from "../../backend/openai-agents/discovery.js";

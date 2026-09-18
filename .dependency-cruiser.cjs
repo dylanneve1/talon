@@ -56,12 +56,12 @@ module.exports = {
         "layers above would be a cycle waiting to happen. The #prompt-assets " +
         "subpath import is exempt: it is the build-time asset seam " +
         "(package.json `imports` switches disk/embedded prompts per runtime), " +
-        "not a layering edge. config.ts and metrics.ts are carved out below " +
-        "with their own migration rules.",
+        "not a layering edge. metrics.ts is carved out below with its own " +
+        "migration rule.",
       severity: "error",
       from: {
         path: "^src/util/",
-        pathNot: "^src/util/(config|metrics)\\.ts$",
+        pathNot: "^src/util/metrics\\.ts$",
       },
       to: {
         path: "^src/(core|backend|frontend|storage|cli|plugins)/",
@@ -155,13 +155,12 @@ module.exports = {
     {
       name: "config-belongs-in-core",
       comment:
-        "TARGET: util/config.ts imports core/prompt and core/agent-runtime " +
-        "— it is engine configuration, not a leaf utility, and should move " +
-        "to core/config/. Ratchets to error when the move lands. Do not " +
-        "add new upward imports.",
-      severity: "warn",
-      from: { path: "^src/util/config\\.ts$" },
-      to: { path: "^src/(core|backend|frontend|storage|cli|plugins)/" },
+        "DONE, now enforced: engine configuration lives in core/config/ " +
+        "(it imports core/prompt and core/agent-runtime, so it was never a " +
+        "leaf utility). A config module under util/ would be a regression.",
+      severity: "error",
+      from: { path: "^src/util/config" },
+      to: {},
     },
     {
       name: "metrics-read-shape-moves-down",

@@ -1,4 +1,4 @@
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // This suite asserts the Node/tsx spawn recipes; pin the runtime
@@ -426,7 +426,7 @@ describe("plugin system", () => {
     it("clears standalone MCP entries on hot reload", async () => {
       vi.resetModules();
       vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-      vi.doMock("../util/config.js", () => ({
+      vi.doMock("../core/config/index.js", () => ({
         loadConfig: () => ({
           frontend: "terminal",
           model: "default",

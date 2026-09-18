@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { chmodSync, writeFileSync, readFileSync } from "node:fs";
 
-import type { TalonConfig } from "../../../../util/config.js";
+import type { TalonConfig } from "../../../../core/config/index.js";
 import type { StubBackendAdapter, TurnContext } from "../types.js";
 import type {
   CodexStubTurn,

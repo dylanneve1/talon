@@ -16,7 +16,7 @@
  */
 
 import type { Bot } from "grammy";
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../../core/config/index.js";
 import type { Backend } from "../../../core/agent-runtime/capabilities.js";
 import { registerInfoCommands } from "./info.js";
 import { registerSessionCommands } from "./session.js";

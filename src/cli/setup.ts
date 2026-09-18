@@ -650,7 +650,7 @@ export function buildSetupConfig(
         : existing.discord,
     // Never dropped. Deselecting WhatsApp shouldn't throw away its
     // pairing setup, and dropping it while `frontend` still lists
-    // whatsapp produces a config util/config.ts refuses to load at all
+    // whatsapp produces a config core/config/index.ts refuses to load at all
     // ("WhatsApp frontend requires a whatsapp config block") — a daemon
     // that won't start. The `??` keeps that impossible even if the
     // branch that collects the answer is ever skipped.

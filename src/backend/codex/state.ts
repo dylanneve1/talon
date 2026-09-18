@@ -11,7 +11,7 @@
 
 import type { Codex } from "@openai/codex-sdk";
 import type { ReasoningEffortLevel } from "../../core/types.js";
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
 
 /**

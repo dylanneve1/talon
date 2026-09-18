@@ -21,7 +21,7 @@ export async function startChat(): Promise<void> {
   // spawning telegram-tools or teams-tools MCP servers and ensures the
   // system prompt loads terminal.md instead of teams.md/telegram.md.
   (config as Record<string, unknown>).frontend = "terminal";
-  const { rebuildSystemPrompt } = await import("../util/config.js");
+  const { rebuildSystemPrompt } = await import("../core/config/index.js");
   const { getPluginPromptAdditions } = await import("../core/plugin/index.js");
   rebuildSystemPrompt(config, getPluginPromptAdditions());
 

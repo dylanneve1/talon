@@ -26,7 +26,7 @@
  * Discord types leak in.
  */
 
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import type { Backend } from "../../core/agent-runtime/capabilities.js";
 import {
   buildModelMenuState,

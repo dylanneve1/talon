@@ -195,7 +195,7 @@ describe("main-menu frontend label", () => {
 
 describe("the whatsapp block the wizard writes", () => {
   it("uses only keys the daemon's strict schema accepts", () => {
-    // `whatsappConfigSchema` in util/config.ts is `.strict()`, so a key the
+    // `whatsappConfigSchema` in core/config/index.ts is `.strict()`, so a key the
     // wizard invents here would make the daemon refuse to load the config
     // it just wrote. Keep this list in step with that schema.
     const allowed = new Set([
@@ -296,7 +296,7 @@ describe("the exact failure an existing WhatsApp user hit", () => {
     // without filtering against `options`, so before WhatsApp was an
     // option it still rode through the picker invisibly — `frontend` came
     // back containing "whatsapp" while the rebuilt config had no
-    // `whatsapp` block. util/config.ts then refuses to load that pairing
+    // `whatsapp` block. core/config/index.ts then refuses to load that pairing
     // outright ("WhatsApp frontend requires a whatsapp config block"), so
     // finishing the wizard left a daemon that would not start.
     const after = buildSetupConfig(

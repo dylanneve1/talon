@@ -25,7 +25,7 @@ import {
   MAX_QUEUED_PER_CHAT,
   type QueuedMessage,
 } from "./state.js";
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../../core/config/index.js";
 
 export function enqueueMessage(
   config: TalonConfig,

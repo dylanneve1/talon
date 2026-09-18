@@ -116,7 +116,7 @@ vi.mock("../core/plugin/index.js", () => ({
   getPluginPromptAdditions: () => mockGetPluginPromptAdditions(),
 }));
 
-vi.mock("../util/config.js", () => ({
+vi.mock("../core/config/index.js", () => ({
   rebuildSystemPrompt: (...args: unknown[]) =>
     mockRebuildSystemPrompt(
       ...(args as Parameters<typeof mockRebuildSystemPrompt>),

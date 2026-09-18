@@ -4,7 +4,7 @@
  */
 
 import { log, logError, logWarn } from "../../util/log.js";
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../config/index.js";
 import { registry, reloadState } from "./registry.js";
 import type { ProvisionOutcome } from "./provision.js";
 import { NATIVE_RUNTIMES, type NativePluginId } from "./native-runtimes.js";
@@ -226,7 +226,7 @@ export async function reloadPlugins(
 ): Promise<{ names: string[]; config: TalonConfig }> {
   // Validate config BEFORE tearing down existing plugins. If the config is
   // malformed the error propagates and current plugins stay intact.
-  const { loadConfig, getFrontends } = await import("../../util/config.js");
+  const { loadConfig, getFrontends } = await import("../config/index.js");
   const config = loadConfig();
 
   // Derive frontends from config if not explicitly provided

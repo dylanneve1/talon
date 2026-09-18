@@ -12,7 +12,7 @@ import {
   renderMeshReport,
   renderUsageMessage,
 } from "../render.js";
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../../core/config/index.js";
 import { collectPlanUsage } from "../../shared/plan-usage-report.js";
 import { getLoadedPlugins } from "../../../core/plugin/index.js";
 import { getMeshService } from "../../../core/mesh/index.js";

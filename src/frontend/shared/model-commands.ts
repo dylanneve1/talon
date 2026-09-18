@@ -10,7 +10,7 @@
  * about a socket, a bot API, or a keyboard.
  */
 
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import type { Backend } from "../../core/agent-runtime/capabilities.js";
 import type { ReasoningEffortLevel } from "../../core/types.js";
 import {

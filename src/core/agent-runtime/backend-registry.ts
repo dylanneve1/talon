@@ -31,7 +31,7 @@
 
 import type { Backend } from "./capabilities.js";
 import type { DoctorCheck, DoctorConfigSlice } from "../doctor/types.js";
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../config/index.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

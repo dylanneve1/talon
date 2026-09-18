@@ -23,7 +23,10 @@ import { getPluginPromptAdditions } from "../../core/plugin/index.js";
 import { listPluginItems, setPluginEnabled } from "../../core/plugin/manage.js";
 import { notifyPromptInputsChanged } from "../../core/prompt/invalidation.js";
 import { listSkills, setSkillEnabled } from "../../storage/skills.js";
-import { rebuildSystemPrompt, type TalonConfig } from "../../util/config.js";
+import {
+  rebuildSystemPrompt,
+  type TalonConfig,
+} from "../../core/config/index.js";
 import { log } from "../../util/log.js";
 import type { PluginItem, SkillItem, ToggleResult } from "./protocol.js";
 import { persistConfigPatch } from "./settings.js";

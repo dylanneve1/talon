@@ -27,7 +27,7 @@ vi.mock("../storage/skills.js", () => ({
   ]),
   setSkillEnabled: vi.fn(),
 }));
-vi.mock("../util/config.js", () => ({ rebuildSystemPrompt: vi.fn() }));
+vi.mock("../core/config/index.js", () => ({ rebuildSystemPrompt: vi.fn() }));
 vi.mock("../frontend/native/settings.js", () => ({
   persistConfigPatch: vi.fn(),
 }));
@@ -38,11 +38,11 @@ const { performPluginReload } =
   await import("../core/engine/gateway-actions/plugins.js");
 const { setPluginEnabled } = await import("../core/plugin/manage.js");
 const { setSkillEnabled } = await import("../storage/skills.js");
-const { rebuildSystemPrompt } = await import("../util/config.js");
+const { rebuildSystemPrompt } = await import("../core/config/index.js");
 const { persistConfigPatch } = await import("../frontend/native/settings.js");
 const { notifyPromptInputsChanged } =
   await import("../core/prompt/invalidation.js");
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 import type { Backend } from "../core/agent-runtime/capabilities.js";
 
 const config = { systemPrompt: "old" } as unknown as TalonConfig;

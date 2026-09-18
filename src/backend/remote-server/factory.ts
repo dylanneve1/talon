@@ -25,7 +25,7 @@ import {
   type UsageTelemetry,
 } from "../../core/agent-runtime/capabilities.js";
 import type { OneShotAgentParams, OneShotUsage } from "../../core/types.js";
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import { binaryOnPath } from "../../util/binary-on-path.js";
 import { log } from "../../util/log.js";
 import { handlerToEvents } from "../shared/handler-to-events.js";

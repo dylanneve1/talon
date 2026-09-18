@@ -9,7 +9,7 @@
  * collect extra diagnostics). Adding a backend = adding an adapter; no harness
  * changes.
  */
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../../core/config/index.js";
 
 /** Result of one driven turn — common fields plus adapter-supplied extras. */
 export interface StubTurnResult {

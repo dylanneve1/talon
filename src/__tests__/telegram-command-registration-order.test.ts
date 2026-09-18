@@ -24,7 +24,7 @@ vi.mock("../core/update/self-update.js", () => ({
 import { registerCommands } from "../frontend/telegram/commands/index.js";
 import { telegramCommandMenu } from "../frontend/telegram/commands/definitions.js";
 import type { Bot } from "grammy";
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 
 type Entry = { kind: "command" | "on"; key: string };
 

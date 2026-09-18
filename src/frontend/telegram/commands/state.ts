@@ -29,6 +29,6 @@ export function isAuthorizedAdmin(ctx: Context): boolean {
 }
 
 export type RegisterDeps = {
-  config: import("../../../util/config.js").TalonConfig;
+  config: import("../../../core/config/index.js").TalonConfig;
   gateway?: { backend: Backend | null };
 };

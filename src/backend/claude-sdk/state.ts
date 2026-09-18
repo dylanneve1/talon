@@ -5,7 +5,7 @@
  * initialization functions + internal getters for sibling modules.
  */
 
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import { registerClaudeModels } from "./models/index.js";
 
 // ── State ────────────────────────────────────────────────────────────────────

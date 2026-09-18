@@ -19,7 +19,7 @@
  */
 
 import type { Backend } from "../agent-runtime/capabilities.js";
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../config/index.js";
 import type { ReasoningEffortLevel } from "../types.js";
 import {
   normalizeReasoningLevels,

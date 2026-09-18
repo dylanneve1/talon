@@ -33,7 +33,7 @@ import type {
   ModelCatalog,
 } from "../core/agent-runtime/capabilities.js";
 import { composeBackend } from "../core/agent-runtime/capabilities.js";
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),

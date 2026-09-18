@@ -3,7 +3,7 @@
  */
 
 import type { Bot, Context } from "grammy";
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../../core/config/index.js";
 import { escapeHtml } from "../formatting.js";
 import { resetSession, getAllSessions } from "../../../storage/sessions.js";
 import { clearHistory } from "../../../storage/history.js";

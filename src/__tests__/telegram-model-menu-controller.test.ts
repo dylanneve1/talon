@@ -61,7 +61,7 @@ import {
   toggleChatFreeOnly,
 } from "../frontend/telegram/model-menu.js";
 import { setChatModel, setChatFreeOnly } from "../storage/chat-settings.js";
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 
 let nextChatId = 1000;
 function freshChat(): string {

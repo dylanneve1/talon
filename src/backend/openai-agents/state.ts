@@ -8,7 +8,7 @@
  * so the resolver, picker, and UIs can read it synchronously.
  */
 
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
 import { TalonSession } from "./session.js";
 import type { ReasoningEffortLevel } from "../../core/types.js";

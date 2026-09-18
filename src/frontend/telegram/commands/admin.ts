@@ -7,7 +7,7 @@
  */
 
 import type { Bot } from "grammy";
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../../core/config/index.js";
 import { respawnSelf } from "../../../util/respawn.js";
 import { isStaleCommand } from "../stale-command.js";
 import {

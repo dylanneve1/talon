@@ -6,7 +6,7 @@
 
 import type { Client, Message } from "discord.js";
 import { ChannelType } from "discord.js";
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../../core/config/index.js";
 import { setMessageFilePath } from "../../../storage/history.js";
 import { addMedia } from "../../../storage/media-index.js";
 import { deriveNumericChatId } from "../../../util/chat-id.js";

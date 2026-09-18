@@ -9,7 +9,7 @@
  * differ (index.ts selects dynamically, cli.ts always uses terminal).
  */
 
-import { loadConfig, rebuildSystemPrompt } from "./util/config.js";
+import { loadConfig, rebuildSystemPrompt } from "./core/config/index.js";
 import { initWorkspace } from "./util/workspace.js";
 import { loadSessions, resetSession } from "./storage/sessions.js";
 import { loadChatSettings } from "./storage/chat-settings.js";
@@ -38,7 +38,7 @@ import { initHeartbeat } from "./core/background/heartbeat/index.js";
 import { log, logWarn, logDebug } from "./util/log.js";
 import { bootPhase } from "./util/boot-timer.js";
 import { mapConcurrent } from "./util/concurrency.js";
-import type { TalonConfig } from "./util/config.js";
+import type { TalonConfig } from "./core/config/index.js";
 import { resolveFrontendIdAmong } from "./core/frontend-runtime/routing.js";
 import type { Frontend } from "./core/frontend-runtime/index.js";
 import type { ContextManager } from "./core/types.js";

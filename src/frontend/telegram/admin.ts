@@ -9,7 +9,7 @@
  */
 
 import type { Bot, Context } from "grammy";
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import { replyActiveChats, broadcast, killSession } from "./admin/sessions.js";
 import {
   replyStats,

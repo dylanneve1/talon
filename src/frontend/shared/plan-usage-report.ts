@@ -9,7 +9,7 @@
  * never silence.
  */
 
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import type { PlanUsage } from "../../core/agent-runtime/capabilities.js";
 import {
   listAvailableBackends,

@@ -1,16 +1,16 @@
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import writeFileAtomic from "write-file-atomic";
 import { z } from "zod";
-import { dirs, files as pathFiles } from "./paths.js";
-import { hardenTalonPermissions } from "./harden.js";
-import { setTimezone } from "./time.js";
-import { BACKEND_IDS } from "../core/agent-runtime/model-ref.js";
-import { REASONING_LEVEL_ORDER } from "../core/models/reasoning-levels.js";
+import { dirs, files as pathFiles } from "../../util/paths.js";
+import { hardenTalonPermissions } from "../../util/harden.js";
+import { setTimezone } from "../../util/time.js";
+import { BACKEND_IDS } from "../agent-runtime/model-ref.js";
+import { REASONING_LEVEL_ORDER } from "../models/reasoning-levels.js";
 import {
   assembleSystemPrompt,
   joinSystemPromptParts,
   type SystemPromptParts,
-} from "../core/prompt/assemble.js";
+} from "../prompt/assemble.js";
 
 /**
  * Backend-id literal source.
@@ -609,11 +609,11 @@ const configSchema = z.object({
 
 // System-prompt assembly lives in core/prompt/ (section pipeline,
 // templates, workspace listing). Re-exported here so existing
-// consumers keep importing from util/config.
+// consumers keep importing from core/config.
 export {
   joinSystemPromptParts,
   type SystemPromptParts,
-} from "../core/prompt/assemble.js";
+} from "../prompt/assemble.js";
 
 export type TalonConfig = z.infer<typeof configSchema> & {
   systemPrompt: string;

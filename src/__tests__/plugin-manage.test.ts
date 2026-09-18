@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import { listPluginItems, setPluginEnabled } from "../core/plugin/manage.js";
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 import type { PluginEntry } from "../core/plugin/types.js";
 
 function fakeConfig(input: {

@@ -52,7 +52,7 @@ import type { ComponentInteraction } from "../frontend/discord/callbacks/compone
 import { setAccessControl } from "../frontend/discord/handlers/index.js";
 import { deriveNumericChatId } from "../util/chat-id.js";
 import { logError } from "../util/log.js";
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 import type { Gateway } from "../core/engine/gateway.js";
 
 const config = {} as TalonConfig;

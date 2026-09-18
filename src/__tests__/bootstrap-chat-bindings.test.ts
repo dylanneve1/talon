@@ -12,7 +12,7 @@ import {
   setChatModel,
 } from "../storage/chat-settings.js";
 import { stubBackend } from "./helpers/stub-backend.js";
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 
 const config = {} as TalonConfig;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

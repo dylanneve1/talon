@@ -47,7 +47,7 @@ import {
   type BackendFactory,
 } from "../core/agent-runtime/backend-registry.js";
 import { handleModelCallback } from "../frontend/telegram/callbacks/model.js";
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 
 let nextChatId = 7000;
 function freshChat(): string {

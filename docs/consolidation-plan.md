@@ -127,7 +127,7 @@ delegates to private methods at those boundaries.
 
 Already documented there; listed here so the order is explicit.
 
-- **`config-belongs-in-core`** (3 edges): move `util/config.ts` to
+- **`config-belongs-in-core`** (3 edges, done): moved `util/config.ts` to
   `core/config/`. Mechanical — it imports `core/agent-runtime/model-ref`,
   `core/models/reasoning-levels`, `core/prompt/assemble`; ~100 import
   sites move with it. Ratchet the rule to `error` in the same PR.

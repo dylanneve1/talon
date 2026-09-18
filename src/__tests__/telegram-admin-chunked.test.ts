@@ -46,7 +46,7 @@ vi.mock("../util/watchdog.js", () => ({
 
 import { handleAdminCommand } from "../frontend/telegram/admin.js";
 import { TELEGRAM_MAX_TEXT } from "../frontend/telegram/actions/types.js";
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 
 const config = { model: "claude-sonnet-4-5" } as TalonConfig;
 

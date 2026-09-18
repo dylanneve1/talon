@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { files, dirs } from "../../util/paths.js";
 import { tailFile } from "../../util/tail-file.js";
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { resetSession, getAllSessions } from "../../storage/sessions.js";
 import { clearHistory } from "../../storage/history.js";

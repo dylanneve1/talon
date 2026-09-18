@@ -13,7 +13,7 @@
  * logs, telemetry, tests) doesn't have to chase it down again.
  *
  * This module also pins the canonical `BackendId` union;
- * `src/util/config.ts` imports `BACKEND_IDS` directly for its zod
+ * `src/core/config/index.ts` imports `BACKEND_IDS` directly for its zod
  * enums. Adding a backend means updating THIS literal once; the
  * config schema picks the change up automatically. Don't
  * reintroduce a manually-mirrored zod tuple — it's a footgun.
@@ -24,7 +24,7 @@ import type { ReasoningEffortLevel } from "../types.js";
 /**
  * Canonical backend identifiers — single source of truth for the
  * typed `BackendId` union AND the runtime zod enums in
- * `src/util/config.ts`. Update one place, everything stays in
+ * `src/core/config/index.ts`. Update one place, everything stays in
  * lockstep.
  */
 export const BACKEND_IDS = [

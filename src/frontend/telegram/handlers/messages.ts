@@ -6,7 +6,7 @@
  */
 
 import type { Bot, Context } from "grammy";
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../../core/config/index.js";
 import { escapeHtml } from "../formatting.js";
 import { friendlyMessage } from "../../../core/errors.js";
 import { setMessageFilePath } from "../../../storage/history.js";

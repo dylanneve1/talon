@@ -6,7 +6,7 @@
  */
 
 import type { Backend } from "../../agent-runtime/capabilities.js";
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../config/index.js";
 import { type BackendInitContext } from "../../agent-runtime/backend-registry.js";
 import { log } from "../../../util/log.js";
 import { roleHolder } from "./holders.js";

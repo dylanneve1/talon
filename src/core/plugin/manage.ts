@@ -8,7 +8,7 @@
  * talon.json so the surface owns its own write path.
  */
 
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../config/index.js";
 import { isPathPlugin, type PluginEntry } from "./types.js";
 import {
   BUILTIN_PLUGINS,

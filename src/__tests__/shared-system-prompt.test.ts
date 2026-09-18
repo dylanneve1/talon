@@ -19,15 +19,15 @@ import {
   rebuildSystemPrompt,
   buildSystemPromptPartsFor,
   type TalonConfig,
-} from "../util/config.js";
+} from "../core/config/index.js";
 
 // Each rebuild stamps a fresh version into the config — simulating the
 // real volatility (workspace listing sizes, daily-memory pointer) that
 // makes consecutive rebuilds differ.
 let rebuildCount = 0;
 
-vi.mock("../util/config.js", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("../util/config.js")>();
+vi.mock("../core/config/index.js", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../core/config/index.js")>();
   return {
     ...orig,
     rebuildSystemPrompt: vi.fn((config: { [k: string]: unknown }) => {

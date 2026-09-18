@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 
 const listAvailableBackends = vi.hoisted(() => vi.fn());
 const getPooledBackend = vi.hoisted(() => vi.fn());

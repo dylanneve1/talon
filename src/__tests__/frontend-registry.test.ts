@@ -28,7 +28,7 @@ import {
   frontendsForChat,
   nonTerminalFrontends,
 } from "../backend/shared/frontends.js";
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../core/config/index.js";
 import type { Gateway } from "../core/engine/gateway.js";
 
 afterEach(() => resetFrontendRegistry());

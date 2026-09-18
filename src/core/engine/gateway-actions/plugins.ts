@@ -21,7 +21,7 @@ export async function performPluginReload(
 ): Promise<{ names: string[] }> {
   const { reloadPlugins, getPluginPromptAdditions } =
     await import("../../plugin/index.js");
-  const { rebuildSystemPrompt } = await import("../../../util/config.js");
+  const { rebuildSystemPrompt } = await import("../../config/index.js");
   const { notifyPromptInputsChanged } =
     await import("../../prompt/invalidation.js");
 

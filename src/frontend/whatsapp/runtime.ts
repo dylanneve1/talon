@@ -9,7 +9,7 @@
  */
 
 import type { WASocket } from "baileys";
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { bareId } from "./identity.js";
 

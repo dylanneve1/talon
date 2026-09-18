@@ -8,7 +8,7 @@
 
 import type { Bot, Context, Filter, NextFunction } from "grammy";
 import type { Message } from "grammy/types";
-import type { TalonConfig } from "../../util/config.js";
+import type { TalonConfig } from "../../core/config/index.js";
 import { pushMessage } from "../../storage/history.js";
 import type { HistoryMessage } from "../../storage/repositories/history-repo.js";
 import { allowChat, revokeChat } from "./userbot.js";

@@ -15,7 +15,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 
-import type { TalonConfig } from "../../../util/config.js";
+import type { TalonConfig } from "../../../core/config/index.js";
 import { initBackendAndDispatcher, type Frontend } from "../../../bootstrap.js";
 import { execute as dispatcherExecute } from "../../../core/engine/dispatcher.js";
 import { toolInputToRecord } from "../../../core/agent-runtime/events.js";

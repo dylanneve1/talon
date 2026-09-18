@@ -315,7 +315,7 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
     const { bootstrap, initBackendAndDispatcher } =
       await import("../../bootstrap.js");
     await bootstrap();
-    const { loadConfig } = await import("../../util/config.js");
+    const { loadConfig } = await import("../../core/config/index.js");
     await initBackendAndDispatcher(loadConfig(), frontend);
   }, 120_000);
 

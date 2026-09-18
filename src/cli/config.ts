@@ -2,7 +2,7 @@
  * CLI config model + load/save/format helpers, plus the banner.
  *
  * This is the on-disk `talon.json` shape as the CLI sees it; the runtime has
- * its own richer config type in util/config.ts.
+ * its own richer config type in core/config/index.ts.
  */
 
 import pc from "picocolors";
@@ -20,7 +20,7 @@ export function printBanner(): void {
 
 /**
  * The subset of ~/.talon/config.json the CLI reads or prompts for — a
- * partial view, not the whole schema (that lives in util/config.ts).
+ * partial view, not the whole schema (that lives in core/config/index.ts).
  * Anything absent here is still present at runtime on a loaded config and
  * MUST be carried through on save: `talon setup` used to rebuild the file
  * from its own named fields alone and silently dropped every other key.
