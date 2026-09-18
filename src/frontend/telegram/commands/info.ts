@@ -113,6 +113,9 @@ export function registerInfoCommands(bot: Bot): void {
     }
   });
 
+  /** True only in a 1:1 chat with the bot — never a group or channel. */
+  const isPrivate = (ctx: Context): boolean => ctx.chat?.type === "private";
+
   /**
    * The bridge footer `/mesh` prints for this caller.
    *
@@ -121,10 +124,16 @@ export function registerInfoCommands(bot: Bot): void {
    * itself should get an answer rather than a scavenger hunt through config
    * files. Everyone else gets the address only: a group member reading the
    * fleet has no business holding the key to it.
+   *
+   * Being the admin is not enough on its own: the secrets are withheld in
+   * any room that isn't a 1:1 with the bot. A group message is readable by
+   * every member, forwardable out of the group, and retained in their
+   * clients — so "the admin asked" says nothing about who ends up holding
+   * the bearer token. The admin can re-run the command in a DM.
    */
   const bridgeFor = (ctx: Context): MeshReachability => {
     const reach = getMeshService().bridgeReachability();
-    if (!reach.ok || isAuthorizedAdmin(ctx)) return reach;
+    if (!reach.ok || (isAuthorizedAdmin(ctx) && isPrivate(ctx))) return reach;
     return {
       ok: true,
       url: reach.url,
@@ -149,7 +158,27 @@ export function registerInfoCommands(bot: Bot): void {
       const minted = getMeshService().makeCompanionPairLink(
         named || ctx.me.first_name,
       );
-      await ctx.reply(renderMeshPairLink(minted), {
+      const rendered = renderMeshPairLink(minted);
+      // The pairing block is a live credential: a single-use grant plus the
+      // bearer token and certificate for the manual fallback. In a group
+      // that is a key handed to every member, so deliver it to the admin's
+      // DM and leave only a receipt behind. The grant is minted either way,
+      // so a failed DM must say so rather than look like it worked.
+      if (!isPrivate(ctx)) {
+        try {
+          await bot.api.sendMessage(ctx.from!.id, rendered, {
+            parse_mode: "HTML",
+            link_preview_options: { is_disabled: true },
+          });
+          await ctx.reply("Sent the pairing link to your DM.");
+        } catch {
+          await ctx.reply(
+            "A pairing link carries the bridge token, so I won't post it in a group — and I couldn't DM you. Message me directly once, then run /mesh link there.",
+          );
+        }
+        return;
+      }
+      await ctx.reply(rendered, {
         parse_mode: "HTML",
         link_preview_options: { is_disabled: true },
       });
