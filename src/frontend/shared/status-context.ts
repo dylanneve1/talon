@@ -1,6 +1,8 @@
 import type { CacheMetricsSupport } from "../../core/types.js";
 import type { PlanUsage } from "../../core/agent-runtime/capabilities.js";
+import type { CacheVerdict } from "../../storage/metrics.js";
 import { formatSmartTimestamp, formatRelativeAge } from "../../util/time.js";
+import { formatDuration } from "./format.js";
 
 // ── /context breakdown ────────────────────────────────────────────────────────
 
@@ -285,6 +287,54 @@ export function buildCacheDisplay(input: {
     write,
     showsWrite: mode === "readwrite",
   };
+}
+
+// ── Cache temperature ───────────────────────────────────────────────────────
+
+export interface CacheTempDisplay {
+  /** Last cross-turn verdict, or "unknown" when this process saw no turn. */
+  verdict: CacheVerdict | "unknown";
+  /** Time since the last turn ended, or "—" when no turn has finished. */
+  idle: string;
+}
+
+/**
+ * Resolve the "is this chat's prompt prefix still warm?" line.
+ *
+ * The aggregate `Cache: NN% hit` above it answers a different question — it
+ * folds in every request of every turn, and an agentic turn's later requests
+ * always read the prefix the first one paid for. What costs money is whether
+ * the NEXT turn will find the prefix still cached, and the two inputs to that
+ * are the last turn's cross-turn verdict and how long ago that turn ended
+ * (docs/cache-economics.md).
+ *
+ * Returns null when neither is known — a chat that has not completed a turn
+ * in this process has nothing to say, and a fabricated "none / 0s" would read
+ * as a measurement.
+ */
+export function buildCacheTempDisplay(input: {
+  verdict?: CacheVerdict;
+  lastTurnEndedAt?: number;
+  now?: number;
+}): CacheTempDisplay | null {
+  const endedAt =
+    typeof input.lastTurnEndedAt === "number" &&
+    Number.isFinite(input.lastTurnEndedAt) &&
+    input.lastTurnEndedAt > 0
+      ? input.lastTurnEndedAt
+      : undefined;
+  if (!input.verdict && endedAt === undefined) return null;
+  const now = input.now ?? Date.now();
+  return {
+    verdict: input.verdict ?? "unknown",
+    idle:
+      endedAt === undefined ? "—" : formatDuration(Math.max(0, now - endedAt)),
+  };
+}
+
+/** The one-line rendering every frontend's /status shares. */
+export function formatCacheTempLine(temp: CacheTempDisplay): string {
+  return `Cache: ${temp.verdict} last turn · idle ${temp.idle}`;
 }
 
 // ── Plan limits ─────────────────────────────────────────────────────────────

@@ -104,6 +104,14 @@ export type SessionState = {
   sessionName?: string;
   /** Model used for this session's cost tracking. */
   lastModel?: string;
+  /**
+   * When the last turn of this chat finished (ms epoch), or undefined when
+   * no turn has completed yet. Distinct from `lastActive`, which any
+   * session write moves: this one only ever means "the transcript stopped
+   * growing here", which is what the prompt cache's TTL runs against —
+   * warm iff `now - lastTurnEndedAt < ttl` (docs/cache-economics.md).
+   */
+  lastTurnEndedAt?: number;
 };
 
 export const emptyUsage = (): SessionUsage => ({

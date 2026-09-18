@@ -20,6 +20,7 @@ import {
   performSessionReset,
   collectSessionStatus,
 } from "../../shared/session-status.js";
+import { formatCacheTempLine } from "../../shared/status-context.js";
 import { stopCurrentTurn } from "../../../core/engine/dispatcher.js";
 import type { RegisterDeps } from "./state.js";
 
@@ -74,6 +75,7 @@ export function registerSessionCommands(
             `  Read ${formatTokenCount(s.cache.read)}${s.cache.showsWrite ? `  Write ${formatTokenCount(s.cache.write)}` : ""}`,
           ]
         : []),
+      ...(s.cacheTemp ? [`  ${formatCacheTempLine(s.cacheTemp)}`] : []),
       `  Input ${formatTokenCount(s.inputTokens)}  Output ${formatTokenCount(s.outputTokens)}${s.costUsd > 0 ? `  Cost ${formatUsd(s.costUsd)}` : ""}`,
       "",
       ...(s.plan

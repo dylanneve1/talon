@@ -166,6 +166,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   total_response_ms   REAL    NOT NULL DEFAULT 0,
   last_response_ms    REAL    NOT NULL DEFAULT 0,
   fastest_response_ms REAL,
+  -- When the chat's last turn finished; NULL until one has. Read as the
+  -- prompt cache's age signal (docs/cache-economics.md), which is why it
+  -- is separate from last_active (moved by any session write).
+  last_turn_ended_at  INTEGER,
   metrics             TEXT    NOT NULL DEFAULT '{"lifetime":{"counters":{"queries":0,"toolCalls":0,"turnsWithTools":0,"apiCalls":0,"inputTokens":0,"outputTokens":0,"cacheReadTokens":0,"cacheWriteTokens":0,"failedTurns":0,"flowViolationRetries":0,"flowViolationCapExhausted":0,"trailingTextDropped":0},"latency":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"toolCallsByName":{},"backend":{},"cacheHitPercent":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"toolCallsPerTurn":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"apiCallsPerTurn":{"count":0,"sumMs":0,"minMs":null,"maxMs":0}},"buckets":{}}'
 );
 
@@ -414,6 +418,9 @@ ALTER TABLE sessions ADD COLUMN metrics TEXT NOT NULL DEFAULT '{"lifetime":{"cou
 -- carry more than one attachment. Fresh databases get the column via
 -- schema.sql.
 ALTER TABLE history_messages ADD COLUMN attachments TEXT`,
+  addSessionsLastTurnEndedAtColumn: `-- Column reconciliation for databases that shipped before the cache-age
+-- signal existed. Fresh databases get the column via schema.sql.
+ALTER TABLE sessions ADD COLUMN last_turn_ended_at INTEGER`,
 } as const;
 
 export const goalsSql = {
@@ -657,13 +664,13 @@ export const sessionsSql = {
    created_at, last_bot_message_id, total_input_tokens, total_output_tokens,
    total_cache_read, total_cache_write, last_prompt_tokens, context_tokens,
    context_window, num_api_calls, estimated_cost_usd, total_response_ms,
-   last_response_ms, fastest_response_ms, metrics)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+   last_response_ms, fastest_response_ms, last_turn_ended_at, metrics)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   all: `SELECT chat_id, session_id, session_name, last_model, turns, last_active,
        created_at, last_bot_message_id, total_input_tokens, total_output_tokens,
        total_cache_read, total_cache_write, last_prompt_tokens, context_tokens,
        context_window, num_api_calls, estimated_cost_usd, total_response_ms,
-       last_response_ms, fastest_response_ms, metrics
+       last_response_ms, fastest_response_ms, last_turn_ended_at, metrics
 FROM sessions`,
   remove: `DELETE FROM sessions WHERE chat_id = ?`,
 } as const;

@@ -36,6 +36,8 @@
  * did.
  */
 
+import { createHash } from "node:crypto";
+
 import { logWarn } from "../../util/log.js";
 
 // ── Per-turn cache stats ────────────────────────────────────────────────────
@@ -305,6 +307,24 @@ export function toolFingerprint(
   return [
     ...new Set([...builtinTools, ...mcpServerNames.map((n) => `mcp:${n}`)]),
   ].sort();
+}
+
+/**
+ * Short, stable digest of a tool set — the thing to compare between two
+ * chats. Two chats whose fingerprints (and static prompt) match render a
+ * byte-identical prefix and therefore share the cache; two that don't,
+ * can't, however similar they look (docs/cache-economics.md, PR B).
+ */
+export function fingerprintHash(fingerprint: readonly string[]): string {
+  return createHash("sha256")
+    .update(fingerprint.join("\n"))
+    .digest("hex")
+    .slice(0, 12);
+}
+
+/** True once a fingerprint has been recorded for this chat in this process. */
+export function hasToolFingerprint(chatId: string): boolean {
+  return lastToolSets.has(chatId);
 }
 
 /**

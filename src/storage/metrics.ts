@@ -30,6 +30,42 @@ const legacyCounters = new Map<string, number>();
  */
 const processHistograms = new Map<string, MetricsLatencyAgg>();
 
+/**
+ * A chat's last cross-turn cache verdict — did the turn's FIRST request
+ * read the previous turn's prefix (`hit`), pay to re-write it (`miss`), or
+ * was nothing cacheable at all (`none`)? Mirrors `CrossTurnVerdict` in
+ * backend/shared/cache-telemetry.ts, which owns the classification; the
+ * union is restated here because `/status` renders it and frontends may
+ * not import backend/ (.dependency-cruiser.cjs: frontend-not-to-backend).
+ */
+export type CacheVerdict = "hit" | "miss" | "none";
+
+/**
+ * Per-chat last verdict. Process-local and deliberately unpersisted: it
+ * describes the live prefix, which dies with the process anyway, and
+ * `/status` is the only reader. Bounded like the per-chat maps in
+ * cache-telemetry.ts, insertion-ordered eviction.
+ */
+const MAX_TRACKED_CHATS = 256;
+const lastCacheVerdicts = new Map<string, CacheVerdict>();
+
+/** Record the chat's newest cross-turn cache verdict. */
+export function noteCacheVerdict(chatId: string, verdict: CacheVerdict): void {
+  if (
+    lastCacheVerdicts.size >= MAX_TRACKED_CHATS &&
+    !lastCacheVerdicts.has(chatId)
+  ) {
+    const oldest = lastCacheVerdicts.keys().next().value;
+    if (oldest !== undefined) lastCacheVerdicts.delete(oldest);
+  }
+  lastCacheVerdicts.set(chatId, verdict);
+}
+
+/** The chat's last cross-turn verdict, or undefined if none was recorded. */
+export function getCacheVerdict(chatId: string): CacheVerdict | undefined {
+  return lastCacheVerdicts.get(chatId);
+}
+
 export type MetricsSnapshot = {
   counters: Record<string, number>;
   histograms: Record<
@@ -202,5 +238,6 @@ export function getTodayMetrics(): MetricsSnapshot {
 export function resetMetrics(): void {
   legacyCounters.clear();
   processHistograms.clear();
+  lastCacheVerdicts.clear();
   resetAllSessionMetrics();
 }

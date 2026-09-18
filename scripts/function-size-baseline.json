@@ -114,12 +114,6 @@
     "cx": 29
   },
   {
-    "file": "src/frontend/shared/session-status.ts",
-    "name": "collectSessionStatus",
-    "lines": 117,
-    "cx": 26
-  },
-  {
     "file": "src/frontend/telegram/commands/info.ts",
     "name": "registerInfoCommands",
     "lines": 188,

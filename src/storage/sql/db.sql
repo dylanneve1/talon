@@ -25,3 +25,8 @@ ALTER TABLE sessions ADD COLUMN metrics TEXT NOT NULL DEFAULT '{"lifetime":{"cou
 -- carry more than one attachment. Fresh databases get the column via
 -- schema.sql.
 ALTER TABLE history_messages ADD COLUMN attachments TEXT
+
+-- name: addSessionsLastTurnEndedAtColumn
+-- Column reconciliation for databases that shipped before the cache-age
+-- signal existed. Fresh databases get the column via schema.sql.
+ALTER TABLE sessions ADD COLUMN last_turn_ended_at INTEGER

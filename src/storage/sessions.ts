@@ -480,6 +480,10 @@ export function recordUsage(
     session.usage.estimatedCostUsd += turn.costUsd;
   }
   if (turn.model) session.lastModel = turn.model;
+  // A turn just ended — this is the timestamp the prompt cache ages
+  // against (docs/cache-economics.md). Set on the one seam every backend
+  // funnels a finished turn through, failed-but-billed turns included.
+  session.lastTurnEndedAt = Date.now();
   if (turn.durationMs && turn.durationMs > 0) {
     session.usage.totalResponseMs =
       (session.usage.totalResponseMs || 0) + turn.durationMs;
@@ -580,6 +584,12 @@ export type SessionInfo = {
   lastModel?: string;
   /** True when a turn is currently streaming and `usage` includes its live so-far counts. */
   turnInProgress?: boolean;
+  /**
+   * When this chat's last turn finished (ms epoch), or undefined when none
+   * has. `/status` reports the idle gap from it; `lastActive` can't stand in
+   * because any session write moves that.
+   */
+  lastTurnEndedAt?: number;
 };
 
 export function getSessionInfo(chatId: string): SessionInfo {
@@ -594,6 +604,7 @@ export function getSessionInfo(chatId: string): SessionInfo {
     sessionName: session?.sessionName,
     lastModel: session?.lastModel,
     turnInProgress: liveTurns.has(chatId),
+    lastTurnEndedAt: session?.lastTurnEndedAt,
   };
 }
 
@@ -615,6 +626,7 @@ export function getAllSessions(): Array<{ chatId: string; info: SessionInfo }> {
       sessionName: session.sessionName,
       lastModel: session.lastModel,
       turnInProgress: liveTurns.has(chatId),
+      lastTurnEndedAt: session.lastTurnEndedAt,
     },
   }));
 }

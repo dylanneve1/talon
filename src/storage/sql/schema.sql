@@ -161,6 +161,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   total_response_ms   REAL    NOT NULL DEFAULT 0,
   last_response_ms    REAL    NOT NULL DEFAULT 0,
   fastest_response_ms REAL,
+  -- When the chat's last turn finished; NULL until one has. Read as the
+  -- prompt cache's age signal (docs/cache-economics.md), which is why it
+  -- is separate from last_active (moved by any session write).
+  last_turn_ended_at  INTEGER,
   metrics             TEXT    NOT NULL DEFAULT '{"lifetime":{"counters":{"queries":0,"toolCalls":0,"turnsWithTools":0,"apiCalls":0,"inputTokens":0,"outputTokens":0,"cacheReadTokens":0,"cacheWriteTokens":0,"failedTurns":0,"flowViolationRetries":0,"flowViolationCapExhausted":0,"trailingTextDropped":0},"latency":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"toolCallsByName":{},"backend":{},"cacheHitPercent":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"toolCallsPerTurn":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"apiCallsPerTurn":{"count":0,"sumMs":0,"minMs":null,"maxMs":0}},"buckets":{}}'
 );
 

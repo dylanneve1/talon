@@ -42,6 +42,7 @@ type Row = {
   total_response_ms: number;
   last_response_ms: number;
   fastest_response_ms: number | null;
+  last_turn_ended_at: number | null;
   metrics: string | null;
 };
 
@@ -81,6 +82,7 @@ function rowToSession(row: Row): SessionState {
     lastBotMessageId: row.last_bot_message_id ?? undefined,
     sessionName: row.session_name ?? undefined,
     lastModel: row.last_model ?? undefined,
+    lastTurnEndedAt: row.last_turn_ended_at ?? undefined,
   };
 }
 
@@ -120,6 +122,10 @@ export function upsert(chatId: string, session: SessionState): void {
       num(usage?.totalResponseMs),
       num(usage?.lastResponseMs),
       typeof fastest === "number" && Number.isFinite(fastest) ? fastest : null,
+      typeof session.lastTurnEndedAt === "number" &&
+        Number.isFinite(session.lastTurnEndedAt)
+        ? session.lastTurnEndedAt
+        : null,
       JSON.stringify(session.metrics ?? emptyMetrics()),
     );
 }

@@ -26,10 +26,8 @@ import {
   hubPluginServerNames,
 } from "../../core/mcp-hub/index.js";
 import { nonTerminalFrontends, frontendsForChat } from "../shared/frontends.js";
-import {
-  noteToolFingerprint,
-  toolFingerprint,
-} from "../shared/cache-telemetry.js";
+import { toolFingerprint } from "../shared/cache-telemetry.js";
+import { reportToolFingerprint } from "../shared/cache-metrics.js";
 import { log, logError } from "../../util/log.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { ALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
@@ -395,7 +393,7 @@ export function buildSdkOptions(
   // mid-session invalidates the system prompt and every cached message after
   // it — the most expensive cache event there is, and one the aggregate
   // hit-rate can't show. Plugin-provided MCP servers are the mutable part.
-  noteToolFingerprint(
+  reportToolFingerprint(
     chatId,
     toolFingerprint(builtinTools, Object.keys(mcpServers)),
   );

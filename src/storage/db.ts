@@ -69,7 +69,7 @@ let db: SqlDatabase | null = null;
  * Column reconciliation runs first: `ALTER TABLE … ADD COLUMN` has no
  * IF NOT EXISTS form, so columns added to already-shipped tables
  * (media_index.content_hash, sessions.metrics,
- * history_messages.attachments) are ensured by attempting the ALTER and
+ * history_messages.attachments, sessions.last_turn_ended_at) are ensured by attempting the ALTER and
  * swallowing the two expected failures — "duplicate column name"
  * (column already there) and "no such table" (fresh database; the
  * CREATE TABLE in schema.sql includes the column).
@@ -97,6 +97,11 @@ function ensureSchema(database: SqlDatabase): void {
   }
   try {
     database.exec(dbSql.addHistoryAttachmentsColumn);
+  } catch {
+    /* duplicate column or no such table — both mean nothing to do */
+  }
+  try {
+    database.exec(dbSql.addSessionsLastTurnEndedAtColumn);
   } catch {
     /* duplicate column or no such table — both mean nothing to do */
   }

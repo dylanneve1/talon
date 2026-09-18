@@ -29,6 +29,7 @@ import {
   performSessionReset,
   type SessionStatusData,
 } from "../shared/session-status.js";
+import { formatCacheTempLine } from "../shared/status-context.js";
 import {
   describeChatEffort,
   describeChatModels,
@@ -199,6 +200,7 @@ function renderStatus(s: SessionStatusData): string {
       `Cache: ${s.cache.hitPct}% hit · read ${formatTokenCount(s.cache.read)}${s.cache.showsWrite ? ` · write ${formatTokenCount(s.cache.write)}` : ""}`,
     );
   }
+  if (s.cacheTemp) lines.push(formatCacheTempLine(s.cacheTemp));
   if (s.plan) {
     lines.push(
       "",

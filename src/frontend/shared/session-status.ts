@@ -26,12 +26,15 @@ import { resolveActiveModelForChat } from "../../core/models/active-model.js";
 import { getPooledBackend } from "../../core/engine/backend-controller/index.js";
 import {
   buildCacheDisplay,
+  buildCacheTempDisplay,
   buildContextDisplay,
   buildPlanDisplay,
   type CacheDisplay,
+  type CacheTempDisplay,
   type ContextDisplay,
   type PlanDisplay,
 } from "./status-context.js";
+import { getCacheVerdict } from "../../storage/metrics.js";
 import { formatDuration } from "./format.js";
 
 /**
@@ -79,6 +82,12 @@ export interface SessionStatusData {
   pulseOn: boolean;
   context: ContextDisplay;
   cache: CacheDisplay | null;
+  /**
+   * Whether the chat's prompt prefix is still warm: the last turn's
+   * cross-turn cache verdict and how long ago that turn ended. Null when no
+   * turn has finished in this process (docs/cache-economics.md).
+   */
+  cacheTemp: CacheTempDisplay | null;
   plan: PlanDisplay | null;
   inputTokens: number;
   outputTokens: number;
@@ -98,6 +107,11 @@ export interface SessionStatusData {
   runtime: string;
   /** Daemon resident set size, in bytes. */
   rssBytes: number;
+}
+
+/** Mean turn duration, or 0 before any turn has been timed. */
+function averageResponseMs(turns: number, totalResponseMs: number): number {
+  return turns > 0 && totalResponseMs ? Math.round(totalResponseMs / turns) : 0;
 }
 
 /**
@@ -182,11 +196,6 @@ export async function collectSessionStatus(
     await planSource?.usage?.getPlanUsage?.().catch(() => undefined),
   );
 
-  const avgResponseMs =
-    info.turns > 0 && u.totalResponseMs
-      ? Math.round(u.totalResponseMs / info.turns)
-      : 0;
-
   return {
     activeModel,
     backendLabel: backend?.label ?? "",
@@ -195,6 +204,10 @@ export async function collectSessionStatus(
     pulseOn: isPulseEnabled(chatId),
     context,
     cache,
+    cacheTemp: buildCacheTempDisplay({
+      verdict: getCacheVerdict(chatId),
+      lastTurnEndedAt: info.lastTurnEndedAt,
+    }),
     plan,
     inputTokens,
     outputTokens,
@@ -202,7 +215,7 @@ export async function collectSessionStatus(
     turns: info.turns,
     turnsModelLabel,
     lastResponseMs: u.lastResponseMs || 0,
-    avgResponseMs,
+    avgResponseMs: averageResponseMs(info.turns, u.totalResponseMs),
     fastestMs: u.fastestResponseMs === Infinity ? 0 : u.fastestResponseMs || 0,
     diskBytes: getWorkspaceDiskUsage(config.workspace),
     sessionAge: info.createdAt

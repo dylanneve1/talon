@@ -40,6 +40,7 @@ import { buildSdkOptions, getActiveFrontends } from "./options.js";
 import { waitForMcpServersReady } from "./mcp-ready.js";
 import { invalidatePlanUsage } from "./plan-usage.js";
 import { frontendsForChat } from "../shared/frontends.js";
+import { rollUpTurnCache } from "../shared/cache-metrics.js";
 import {
   createStreamState,
   isSystemInit,
@@ -47,10 +48,12 @@ import {
   isAssistant,
   isResult,
   isRateLimitEvent,
+  isCompactBoundary,
   isUserMessage,
   extractToolResults,
   processStreamDelta,
   processAssistantMessage,
+  processCompactBoundary,
   processResultMessage,
   type StreamState,
 } from "./stream.js";
@@ -334,6 +337,12 @@ async function* consumeSdkStream(
       yield* translateToolResults(ctx, message);
       continue;
     }
+    // The SDK compacted the session mid-turn. Measured, not acted on: the
+    // turn carries on exactly as before.
+    if (isCompactBoundary(message)) {
+      processCompactBoundary(message, ctx.chatId);
+      continue;
+    }
     // The turn just moved the plan's usage — drop the cached windows so
     // the next /status reads them again instead of showing pre-turn
     // figures.
@@ -448,9 +457,20 @@ function accountFailedClaudeTurn(
  * shared/cache-telemetry.ts. A lookback overflow only *predicts* a miss,
  * so warn when this turn's verdict proves the previous turn's overflow
  * cost a prefix re-write, then record this turn's overflow for the next.
+ *
+ * Also the rollup seam: the verdict goes into `cache.first_request.*` (and
+ * `cache.session_start.*` on a chat's first turn) here rather than in
+ * `runChatTurn`, which is at its size limit. `turnsIncludingThis` is the
+ * session's turn count with this turn already counted — `incrementTurns`
+ * has run by the time this is called, so 1 means "this was the first".
  */
-function reportCacheVerdict(chatId: string, state: StreamState): void {
+function reportCacheVerdict(
+  chatId: string,
+  state: StreamState,
+  turnsIncludingThis: number,
+): void {
   if (state.cacheStats) {
+    rollUpTurnCache(chatId, state.cacheStats, turnsIncludingThis);
     const overflow = priorLookbackOverflow(chatId);
     if (
       overflow !== undefined &&
@@ -647,7 +667,7 @@ export async function* runChatTurn(
   incrementTurns(chatId);
 
   state.allResponseText += state.currentBlockText;
-  reportCacheVerdict(chatId, state);
+  reportCacheVerdict(chatId, state, session.turns);
 
   const usage = turnUsageSnapshot(state);
   log(

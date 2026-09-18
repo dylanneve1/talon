@@ -7,6 +7,7 @@
  */
 
 import type {
+  SDKCompactBoundaryMessage,
   SDKMessage,
   SDKSystemMessage,
   SDKPartialAssistantMessage,
@@ -23,6 +24,7 @@ import {
   turnCacheStats,
   type TurnCacheStats,
 } from "../shared/cache-telemetry.js";
+import { recordCompactBoundary } from "../shared/cache-metrics.js";
 
 // ── Stream state accumulator ────────────────────────────────────────────────
 
@@ -154,6 +156,18 @@ export function isResult(msg: SDKMessage): msg is SDKResultMessage {
 /** Emitted when the subscription's rate-limit state changes mid-turn. */
 export function isRateLimitEvent(msg: SDKMessage): boolean {
   return msg.type === "rate_limit_event";
+}
+
+/**
+ * Emitted when the SDK compacts the session — the transcript before the
+ * boundary is replaced by a summary, so every cached block after the system
+ * prompt is gone and the next turn re-writes it. Shares `type: 'system'`
+ * with the init message, so the subtype is what tells them apart.
+ */
+export function isCompactBoundary(
+  msg: SDKMessage,
+): msg is SDKCompactBoundaryMessage {
+  return msg.type === "system" && msg.subtype === "compact_boundary";
 }
 
 // ── Message processors ──────────────────────────────────────────────────────
@@ -332,6 +346,19 @@ export function extractToolResults(msg: SDKUserMessage): ToolResultInfo[] {
     results.push({ toolUseId: b.tool_use_id, error });
   }
   return results;
+}
+
+/**
+ * Record a compaction boundary. Observational only: the turn proceeds
+ * exactly as it did before this message was recognised — what changes is
+ * that `session.compacted.*` now says how often the SDK compacts and how
+ * much it reclaims (docs/cache-economics.md, PR A step 3).
+ */
+export function processCompactBoundary(
+  msg: SDKCompactBoundaryMessage,
+  chatId: string,
+): void {
+  recordCompactBoundary(chatId, msg.compact_metadata);
 }
 
 /** Context fill of the last API iteration + whether the turn's first request hit the cache. */
