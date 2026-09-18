@@ -56,12 +56,12 @@ files; the same discipline scales it down. This document is the contract,
 
 | Directory | Files | Fix |
 | --- | --- | --- |
-| `frontend/native` | 30 | `bridge/` (server, tls, auth, routes/), `chats/` (chats, chat-wire, chat-lifecycle, empty-chat-sweep, reset), `turn/` (turn, queue, emit, tool-result, turn-meta, context), `surface/` (settings, models, status, memory, logs, extensions, control, discovery), `media/` |
+| ~~`frontend/native`~~ (done #960) | 30 | `bridge/` (server, tls, auth, routes/), `chats/` (chats, chat-wire, chat-lifecycle, empty-chat-sweep, reset), `turn/` (turn, queue, emit, tool-result, turn-meta, context), `surface/` (settings, models, status, memory, logs, extensions, control, discovery), `media/` |
 | `core/tools` | 25 | one file per domain is right; group into `chat/`, `ops/`, `content/`, `system/` with an `index.ts` per group feeding `ALL_TOOLS` |
 | `util` | 22 | move non-leaf modules to their owners: `mcp-launcher` → `core/mcp-hub/`, `workspace` → `core/vfs/`, `watchdog` + `respawn` + `boot-timer` → `core/daemon/`, `web-content` → `core/tools/content/`, `session-name` → `core/weaver/`, `harden` → `core/config/`, `chat-id` → `core/frontend-runtime/`; delete `cleanup-registry` (no importer). What stays is a leaf: log, paths, time, fs-path, http-body, exec-output, concurrency, binary-on-path, tail-file, runtime, version, trace. |
 | `storage` | 21 | fine as a flat store API — but `repositories/` (13) says the same thing; both stay, both are the one exception the baseline documents |
 | `backend/shared` | 21 | it is a library, not a dumping ground: rename to `backend/runtime/` and split `turn/` (turn-phases, stream-state, handler-to-events, result-events, delivered-text, delivery, model-retry, handle-retry, turn-interrupt), `prompt/` (system-prompt, prompt-format), `cache/` (cache-telemetry, cache-metrics), `usage.ts`, `metrics.ts`, `frontends.ts` |
-| `frontend/whatsapp` | 19 | `connection/` (connection, auth-state, wa-logger, pairing, pairing-lock, pairing-service, identity), `messages/` (inbound, message-store, media-store, turn-recovery, pins), `access.ts`, `commands.ts`, `actions/` |
+| ~~`frontend/whatsapp`~~ (done #958) | 19 | `connection/` (connection, auth-state, wa-logger, pairing, pairing-lock, pairing-service, identity), `messages/` (inbound, message-store, media-store, turn-recovery, pins), `access.ts`, `commands.ts`, `actions/` |
 | `cli` | 18 | `commands/` one file per command (already nearly so) + `index.ts` |
 | `core/engine/gateway-actions` | 17 | domain files are right; split `native.ts` (1 k lines) by route group and move validation next to its users |
 | `backend/remote-server` | 17 | `session/`, `model-catalog/` (exists), `server/` |

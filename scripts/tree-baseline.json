@@ -53,11 +53,6 @@
     "files": 14
   },
   {
-    "kind": "flat",
-    "path": "src/frontend/native",
-    "files": 30
-  },
-  {
     "kind": "banned-dir",
     "path": "src/frontend/shared"
   },
@@ -69,11 +64,6 @@
   {
     "kind": "banned-dir",
     "path": "src/frontend/telegram/helpers"
-  },
-  {
-    "kind": "flat",
-    "path": "src/frontend/whatsapp",
-    "files": 19
   },
   {
     "kind": "flat",
