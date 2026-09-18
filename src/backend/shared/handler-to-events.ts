@@ -27,6 +27,26 @@ import { buildResultEvents } from "./result-events.js";
 
 const SENTINEL = Symbol("handler-to-events:sentinel");
 
+/**
+ * The DATA half of `QueryParams`, carried verbatim from the canonical
+ * `ChatRunParams` (only `ModelRef` flattens to `model.id`). The
+ * callback half is the queue's and is built per run below. Keeping the
+ * carry in one place is what stops a field — `retrievedMemory` being
+ * the one #639 lost — from reaching some handlers and not others.
+ */
+function turnFields(params: ChatRunParams) {
+  return {
+    chatId: params.chatId,
+    model: params.model.id,
+    text: params.text,
+    senderName: params.senderName,
+    senderHandle: params.senderHandle,
+    isGroup: params.isGroup,
+    messageId: params.messageId,
+    retrievedMemory: params.retrievedMemory,
+  };
+}
+
 type QueueEvent = AgentEvent | typeof SENTINEL;
 
 /**
@@ -79,13 +99,7 @@ export async function* handlerToEvents(
   let lastAccumulated = "";
 
   const handlerParams: QueryParams = {
-    chatId: params.chatId,
-    model: params.model.id,
-    text: params.text,
-    senderName: params.senderName,
-    senderHandle: params.senderHandle,
-    isGroup: params.isGroup,
-    messageId: params.messageId,
+    ...turnFields(params),
     onStreamDelta: (accumulated) => {
       if (typeof accumulated !== "string" || accumulated.length === 0) {
         return;

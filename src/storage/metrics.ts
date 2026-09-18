@@ -15,6 +15,7 @@ import { emptyPhases, TURN_PHASES, type TurnPhase } from "./session-record.js";
 const PHASE_HISTOGRAM: Record<TurnPhase, string> = {
   queueWait: "turn.queue_wait_ms",
   warpResolve: "turn.warp_resolve_ms",
+  memory: "turn.memory_ms",
   firstToken: "turn.first_token_ms",
   stream: "turn.stream_ms",
   delivery: "turn.delivery_ms",

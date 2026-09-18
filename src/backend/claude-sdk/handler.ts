@@ -399,6 +399,7 @@ function buildTurnPrompt(
     senderHandle: params.senderHandle,
     isGroup: params.isGroup,
     messageId: params.messageId,
+    retrievedMemory: params.retrievedMemory,
   });
   if (frontend && previousTurns === 0 && !internal.flowRetries) {
     prompt += `\n\n${buildFirstTurnReminder(frontend)}`;

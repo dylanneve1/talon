@@ -23,6 +23,7 @@ import {
   assertBackendContract,
   assertBackendIdentity,
   assertBackgroundRunnerLifecycle,
+  assertChatBackendCarriesRetrievedMemory,
   assertChatBackendEmitsRunStarted,
   assertChatBackendEmitsSingleUsage,
   assertChatBackendTerminates,
@@ -43,6 +44,10 @@ import {
   BACKEND_IDS,
   type BackendId,
 } from "../core/agent-runtime/model-ref.js";
+import {
+  formatUserPrompt,
+  RECALLED_MEMORY_HEADER,
+} from "../backend/shared/prompt-format.js";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -74,6 +79,42 @@ function wellBehaved(id: BackendId = "claude"): Backend {
       cacheWrite: 4,
     }),
   });
+}
+
+/**
+ * A backend wired the way all four production handlers are: the
+ * canonical `ChatRunParams` reaches the handler as `QueryParams`, and
+ * the handler renders its user prompt with the ONE shared helper. That
+ * is the whole seam per-turn memory travels down, so capturing the
+ * helper's output here is capturing "the prompt the backend sends".
+ */
+function promptCapturing(id: BackendId = "claude"): {
+  backend: Backend;
+  capturePrompt: () => string | undefined;
+} {
+  let prompt: string | undefined;
+  const backend = stubBackend({
+    id,
+    query: async (params) => {
+      prompt = formatUserPrompt({
+        text: params.text,
+        senderName: params.senderName,
+        senderHandle: params.senderHandle,
+        isGroup: params.isGroup,
+        messageId: params.messageId,
+        retrievedMemory: params.retrievedMemory,
+      });
+      return {
+        text: "hello",
+        durationMs: 1,
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheRead: 0,
+        cacheWrite: 0,
+      };
+    },
+  });
+  return { backend, capturePrompt: () => prompt };
 }
 
 async function* streamOf(...events: AgentEvent[]): AsyncIterable<AgentEvent> {
@@ -151,7 +192,53 @@ describe("backend contract / across every BackendId", () => {
       const checked = await assertBackendContract(wellBehaved(id));
       expect(checked).toContain("ChatBackend.terminates");
     });
+
+    it(`${id}: carries per-turn retrieved memory into the user prompt`, async () => {
+      const { backend, capturePrompt } = promptCapturing(id);
+      const checked = await assertBackendContract(backend, { capturePrompt });
+      expect(checked).toContain("ChatBackend.carriesRetrievedMemory");
+    });
   }
+});
+
+// ── Turn retrieval — the seam #639 deleted, rebuilt without divergence ────────
+
+describe("backend contract / retrieved memory reaches the user turn", () => {
+  it("renders the verify-first block after the message text", async () => {
+    const { backend, capturePrompt } = promptCapturing();
+    await assertChatBackendCarriesRetrievedMemory(backend, capturePrompt, {
+      text: "what did I say about the cache?",
+      marker: "#7 [fact] cache: the TTL knob does not exist",
+    });
+    const prompt = capturePrompt() ?? "";
+    // The last run the assertion made carried no memory — byte-identical
+    // to a pre-retrieval prompt.
+    expect(prompt).not.toContain(RECALLED_MEMORY_HEADER);
+  });
+
+  it("a backend that drops the field fails the clause", async () => {
+    let prompt: string | undefined;
+    const backend = stubBackend({
+      query: async (params) => {
+        // The #639 shape: the field arrives and is silently ignored.
+        prompt = formatUserPrompt({
+          text: params.text,
+          senderName: params.senderName,
+        });
+        return {
+          text: "hello",
+          durationMs: 1,
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+        };
+      },
+    });
+    await expect(
+      assertChatBackendCarriesRetrievedMemory(backend, () => prompt),
+    ).rejects.toThrow(/violates contract "ChatBackend.carriesRetrievedMemory"/);
+  });
 });
 
 // ── Failure path — assertions catch violations ────────────────────────────────

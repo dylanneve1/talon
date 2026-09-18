@@ -500,14 +500,24 @@ export function listMemories(opts: MemoryListOptions = {}): MemoryRow[] {
  * input is quoted into a literal FTS5 expression by the shared
  * `ftsQuote` core, so operators and punctuation in a query are matched
  * as text rather than parsed as syntax.
+ *
+ * `match` picks how the query's terms combine:
+ *
+ *   - `"all"` (default) — every term must appear. Right for a search
+ *     someone typed on purpose (`talon memory search`, `/memory`).
+ *   - `"any"` — terms are OR-ed and bm25 ranks, the same expression
+ *     near-duplicate detection already uses. Right for a query that is
+ *     a whole sentence nobody wrote as a query — a chat turn's inbound
+ *     message (`core/memory/turn-retrieval.ts`), where AND-ing every
+ *     word means matching nothing.
  */
 export function searchMemories(
   query: string,
-  opts: { kind?: MemoryKind; limit?: number } = {},
+  opts: { kind?: MemoryKind; limit?: number; match?: "all" | "any" } = {},
 ): MemoryRow[] {
-  const match = ftsQuote(query);
-  if (!match) return [];
-  return repo.searchFts(match, opts.kind, opts.limit ?? DEFAULT_SEARCH_LIMIT);
+  const expr = opts.match === "any" ? similarityQuery(query) : ftsQuote(query);
+  if (!expr) return [];
+  return repo.searchFts(expr, opts.kind, opts.limit ?? DEFAULT_SEARCH_LIMIT);
 }
 
 /**

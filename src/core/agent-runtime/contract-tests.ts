@@ -200,6 +200,80 @@ export async function assertCompletedUsageMatchesUsageEvent(
 }
 
 /**
+ * `ChatRunParams.retrievedMemory` must reach the prompt the backend
+ * sends, in the USER turn, after the message text.
+ *
+ * This is the clause #639 was written in the absence of: the old
+ * pre-retrieval field was honoured by two backends and dropped in
+ * silence by the other four, a divergence that would have become a
+ * real bug the day a retriever existed. Now there is one renderer
+ * (`backend/shared/prompt-format.ts`) that every backend already calls
+ * for its time tag and `msg_id` framing — and this assertion is what
+ * stops a backend from quietly building its prompt some other way.
+ *
+ * The caller supplies `capturePrompt`, returning the prompt the
+ * backend built for the last run: `core/` cannot import `backend/`, so
+ * the rendering itself is asserted by the caller, which can. `marker`
+ * is the retrieved text; it must appear after the user's own text, and
+ * must not appear at all when the field is absent.
+ */
+export async function assertChatBackendCarriesRetrievedMemory(
+  backend: Backend,
+  capturePrompt: () => string | undefined,
+  options: { text?: string; chatId?: string; marker?: string } = {},
+): Promise<void> {
+  const chat = backend.chat;
+  if (!chat) return;
+  const text = options.text ?? "ping";
+  const marker = options.marker ?? "#1 [fact] contract: remembered thing";
+  const run = async (retrievedMemory?: string): Promise<string> => {
+    await drain(
+      chat.runChatTurn({
+        chatId: options.chatId ?? "contract-test-chat",
+        model: makeBareModelRef(backend.id, "contract-test-model"),
+        text,
+        senderName: "ContractTest",
+        ...(retrievedMemory !== undefined ? { retrievedMemory } : {}),
+      }),
+    );
+    const prompt = capturePrompt();
+    if (prompt === undefined) {
+      throw new ContractViolation(
+        backend.id,
+        "ChatBackend.carriesRetrievedMemory",
+        "the backend built no prompt for the turn",
+      );
+    }
+    return prompt;
+  };
+
+  const withMemory = await run(marker);
+  if (!withMemory.includes(marker)) {
+    throw new ContractViolation(
+      backend.id,
+      "ChatBackend.carriesRetrievedMemory",
+      `retrievedMemory never reached the prompt: ${JSON.stringify(withMemory)}`,
+    );
+  }
+  if (withMemory.indexOf(marker) < withMemory.indexOf(text)) {
+    throw new ContractViolation(
+      backend.id,
+      "ChatBackend.carriesRetrievedMemory",
+      "the memory block precedes the user text; it must be appended after it",
+    );
+  }
+
+  const without = await run();
+  if (without.includes(marker)) {
+    throw new ContractViolation(
+      backend.id,
+      "ChatBackend.carriesRetrievedMemory",
+      "the memory block appeared in a turn that carried no retrievedMemory",
+    );
+  }
+}
+
+/**
  * Backends that expose a `BackgroundRunner` must terminate with
  * `completed` or `error` and must emit `run_started` first — same
  * lifecycle contract as chat.
@@ -323,7 +397,16 @@ export async function assertUsageTelemetryShape(
  */
 export async function assertBackendContract(
   backend: Backend,
-  options: { text?: string; chatId?: string } = {},
+  options: {
+    text?: string;
+    chatId?: string;
+    /**
+     * The prompt the backend built for the last run, when the fixture
+     * can capture it. Supplying it opts the turn-retrieval clause into
+     * the suite; omitting it skips that clause only.
+     */
+    capturePrompt?: () => string | undefined;
+  } = {},
 ): Promise<string[]> {
   const checked: string[] = [];
 
@@ -336,6 +419,14 @@ export async function assertBackendContract(
     checked.push("ChatBackend.singleUsage");
     await assertCompletedUsageMatchesUsageEvent(backend, options);
     checked.push("ChatBackend.completedUsageMatches");
+    if (options.capturePrompt) {
+      await assertChatBackendCarriesRetrievedMemory(
+        backend,
+        options.capturePrompt,
+        options,
+      );
+      checked.push("ChatBackend.carriesRetrievedMemory");
+    }
   }
   if (backend.background) {
     await assertBackgroundRunnerLifecycle(backend);

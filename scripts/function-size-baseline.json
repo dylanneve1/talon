@@ -8,8 +8,8 @@
   {
     "file": "src/backend/codex/handler/message.ts",
     "name": "handleMessage",
-    "lines": 199,
-    "cx": 21
+    "lines": 193,
+    "cx": 20
   },
   {
     "file": "src/backend/codex/one-shot.ts",
@@ -32,13 +32,13 @@
   {
     "file": "src/backend/remote-server/chat-turn.ts",
     "name": "runRemoteChatTurn",
-    "lines": 200,
-    "cx": 10
+    "lines": 185,
+    "cx": 9
   },
   {
     "file": "src/backend/shared/handler-to-events.ts",
     "name": "handlerToEvents",
-    "lines": 161,
+    "lines": 157,
     "cx": 16
   },
   {

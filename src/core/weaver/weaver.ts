@@ -24,8 +24,10 @@ import type { ContextManager, ExecuteParams, ExecuteResult } from "../types.js";
 import { bus } from "../bus/index.js";
 import { taskTable, type TaskHandle } from "../tasks/index.js";
 import { log, logDebug, logWarn } from "../../util/log.js";
+import { recordHistogram } from "../../storage/metrics.js";
 import { recordSessionTurnPhases } from "../../storage/sessions.js";
 import type { TurnPhase } from "../../storage/session-record.js";
+import { retrieveForTurn, type TurnMemory } from "../memory/turn-retrieval.js";
 import { TalonError } from "../errors.js";
 import { Loom } from "./loom.js";
 import { carryTurnEvents, startShuttleTiming } from "./shuttle.js";
@@ -244,6 +246,7 @@ export class Weaver {
         );
       }
 
+      const memory = resolveTurnMemory(params, phases);
       const stream = backend.chat.runChatTurn({
         chatId: params.chatId,
         model: warp.ref,
@@ -252,6 +255,7 @@ export class Weaver {
         senderHandle: params.senderHandle,
         isGroup: params.isGroup,
         messageId: params.messageId,
+        retrievedMemory: memory?.text,
       });
       const timing = startShuttleTiming();
       const streamStartedAt = Date.now();
@@ -321,11 +325,37 @@ export class Weaver {
   }
 }
 
+/**
+ * This turn's retrieved memory (`core/memory/turn-retrieval.ts`) — off
+ * unless `TALON_MEMORY_STORE=1`, fail-closed, and a pure read: nothing
+ * here may invalidate the frozen system prompt (plan §3.6), because the
+ * block travels in the USER turn, after all cached history.
+ *
+ * The size goes out as `turn.memory_chars` on every turn, zero
+ * included, so the flag's before/after populations are comparable next
+ * to `prompt.memory_chars` (the static core-view tier from #943).
+ */
+function resolveTurnMemory(
+  params: ExecuteParams,
+  phases: Partial<Record<TurnPhase, number>>,
+): TurnMemory | undefined {
+  const startedAt = Date.now();
+  const memory = retrieveForTurn({
+    chatId: params.chatId,
+    text: params.prompt,
+    isGroup: params.isGroup ?? false,
+  });
+  phases.memory = Date.now() - startedAt;
+  recordHistogram("turn.memory_chars", memory?.chars ?? 0);
+  return memory;
+}
+
 /** `queue=12ms warp=3ms ttft=1840ms stream=6200ms delivery=310ms` */
 function formatPhases(phases: Partial<Record<TurnPhase, number>>): string {
   const labels: Record<TurnPhase, string> = {
     queueWait: "queue",
     warpResolve: "warp",
+    memory: "memory",
     firstToken: "ttft",
     stream: "stream",
     delivery: "delivery",

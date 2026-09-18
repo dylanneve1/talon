@@ -29,7 +29,8 @@ Repo conventions every PR here obeys:
 - Engine-touching PRs (6, 7, 9, 10) need Discord verified — it breaks quietly.
 
 One flag gates the whole new path: **`TALON_MEMORY_STORE`**, default off until
-PR 9 is measured. Removed during Stage 6.
+both read tiers are measured — the static core view (PR 9) and per-turn
+retrieval (PR 8). Removed during Stage 6.
 
 ---
 
@@ -247,20 +248,97 @@ The PR that makes persona learning frontend-agnostic — what the soul never got
 
 ## Stage 3 — Read path
 
-### PR 8 — `feat(memory): real retriever behind the Phase B seam`
+### PR 8 — `feat(memory): turn-time retrieval from the store` ✅ done
 
-**The PR where memory starts working.** Sequenced *after* PR 9: the core view is
-the session-frozen tier and turn retrieval is the per-turn one, so landing the
-static block first makes the retrieval delta readable against a known baseline.
+**The PR where memory starts working.** The core view (PR 9, #943) is the
+session-frozen tier; this is the per-turn one, and the two together are plan
+§3.4's pair.
 
-- `core/memory/store-retriever.ts` implements the existing `MemoryRetriever`: FTS
-  match on the inbound message + recency decay + salience + `hit_count`. Sub-
-  millisecond, no model call, no MCP round trip.
-- Wire in bootstrap: flag on → store retriever; off → `noopMemoryRetriever`.
-  `filterAutoInjectable` stays exactly as written; trust policy unchanged.
+- `core/memory/turn-retrieval.ts`: FTS match on the inbound message + recency
+  decay + salience + `hit_count`. Sub-millisecond, no model call, no MCP round
+  trip.
+- Gated on `TALON_MEMORY_STORE`; trust policy per plan §5.
 - Retrieved rows bump `hit_count` / `last_seen_at` — the ranking feedback loop.
 - Tests: relevance; trust filtering; **fail-closed on any db error**; budget cap;
   prompt byte-identical when nothing is retrieved.
+
+**Landed** as #TBD, still default-off. `core/memory/turn-retrieval.ts` exports
+`retrieveForTurn({ chatId, text, isGroup })` and `TURN_MEMORY_MAX_CHARS`
+(3 000 chars). The Weaver resolves it once per turn in `executeInner`, before
+`runChatTurn`, and passes the rendered block as `retrievedMemory`.
+
+**The seam is one field, one renderer, and one producer** — which is what #639's
+`retrievedMemory` lacked. That field was read by two backends out of six and
+silently dropped by the other four ("a latent divergence that would have become
+a real bug the day a retriever was installed"), so #639 deleted the plumbing
+rather than finish it. The rebuild routes everything through
+`formatUserPrompt` — the ONE helper all four backends already call for their
+time tag, sender label and `msg_id` framing — so a backend cannot drop the block
+without also losing the framing its tests pin:
+
+| layer                                 | change                                                       |
+| ------------------------------------- | ------------------------------------------------------------ |
+| `core/agent-runtime/capabilities.ts`  | `ChatRunParams.retrievedMemory?: string`                     |
+| `core/weaver/weaver.ts`               | the only producer: `resolveTurnMemory` before `runChatTurn`  |
+| `backend/shared/handler-to-events.ts` | `turnFields()` carries the data half of the params verbatim  |
+| `backend/shared/prompt-format.ts`     | the only renderer: appends the block after the message text  |
+| the four handlers                     | pass `retrievedMemory` into `formatUserPrompt`, nothing else |
+
+Rendered as `\n\n[Recalled from memory — verify before relying on it]\n<rows>`,
+appended **after** the user's text, one `formatMemory` line per row. With the
+field absent, blank, or whitespace the prompt is byte-identical to the
+pre-retrieval one — asserted, alongside a contract clause
+(`ChatBackend.carriesRetrievedMemory`) every shipped `BackendId` passes and a
+source-level check that all four `formatUserPrompt` call sites forward the
+field.
+
+**Trust policy (plan §5, #373): only `operator` and `agent` rows are ever
+auto-injected.** A `user_claim` or `group_chat` row that matches the query
+perfectly is still left out — auto-injecting one turns anything said in a group
+chat into a standing prompt injection. They stay reachable through the explicit
+`recall` tool. `reflection` is excluded too (the diary is never a fact source,
+plan §3.5); `episode` is _not_, which is what gives episodes a home now that the
+core view excludes them. The trust filter runs after the bm25 cut, so a query
+whose twenty best matches are all low-trust injects nothing — the conservative
+direction.
+
+Ranking is bm25 order from the store, re-weighted over the top 20 hits:
+relevance 0.4 (bm25 position, the only signal that knows what was asked),
+salience 0.3, `hitCount` affinity 0.2 (log-scaled, saturating at 20), recency
+0.1 (linear to zero at 30 days). Ties break on id, so the order is stable. The
+block is capped at `TURN_MEMORY_MAX_CHARS` **whole rows only** — a truncated
+memory is a misquoted memory. Each injected row is `touch`ed, which is the
+feedback loop the affinity term reads.
+
+**Fail-closed:** any store error logs once per process at warn level and the
+turn runs without memory, exactly as if the flag were off. A broken store never
+blocks chat delivery.
+
+**Cache invariant (plan §3.6):** retrieval touches the user turn only. Tests
+assert the assembled system prompt is byte-identical across a retrieval hit and
+that nothing on this path reaches `notifyPromptInputsChanged()` — the per-turn
+version of that mistake would force a full-prompt cache write on every live
+session on every turn.
+
+`searchMemories` grew a `match: "all" | "any"` option (default `"all"`,
+unchanged for `/memory` and the CLI). Turn retrieval uses `"any"`: the query is
+a sentence somebody wrote as a _message_, not as a search, and AND-ing its every
+word matches nothing. The expression is the one near-duplicate detection already
+builds.
+
+**The flag stays off** until `turn.memory_chars` and `prompt.memory_chars` are
+read from a real run — the per-turn tier's cost next to the static tier's is the
+number Decision 4 is waiting on. Both are process-lifetime histograms in
+`storage/metrics.ts`; a `memory` turn phase joins `queueWait` / `warpResolve` /
+`firstToken` / `stream` / `delivery`, so `turn.memory_ms` says what retrieval
+costs in wall-clock.
+
+**Open decision — should `recall` apply the same trust filter?** The explicit
+tool is the documented escape hatch for `user_claim` / `group_chat` rows, so
+today it does not, and a model asking for them by name is a different act from
+the harness injecting them unasked. But a model that has been talked into
+calling `recall` has the same poisoning surface auto-injection has, minus the
+one-step deniability. Not decided here; not implemented either way.
 
 ### PR 9 — `feat(prompt): core view replaces the head-slice` ✅ done
 
@@ -280,7 +358,7 @@ ranked in memory: pinned rows first (any eligible kind), then `directive`, then
 rows seen inside a 7-day window; `episode` and `reflection` never enter the core
 view (plan §3.1), not even pinned, and stale unpinned `state` is left out. The
 ordered rows go through `renderMemoryMarkdown({ rows, budget })`, so the prompt and
-the rendered `memory.md` projection read identically, and the block is *budgeted*
+the rendered `memory.md` projection read identically, and the block is _budgeted_
 rather than truncated — whole sections drop from the bottom of the ranking and the
 tail is named. New wrapper `prompts/system/memory-core-view.md` points at
 `talon memory list` / `/memory` for the rest.
@@ -297,10 +375,9 @@ Both paths record the injected block's size as the `prompt.memory_chars` histogr
 (`storage/metrics.ts` grew a real process-lifetime histogram sink for it — the old
 `recordHistogram` was a no-op stub swept in #820). **The flag stays off until those
 two populations are compared**: file-path chars vs core-view chars is the
-prompt-size delta Decision 4 is waiting on. PR 8 (turn retrieval behind the Phase B
-seam) is sequenced *after* this one — the core view is the frozen tier, turn
-retrieval is the per-turn tier, and it is easier to read the retrieval delta once
-the static block's size is known.
+prompt-size delta Decision 4 is waiting on. Turn retrieval — the per-turn tier to
+this one's frozen tier — landed above as PR 8, and its `turn.memory_chars` is the
+second half of that comparison.
 
 ---
 

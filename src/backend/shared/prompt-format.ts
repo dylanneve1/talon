@@ -38,7 +38,32 @@ export type PromptFormatInputs = {
   messageId?: number | string;
   /** When true, omit the leading `[YYYY-MM-DD HH:MM:SS]` tag. */
   omitTimeTag?: boolean;
+  /**
+   * Memory retrieved for THIS turn (`core/memory/turn-retrieval.ts`),
+   * already ranked, trust-filtered and budgeted. Appended after the
+   * message text under a verify-first header.
+   *
+   * This is the **only** place retrieved memory enters a prompt, and
+   * every backend reaches it through this one helper — which is what
+   * keeps #639's divergence (two backends reading the field, four
+   * silently dropping it) from coming back. It belongs to the user
+   * turn: it must never reach `prepareSystemPrompt()`, a prompt
+   * addition, or a backend `system` field, or it would break the
+   * per-session frozen prompt (plan §3.6).
+   *
+   * Absent or blank → the returned prompt is BYTE-IDENTICAL to what
+   * this helper produced before the field existed.
+   */
+  retrievedMemory?: string;
 };
+
+/**
+ * Header on the injected block. "Verify before relying on it" is
+ * deliberate: retrieval is a bm25 guess, not a fact, and the model
+ * should treat a recalled line as a lead rather than as truth.
+ */
+export const RECALLED_MEMORY_HEADER =
+  "[Recalled from memory — verify before relying on it]";
 
 /**
  * Format a user prompt for the AI backend.
@@ -49,6 +74,13 @@ export type PromptFormatInputs = {
  * is on the other end.
  */
 export function formatUserPrompt(inputs: PromptFormatInputs): string {
+  return withRecalledMemory(formatMessageLine(inputs), inputs.retrievedMemory);
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/** The message line itself — time tag, sender label, `msg_id`, text. */
+function formatMessageLine(inputs: PromptFormatInputs): string {
   const timeTag = inputs.omitTimeTag ? "" : `[${formatFullDatetime()}]`;
   const msgIdHint =
     inputs.messageId !== undefined ? ` [msg_id:${inputs.messageId}]` : "";
@@ -68,7 +100,19 @@ export function formatUserPrompt(inputs: PromptFormatInputs): string {
   return joinNonEmpty(timeTag, inputs.text);
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+/**
+ * Append the retrieved-memory block AFTER the message, never before:
+ * the user's own words stay the first thing the model reads, and the
+ * recalled lines read as an annotation on them.
+ */
+function withRecalledMemory(
+  prompt: string,
+  memory: string | undefined,
+): string {
+  const block = memory?.trim();
+  if (!block) return prompt;
+  return `${prompt}\n\n${RECALLED_MEMORY_HEADER}\n${block}`;
+}
 
 function joinNonEmpty(...parts: string[]): string {
   return parts

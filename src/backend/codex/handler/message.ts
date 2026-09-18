@@ -213,6 +213,23 @@ async function maybeFallbackForChatGptMismatch(
  * ChatGPT-OAuth account is swapped pre-emptively rather than letting the
  * first turn fail.
  */
+/**
+ * The turn's user prompt: the shared framing every backend emits, plus
+ * whatever this turn's memory retrieval produced. `formatUserPrompt` is
+ * the one place `retrievedMemory` is rendered — see
+ * `backend/shared/prompt-format.ts`.
+ */
+function buildTurnPrompt(params: QueryParams): string {
+  return formatUserPrompt({
+    text: params.text,
+    senderName: params.senderName ?? "user",
+    senderHandle: params.senderHandle,
+    isGroup: params.isGroup,
+    messageId: params.messageId,
+    retrievedMemory: params.retrievedMemory,
+  });
+}
+
 function resolveCodexModel(chatId: string, requested: string | undefined) {
   const authInfo = getCodexAuthInfo();
   const authAwareDefault =
@@ -409,7 +426,7 @@ export async function handleMessage(
   }
   const codex = ensureCodex(params.chatId);
 
-  const { chatId, text, senderName, senderHandle, isGroup, messageId } = params;
+  const { chatId, text, senderName, isGroup } = params;
   const t0 = Date.now();
   const session = getSession(chatId);
   const previousTurns = session.turns;
@@ -432,13 +449,7 @@ export async function handleMessage(
     sessionEpoch: session.createdAt,
   });
 
-  const prompt = formatUserPrompt({
-    text,
-    senderName: senderName ?? "user",
-    senderHandle,
-    isGroup,
-    messageId,
-  });
+  const prompt = buildTurnPrompt(params);
 
   log("agent", `[${chatId}] <- (${text.length} chars)`);
   traceMessage(chatId, "in", text, { senderName, isGroup });

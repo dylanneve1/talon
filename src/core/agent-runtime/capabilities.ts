@@ -56,6 +56,17 @@ export interface ChatRunParams {
   isGroup?: boolean;
   /** Provider message ID. Telegram is numeric; Discord snowflakes are strings. */
   messageId?: number | string;
+  /**
+   * Memory retrieved for this turn by `core/memory/turn-retrieval.ts`,
+   * already ranked, trust-filtered and budgeted. The Weaver resolves it
+   * before the call; a backend's only job is to hand it to
+   * `formatUserPrompt`, which owns the rendering.
+   *
+   * Turn-scoped and user-turn-only: it must never reach
+   * `prepareSystemPrompt()` or a backend `system` field, or the
+   * per-session frozen prompt stops being frozen (plan §3.6).
+   */
+  retrievedMemory?: string;
 }
 
 // ── Catalog types ───────────────────────────────────────────────────────────

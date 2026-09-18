@@ -56,12 +56,14 @@ export type MetricsLatencyAgg = {
 
 /**
  * Where a turn's wall-clock went, as seen from the Weaver: waiting in the
- * chat's FIFO, resolving the warp, until the backend's first event, the
- * whole stream, and the slice of it spent inside frontend delivery.
+ * chat's FIFO, resolving the warp, retrieving this turn's memory, until
+ * the backend's first event, the whole stream, and the slice of it spent
+ * inside frontend delivery.
  */
 export const TURN_PHASES = [
   "queueWait",
   "warpResolve",
+  "memory",
   "firstToken",
   "stream",
   "delivery",
@@ -146,6 +148,7 @@ export const emptyLatency = (): MetricsLatencyAgg => ({
 export const emptyPhases = (): MetricsPhaseAggs => ({
   queueWait: emptyLatency(),
   warpResolve: emptyLatency(),
+  memory: emptyLatency(),
   firstToken: emptyLatency(),
   stream: emptyLatency(),
   delivery: emptyLatency(),

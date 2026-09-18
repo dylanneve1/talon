@@ -68,16 +68,7 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
   const config = bindings.getConfig();
   if (!config) throw new Error(`${label} agent not initialized`);
 
-  const {
-    chatId,
-    text,
-    senderName,
-    senderHandle,
-    isGroup,
-    messageId,
-    onTextBlock,
-    onToolUse,
-  } = params;
+  const { chatId, text, senderName, onTextBlock, onToolUse } = params;
   const t0 = Date.now();
   const session = getSession(chatId);
   const previousTurns = session.turns;
@@ -108,14 +99,8 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
     pluginMcpServerNames,
   );
 
-  // Build the prompt (time tag + sender + msg_id reference).
-  const prompt = formatUserPrompt({
-    text,
-    senderName: senderName ?? "user",
-    senderHandle,
-    isGroup,
-    messageId,
-  });
+  // Build the prompt (time tag + sender + msg_id + recalled memory).
+  const prompt = buildTurnPrompt(params);
 
   // Per-session frozen prompt + this backend's delivery suffix.
   const { text: systemPrompt } = prepareSystemPrompt({
@@ -130,7 +115,7 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
   });
 
   log("agent", `[${chatId}] <- (${text.length} chars)`);
-  traceMessage(chatId, "in", text, { senderName, isGroup });
+  traceMessage(chatId, "in", text, { senderName, isGroup: params.isGroup });
 
   // Bind the stream state to the chat so token mutators mirror counts
   // into the live-turn overlay — /status updates while the turn runs.
@@ -268,6 +253,23 @@ export async function runRemoteChatTurn<TClient extends RemoteAgentClient>(
  * session summaries can race on cancellation, so a failure leaves the
  * counts at zero.
  */
+/**
+ * The turn's user prompt: the shared framing every backend emits, plus
+ * whatever this turn's memory retrieval produced. `formatUserPrompt` is
+ * the one place `retrievedMemory` is rendered — see
+ * `backend/shared/prompt-format.ts`.
+ */
+function buildTurnPrompt(params: QueryParams): string {
+  return formatUserPrompt({
+    text: params.text,
+    senderName: params.senderName ?? "user",
+    senderHandle: params.senderHandle,
+    isGroup: params.isGroup,
+    messageId: params.messageId,
+    retrievedMemory: params.retrievedMemory,
+  });
+}
+
 async function fillUsageFromSummary(
   oc: RemoteSessionClient,
   sessionId: string,

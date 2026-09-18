@@ -35,6 +35,12 @@ export type QueryParams = {
    * Provider message ID. Telegram is numeric; Discord snowflakes are strings.
    */
   messageId?: number | string;
+  /**
+   * Per-turn retrieved memory, carried verbatim from `ChatRunParams`.
+   * The handler passes it to `formatUserPrompt` and does nothing else
+   * with it — see `backend/shared/prompt-format.ts`.
+   */
+  retrievedMemory?: string;
   onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
   onTextBlock?: (text: string) => Promise<void>;
   /**
