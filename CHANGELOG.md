@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.4.0](https://github.com/dylanneve1/talon/compare/v4.3.3...v4.4.0) (2026-09-18)
+
+
+### Features
+
+* **storage:** typed memory store with FTS5 ([#937](https://github.com/dylanneve1/talon/issues/937)) ([c9d89c3](https://github.com/dylanneve1/talon/commit/c9d89c3309480c289be3cf1ddc5e96d2982e2e36))
+
+
+### Code Refactoring
+
+* **core:** move engine configuration from util/config to core/config ([#936](https://github.com/dylanneve1/talon/issues/936)) ([784139e](https://github.com/dylanneve1/talon/commit/784139e395ee22efdb103ab728593e09d4bf26ee))
+* **telegram:** name the two shared helper files by what they hold ([#939](https://github.com/dylanneve1/talon/issues/939)) ([7119b6f](https://github.com/dylanneve1/talon/commit/7119b6f0ad193d749017092bee80ab6d960b344c))
+
 ## [4.3.3](https://github.com/dylanneve1/talon/compare/v4.3.2...v4.3.3) (2026-09-18)
 
 
