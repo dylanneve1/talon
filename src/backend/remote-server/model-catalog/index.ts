@@ -3,9 +3,9 @@
  * family (OpenCode + its Kilo fork). Both servers expose identical
  * `/provider/list` + `/provider/auth` wire formats, so the catalog cache,
  * query resolution, presentation, and the `Backend.models` adapter live here
- * once. Each backend calls `createRemoteModelCatalogModule` with its own SDK
- * client + branding/UI knobs and re-exports the bound functions under its
- * historical names.
+ * once. `profiles/bind.ts` calls `createRemoteModelCatalogModule` with each
+ * driver's SDK client + branding/picker knobs and hangs the result off that
+ * profile.
  */
 
 import {
@@ -23,13 +23,7 @@ import type {
   RemoteProviderClient,
 } from "./types.js";
 
-export type {
-  ModelButton,
-  RemoteModelCatalog,
-  RemoteModelCatalogEntry,
-  RemoteModelResolution,
-} from "./types.js";
-export { sortCatalogModels } from "./catalog.js";
+export type { RemoteProviderClient } from "./types.js";
 export {
   getBucketPriority,
   getRemoteModelSelectionValue,

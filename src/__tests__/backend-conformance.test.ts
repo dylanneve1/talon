@@ -43,8 +43,14 @@ import {
   type RemoteAgentClient,
 } from "../backend/remote-server/index.js";
 import { routeDelivery, createStreamState } from "../backend/runtime/index.js";
-import { extractPartsSummary as kiloExtract } from "../backend/kilo/sessions.js";
-import { extractPartsSummary as opencodeExtract } from "../backend/opencode/sessions.js";
+// Both backends used to re-export this one shared helper under their own
+// name (`backend/kilo/sessions.ts`, `backend/opencode/sessions.ts`). Those
+// wrappers are gone with the profile refactor; the aliases stay so the
+// parity assertions below still read as "kilo's vs opencode's extractor".
+import { extractPartsSummary } from "../backend/remote-server/session-helpers.js";
+
+const kiloExtract = extractPartsSummary;
+const opencodeExtract = extractPartsSummary;
 
 // ── Test doubles ────────────────────────────────────────────────────────────
 

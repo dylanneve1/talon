@@ -3,9 +3,9 @@
  * interface (resolveModel, getModelInfo, getProviders, …).
  *
  * One implementation for the whole OpenCode family. The catalog surface is
- * injected (rather than captured from the module factory) so each backend's
- * `model-provider.ts` binds its own `models/index.js` — which also keeps that
- * module the single seam tests mock.
+ * injected (rather than captured from the module factory) so
+ * `profiles/bind.ts` can point it at that driver's own cached catalog —
+ * and so a test can point it at a static fixture without a module mock.
  */
 
 import type {

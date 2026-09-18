@@ -47,7 +47,11 @@ import {
   waitForHealthy,
 } from "./live-backend-helpers.js";
 
-type KiloModelsModule = typeof import("../../backend/kilo/models/index.js");
+type RemoteCatalogModule =
+  typeof import("../../backend/remote-server/model-catalog/index.js");
+type RemoteModelCatalogModule = ReturnType<
+  RemoteCatalogModule["createRemoteModelCatalogModule"]
+>;
 
 const KILO_EXECUTABLE_ENV = "KILO_CODE_EXECUTABLE";
 
@@ -78,27 +82,9 @@ const TEST_TIMEOUT_MS = process.platform === "win32" ? 60_000 : 20_000;
 
 let kiloProc: ChildProcess | null = null;
 let testClient: KiloClient;
-let getOpenCodeModelCatalog: KiloModelsModule["getOpenCodeModelCatalog"];
-let resolveOpenCodeModelInput: KiloModelsModule["resolveOpenCodeModelInput"];
-let clearModelCatalogCache: KiloModelsModule["clearModelCatalogCache"];
-
-// ── ensureServer mock — points Talon's kilo backend at our test server. ────
-// We mock at module scope BEFORE importing Talon's kilo modules so the mock
-// is in place when `models.ts` reads its `ensureServer` dependency. The mock
-// resolves the live client built in `beforeAll` once it's been assigned.
-vi.mock("../../backend/kilo/server.js", () => {
-  return {
-    ensureServer: vi.fn(async (): Promise<KiloClient> => {
-      if (!testClient) {
-        throw new Error(
-          "ensureServer called before kilo-live beforeAll initialised testClient",
-        );
-      }
-      return testClient;
-    }),
-    onServerStop: vi.fn(),
-  };
-});
+let getOpenCodeModelCatalog: RemoteModelCatalogModule["getCatalog"];
+let resolveOpenCodeModelInput: RemoteCatalogModule["resolveRemoteModelInput"];
+let clearModelCatalogCache: RemoteModelCatalogModule["clearCache"];
 
 vi.mock("../../util/log.js", () => ({
   log: vi.fn(),
@@ -114,12 +100,28 @@ kiloDescribe("Kilo live discovery (integration)", () => {
       );
     }
 
-    // Import AFTER the mocks register so the catalog module picks them up.
-    ({
-      getOpenCodeModelCatalog,
-      resolveOpenCodeModelInput,
-      clearModelCatalogCache,
-    } = await import("../../backend/kilo/models/index.js"));
+    // Bind a catalog module on the Kilo profile's own knobs, pointed at
+    // the throwaway server this suite spawns instead of at the profile's
+    // port-4097 one. `getClient` is lazy, so it resolves the live client
+    // built further down this hook.
+    const { createRemoteModelCatalogModule, resolveRemoteModelInput } =
+      await import("../../backend/remote-server/model-catalog/index.js");
+    const { kiloProfile } =
+      await import("../../backend/remote-server/profiles/kilo.js");
+    const catalogModule = createRemoteModelCatalogModule({
+      ...kiloProfile.definition,
+      getClient: async (): Promise<KiloClient> => {
+        if (!testClient) {
+          throw new Error(
+            "catalog client requested before kilo-live beforeAll initialised testClient",
+          );
+        }
+        return testClient;
+      },
+    });
+    getOpenCodeModelCatalog = catalogModule.getCatalog;
+    clearModelCatalogCache = catalogModule.clearCache;
+    resolveOpenCodeModelInput = resolveRemoteModelInput;
 
     // Spawn `kilo serve` in detached-style stdio so its output doesn't
     // contaminate our test output. We capture stdout/stderr to a buffer

@@ -6,23 +6,15 @@ vi.mock("../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-// ensureServer is reached transitively through getOpenCodeModelCatalog if it's
-// ever invoked. We don't invoke it here — these tests use a hand-built catalog
-// against resolveOpenCodeModelInput / getOpenCodeModelSelectionValue — but the
-// kilo server module still gets imported for type resolution. Stub it so the
-// import doesn't try to spin up a real Kilo process.
-vi.mock("../backend/kilo/server.js", () => ({
-  onServerStop: vi.fn(),
-  ensureServer: vi.fn(async () => {
-    throw new Error("ensureServer should not be called from kilo-models tests");
-  }),
-  getConfig: vi.fn(() => undefined),
-  initKiloAgent: vi.fn(),
-  stopKiloServer: vi.fn(),
-}));
-
-const { getOpenCodeModelSelectionValue, resolveOpenCodeModelInput } =
-  await import("../backend/kilo/index.js");
+// Resolution and selection-value rendering are shared by the whole
+// remote-server family — Kilo re-exported them under `OpenCode*` names
+// until the profile refactor. The fixtures below are Kilo-flavoured
+// (kilo-routed ids with "/" and ":" in them); they run against the shared
+// implementation directly, so no server or catalog module is involved.
+const {
+  getRemoteModelSelectionValue: getOpenCodeModelSelectionValue,
+  resolveRemoteModelInput: resolveOpenCodeModelInput,
+} = await import("../backend/remote-server/model-catalog/index.js");
 
 type Entry = Parameters<typeof getOpenCodeModelSelectionValue>[0];
 

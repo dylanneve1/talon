@@ -1,19 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-vi.mock("../backend/opencode/index.js", async (importOriginal) => {
-  const mod =
-    await importOriginal<typeof import("../backend/opencode/index.js")>();
-  return {
-    ...mod,
-    getOpenCodeModelSelectionValue: vi.fn(
-      (model: { providerID?: string; id: string }) =>
-        `${model.providerID}/${model.id}`,
-    ),
-  };
-});
-
-const { formatOpenCodeSelectionError } =
-  await import("../backend/opencode/index.js");
+// The error text carries the profile's label ("OpenCode") and renders each
+// match through the shared selection-value helper, so this drives the
+// OpenCode profile's own bound catalog against a hand-built catalog object.
+const { opencodeProfile } =
+  await import("../backend/remote-server/profiles/opencode.js");
+const formatOpenCodeSelectionError =
+  opencodeProfile.catalog.formatSelectionError;
 
 function makeEntry(overrides: Record<string, unknown> = {}) {
   return {

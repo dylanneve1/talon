@@ -6,29 +6,12 @@ vi.mock("../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-vi.mock("../backend/kilo/server.js", () => ({
-  onServerStop: vi.fn(),
-  ensureServer: vi.fn(async () => {
-    throw new Error("ensureServer should not be called from kilo-ui tests");
-  }),
-  getConfig: vi.fn(() => undefined),
-  initOpenCodeAgent: vi.fn(),
-  stopOpenCodeServer: vi.fn(),
-}));
-
-vi.mock("../backend/kilo/index.js", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("../backend/kilo/index.js")>();
-  return {
-    ...mod,
-    getOpenCodeModelSelectionValue: vi.fn(
-      (model: { providerID?: string; id: string }) =>
-        `${model.providerID}/${model.id}`,
-    ),
-  };
-});
-
-const { formatOpenCodeSelectionError } =
-  await import("../backend/kilo/index.js");
+// The error text carries the profile's label ("Kilo") and renders each
+// match through the shared selection-value helper, so this drives the Kilo
+// profile's own bound catalog against a hand-built catalog object.
+const { kiloProfile } =
+  await import("../backend/remote-server/profiles/kilo.js");
+const formatOpenCodeSelectionError = kiloProfile.catalog.formatSelectionError;
 
 function makeEntry(overrides: Record<string, unknown> = {}) {
   return {

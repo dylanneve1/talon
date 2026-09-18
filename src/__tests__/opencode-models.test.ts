@@ -6,8 +6,12 @@ vi.mock("../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-const { getOpenCodeModelSelectionValue, resolveOpenCodeModelInput } =
-  await import("../backend/opencode/index.js");
+// Shared remote-server catalog helpers — OpenCode re-exported them under
+// these names until the profile refactor.
+const {
+  getRemoteModelSelectionValue: getOpenCodeModelSelectionValue,
+  resolveRemoteModelInput: resolveOpenCodeModelInput,
+} = await import("../backend/remote-server/model-catalog/index.js");
 
 const catalog = {
   generatedAt: Date.now(),

@@ -31,19 +31,24 @@ vi.mock("../util/log.js", () => ({
   logError: vi.fn(),
 }));
 
+// The Kilo driver is a profile bound over the shared remote-server
+// helpers; the bound object is the surface that used to be
+// `backend/kilo/server.ts`.
+const { kiloProfile } =
+  await import("../backend/remote-server/profiles/kilo.js");
 const {
-  initKiloAgent,
+  init: initKiloAgent,
   ensureChatMcpServer,
   ensurePluginMcpServers,
   buildToolOverrides,
   disconnectChatMcpServer,
   ensureSession,
   resolveProviderID,
-  parseStoredKiloModelSelection,
-  stopKiloServer,
+  parseModelSelection: parseStoredKiloModelSelection,
+  stop: stopKiloServer,
   getConfig,
   updateSystemPrompt,
-} = await import("../backend/kilo/server.js");
+} = kiloProfile;
 const { getPluginMcpServerName, getPluginMcpServerPrefix } =
   await import("../backend/remote-server/mcp.js");
 

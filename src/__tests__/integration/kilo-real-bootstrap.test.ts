@@ -192,12 +192,13 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
       );
     }
 
-    // Sanity: the env override took effect before kilo/server.js loaded.
-    const { KILO_BASE_URL } = await import("../../backend/kilo/server.js");
-    if (KILO_BASE_URL !== TEST_BASE_URL) {
+    // Sanity: the env override took effect before the Kilo profile loaded.
+    const { kiloProfile } =
+      await import("../../backend/remote-server/profiles/kilo.js");
+    if (kiloProfile.baseUrl !== TEST_BASE_URL) {
       throw new Error(
-        `KILO_PORT env override didn't take effect. Expected base ${TEST_BASE_URL}, got ${KILO_BASE_URL}. ` +
-          `(Did kilo/server.js load before vi.hoisted ran?)`,
+        `KILO_PORT env override didn't take effect. Expected base ${TEST_BASE_URL}, got ${kiloProfile.baseUrl}. ` +
+          `(Did profiles/kilo.js load before vi.hoisted ran?)`,
       );
     }
 
@@ -229,13 +230,13 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
     //    Real deployment behaviour: discover what Kilo offers, don't pin a
     //    name that might disappear from the catalog tomorrow.
     //
-    //    `getOpenCodeModelCatalog()` calls `ensureServer()` internally, which
+    //    `catalog.getCatalog()` calls `ensureServer()` internally, which
     //    spawns the test-port `kilo serve` on the very first invocation. So
     //    this also doubles as the server warm-up.
-    const { getOpenCodeModelCatalog, clearModelCatalogCache } =
-      await import("../../backend/kilo/models/index.js");
-    clearModelCatalogCache();
-    const catalog = await getOpenCodeModelCatalog(/* forceRefresh */ true);
+    kiloProfile.catalog.clearCache();
+    const catalog = await kiloProfile.catalog.getCatalog(
+      /* forceRefresh */ true,
+    );
     const free = catalog.connectedFreeModels[0];
     if (!free) {
       throw new Error(
@@ -435,8 +436,9 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
   it("retains both chat MCP servers across chat switches", async () => {
     recording.reset();
     const { execute } = await import("../../core/engine/dispatcher.js");
-    const { getRegisteredMcpServerNames } =
-      await import("../../backend/kilo/server.js");
+    const { kiloProfile } =
+      await import("../../backend/remote-server/profiles/kilo.js");
+    const { getRegisteredMcpServerNames } = kiloProfile;
 
     // Turn 1 — chat A. The model's reply doesn't matter; we just need
     // its MCP server to get registered.

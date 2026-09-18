@@ -14,10 +14,9 @@
  * of hand-written pass-through wrappers around the shared helpers. They
  * drifted in the small ways copies do (one documented the port override,
  * the other didn't; one exported `errMsg`, the other aliased it) while
- * doing exactly the same thing. Now a backend's `server.ts` declares its
- * profile and re-exports these bindings under the historical names —
- * the surface the models module, the tests, and
- * `vi.mock("../backend/<name>/server.js")` all address.
+ * doing exactly the same thing. Those wrapper files are gone:
+ * `profiles/bind.ts` calls this once per driver and hands the result
+ * straight to `createRemoteBackendFactory`.
  */
 
 import type { TalonConfig } from "../../core/config/index.js";

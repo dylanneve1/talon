@@ -1,14 +1,15 @@
 /**
- * Tests for src/backend/kilo/model-provider.ts — the adapter that
- * maps the internal Kilo catalog to the `UnifiedModelInfo` /
- * resolution / provider shapes the `Backend.models` slot exposes
- * to the dispatcher and frontend pickers.
+ * Tests for `createRemoteModelProvider` — the adapter that maps a
+ * remote-server backend's catalog to the `UnifiedModelInfo` /
+ * resolution / provider shapes the `Backend.models` slot exposes to
+ * the dispatcher and frontend pickers.
  *
- * The adapter is the shared `createRemoteModelProvider` factory
- * (backend/remote-server/model-catalog/provider.ts) bound to Kilo's
- * catalog module — OpenCode binds the same factory, so these tests
- * cover both. They exist because this glue is the easiest place for
- * a model-shape regression to slip past tsc.
+ * Every member of the family (`remote-server/profiles/*`) binds this
+ * one factory, so these tests cover all of them. The fixture below is
+ * Kilo-flavoured — label, provider ids, error text — because that is
+ * what the assertions were written against. They exist because this
+ * glue is the easiest place for a model-shape regression to slip past
+ * tsc.
  */
 import { describe, expect, it, vi } from "vitest";
 
@@ -18,23 +19,16 @@ vi.mock("../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-vi.mock("../backend/kilo/server.js", () => ({
-  onServerStop: vi.fn(),
-  ensureServer: vi.fn(async () => {
-    throw new Error(
-      "ensureServer should not be called from kilo-model-provider tests",
-    );
-  }),
-  getConfig: vi.fn(() => undefined),
-  initKiloAgent: vi.fn(),
-  stopKiloServer: vi.fn(),
-}));
+import type { RemoteModelProviderDeps } from "../backend/remote-server/model-catalog/provider.js";
+
+const { createRemoteModelProvider } =
+  await import("../backend/remote-server/model-catalog/index.js");
 
 // ---------------------------------------------------------------------------
 // Fixture: a hand-built kilo catalog.
 //
 // Three providers — one connected, one login-required, one not-yet-set-up;
-// four models split across them. Used by the catalog mock below.
+// four models split across them. Fed to the adapter through the stubs below.
 // ---------------------------------------------------------------------------
 
 function makeEntry(overrides: Record<string, unknown> = {}) {
@@ -146,41 +140,11 @@ const catalog = {
 };
 
 // ---------------------------------------------------------------------------
-// Mock ./models.js so the model-provider adapter sees our static catalog
-// without spinning up a real Kilo server.
+// Bind the adapter over the static catalog above. A profile binds these
+// same deps to its cached catalog module; here they are plain stubs, so
+// no server is ever spun up.
 // ---------------------------------------------------------------------------
 
-vi.mock("../backend/kilo/models/index.js", () => ({
-  getOpenCodeModelCatalog: vi.fn(async () => catalog),
-  getOpenCodeModelInfo: vi.fn(async (id: string) =>
-    catalog.models.find((m) => m.id === id),
-  ),
-  resolveOpenCodeModelInput: vi.fn((query: string) => {
-    if (query === "ambiguous") {
-      return { kind: "ambiguous", matches: [m1, m2] };
-    }
-    const match = catalog.models.find((m) => m.id === query);
-    return match
-      ? { kind: "exact", model: match }
-      : { kind: "missing", matches: [] };
-  }),
-  getOpenCodeModelSelectionValue: vi.fn(
-    (m: { providerID: string; id: string }) => `${m.providerID}/${m.id}`,
-  ),
-  getOpenCodeSettingsPresentation: vi.fn(async () => ({
-    modelButtons: [
-      { text: "big-pickle", callback_data: "settings:model:big-pickle" },
-    ],
-    modelDetails: ["Kilo · 1 provider connected · 2 models usable"],
-  })),
-  formatOpenCodeSelectionError: vi.fn(() => "delegated-error"),
-  formatOpenCodeUnavailableModel: vi.fn(
-    (m: { providerName: string; id: string }) =>
-      `${m.providerName} not connected — ${m.id} unavailable`,
-  ),
-}));
-
-// Import the adapter AFTER the mocks are registered.
 const {
   resolveModel,
   getModelInfo,
@@ -189,13 +153,43 @@ const {
   getProviderModels,
   listModels,
   formatModelError,
-} = await import("../backend/kilo/model-provider.js");
+} = createRemoteModelProvider({
+  label: "Kilo",
+  getCatalog: vi.fn(async () => catalog),
+  getModelInfo: vi.fn(async (id: string) =>
+    catalog.models.find((m) => m.id === id),
+  ),
+  resolveModelInput: vi.fn((query: string) => {
+    if (query === "ambiguous") {
+      return { kind: "ambiguous" as const, matches: [m1, m2] };
+    }
+    const match = catalog.models.find((m) => m.id === query);
+    return match
+      ? { kind: "exact" as const, model: match }
+      : { kind: "missing" as const, matches: [] };
+  }),
+  getSelectionValue: vi.fn(
+    (m: { providerID: string; id: string }) => `${m.providerID}/${m.id}`,
+  ),
+  // Only the two fields the adapter passes through are asserted on; the
+  // picker's paging fields are the presentation module's own business.
+  getSettingsPresentation: vi.fn(async () => ({
+    modelButtons: [
+      { text: "big-pickle", callback_data: "settings:model:big-pickle" },
+    ],
+    modelDetails: ["Kilo · 1 provider connected · 2 models usable"],
+  })) as unknown as RemoteModelProviderDeps["getSettingsPresentation"],
+  formatUnavailableModel: vi.fn(
+    (m: { providerName: string; id: string }) =>
+      `${m.providerName} not connected — ${m.id} unavailable`,
+  ),
+});
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("kilo/model-provider — resolveModel", () => {
+describe("remote-server model-provider — resolveModel", () => {
   it("returns exact resolution with storedValue using the provider-qualified slug", async () => {
     const result = await resolveModel("big-pickle");
     expect(result.kind).toBe("exact");
@@ -225,7 +219,7 @@ describe("kilo/model-provider — resolveModel", () => {
   });
 });
 
-describe("kilo/model-provider — getModelInfo", () => {
+describe("remote-server model-provider — getModelInfo", () => {
   it("maps a catalog entry to UnifiedModelInfo", async () => {
     const info = await getModelInfo("big-pickle");
     expect(info).toBeDefined();
@@ -252,7 +246,7 @@ describe("kilo/model-provider — getModelInfo", () => {
   });
 });
 
-describe("kilo/model-provider — getProviders", () => {
+describe("remote-server model-provider — getProviders", () => {
   it("lists connected providers first, then login-required providers", async () => {
     const providers = await getProviders();
     // Connected providers come first…
@@ -286,7 +280,7 @@ describe("kilo/model-provider — getProviders", () => {
   });
 });
 
-describe("kilo/model-provider — getProviderModels", () => {
+describe("remote-server model-provider — getProviderModels", () => {
   it("returns the right slice for page 1 and a page size that fits", async () => {
     const { models, total } = await getProviderModels("kilo", 1, 8);
     expect(total).toBe(2);
@@ -316,7 +310,7 @@ describe("kilo/model-provider — getProviderModels", () => {
   });
 });
 
-describe("kilo/model-provider — listModels", () => {
+describe("remote-server model-provider — listModels", () => {
   it("returns all connected models when filter is 'all' or omitted", async () => {
     const all = await listModels("all");
     expect(all.total).toBe(2);
@@ -338,7 +332,7 @@ describe("kilo/model-provider — listModels", () => {
   });
 });
 
-describe("kilo/model-provider — formatModelError", () => {
+describe("remote-server model-provider — formatModelError", () => {
   it("returns empty string for exact resolutions", () => {
     const msg = formatModelError("big-pickle", {
       kind: "exact",
@@ -381,7 +375,7 @@ describe("kilo/model-provider — formatModelError", () => {
   });
 });
 
-describe("kilo/model-provider — getSettingsPresentation", () => {
+describe("remote-server model-provider — getSettingsPresentation", () => {
   it("delegates to getOpenCodeSettingsPresentation and passes the callback prefix", async () => {
     const presentation = await getSettingsPresentation("big-pickle", {
       callbackPrefix: "settings:model:",

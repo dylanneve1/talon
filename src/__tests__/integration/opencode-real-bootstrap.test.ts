@@ -142,13 +142,13 @@ opencodeDescribe("OpenCode backend — real bootstrap (integration)", () => {
       );
     }
 
-    // Sanity: env override took effect before opencode/server.js loaded.
-    const { OPENCODE_BASE_URL } =
-      await import("../../backend/opencode/server.js");
-    if (OPENCODE_BASE_URL !== TEST_BASE_URL) {
+    // Sanity: env override took effect before the OpenCode profile loaded.
+    const { opencodeProfile } =
+      await import("../../backend/remote-server/profiles/opencode.js");
+    if (opencodeProfile.baseUrl !== TEST_BASE_URL) {
       throw new Error(
-        `OPENCODE_PORT env override didn't take effect. Expected base ${TEST_BASE_URL}, got ${OPENCODE_BASE_URL}. ` +
-          `(Did opencode/server.js load before vi.hoisted ran?)`,
+        `OPENCODE_PORT env override didn't take effect. Expected base ${TEST_BASE_URL}, got ${opencodeProfile.baseUrl}. ` +
+          `(Did profiles/opencode.js load before vi.hoisted ran?)`,
       );
     }
 
@@ -175,10 +175,10 @@ opencodeDescribe("OpenCode backend — real bootstrap (integration)", () => {
     }
 
     // Pick a free model from the live opencode catalog.
-    const { getOpenCodeModelCatalog, clearModelCatalogCache } =
-      await import("../../backend/opencode/models/index.js");
-    clearModelCatalogCache();
-    const catalog = await getOpenCodeModelCatalog(/* forceRefresh */ true);
+    opencodeProfile.catalog.clearCache();
+    const catalog = await opencodeProfile.catalog.getCatalog(
+      /* forceRefresh */ true,
+    );
     const free = catalog.connectedFreeModels[0];
     if (!free) {
       throw new Error(
@@ -347,8 +347,9 @@ opencodeDescribe("OpenCode backend — real bootstrap (integration)", () => {
   it("retains both chat MCP servers across chat switches", async () => {
     recording.reset();
     const { execute } = await import("../../core/engine/dispatcher.js");
-    const { getRegisteredMcpServerNames } =
-      await import("../../backend/opencode/server.js");
+    const { opencodeProfile } =
+      await import("../../backend/remote-server/profiles/opencode.js");
+    const { getRegisteredMcpServerNames } = opencodeProfile;
 
     // Turn 1 — chat A. The model's reply doesn't matter; we just need
     // its MCP server to get registered.

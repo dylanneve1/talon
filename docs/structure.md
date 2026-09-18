@@ -75,9 +75,10 @@ files; the same discipline scales it down. This document is the contract,
 Also on the list, not gate-detected: `core/scripting/` + `core/scripts/`
 are one subsystem (`core/scripts/{runner,lua}.ts`); `core/background/`
 (11 flat files + `heartbeat/` + `triggers/`) becomes `cron/`, `dream/`,
-`pulse/`, `heartbeat/`, `triggers/`; `backend/kilo` + `backend/opencode`
-(810 lines of thin wrappers over `remote-server`) become two profile
-modules under `remote-server/profiles/`; and the frontend duplication the
+`pulse/`, `heartbeat/`, `triggers/`; ~~`backend/kilo` +
+`backend/opencode` (810 lines of thin wrappers over `remote-server`)
+become two profile modules under `remote-server/profiles/`~~ (done, item
+9); and the frontend duplication the
 name survey found — `tryAction` ×2, `renderUsageMessage`/`renderSettingsText`/
 `renderMeshReport`/`meshDeviceLine` ×2 (HTML vs markdown variants of one
 report), the access gate wrappers (`isAccessAllowed`, `isDmAllowed`,
@@ -108,7 +109,19 @@ surfaces of entry files do not change.
    (`frontend/presentation/access.ts` → `core/frontend-runtime/`) remains.
 8. **telegram / discord / codex / claude-sdk / remote-server / mesh / cli /
    native (bricks)** trees — one PR each, smallest first.
-9. **kilo/opencode → remote-server profiles.**
+9. ~~**kilo/opencode → remote-server profiles.**~~ → landed as
+   `remote-server/profiles/` — `bind.ts` (the uniform driver binding:
+   server bindings + catalog + model provider + chat handler + one-shot
+   runner + session snapshots), `kilo.ts` and `opencode.ts` (one file of
+   constants each), `index.ts` (the barrel `backend/builtins.ts`
+   imports). `backend/kilo/` and `backend/opencode/` are deleted: 16
+   files, 810 lines, entirely re-exports under historical names.
+   `backend/builtins.ts` now registers these two through
+   `createRemoteBackendFactory(profile)` instead of a side-effect import
+   — they are the only backends with no `factory.ts`, because a profile
+   plus the shared factory *is* the driver. The delivery-contract suffix
+   (prompt-cache prefix) and the model-picker knobs are pinned
+   byte-for-byte by `remote-server-profiles.test.ts`.
 10. **docs** — finished plans (`agentevent-migration`, `consolidation-plan`,
     `cleanup-plan`, `code-health`) move to `docs/archive/`; `docs/README.md`
     indexes what is live.

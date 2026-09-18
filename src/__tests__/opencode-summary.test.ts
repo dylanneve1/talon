@@ -6,8 +6,10 @@ vi.mock("../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-const { summarizeOpenCodeAssistantMessages } =
-  await import("../backend/opencode/index.js");
+// Shared remote-server helper — OpenCode re-exported it under this name
+// until the profile refactor.
+const { summarizeAssistantMessages: summarizeOpenCodeAssistantMessages } =
+  await import("../backend/remote-server/session-helpers.js");
 
 describe("OpenCode assistant summaries", () => {
   it("aggregates usage across the full assistant chain for a turn", () => {

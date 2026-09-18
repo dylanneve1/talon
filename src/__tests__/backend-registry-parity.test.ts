@@ -19,7 +19,13 @@ import {
   getBackend,
   listBackends,
   hasBackend,
+  registerBackend,
 } from "../core/agent-runtime/backend-registry.js";
+import { createRemoteBackendFactory } from "../backend/remote-server/factory.js";
+import {
+  kiloProfile,
+  opencodeProfile,
+} from "../backend/remote-server/profiles/index.js";
 
 const ALL_BACKENDS = [
   "claude",
@@ -31,11 +37,13 @@ const ALL_BACKENDS = [
 
 beforeAll(async () => {
   // Reset registry for a clean import. Each factory module's
-  // side-effect import re-registers it.
+  // side-effect import re-registers it; the remote-server family has no
+  // factory module — a profile plus the shared factory is the driver, so
+  // it registers the same way `backend/builtins.ts` does.
   clearBackends();
   await import("../backend/claude-sdk/factory.js");
-  await import("../backend/kilo/factory.js");
-  await import("../backend/opencode/factory.js");
+  registerBackend(createRemoteBackendFactory(kiloProfile));
+  registerBackend(createRemoteBackendFactory(opencodeProfile));
   await import("../backend/codex/factory.js");
   await import("../backend/openai-agents/factory.js");
 }, 30_000);

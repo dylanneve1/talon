@@ -6,23 +6,14 @@ vi.mock("../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-vi.mock("../backend/kilo/server.js", () => ({
-  onServerStop: vi.fn(),
-  ensureServer: vi.fn(async () => {
-    throw new Error(
-      "ensureServer should not be called from kilo-summary tests",
-    );
-  }),
-  getConfig: vi.fn(() => undefined),
-  initKiloAgent: vi.fn(),
-  stopKiloServer: vi.fn(),
-}));
-
-const { summarizeKiloAssistantMessages } =
-  await import("../backend/kilo/index.js");
-
-const { extractPartsSummary, extractAssistantUsage } =
-  await import("../backend/kilo/sessions.js");
+// Kilo re-exported these three shared helpers under `*Kilo*` names until
+// the profile refactor; the fixtures are Kilo-shaped SDK payloads run
+// against the shared implementation.
+const {
+  summarizeAssistantMessages: summarizeKiloAssistantMessages,
+  extractPartsSummary,
+  extractAssistantUsage,
+} = await import("../backend/remote-server/session-helpers.js");
 
 // ---------------------------------------------------------------------------
 // extractPartsSummary — pulls assistant text + tool-call count out of the raw

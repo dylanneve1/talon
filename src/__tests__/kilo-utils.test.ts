@@ -1,12 +1,13 @@
 /**
- * Pure-function unit tests for src/backend/kilo/models.ts helpers.
+ * Pure-function unit tests for the remote-server model-catalog helpers, as
+ * the Kilo profile exercises them.
  *
  * Covers the small utility functions that aren't exercised by the higher-level
- * resolveOpenCodeModelInput / catalog tests:
+ * resolveRemoteModelInput / catalog tests:
  *   - guessProviderID            — model.id → provider heuristic
  *   - getBucketPriority          — provider-bucket ordering for resolveProviderID
  *   - normalizeModelLookup       — query canonicalisation
- *   - parseOpenCodeModelQuery    — "<provider>/<model>" splitter
+ *   - parseRemoteModelQuery      — "<provider>/<model>" splitter
  *
  * These are pure functions over strings — no SDK and no catalog.
  * They're cheap to test and they're exactly where a refactor regression
@@ -24,8 +25,8 @@ const {
   guessProviderID,
   getBucketPriority,
   normalizeModelLookup,
-  parseOpenCodeModelQuery,
-} = await import("../backend/kilo/models/index.js");
+  parseRemoteModelQuery: parseOpenCodeModelQuery,
+} = await import("../backend/remote-server/model-catalog/index.js");
 
 // ---------------------------------------------------------------------------
 // guessProviderID — string-pattern heuristic mapping a model.id to a provider.

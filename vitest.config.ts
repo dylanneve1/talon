@@ -43,13 +43,12 @@ export default defineConfig({
         "src/login.ts",
         "src/setup.ts",
         "src/bootstrap.ts",
-        // Kilo/OpenCode process-entry handlers are covered by the dedicated
-        // integration and backend-live CI tiers. Keep unit coverage focused on
+        // The Kilo/OpenCode profiles are declarations bound to SDK
+        // constructors, exercised by the dedicated integration and
+        // backend-live CI tiers. Keep unit coverage focused on the shared
         // parser/session/server logic where isolated tests give useful signal.
-        "src/backend/kilo/handler.ts",
-        "src/backend/kilo/one-shot.ts",
-        "src/backend/opencode/handler.ts",
-        "src/backend/opencode/one-shot.ts",
+        "src/backend/remote-server/profiles/kilo.ts",
+        "src/backend/remote-server/profiles/opencode.ts",
         // The Lua runner is a process entry (`_lua-run`): exercised end-to-end
         // by lua-runner.test.ts as a real child process, which v8 in-process
         // coverage can't see.

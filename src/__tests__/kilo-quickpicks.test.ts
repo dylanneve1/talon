@@ -33,19 +33,12 @@ vi.mock("../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-vi.mock("../backend/kilo/server.js", () => ({
-  onServerStop: vi.fn(),
-  ensureServer: vi.fn(async () => {
-    throw new Error(
-      "ensureServer should not be called from kilo-quickpicks tests",
-    );
-  }),
-  getConfig: vi.fn(() => undefined),
-  initOpenCodeAgent: vi.fn(),
-  stopOpenCodeServer: vi.fn(),
-}));
-
-const { getOpenCodeQuickPickModels } = await import("../backend/kilo/index.js");
+// The quick-pick budget is a Kilo profile knob (90-char ids, 24 picks), so
+// this drives the profile's own bound catalog. Every case passes a
+// hand-built catalog object, so the server is never reached.
+const { kiloProfile } =
+  await import("../backend/remote-server/profiles/kilo.js");
+const getOpenCodeQuickPickModels = kiloProfile.catalog.getQuickPickModels;
 
 type Entry = Parameters<typeof getOpenCodeQuickPickModels>[0]["models"][number];
 

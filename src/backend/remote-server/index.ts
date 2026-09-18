@@ -1,7 +1,7 @@
 /**
  * Shared remote-server backend framework — barrel re-export.
  *
- * Helpers used by `backend/opencode` and `backend/kilo` (both wrap a
+ * Helpers used by the OpenCode and Kilo drivers (both wrap a
  * long-running upstream agent server that exposes a common HTTP API
  * for MCP registration, session lifecycle, tool listing, and provider
  * resolution).
@@ -21,9 +21,11 @@
  *     the chat-turn orchestration, and the registry factory composition.
  *     This is where the code that used to be copied per backend lives.
  *
- *   - Concrete backends (`backend/opencode`, `backend/kilo`) — a
- *     `RemoteBackendProfile` (SDK constructors, port, delivery contract,
- *     model-selection parser) plus re-exports under historical names.
+ *   - Profiles (`profiles/bind.ts` + `profiles/{kilo,opencode}.ts`) —
+ *     `bindRemoteProfile` closes all of the above over one driver's
+ *     state, and each driver is one file of constants: SDK
+ *     constructors, port, delivery contract, model-selection parser,
+ *     model-picker budget.
  *
  * What's NOT here (intentionally):
  *

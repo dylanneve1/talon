@@ -22,8 +22,11 @@ import {
   waitForHealthy,
 } from "./live-backend-helpers.js";
 
-type OpenCodeModelsModule =
-  typeof import("../../backend/opencode/models/index.js");
+type RemoteCatalogModule =
+  typeof import("../../backend/remote-server/model-catalog/index.js");
+type RemoteModelCatalogModule = ReturnType<
+  RemoteCatalogModule["createRemoteModelCatalogModule"]
+>;
 
 const OPENCODE_EXECUTABLE_ENV = "OPENCODE_EXECUTABLE";
 const OPENCODE_PRESENT = cliAvailable("opencode", OPENCODE_EXECUTABLE_ENV);
@@ -37,24 +40,10 @@ const HEALTH_TIMEOUT_MS = process.platform === "win32" ? 120_000 : 45_000;
 
 let opencodeProc: ChildProcess | null = null;
 let testClient: OpencodeClient;
-let getOpenCodeModelCatalog: OpenCodeModelsModule["getOpenCodeModelCatalog"];
-let getOpenCodeModelSelectionValue: OpenCodeModelsModule["getOpenCodeModelSelectionValue"];
-let resolveOpenCodeModelInput: OpenCodeModelsModule["resolveOpenCodeModelInput"];
-let clearModelCatalogCache: OpenCodeModelsModule["clearModelCatalogCache"];
-
-vi.mock("../../backend/opencode/server.js", () => {
-  return {
-    ensureServer: vi.fn(async (): Promise<OpencodeClient> => {
-      if (!testClient) {
-        throw new Error(
-          "ensureServer called before opencode-live beforeAll initialised testClient",
-        );
-      }
-      return testClient;
-    }),
-    onServerStop: vi.fn(),
-  };
-});
+let getOpenCodeModelCatalog: RemoteModelCatalogModule["getCatalog"];
+let getOpenCodeModelSelectionValue: RemoteCatalogModule["getRemoteModelSelectionValue"];
+let resolveOpenCodeModelInput: RemoteCatalogModule["resolveRemoteModelInput"];
+let clearModelCatalogCache: RemoteModelCatalogModule["clearCache"];
 
 vi.mock("../../util/log.js", () => ({
   log: vi.fn(),
@@ -70,12 +59,32 @@ opencodeDescribe("OpenCode live discovery (integration)", () => {
       );
     }
 
-    ({
-      getOpenCodeModelCatalog,
-      getOpenCodeModelSelectionValue,
-      resolveOpenCodeModelInput,
-      clearModelCatalogCache,
-    } = await import("../../backend/opencode/models/index.js"));
+    // Bind a catalog module on the OpenCode profile's own knobs, pointed
+    // at the throwaway server this suite spawns instead of at the
+    // profile's port-4096 one. `getClient` is lazy, so it resolves the
+    // live client built further down this hook.
+    const {
+      createRemoteModelCatalogModule,
+      getRemoteModelSelectionValue,
+      resolveRemoteModelInput,
+    } = await import("../../backend/remote-server/model-catalog/index.js");
+    const { opencodeProfile } =
+      await import("../../backend/remote-server/profiles/opencode.js");
+    const catalogModule = createRemoteModelCatalogModule({
+      ...opencodeProfile.definition,
+      getClient: async (): Promise<OpencodeClient> => {
+        if (!testClient) {
+          throw new Error(
+            "catalog client requested before opencode-live beforeAll initialised testClient",
+          );
+        }
+        return testClient;
+      },
+    });
+    getOpenCodeModelCatalog = catalogModule.getCatalog;
+    clearModelCatalogCache = catalogModule.clearCache;
+    getOpenCodeModelSelectionValue = getRemoteModelSelectionValue;
+    resolveOpenCodeModelInput = resolveRemoteModelInput;
 
     opencodeProc = spawnCli(
       "opencode",

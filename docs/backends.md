@@ -95,11 +95,19 @@ server, so their MCP / session / provider plumbing is shared:
   post-turn accounting, delivery routing).
 - `factory.ts` — `createRemoteBackendFactory`: the registry factory
   composition shared by every member of the family.
+- `profiles/bind.ts` — `bindRemoteProfile(definition)`: server bindings
+  + catalog + model provider + chat handler + one-shot runner +
+  session snapshots, all closed over one profile's state. The result is
+  a `RemoteBackendFactoryInputs`, so `backend/builtins.ts` registers it
+  straight through `createRemoteBackendFactory`.
+- `profiles/kilo.ts`, `profiles/opencode.ts` — the two drivers. Each is
+  a `RemoteProfileDefinition`: SDK client/server constructors, loopback
+  port and its override env var, delivery contract, stored-model parser,
+  and the model-picker budget.
 
-A concrete backend directory (`kilo/`, `opencode/`) is therefore just the
-profile in `server.ts`, the presentation knobs in `models/`, and thin
-re-exports under the historical names. There is no per-backend turn or
-handler logic left to drift.
+A member of this family is therefore one file of constants. There is no
+per-backend directory, and no per-backend turn, handler, catalog or
+session code left to drift.
 
 Codex and Claude SDK don't use this — they wrap different transport
 shapes.
@@ -181,11 +189,13 @@ own credentials.
 Same shape as Kilo (Kilo is a fork). One long-lived `opencode serve`
 HTTP server (default port 4096) via `@opencode-ai/sdk`. Same MCP
 wiring, same SSE event loop, same session lifecycle — literally the
-same code: both are `bindRemoteServer` profiles. What differs is the
-SDK package, the port, the delivery contract (Kilo: text-or-tools;
-OpenCode: text-preferred), the stored-model parser (Kilo honours a
-`kilo/` prefix; OpenCode splits `provider/model` fuzzily), and the
-model-picker presentation knobs in `models/index.ts`.
+same code: both are `bindRemoteProfile` profiles under
+`backend/remote-server/profiles/`. What differs is the SDK package, the
+port, the delivery contract (Kilo: text-or-tools; OpenCode:
+text-preferred), the stored-model parser (Kilo honours a `kilo/` prefix;
+OpenCode splits `provider/model` fuzzily), and the model-picker budget
+(Kilo renders through Discord select menus, OpenCode through Telegram
+inline keyboards).
 
 ### Codex
 
@@ -229,9 +239,10 @@ keep OpenAI-compatible endpoint credentials without hijacking Codex.
    `src/util/config.ts` so config validation accepts it.
 
 5. Wire shared infrastructure where it helps. If your backend wraps
-   an OpenCode-shaped HTTP server, it is a `RemoteBackendProfile`:
-   copy `backend/opencode/` and change the profile fields — nothing
-   else in that directory is backend-specific. If it spawns a
+   an OpenCode-shaped HTTP server, it is a `RemoteProfileDefinition`:
+   copy `backend/remote-server/profiles/opencode.ts`, change the
+   fields, and register it from `backend/builtins.ts` — step 3 above
+   is the profile list, not a factory module. If it spawns a
    subprocess, study the Codex pattern in `backend/codex/`.
 
 6. Update the README's Backends section + this doc.
