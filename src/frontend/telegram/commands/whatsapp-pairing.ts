@@ -11,7 +11,7 @@
  */
 
 import { InputFile, type Bot, type Context } from "grammy";
-import { getPairingProvider } from "../../../core/pairing-broker.js";
+import { getPairingProvider } from "../../../core/frontend-runtime/pairing-broker.js";
 import { log } from "../../../util/log.js";
 import { isAuthorizedAdmin } from "./state.js";
 

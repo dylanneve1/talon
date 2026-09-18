@@ -7,7 +7,7 @@
 import type {
   DoctorCheck,
   DoctorConfigSlice,
-} from "../../core/doctor-types.js";
+} from "../../core/doctor/types.js";
 import { getModels } from "../../core/models/catalog.js";
 import { binaryOnPath } from "../../util/binary-on-path.js";
 import { resolveModel } from "./model-provider.js";

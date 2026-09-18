@@ -45,7 +45,7 @@ The verb vocabulary is already consistent (`get`/`is`/`handle`/`build`/
 | Three naming schemes for one concept | `storage/`: `cron-store.ts`, `goal-store.ts`, `script-store.ts`, `skill-store.ts`, `sticker-store.ts`, `trigger-store.ts`, `scheduled-store.ts` next to `sessions.ts`, `history.ts`, `journal.ts`, `kv.ts`, `metrics.ts`, `chat-settings.ts`, `media-index.ts`, `turn-meta.ts`, next to `repositories/*-repo.ts` | One rule: `storage/<noun>.ts` is the store API, `storage/repositories/<noun>-repo.ts` is its SQL. Drop the `-store` suffix. |
 | `Opts` vs `Options` | 4 `*Opts` types against 30 `*Options` | `Options`. |
 | Dumping-ground files | `frontend/{discord,telegram,whatsapp}/{actions,callbacks,commands}/shared.ts` (7 files), `frontend/discord/helpers.ts`, `gateway-actions/shared.ts` | Name each by what it holds (`reply.ts`, `context.ts`, `permissions.ts`). A file called `shared` is a file nobody owns. |
-| Loose files at `core/` root | `doctor.ts` + `doctor-types.ts`, `notify.ts`, `pairing-broker.ts`, `constants.ts`, `errors.ts`, `types.ts` | `core/doctor/`, `core/notify/`; `pairing-broker` belongs with `mesh/`. `errors`, `types`, `constants` stay — they are the root's vocabulary. |
+| Loose files at `core/` root | `doctor.ts` + `doctor-types.ts`, `notify.ts`, `pairing-broker.ts`, `constants.ts`, `errors.ts`, `types.ts` | `core/doctor/{index,types}.ts`; `notify` and `pairing-broker` are both cross-frontend seams the composition root wires, so they live in `core/frontend-runtime/` as `admin-notify.ts` and `pairing-broker.ts` (not `mesh/` — device pairing is a frontend handshake, not a mesh concern). `errors`, `types`, `constants` stay — they are the root's vocabulary. |
 | Engine config filed as a leaf util | `util/config.ts` (843 lines, imports `core/`) | Already a documented migration (`config-belongs-in-core`, warn). Move to `core/config/`, ratchet to error. |
 
 ### Latency and startup
@@ -110,7 +110,8 @@ after C–G so it does not conflict with them. Landed for storage,
 do not collide.
 
 **I. `core/` root tidy + `config → core/config`** — the ratcheted
-migration. After H.
+migration. After H. Root tidy landed; `config → core/config` waits for
+the in-flight frontend PRs (E/F) since it rewrites ~100 import lines.
 
 **J. Performance PRs, each quoting B's numbers** — boot concurrency,
 native context cache, console log level, native type stripping. In that

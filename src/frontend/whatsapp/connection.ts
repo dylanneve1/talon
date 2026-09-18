@@ -11,7 +11,7 @@ import makeWASocket, { type AuthenticationState, type WASocket } from "baileys";
 import qrcode from "qrcode-terminal";
 import { log, logError, logWarn } from "../../util/log.js";
 import { dirs } from "../../util/paths.js";
-import { notifyAdmin } from "../../core/notify.js";
+import { notifyAdmin } from "../../core/frontend-runtime/admin-notify.js";
 import { useAtomicAuthState } from "./auth-state.js";
 import { bareId } from "./identity.js";
 import { handleInbound } from "./inbound.js";

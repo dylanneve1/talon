@@ -13,22 +13,22 @@
 
 import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
-import { NATIVE_MODULES } from "../native/registry.js";
-import { dirs } from "../util/paths.js";
-import { getBackend, listBackends } from "./agent-runtime/backend-registry.js";
+import { NATIVE_MODULES } from "../../native/registry.js";
+import { dirs } from "../../util/paths.js";
+import { getBackend, listBackends } from "../agent-runtime/backend-registry.js";
 import type {
   DoctorCheck,
   DoctorConfigSlice,
   DoctorReport,
   NativeModuleCheck,
-} from "./doctor-types.js";
+} from "./types.js";
 
 export type {
   DoctorCheck,
   DoctorConfigSlice,
   DoctorReport,
   NativeModuleCheck,
-} from "./doctor-types.js";
+} from "./types.js";
 
 function errorNote(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -180,7 +180,7 @@ async function checkPluginRuntimes(
   config: DoctorConfigSlice | undefined,
 ): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
-  const { NATIVE_RUNTIMES } = await import("./plugin/native-runtimes.js");
+  const { NATIVE_RUNTIMES } = await import("../plugin/native-runtimes.js");
   for (const runtime of NATIVE_RUNTIMES) {
     if (!runtime.enabled(config)) continue;
     try {
@@ -322,7 +322,7 @@ export async function collectDoctorReport(opts: {
   // on the in-process TS path. When present, report the live version.
   {
     const { wardenBinaryPath, wardenVersion } =
-      await import("../native/warden.js");
+      await import("../../native/warden.js");
     const wardenBin = wardenBinaryPath();
     if (wardenBin) {
       const version = wardenVersion();
@@ -350,7 +350,7 @@ export async function collectDoctorReport(opts: {
   // and on the event loop), so it's informational, not an issue. The
   // addon was digest-verified at load time by nativeBlake3().
   {
-    const { nativeBlake3 } = await import("../native/blake3.js");
+    const { nativeBlake3 } = await import("../../native/blake3.js");
     const addon = nativeBlake3();
     checks.push(
       addon
@@ -370,7 +370,7 @@ export async function collectDoctorReport(opts: {
   // ~/.talon/ns is the symlink farm only (file mounts fine, no live
   // proc//plugins views), so it's informational, not an issue.
   {
-    const { nativeFuseFs } = await import("../native/fusefs.js");
+    const { nativeFuseFs } = await import("../../native/fusefs.js");
     const addon = nativeFuseFs();
     checks.push(
       addon
@@ -392,7 +392,7 @@ export async function collectDoctorReport(opts: {
   // stale or the package is incomplete — caught at check time, not
   // mid-message when a backend assembles its system prompt.
   {
-    const { loadSystemTemplate } = await import("./prompt/index.js");
+    const { loadSystemTemplate } = await import("../prompt/index.js");
     try {
       const sample = loadSystemTemplate("workspace");
       checks.push(
@@ -423,7 +423,7 @@ export async function collectDoctorReport(opts: {
   // is which is the difference between "why didn't my prompt update?"
   // and a one-line answer.
   {
-    const { promptSeedReport } = await import("../util/workspace.js");
+    const { promptSeedReport } = await import("../../util/workspace.js");
     try {
       const { tracking, edited } = promptSeedReport();
       if (tracking.length + edited.length > 0) {

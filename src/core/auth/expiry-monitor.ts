@@ -9,7 +9,7 @@
  * fresh login clears it, so the next expiry warns again).
  */
 
-import { notifyAdmin } from "../notify.js";
+import { notifyAdmin } from "../frontend-runtime/admin-notify.js";
 import {
   daysUntil,
   PROVIDER_LABELS,

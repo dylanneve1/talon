@@ -13,7 +13,7 @@
  * import-cheap for consumers that only need the id list.
  */
 
-import type { DoctorCheck } from "../doctor.js";
+import type { DoctorCheck } from "../doctor/index.js";
 import type { ProvisionOutcome } from "./provision.js";
 import type { MempalaceSection } from "../../plugins/mempalace/provision.js";
 import type { PlaywrightSection } from "../../plugins/playwright/provision.js";

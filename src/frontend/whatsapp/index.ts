@@ -32,7 +32,7 @@ import {
   pruneWhatsAppMessages,
 } from "../../storage/whatsapp-messages.js";
 import { flushAuthWrites } from "./auth-state.js";
-import { registerPairingProvider } from "../../core/pairing-broker.js";
+import { registerPairingProvider } from "../../core/frontend-runtime/pairing-broker.js";
 import { beginPairingAttempt } from "./pairing-service.js";
 import { runConnectionLoop } from "./connection.js";
 import { lookupWhatsAppChat, type WhatsAppChatInfo } from "./registry.js";

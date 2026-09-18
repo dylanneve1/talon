@@ -9,7 +9,7 @@
  */
 
 import { join } from "node:path";
-import type { DoctorCheck } from "../../core/doctor.js";
+import type { DoctorCheck } from "../../core/doctor/index.js";
 import {
   failDetail,
   loadProvisionState,

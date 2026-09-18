@@ -17,7 +17,10 @@ vi.mock("../util/log.js", () => ({
 }));
 
 import { classifyClose } from "../frontend/whatsapp/pairing.js";
-import { notifyAdmin, setAdminNotifier } from "../core/notify.js";
+import {
+  notifyAdmin,
+  setAdminNotifier,
+} from "../core/frontend-runtime/admin-notify.js";
 
 afterEach(() => setAdminNotifier(null));
 

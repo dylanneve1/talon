@@ -25,7 +25,7 @@ import {
   renderUsageMessage,
 } from "../helpers/index.js";
 import { collectPlanUsage } from "../../shared/plan-usage-report.js";
-import { collectDoctorReport } from "../../../core/doctor.js";
+import { collectDoctorReport } from "../../../core/doctor/index.js";
 import { handleAdminCommand } from "../admin.js";
 import { getTodayMetrics } from "../../../storage/metrics.js";
 import { isAuthorizedAdmin, type RegisterDeps } from "./state.js";

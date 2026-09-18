@@ -14,7 +14,7 @@ import {
   DISCORD_SAFE_RESERVE,
   splitMessage,
 } from "./formatting.js";
-import type { DoctorReport } from "../../core/doctor.js";
+import type { DoctorReport } from "../../core/doctor/index.js";
 import type { MeshPingResult } from "../../core/mesh/service.js";
 import type { BackendUsageEntry } from "../shared/plan-usage-report.js";
 import {

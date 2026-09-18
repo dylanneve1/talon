@@ -6,7 +6,7 @@
 import type {
   DoctorCheck,
   DoctorConfigSlice,
-} from "../../core/doctor-types.js";
+} from "../../core/doctor/types.js";
 
 export async function openAIAgentsDoctorChecks(
   config: DoctorConfigSlice | undefined,

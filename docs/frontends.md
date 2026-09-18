@@ -112,7 +112,7 @@ terminal claims the legacy chat id `"1"` ahead of telegram (10).
    array of every tool in `core/tools/` it can serve. A tool listed for a
    frontend whose action handler doesn't implement it is a tool the model
    will call and get "unknown action" from — gate deliberately.
-6. Teach `unconfiguredFrontends` in `core/doctor.ts` what "configured"
+6. Teach `unconfiguredFrontends` in `core/doctor/index.ts` what "configured"
    means for it; the check is fail-closed, so an unknown id reports as
    broken.
 7. Add `prompts/<id>.md` (platform affordances and formatting rules) and

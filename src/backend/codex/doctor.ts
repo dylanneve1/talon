@@ -6,7 +6,7 @@
 import type {
   DoctorCheck,
   DoctorConfigSlice,
-} from "../../core/doctor-types.js";
+} from "../../core/doctor/types.js";
 import { binaryOnPath } from "../../util/binary-on-path.js";
 import { detectCodexAuth } from "./auth.js";
 

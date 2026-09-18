@@ -23,7 +23,7 @@ const RATCHETS = [
     name: "naked-throw-in-core",
     dir: "src/core",
     needle: "throw new Error(",
-    baseline: 38,
+    baseline: 37,
     why:
       "core/ should throw classified errors (core/errors.ts) so retry and " +
       "interrupt behaviour stays well-defined at the engine boundary. " +

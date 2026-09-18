@@ -22,7 +22,7 @@ import {
   getPairingProvider,
   registerPairingProvider,
   type PairingProvider,
-} from "../core/pairing-broker.js";
+} from "../core/frontend-runtime/pairing-broker.js";
 import {
   acquireManualPairing,
   releaseManualPairing,

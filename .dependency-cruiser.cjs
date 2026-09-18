@@ -34,9 +34,10 @@ module.exports = {
       comment:
         "core/ imports nothing from backend/ (src/core/types.ts:5). " +
         "Backends are bound through the agent-runtime seam, not imported. " +
-        "doctor.ts is carved out below with its own migration rule.",
+        "core/doctor/ used to be carved out here; it no longer imports " +
+        "backend/ and is covered like the rest of core.",
       severity: "error",
-      from: { path: "^src/core/", pathNot: "^src/core/doctor\\.ts$" },
+      from: { path: "^src/core/" },
       to: { path: "^src/backend/" },
     },
     {
@@ -142,13 +143,13 @@ module.exports = {
       name: "doctor-probes-move-behind-registry",
       comment:
         "DONE, now enforced: backends contribute their own checks through " +
-        "`BackendFactory.doctor` and doctor.ts composes whatever the " +
+        "`BackendFactory.doctor` and core/doctor/ composes whatever the " +
         "registry holds — it names no backend and imports none. The rule " +
         "stays as an error so a probe can't creep back into core: a new " +
         "backend gets doctor coverage by implementing the slot, not by " +
         "teaching doctor about itself.",
       severity: "error",
-      from: { path: "^src/core/doctor\\.ts$" },
+      from: { path: "^src/core/doctor/" },
       to: { path: "^src/backend/" },
     },
     {

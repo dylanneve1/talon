@@ -14,7 +14,7 @@
  * watches. Alerts about a dead frontend must travel over a LIVE one.
  */
 
-import { log, logWarn } from "./../util/log.js";
+import { log, logWarn } from "../../util/log.js";
 
 let deliver: ((text: string) => Promise<void>) | null = null;
 

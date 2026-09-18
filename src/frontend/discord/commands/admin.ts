@@ -19,7 +19,7 @@ import {
   renderMetricsMessages,
   renderDoctorMessages,
 } from "../render.js";
-import { collectDoctorReport } from "../../../core/doctor.js";
+import { collectDoctorReport } from "../../../core/doctor/index.js";
 import { getSoul } from "../../../core/soul/service.js";
 import { getMetrics, getTodayMetrics } from "../../../storage/metrics.js";
 import { handleAdminSubcommand } from "../admin.js";

@@ -16,7 +16,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { DoctorCheck } from "../../core/doctor.js";
+import type { DoctorCheck } from "../../core/doctor/index.js";
 import {
   failDetail,
   loadProvisionState,

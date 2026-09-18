@@ -23,7 +23,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { DoctorCheck } from "../../core/doctor.js";
+import type { DoctorCheck } from "../../core/doctor/index.js";
 import {
   compareVersions,
   expandHome,

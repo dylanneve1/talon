@@ -27,7 +27,7 @@ import { appendToJournal } from "./storage/journal.js";
 import { initPulse, resetPulseTimer } from "./core/background/pulse.js";
 import { initCron } from "./core/background/cron.js";
 import { initPlanAlerts } from "./core/background/plan-alerts.js";
-import { setAdminNotifier } from "./core/notify.js";
+import { setAdminNotifier } from "./core/frontend-runtime/admin-notify.js";
 import { startAuthExpiryMonitor } from "./core/auth/expiry-monitor.js";
 import {
   initTriggers,

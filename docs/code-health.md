@@ -75,7 +75,7 @@ already annotated with the migration that ratchets it to `error`.
 
 ```
 1) core/agent-runtime/events.ts > core/types.ts
-2) core/doctor.ts > core/plugin/native-runtimes.ts
+2) core/doctor/index.ts > core/plugin/native-runtimes.ts
 3) …> plugins/github/provision.ts
 4) …> plugins/mempalace/provision.ts
 5) …> plugins/playwright/provision.ts

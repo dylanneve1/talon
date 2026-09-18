@@ -261,7 +261,7 @@ describe("doctor configured-model check (claude static catalog)", () => {
   });
 
   it("flags an unselectable pinned model as a warn-with-issue", async () => {
-    const { collectDoctorReport } = await import("../core/doctor.js");
+    const { collectDoctorReport } = await import("../core/doctor/index.js");
     const report = await collectDoctorReport({
       hasConfigFile: true,
       config: {
@@ -279,7 +279,7 @@ describe("doctor configured-model check (claude static catalog)", () => {
   });
 
   it("confirms a resolvable pin with its display name", async () => {
-    const { collectDoctorReport } = await import("../core/doctor.js");
+    const { collectDoctorReport } = await import("../core/doctor/index.js");
     const report = await collectDoctorReport({
       hasConfigFile: true,
       config: { frontend: "terminal", backend: "claude", model: "opus" },
