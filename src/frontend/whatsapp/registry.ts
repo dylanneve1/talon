@@ -10,7 +10,7 @@
 
 import { isJidGroup, jidNormalizedUser } from "baileys";
 import { deriveNumericChatId } from "../../util/chat-id.js";
-import { bareId } from "./identity.js";
+import { bareId } from "./connection/identity.js";
 
 export type WhatsAppChatInfo = {
   /** Talon chat id: wa_dm_<number> or wa_group_<id>. */

@@ -28,7 +28,7 @@ vi.mock("../core/engine/dispatcher.js", () => ({
   execute: (...args: unknown[]) => execute(...(args as [])),
 }));
 const saveInboundMedia = vi.fn(async () => undefined as unknown);
-vi.mock("../frontend/whatsapp/media-store.js", () => ({
+vi.mock("../frontend/whatsapp/messages/media-store.js", () => ({
   saveInboundMedia: (...args: unknown[]) => saveInboundMedia(...(args as [])),
 }));
 
@@ -38,11 +38,11 @@ import {
   rememberMessage,
   resetMessageStore,
   resolveKey,
-} from "../frontend/whatsapp/message-store.js";
+} from "../frontend/whatsapp/messages/message-store.js";
 import { maxWhatsAppMsgId } from "../storage/whatsapp-messages.js";
 import { historyHandlers as coreHistory } from "../core/engine/gateway-actions/history.js";
 import { historyHandlers } from "../frontend/whatsapp/actions/history.js";
-import { handleInbound } from "../frontend/whatsapp/inbound.js";
+import { handleInbound } from "../frontend/whatsapp/messages/inbound.js";
 import { resetWhatsAppRegistry } from "../frontend/whatsapp/registry.js";
 import {
   getHistoryMessage,

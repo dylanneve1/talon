@@ -24,7 +24,7 @@ import {
   saveWhatsAppMessage,
   clearWhatsAppMessages,
   type WhatsAppMessageRecord,
-} from "../../storage/whatsapp-messages.js";
+} from "../../../storage/whatsapp-messages.js";
 
 export type StoredMessage = {
   /** Talon-facing numeric id. */

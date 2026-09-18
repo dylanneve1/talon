@@ -1,12 +1,12 @@
 /**
  * Access gates — the allow-lists are the entire permission model. DMs
- * match `allowedJids` (see identity.ts); groups go through `groupPolicy`
+ * match `allowedJids` (see connection/identity.ts); groups go through `groupPolicy`
  * and, in mention mode, must address the bot.
  */
 
 import type { WAMessage } from "baileys";
 import { logWarn } from "../../util/log.js";
-import { bareId } from "./identity.js";
+import { bareId } from "./connection/identity.js";
 import type { WhatsAppRuntime } from "./runtime.js";
 
 /**

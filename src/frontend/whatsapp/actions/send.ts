@@ -8,7 +8,7 @@ import type { AnyMessageContent, WAMessage, WASocket } from "baileys";
 import { log } from "../../../util/log.js";
 import type { ActionResult } from "../../../core/types.js";
 import { toWhatsAppChunks } from "../formatting.js";
-import { lookupMessage, rememberMessage } from "../message-store.js";
+import { lookupMessage, rememberMessage } from "../messages/message-store.js";
 import { pushMessage, type HistoryMessage } from "../../../storage/history.js";
 import type { WhatsAppChatInfo } from "../registry.js";
 

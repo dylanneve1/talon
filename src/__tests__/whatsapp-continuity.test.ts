@@ -27,7 +27,7 @@ import {
   resetMessageStore,
   seedMessageStore,
   lookupMessage,
-} from "../frontend/whatsapp/message-store.js";
+} from "../frontend/whatsapp/messages/message-store.js";
 import {
   sendContent,
   setWhatsAppBotName,
@@ -36,7 +36,7 @@ import {
   runTurnWithRecovery,
   shouldReplyToCatchUp,
   CATCH_UP_REPLY_WINDOW_MS,
-} from "../frontend/whatsapp/turn-recovery.js";
+} from "../frontend/whatsapp/messages/turn-recovery.js";
 import { historyHandlers } from "../core/engine/gateway-actions/history.js";
 import {
   pushMessage,

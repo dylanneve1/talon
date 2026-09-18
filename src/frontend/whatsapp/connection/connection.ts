@@ -9,19 +9,19 @@ import { readFile } from "node:fs/promises";
 import { resolve as resolvePath } from "node:path";
 import makeWASocket, { type AuthenticationState, type WASocket } from "baileys";
 import qrcode from "qrcode-terminal";
-import { log, logError, logWarn } from "../../util/log.js";
-import { dirs } from "../../util/paths.js";
-import { notifyAdmin } from "../../core/frontend-runtime/admin-notify.js";
+import { log, logError, logWarn } from "../../../util/log.js";
+import { dirs } from "../../../util/paths.js";
+import { notifyAdmin } from "../../../core/frontend-runtime/admin-notify.js";
 import { useAtomicAuthState } from "./auth-state.js";
 import { bareId } from "./identity.js";
-import { handleInbound } from "./inbound.js";
+import { handleInbound } from "../messages/inbound.js";
 import { classifyClose, isPaired, REPLACED_BACKOFF_MS } from "./pairing.js";
 import { isManualPairingActive, onPairingComplete } from "./pairing-lock.js";
 import {
   RECONNECT_BASE_MS,
   RECONNECT_MAX_MS,
   type WhatsAppRuntime,
-} from "./runtime.js";
+} from "../runtime.js";
 import { makeWaLogger } from "./wa-logger.js";
 
 /** What the connection loop should do after a socket ends. */

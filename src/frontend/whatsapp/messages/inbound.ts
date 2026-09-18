@@ -1,35 +1,35 @@
 /**
  * One inbound message, from `messages.upsert` to the model's turn:
  * access gates → media saved to the workspace → history recorded →
- * slash commands (commands.ts) → catch-up policy → `execute()`.
+ * slash commands (../commands.ts) → catch-up policy → `execute()`.
  */
 
 import { isJidGroup, type WAMessage } from "baileys";
-import type { AgentEvent } from "../../core/agent-runtime/events.js";
-import { log, logError } from "../../util/log.js";
-import { execute } from "../../core/engine/dispatcher.js";
-import { toolInputToRecord } from "../../core/agent-runtime/events.js";
-import { appendDailyLog } from "../../storage/daily-log.js";
-import { pushMessage } from "../../storage/history.js";
-import { relayInbound } from "../../core/engine/cross-chat-relay.js";
+import type { AgentEvent } from "../../../core/agent-runtime/events.js";
+import { log, logError } from "../../../util/log.js";
+import { execute } from "../../../core/engine/dispatcher.js";
+import { toolInputToRecord } from "../../../core/agent-runtime/events.js";
+import { appendDailyLog } from "../../../storage/daily-log.js";
+import { pushMessage } from "../../../storage/history.js";
+import { relayInbound } from "../../../core/engine/cross-chat-relay.js";
 import {
   recordMessageProcessed,
   recordMessageReceived,
-} from "../../util/watchdog.js";
-import { isAddressedToSelf, isGroupAllowed } from "./access.js";
-import { handleWhatsAppCommand } from "./commands.js";
-import { sendText } from "./actions/send.js";
+} from "../../../util/watchdog.js";
+import { isAddressedToSelf, isGroupAllowed } from "../access.js";
+import { handleWhatsAppCommand } from "../commands.js";
+import { sendText } from "../actions/send.js";
 import {
   bareId,
   canonicalId,
   identityAllowed,
   resolveIdentity,
   type Identity,
-} from "./identity.js";
+} from "../connection/identity.js";
 import { saveInboundMedia, type SavedMedia } from "./media-store.js";
 import { lookupByWaId, rememberMessage } from "./message-store.js";
-import { registerWhatsAppChat, type WhatsAppChatInfo } from "./registry.js";
-import type { WhatsAppRuntime } from "./runtime.js";
+import { registerWhatsAppChat, type WhatsAppChatInfo } from "../registry.js";
+import type { WhatsAppRuntime } from "../runtime.js";
 import { runTurnWithRecovery, shouldReplyToCatchUp } from "./turn-recovery.js";
 
 export type InboundOptions = { catchUp?: boolean };

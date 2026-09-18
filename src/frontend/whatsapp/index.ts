@@ -26,15 +26,15 @@ import { log, logError, logWarn } from "../../util/log.js";
 import { maxMsgIdForChatPrefix } from "../../storage/history.js";
 import { createWhatsAppActionHandler } from "./actions/index.js";
 import { sendText, setWhatsAppBotName } from "./actions/send.js";
-import { seedMessageStore } from "./message-store.js";
+import { seedMessageStore } from "./messages/message-store.js";
 import {
   maxWhatsAppMsgId,
   pruneWhatsAppMessages,
 } from "../../storage/whatsapp-messages.js";
-import { flushAuthWrites } from "./auth-state.js";
+import { flushAuthWrites } from "./connection/auth-state.js";
 import { registerPairingProvider } from "../../core/frontend-runtime/pairing-broker.js";
-import { beginPairingAttempt } from "./pairing-service.js";
-import { runConnectionLoop } from "./connection.js";
+import { beginPairingAttempt } from "./connection/pairing-service.js";
+import { runConnectionLoop } from "./connection/connection.js";
 import { lookupWhatsAppChat, type WhatsAppChatInfo } from "./registry.js";
 import { createWhatsAppRuntime } from "./runtime.js";
 

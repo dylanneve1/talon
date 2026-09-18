@@ -14,7 +14,7 @@
  * install, rather than on a hand-made object that happens to satisfy the fix.
  */
 import { describe, it, expect } from "vitest";
-import { isPaired } from "../frontend/whatsapp/pairing.js";
+import { isPaired } from "../frontend/whatsapp/connection/pairing.js";
 
 // Shape observed on a working QR-linked install: authenticated in every way
 // that matters, `registered` still false.

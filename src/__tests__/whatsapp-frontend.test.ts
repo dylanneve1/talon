@@ -31,14 +31,14 @@ import {
   rememberMessage,
   resetMessageStore,
   resolveKey,
-} from "../frontend/whatsapp/message-store.js";
+} from "../frontend/whatsapp/messages/message-store.js";
 import { createWhatsAppActionHandler } from "../frontend/whatsapp/actions/index.js";
 import {
   canonicalId,
   identityAllowed,
   resetIdentityCache,
   resolveIdentity,
-} from "../frontend/whatsapp/identity.js";
+} from "../frontend/whatsapp/connection/identity.js";
 import { isWhatsAppChatId } from "../util/chat-id.js";
 
 describe("WhatsApp formatting", () => {

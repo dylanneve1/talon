@@ -16,9 +16,9 @@ import QRCode from "qrcode";
 import type {
   PairingAttempt,
   PairingOutcome,
-} from "../../core/frontend-runtime/pairing-broker.js";
-import { log, logError } from "../../util/log.js";
-import { dirs } from "../../util/paths.js";
+} from "../../../core/frontend-runtime/pairing-broker.js";
+import { log, logError } from "../../../util/log.js";
+import { dirs } from "../../../util/paths.js";
 import { useAtomicAuthState, flushAuthWrites } from "./auth-state.js";
 import { classifyClose } from "./pairing.js";
 import { acquireManualPairing, releaseManualPairing } from "./pairing-lock.js";

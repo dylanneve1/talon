@@ -16,7 +16,7 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
-import { classifyClose } from "../frontend/whatsapp/pairing.js";
+import { classifyClose } from "../frontend/whatsapp/connection/pairing.js";
 import {
   notifyAdmin,
   setAdminNotifier,

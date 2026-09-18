@@ -29,7 +29,7 @@ import {
   isManualPairingActive,
   onPairingComplete,
   resetPairingLock,
-} from "../frontend/whatsapp/pairing-lock.js";
+} from "../frontend/whatsapp/connection/pairing-lock.js";
 
 beforeEach(() => resetPairingLock());
 afterEach(() => registerPairingProvider(null));

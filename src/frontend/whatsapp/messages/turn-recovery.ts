@@ -6,7 +6,7 @@
  * the log — the WhatsApp user's message was marked read and then nothing
  * ever came back, which reads as being ignored.
  *
- * Split from index.ts so the policy is unit-testable without a Baileys
+ * Split from ../index.ts so the policy is unit-testable without a Baileys
  * socket: the caller injects the turn and the delivery.
  */
 
@@ -14,13 +14,13 @@ import {
   classify,
   friendlyMessage,
   RETRY_ELAPSED_CAP_MS,
-} from "../../core/errors.js";
-import { log, logError } from "../../util/log.js";
+} from "../../../core/errors.js";
+import { log, logError } from "../../../util/log.js";
 import {
   recordError,
   recordMessageProcessed,
   recordMessageSettled,
-} from "../../util/watchdog.js";
+} from "../../../util/watchdog.js";
 
 export type TurnRecoveryDeps = {
   chatId: string;

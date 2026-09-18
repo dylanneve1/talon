@@ -60,7 +60,7 @@ import {
   getChatSettings,
 } from "../storage/chat-settings.js";
 import { getRecentHistory, pushMessage } from "../storage/history.js";
-import { resetMessageStore } from "../frontend/whatsapp/message-store.js";
+import { resetMessageStore } from "../frontend/whatsapp/messages/message-store.js";
 
 const CATALOG = [
   { id: "claude-sonnet-4", displayName: "Claude Sonnet 4" },

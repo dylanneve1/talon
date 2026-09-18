@@ -194,7 +194,7 @@ export const moderationHandlers: WhatsAppActionHandlers = {
 
         case "unpin_all": {
           // WhatsApp unpins individually; clear the ones Talon placed.
-          const { listPins } = await import("../pins.js");
+          const { listPins } = await import("../messages/pins.js");
           const pins = listPins(chat.chatId);
           return {
             ok: true,

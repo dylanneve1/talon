@@ -11,10 +11,10 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { downloadMediaMessage, type WAMessage } from "baileys";
-import { makeWaLogger } from "./wa-logger.js";
-import { addMedia } from "../../storage/media-index.js";
-import { logWarn } from "../../util/log.js";
-import { dirs } from "../../util/paths.js";
+import { makeWaLogger } from "../connection/wa-logger.js";
+import { addMedia } from "../../../storage/media-index.js";
+import { logWarn } from "../../../util/log.js";
+import { dirs } from "../../../util/paths.js";
 
 /** Media kinds Talon's index understands, keyed by WhatsApp message field. */
 const MEDIA_KINDS = [

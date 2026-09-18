@@ -3,11 +3,11 @@
  * that already has structured logging. Bridge warn+ into Talon's log and
  * drop the rest. The shape is pino's minimal logger contract.
  *
- * Shared by the frontend socket (index.ts) and the manual pairing socket
+ * Shared by the frontend socket (../index.ts) and the manual pairing socket
  * (pairing-service.ts).
  */
 
-import { logError, logWarn } from "../../util/log.js";
+import { logError, logWarn } from "../../../util/log.js";
 
 export function makeWaLogger(): never {
   const fmt = (args: unknown[]): string =>

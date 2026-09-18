@@ -12,7 +12,7 @@ import { join } from "node:path";
 import {
   useAtomicAuthState,
   flushAuthWrites,
-} from "../frontend/whatsapp/auth-state.js";
+} from "../frontend/whatsapp/connection/auth-state.js";
 
 let dir: string;
 beforeEach(() => {
