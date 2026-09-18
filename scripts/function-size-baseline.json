@@ -110,8 +110,8 @@
   {
     "file": "src/frontend/telegram/commands/info.ts",
     "name": "registerInfoCommands",
-    "lines": 188,
-    "cx": 17
+    "lines": 180,
+    "cx": 16
   },
   {
     "file": "src/frontend/telegram/middleware.ts",
