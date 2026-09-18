@@ -31,7 +31,7 @@ vi.mock("../core/engine/backend-controller/index.js", () => ({
   rebindChat: vi.fn(async () => ({ ok: true })),
 }));
 
-vi.mock("../frontend/shared/reasoning-levels.js", () => ({
+vi.mock("../frontend/presentation/reasoning-levels.js", () => ({
   getActiveReasoningLevels: vi.fn(async () => ({ levels: [] })),
 }));
 
@@ -41,7 +41,7 @@ import {
   getPooledBackend,
   rebindChat,
 } from "../core/engine/backend-controller/index.js";
-import { getActiveReasoningLevels } from "../frontend/shared/reasoning-levels.js";
+import { getActiveReasoningLevels } from "../frontend/presentation/reasoning-levels.js";
 import {
   effortLevels,
   listBackends,

@@ -66,10 +66,10 @@ files; the same discipline scales it down. This document is the contract,
 | `core/engine/gateway-actions` | 17 | domain files are right; split `native.ts` (1 k lines) by route group and move validation next to its users |
 | `backend/remote-server` | 17 | `session/`, `model-catalog/` (exists), `server/` |
 | `native` | 15 | one directory per brick loader |
-| `frontend/telegram`, `frontend/discord` | 14 | `connection/` + `render/` for both; dissolve `telegram/helpers/` (`diagnostics` → `render/`, `menu` → `model-menu/`, `format` → merge into `frontend/shared/format`) |
+| `frontend/telegram`, `frontend/discord` | 14 | `connection/` for both; `telegram/helpers/` dissolved (item 7): `diagnostics` → `telegram/render/reports.ts`, `menu` → `telegram/render/menu.ts`, `format` → `frontend/presentation/format` |
 | `backend/codex`, `backend/claude-sdk` | 14 | `session/`, `stream/`, `options.ts` |
 | `core/mesh` | 13 | `devices/`, `links/`, `transfers/`; rename `common.ts` |
-| `frontend/shared`, `util`, `backend/shared`, `telegram/helpers`, `mesh/common.ts` | names | rename per rule 3 (`frontend/shared` → `frontend/lib/`? no — it holds presentation helpers every driver uses: `frontend/presentation/`) |
+| `util`, `backend/shared`, `mesh/common.ts` | names | rename per rule 3. Done: `frontend/shared` → `frontend/presentation/` and `telegram/helpers` → `telegram/render/` (item 7). |
 
 Also on the list, not gate-detected: `core/scripting/` + `core/scripts/`
 are one subsystem (`core/scripts/{runner,lua}.ts`); `core/background/`
@@ -83,7 +83,9 @@ report), the access gate wrappers (`isAccessAllowed`, `isDmAllowed`,
 `isUserRateLimited`, `setAccessControl`, `notifyUnauthorized`,
 `trackDmUser`) ×2, `restoreScheduledMessages` ×2, `flushQueue` ×2 —
 collapses into `frontend/presentation/` (reports parameterised by a
-formatter) and `core/frontend-runtime/` (the gate).
+formatter) and `core/frontend-runtime/` (the gate). The five reports are
+done: `frontend/presentation/reports.ts` writes each once and takes the
+markup dialect from a `ReportFormatter`. The access gate is still ×2.
 
 ## Worklist, in order
 
@@ -100,6 +102,8 @@ surfaces of entry files do not change.
 6. ~~**tools groups**~~ (done), **gateway-actions/native split**.
 7. **frontend presentation** — dedupe the report renderers and the access
    gate; dissolve `telegram/helpers`; `frontend/shared` → `frontend/presentation`.
+   Reports, renames and `telegram/helpers` done; the access gate
+   (`frontend/presentation/access.ts` → `core/frontend-runtime/`) remains.
 8. **telegram / discord / codex / claude-sdk / remote-server / mesh / cli /
    native (bricks)** trees — one PR each, smallest first.
 9. **kilo/opencode → remote-server profiles.**

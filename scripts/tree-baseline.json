@@ -48,17 +48,9 @@
     "files": 14
   },
   {
-    "kind": "banned-dir",
-    "path": "src/frontend/shared"
-  },
-  {
     "kind": "flat",
     "path": "src/frontend/telegram",
     "files": 14
-  },
-  {
-    "kind": "banned-dir",
-    "path": "src/frontend/telegram/helpers"
   },
   {
     "kind": "flat",

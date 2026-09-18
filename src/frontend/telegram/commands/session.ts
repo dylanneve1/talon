@@ -2,7 +2,7 @@
  * Session commands — /reset and /status.
  *
  * Data gathering and the reset sequence live in
- * frontend/shared/session-status.ts; this file only renders Telegram HTML.
+ * frontend/presentation/session-status.ts; this file only renders Telegram HTML.
  */
 
 import type { Bot } from "grammy";
@@ -13,17 +13,17 @@ import {
   formatTokenCount,
   formatBytes,
   formatUsd,
-} from "../helpers/index.js";
+} from "../../presentation/format.js";
 import { resolveBackendForChat } from "../model-menu.js";
 import { getBackendIdForChat } from "../../../core/engine/backend-controller/index.js";
 import {
   performSessionReset,
   collectSessionStatus,
-} from "../../shared/session-status.js";
+} from "../../presentation/session-status.js";
 import {
   formatCacheTempLine,
   formatDaemonLine,
-} from "../../shared/status-context.js";
+} from "../../presentation/status-context.js";
 import { stopCurrentTurn } from "../../../core/engine/dispatcher.js";
 import type { RegisterDeps } from "./state.js";
 

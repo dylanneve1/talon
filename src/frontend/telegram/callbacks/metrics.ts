@@ -12,7 +12,7 @@ import {
   renderMetricsKeyboard,
   renderMetricsPanel,
   type MetricsView,
-} from "../helpers/index.js";
+} from "../render/reports.js";
 import { isAuthorizedAdmin } from "../commands/state.js";
 import { answerCallbackQuerySafe, editOrIgnoreSame } from "./query.js";
 

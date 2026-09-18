@@ -11,7 +11,7 @@ import {
   renderModelBrowseKeyboard,
   renderBackendMenuKeyboard,
   renderBackendMenuText,
-} from "../../helpers/index.js";
+} from "../../render/menu.js";
 import {
   buildModelMenuViewForChat,
   buildModelBrowseViewForChat,

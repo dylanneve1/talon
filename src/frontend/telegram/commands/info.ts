@@ -5,12 +5,12 @@
 import type { Bot, Context } from "grammy";
 import { isUserClientReady } from "../userbot.js";
 import { escapeHtml } from "../formatting.js";
+import { formatDuration } from "../../presentation/format.js";
 import {
-  formatDuration,
   renderMeshPairLink,
   renderMeshReport,
   type MeshReachability,
-} from "../helpers/index.js";
+} from "../render/reports.js";
 import { isAuthorizedAdmin } from "./state.js";
 import { getLoadedPlugins } from "../../../core/plugin/index.js";
 import { getMeshService } from "../../../core/mesh/index.js";

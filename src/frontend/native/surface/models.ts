@@ -21,7 +21,7 @@ import {
   listAvailableBackends,
   rebindChat,
 } from "../../../core/engine/backend-controller/index.js";
-import { getActiveReasoningLevels } from "../../shared/reasoning-levels.js";
+import { getActiveReasoningLevels } from "../../presentation/reasoning-levels.js";
 import { broadcastChatUpdated } from "../chats/chat-wire.js";
 import { emitSystem } from "../turn/emit.js";
 import type { BackendOption, ModelOption } from "../protocol.js";

@@ -27,7 +27,7 @@ import {
   clearCommands,
   type CommandContext,
 } from "./commands.js";
-import { buildCacheDisplay } from "../shared/status-context.js";
+import { buildCacheDisplay } from "../presentation/status-context.js";
 
 // ── State ────────────────────────────────────────────────────────────────────
 

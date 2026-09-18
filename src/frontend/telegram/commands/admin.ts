@@ -17,14 +17,14 @@ import {
 import { forceDream } from "../../../core/background/dream/index.js";
 import { escapeHtml } from "../formatting.js";
 import { closestMatch } from "../../../native/strsim.js";
+import { formatDuration } from "../../presentation/format.js";
 import {
-  formatDuration,
   renderDoctorMessage,
   renderMetricsKeyboard,
   renderMetricsPanel,
   renderUsageMessage,
-} from "../helpers/index.js";
-import { collectPlanUsage } from "../../shared/plan-usage-report.js";
+} from "../render/reports.js";
+import { collectPlanUsage } from "../../presentation/plan-usage-report.js";
 import { collectDoctorReport } from "../../../core/doctor/index.js";
 import { handleAdminCommand } from "../admin.js";
 import { getTodayMetrics } from "../../../storage/metrics.js";

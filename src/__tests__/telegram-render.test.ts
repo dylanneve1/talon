@@ -1,22 +1,26 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { clearModels, registerModels } from "../core/models/catalog.js";
 import {
-  formatCompactModelLabel,
   formatDuration,
   formatModelLabel,
+} from "../frontend/presentation/format.js";
+import {
+  formatCompactModelLabel,
   formatModelOptionLabel,
   getTelegramModelOptions,
   isSelectedModel,
-  renderMeshReport,
-  renderMetricsKeyboard,
-  renderMetricsPanel,
   renderEffortRows,
   renderSettingsKeyboard,
   renderSettingsText,
-} from "../frontend/telegram/helpers/index.js";
+} from "../frontend/telegram/render/menu.js";
+import {
+  renderMeshReport,
+  renderMetricsKeyboard,
+  renderMetricsPanel,
+} from "../frontend/telegram/render/reports.js";
 import type { MeshPingResult } from "../core/mesh/service.js";
 
-describe("telegram helpers", () => {
+describe("telegram render", () => {
   beforeEach(() => {
     clearModels();
     // Post-merge state: convertSdkModels collapses base/1M/claude-* variants

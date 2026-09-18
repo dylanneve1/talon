@@ -4,7 +4,7 @@
  */
 
 import { getSessionInfo } from "../../../storage/sessions.js";
-import { buildContextDisplay } from "../../shared/status-context.js";
+import { buildContextDisplay } from "../../presentation/status-context.js";
 import { resolveActiveModelForChat } from "../../../core/models/active-model.js";
 import {
   getBackendForChat,

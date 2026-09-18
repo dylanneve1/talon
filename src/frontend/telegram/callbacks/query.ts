@@ -7,7 +7,7 @@ import type { Context } from "grammy";
 import type { TalonConfig } from "../../../core/config/index.js";
 import type { Backend } from "../../../core/agent-runtime/capabilities.js";
 import { logWarn } from "../../../util/log.js";
-import type { SettingsButton } from "../helpers/index.js";
+import type { SettingsButton } from "../render/menu.js";
 
 export type CallbackDeps = {
   config: TalonConfig;

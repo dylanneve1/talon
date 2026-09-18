@@ -18,7 +18,7 @@ import type { ExecuteParams } from "../core/types.js";
 import {
   buildDaemonDisplay,
   formatDaemonLine,
-} from "../frontend/shared/status-context.js";
+} from "../frontend/presentation/status-context.js";
 import { stubBackend, stubResolveActiveModel } from "./helpers/stub-backend.js";
 
 const SAMPLE_INTERVAL_MS = 60_000;

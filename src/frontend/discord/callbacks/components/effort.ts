@@ -14,7 +14,7 @@ import {
 import {
   getActiveReasoningLevels,
   supportsReasoningLevel,
-} from "../../../shared/reasoning-levels.js";
+} from "../../../presentation/reasoning-levels.js";
 import type { ComponentContext, ComponentInteraction } from "./types.js";
 
 async function selectEffort(

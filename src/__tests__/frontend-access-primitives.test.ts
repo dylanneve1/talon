@@ -17,7 +17,7 @@ vi.mock("../util/log.js", () => ({
 vi.mock("../storage/daily-log.js", () => ({ appendDailyLog: vi.fn() }));
 
 const { createRateLimiter, createDmUserTracker, createNoticeCooldown } =
-  await import("../frontend/shared/access.js");
+  await import("../frontend/presentation/access.js");
 const { log } = await import("../util/log.js");
 const { appendDailyLog } = await import("../storage/daily-log.js");
 

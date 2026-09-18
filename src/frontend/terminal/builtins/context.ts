@@ -7,9 +7,9 @@ import {
   apportionCells,
   type ContextBreakdown,
   type ContextSegmentKey,
-} from "../../shared/status-context.js";
+} from "../../presentation/status-context.js";
 import { getRecentHistory } from "../../../storage/history.js";
-import { formatTokenCount } from "../../shared/format.js";
+import { formatTokenCount } from "../../presentation/format.js";
 import { getChatSettings } from "../../../storage/chat-settings.js";
 import { resolveModelId as resolveModelName } from "../../../core/models/catalog.js";
 import { getSessionInfo } from "../../../storage/sessions.js";

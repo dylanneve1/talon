@@ -1,9 +1,10 @@
 /**
  * Frontend-agnostic display formatters shared by all chat frontends.
  *
- * These were previously duplicated per-frontend (telegram/helpers/format.ts,
- * discord/helpers.ts) and had started to drift — parseInterval accepted days
- * on Discord but not Telegram. One definition here keeps them in lockstep.
+ * These were previously duplicated per-frontend (the old
+ * telegram/helpers/format.ts, discord/helpers.ts) and had started to drift —
+ * parseInterval accepted days on Discord but not Telegram. One definition
+ * here keeps them in lockstep; frontends import this module directly.
  */
 
 import { resolveModel } from "../../core/models/catalog.js";

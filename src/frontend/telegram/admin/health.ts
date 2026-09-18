@@ -12,7 +12,7 @@ import { getAllSessions } from "../../../storage/sessions.js";
 import { todayLogDate } from "../../../storage/daily-log.js";
 import { getActiveCount } from "../../../core/engine/dispatcher.js";
 import { getHealthStatus, getRecentErrors } from "../../../util/watchdog.js";
-import { formatDuration } from "../helpers/index.js";
+import { formatDuration } from "../../presentation/format.js";
 
 export async function replyStats(ctx: Context): Promise<void> {
   const h = getHealthStatus();

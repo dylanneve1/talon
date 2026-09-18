@@ -11,7 +11,7 @@ import {
   createDmUserTracker,
   createNoticeCooldown,
   createRateLimiter,
-} from "../../shared/access.js";
+} from "../../presentation/access.js";
 
 // ── Chat registry: numericChatId → Discord channel info ─────────────────────
 // The gateway/dispatcher uses numeric chatIds. Action handlers need to map

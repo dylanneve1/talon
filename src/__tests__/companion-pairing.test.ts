@@ -9,7 +9,7 @@ import {
 import {
   renderMeshPairLink,
   renderMeshReport,
-} from "../frontend/telegram/helpers/diagnostics.js";
+} from "../frontend/telegram/render/reports.js";
 
 const grantInput = {
   bridgeUrl: "https://192.168.1.20:19880",

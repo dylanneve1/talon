@@ -5,12 +5,12 @@ import {
   buildCacheDisplay,
   buildContextDisplay,
   buildPlanDisplay,
-} from "../../shared/status-context.js";
+} from "../../presentation/status-context.js";
 import {
   formatDuration,
   formatTokenCount,
   formatUsd,
-} from "../../shared/format.js";
+} from "../../presentation/format.js";
 import { getChatSettings } from "../../../storage/chat-settings.js";
 import { getSessionInfo } from "../../../storage/sessions.js";
 import { getLoadedPlugins } from "../../../core/plugin/index.js";

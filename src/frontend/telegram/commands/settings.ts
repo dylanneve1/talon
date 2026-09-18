@@ -23,13 +23,15 @@ import {
   formatModelLabel,
   formatDuration,
   parseInterval,
+} from "../../presentation/format.js";
+import {
   renderSettingsText,
   renderSettingsKeyboard,
   renderEffortRows,
   renderModelMenuText,
   renderModelMenuKeyboard,
   type SettingsButton,
-} from "../helpers/index.js";
+} from "../render/menu.js";
 import {
   buildModelMenuViewForChat,
   resolveBackendForChat,
@@ -40,7 +42,7 @@ import {
   displayReasoningEffort,
   getActiveReasoningLevels,
   supportsReasoningLevel,
-} from "../../shared/reasoning-levels.js";
+} from "../../presentation/reasoning-levels.js";
 import type { RegisterDeps } from "./state.js";
 
 /** `/model <query>` — resolve the query against the per-chat backend and

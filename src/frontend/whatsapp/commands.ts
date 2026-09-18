@@ -5,7 +5,7 @@
  * WhatsApp has no inline buttons, so everything Telegram does with a
  * picker is done here with typed arguments: `/model` prints a numbered
  * catalog, `/model 3` (or `/model <id>`, `/model <backend>`) picks from
- * it. The state changes come from frontend/shared/model-commands.ts;
+ * it. The state changes come from frontend/presentation/model-commands.ts;
  * this module only parses, authorises, and renders.
  *
  * Replies are written in Markdown — `sendText` translates them into
@@ -23,16 +23,16 @@ import {
   formatModelLabel,
   formatTokenCount,
   formatUsd,
-} from "../shared/format.js";
+} from "../presentation/format.js";
 import {
   collectSessionStatus,
   performSessionReset,
   type SessionStatusData,
-} from "../shared/session-status.js";
+} from "../presentation/session-status.js";
 import {
   formatCacheTempLine,
   formatDaemonLine,
-} from "../shared/status-context.js";
+} from "../presentation/status-context.js";
 import {
   describeChatEffort,
   describeChatModels,
@@ -45,7 +45,7 @@ import {
   switchChatBackend,
   type ModelCommandDeps,
   type ModelOverview,
-} from "../shared/model-commands.js";
+} from "../presentation/model-commands.js";
 import { sendText } from "./actions/send.js";
 import { identityAllowed, type Identity } from "./connection/identity.js";
 import type { WhatsAppChatInfo } from "./registry.js";

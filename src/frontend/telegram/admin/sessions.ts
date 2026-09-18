@@ -8,7 +8,7 @@ import { escapeHtml } from "../formatting.js";
 import { resetSession, getAllSessions } from "../../../storage/sessions.js";
 import { clearHistory } from "../../../storage/history.js";
 import { getChatSettings } from "../../../storage/chat-settings.js";
-import { formatModelLabel } from "../helpers/index.js";
+import { formatModelLabel } from "../../presentation/format.js";
 import { replyHtmlChunked } from "./chunked-reply.js";
 
 /** `/admin chats` — every active session, newest first, titled via getChat. */

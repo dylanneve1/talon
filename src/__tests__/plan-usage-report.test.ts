@@ -9,7 +9,7 @@ vi.mock("../core/engine/backend-controller/index.js", () => ({
 }));
 
 const { collectPlanUsage } =
-  await import("../frontend/shared/plan-usage-report.js");
+  await import("../frontend/presentation/plan-usage-report.js");
 
 const config = {} as TalonConfig;
 

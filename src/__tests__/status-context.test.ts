@@ -5,7 +5,7 @@ import {
   buildContextBreakdown,
   apportionCells,
   estimateContextTokens,
-} from "../frontend/shared/status-context.js";
+} from "../frontend/presentation/status-context.js";
 
 describe("status context display", () => {
   it("uses authoritative contextTokens when present", () => {

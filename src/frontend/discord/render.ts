@@ -2,13 +2,17 @@
  * Message rendering for Discord commands, callbacks, and the settings panel:
  * metrics, doctor, mesh, usage and settings text, sized to Discord's limits.
  *
- * Discord-specific quirks vs the Telegram helpers:
+ * The reports themselves live in `frontend/presentation/reports.ts` — this
+ * file is Discord's dialect of them (`DISCORD_REPORTS`) plus the wrappers
+ * that keep each command to a single import.
+ *
+ * Discord-specific quirks vs the Telegram renderers:
  *  - settings panel uses Components (Buttons + Select Menus), not inline keyboard.
  *  - custom_id strings are limited to 100 chars total — keep payload compact.
  *  - chat IDs are Discord snowflakes (strings), not numbers.
+ *  - markdown needs no escaping, so `escape` is the identity function.
  */
 
-import { REASONING_LEVEL_DESCRIPTIONS } from "../../core/models/reasoning-levels.js";
 import {
   DISCORD_MAX_TEXT,
   DISCORD_SAFE_RESERVE,
@@ -16,13 +20,18 @@ import {
 } from "./formatting.js";
 import type { DoctorReport } from "../../core/doctor/index.js";
 import type { MeshPingResult } from "../../core/mesh/service.js";
-import type { BackendUsageEntry } from "../shared/plan-usage-report.js";
+import type { BackendUsageEntry } from "../presentation/plan-usage-report.js";
 import {
-  DEFAULT_PULSE_INTERVAL_MS,
-  formatDuration,
-  formatBytes,
-  formatModelLabel,
-} from "../shared/format.js";
+  renderDoctorReport,
+  renderMeshReport as renderMeshReportWith,
+  renderMetricsMessages as renderMetricsMessagesWith,
+  renderSettingsText as renderSettingsTextWith,
+  renderUsageMessage as renderUsageMessageWith,
+  type MetricsSnapshot,
+  type ReportFormatter,
+} from "../presentation/reports.js";
+
+export { EFFORT_DESCRIPTIONS } from "../presentation/reasoning-levels.js";
 
 export {
   parseInterval,
@@ -31,27 +40,22 @@ export {
   formatBytes,
   formatUsd,
   formatModelLabel,
-} from "../shared/format.js";
+} from "../presentation/format.js";
 
-/** Per-message length budget for metrics output. */
+/** Per-message length budget for report output. */
 const DEFAULT_METRICS_MESSAGE_MAX = DISCORD_MAX_TEXT - DISCORD_SAFE_RESERVE;
 
-/** Effort level descriptions shown next to each option in select menus. */
-export const EFFORT_DESCRIPTIONS: Record<string, string> = {
-  ...REASONING_LEVEL_DESCRIPTIONS,
+/** Discord markdown: bold/italic/code markers, no escaping, 2000-char messages. */
+const DISCORD_REPORTS: ReportFormatter = {
+  bold: (s) => `**${s}**`,
+  italic: (s) => `_${s}_`,
+  emphasis: (s) => `*${s}*`,
+  code: (s) => `\`${s}\``,
+  escape: (s) => s,
+  lineLimit: DEFAULT_METRICS_MESSAGE_MAX,
+  metricLabelMax: 60,
+  pulseLabel: "🔔 Pulse:",
 };
-
-type MetricsSnapshot = {
-  counters: Record<string, number>;
-  histograms: Record<
-    string,
-    { count: number; avg: number; min: number; max: number }
-  >;
-};
-
-function truncateMetricLabel(label: string, max = 60): string {
-  return label.length <= max ? label : `${label.slice(0, max - 3)}...`;
-}
 
 /**
  * Render the metrics report into one or more Discord messages, each ≤ maxLen
@@ -62,116 +66,8 @@ export function renderMetricsMessages(
   maxLen = DEFAULT_METRICS_MESSAGE_MAX,
   title = "📊 Metrics",
 ): string[] {
-  const firstHeader = `**${title}**`;
-  const continuationHeader = `**${title} (cont.)**`;
-  const sections: string[][] = [];
-
-  // Histograms come in two flavours: durations (keys ending in `_ms`,
-  // rendered as human times) and plain counts like `tool_calls_per_turn`
-  // (rendered as bare numbers — "min=1ms" for a count is nonsense).
-  const histKeys = Object.keys(metrics.histograms).sort();
-  const durationKeys = histKeys.filter((key) => key.endsWith("_ms"));
-  const countKeys = histKeys.filter((key) => !key.endsWith("_ms"));
-  const histLine = (key: string, fmt: (v: number) => string): string => {
-    const h = metrics.histograms[key];
-    return (
-      `  \`${truncateMetricLabel(key)}\`  n=${h.count} ` +
-      `avg=${fmt(h.avg)}  min=${fmt(h.min)} ` +
-      `max=${fmt(h.max)}`
-    );
-  };
-  if (durationKeys.length > 0) {
-    sections.push([
-      "**Latency**",
-      ...durationKeys.map((key) => histLine(key, formatDuration)),
-    ]);
-  }
-  if (countKeys.length > 0) {
-    sections.push([
-      "**Distributions**",
-      ...countKeys.map((key) => histLine(key, String)),
-    ]);
-  }
-
-  const counterKeys = Object.keys(metrics.counters).sort();
-  if (counterKeys.length > 0) {
-    const groups = new Map<string, string[]>();
-    for (const key of counterKeys) {
-      const prefix = key.includes(".") ? key.split(".")[0]! : "general";
-      if (!groups.has(prefix)) groups.set(prefix, []);
-      groups.get(prefix)!.push(key);
-    }
-    for (const prefix of [...groups.keys()].sort()) {
-      // tool_calls reads best as a leaderboard — busiest tools first.
-      // Other groups keep alphabetical order (stable lookup by name).
-      const keys =
-        prefix === "tool_calls"
-          ? [...groups.get(prefix)!].sort(
-              (a, b) =>
-                metrics.counters[b]! - metrics.counters[a]! ||
-                a.localeCompare(b),
-            )
-          : groups.get(prefix)!;
-      sections.push([
-        `**${prefix}**`,
-        ...keys.map((key) => {
-          const label = key.includes(".")
-            ? key.split(".").slice(1).join(".")
-            : key;
-          return `  \`${truncateMetricLabel(label)}\`  ${metrics.counters[key]!.toLocaleString()}`;
-        }),
-      ]);
-    }
-  }
-
-  if (sections.length === 0) {
-    return [`${firstHeader}\n\n_No metrics recorded yet._`];
-  }
-
-  const chunks: string[] = [];
-  let header = firstHeader;
-  let current = header;
-  const flush = () => {
-    chunks.push(current);
-    header = continuationHeader;
-    current = header;
-  };
-  const appendLine = (line: string) => {
-    if (!line && current === header) return;
-    const candidate = `${current}\n${line}`;
-    if (candidate.length <= maxLen) {
-      current = candidate;
-      return;
-    }
-    if (current !== header) {
-      flush();
-      if (!line) return;
-    }
-    const available = maxLen - header.length - 1;
-    if (available < 0) return;
-    const safeLine =
-      line.length <= available
-        ? line
-        : available >= 4
-          ? `${line.slice(0, available - 3)}...`
-          : line.slice(0, available);
-    current = `${current}\n${safeLine}`;
-  };
-
-  for (const section of sections) {
-    appendLine("");
-    for (const line of section) appendLine(line);
-  }
-  if (current !== header || chunks.length === 0) chunks.push(current);
-  return chunks;
+  return renderMetricsMessagesWith(metrics, DISCORD_REPORTS, maxLen, title);
 }
-
-const DOCTOR_ICONS: Record<string, string> = {
-  ok: "✅",
-  warn: "⚠️",
-  fail: "❌",
-  info: "▫️",
-};
 
 /**
  * Render a DoctorReport as Discord markdown, split to fit the message cap.
@@ -181,59 +77,7 @@ export function renderDoctorMessages(
   report: DoctorReport,
   maxLen = DEFAULT_METRICS_MESSAGE_MAX,
 ): string[] {
-  const lines = ["**🩺 Talon Doctor**", "", "**Environment**"];
-
-  const render = (check: DoctorReport["checks"][number]): string =>
-    `${DOCTOR_ICONS[check.status]} ${check.label}${check.detail ? ` (${check.detail})` : ""}`;
-
-  for (const check of report.checks.filter((c) => !c.inactive)) {
-    lines.push(render(check));
-  }
-
-  // Configured-but-idle backends get their own block: they describe what a
-  // switch would run into, not the state of the running deployment.
-  const idle = report.checks.filter((c) => c.inactive);
-  if (idle.length > 0) {
-    lines.push("", "**Other backends**", ...idle.map(render));
-  }
-
-  lines.push("", "**Native modules**");
-  for (const mod of report.native) {
-    const size =
-      mod.sizeBytes !== undefined ? ` · ${formatBytes(mod.sizeBytes)}` : "";
-    const note = mod.note ? ` (${mod.note})` : "";
-    lines.push(
-      `${mod.ok ? DOCTOR_ICONS.ok : DOCTOR_ICONS.fail} \`${mod.name}\` — ${mod.language} → ${mod.target}${size}${note}`,
-    );
-  }
-
-  lines.push(
-    "",
-    "**Process**",
-    `Uptime ${formatDuration(process.uptime() * 1000)} · PID ${process.pid} · Node ${process.versions.node}`,
-    "",
-    report.issues === 0
-      ? `${DOCTOR_ICONS.ok} All checks passed.`
-      : `${DOCTOR_ICONS.warn} ${report.issues} issue(s) found.`,
-  );
-
-  return splitMessage(lines.join("\n"), maxLen);
-}
-
-function meshDeviceLine(r: MeshPingResult, now: number): string {
-  const d = r.device;
-  const bits: string[] = [d.platform];
-  if (r.reachable && typeof r.latencyMs === "number") {
-    bits.push(`${r.latencyMs} ms`);
-  } else if (d.online && r.error) {
-    bits.push(r.error);
-  } else if (!d.online) {
-    bits.push(`last seen ${formatDuration(now - d.lastSeen)} ago`);
-  }
-  if (typeof d.battery === "number") {
-    bits.push(`${d.battery}%${d.charging ? " charging" : ""}`);
-  }
-  return `  **${d.name}** — ${bits.join(" · ")}`;
+  return splitMessage(renderDoctorReport(report, DISCORD_REPORTS), maxLen);
 }
 
 /**
@@ -244,71 +88,12 @@ export function renderMeshReport(
   results: MeshPingResult[],
   now = Date.now(),
 ): string {
-  if (results.length === 0) {
-    return "**Mesh**\n\n_No devices have registered yet._";
-  }
-
-  const responding = results
-    .filter((r) => r.reachable)
-    .sort((a, b) => (a.latencyMs ?? Infinity) - (b.latencyMs ?? Infinity));
-  const unreachable = results
-    .filter((r) => !r.reachable && r.device.online)
-    .sort((a, b) => a.device.name.localeCompare(b.device.name));
-  const offline = results
-    .filter((r) => !r.reachable && !r.device.online)
-    .sort((a, b) => b.device.lastSeen - a.device.lastSeen);
-
-  const summary = [
-    `${results.length} device${results.length === 1 ? "" : "s"}`,
-    `${responding.length} responding`,
-    ...(unreachable.length > 0 ? [`${unreachable.length} unreachable`] : []),
-    ...(offline.length > 0 ? [`${offline.length} offline`] : []),
-  ].join(" · ");
-
-  const lines = ["**Mesh**", summary];
-  const section = (title: string, entries: MeshPingResult[]): void => {
-    if (entries.length === 0) return;
-    lines.push(
-      "",
-      `**${title}**`,
-      ...entries.map((r) => meshDeviceLine(r, now)),
-    );
-  };
-  section("Responding", responding);
-  section("Unreachable", unreachable);
-  section("Offline", offline);
-
-  return lines.join("\n");
+  return renderMeshReportWith(results, DISCORD_REPORTS, now);
 }
 
 /** Render the `/usage` report — one block per exposed backend. */
 export function renderUsageMessage(entries: BackendUsageEntry[]): string {
-  const lines = ["**📊 Plan usage**"];
-
-  for (const entry of entries) {
-    const name = entry.label || entry.id;
-    if (!entry.plan) {
-      lines.push("", `**${name}** — _${entry.note ?? ""}_`);
-      continue;
-    }
-    const age = entry.plan.ageLabel ? ` *(${entry.plan.ageLabel})*` : "";
-    const plan = entry.plan.plan ? ` · ${entry.plan.plan}` : "";
-    lines.push("", `**${name}**${plan}${age}`);
-    if (entry.plan.resetsAvailable) {
-      const n = entry.plan.resetsAvailable;
-      lines.push(
-        `  • You have **${n}** usage limit reset${n === 1 ? "" : "s"} available`,
-      );
-    }
-    for (const w of entry.plan.windows) {
-      const reset = w.resetLabel ? ` reset ${w.resetLabel}` : "";
-      lines.push(
-        `  \`${w.label.padEnd(6)}${w.bar} ${String(w.percent).padStart(3)}%\`${reset}`,
-      );
-    }
-  }
-
-  return lines.join("\n");
+  return renderUsageMessageWith(entries, DISCORD_REPORTS);
 }
 
 /** Settings panel: build the markdown body. */
@@ -319,15 +104,12 @@ export function renderSettingsText(
   pulseIntervalMs?: number,
   modelDetails?: Array<string>,
 ): string {
-  const intervalStr = pulseIntervalMs
-    ? formatDuration(pulseIntervalMs)
-    : formatDuration(DEFAULT_PULSE_INTERVAL_MS);
-  return [
-    "**🦅 Settings**",
-    "",
-    `**Model:** \`${formatModelLabel(model)}\``,
-    ...(modelDetails?.length ? modelDetails : []),
-    `**Effort:** ${effort}`,
-    `**🔔 Pulse:** ${proactive ? "on" : "off"} (every ${intervalStr})`,
-  ].join("\n");
+  return renderSettingsTextWith(
+    DISCORD_REPORTS,
+    model,
+    effort,
+    proactive,
+    pulseIntervalMs,
+    modelDetails,
+  );
 }

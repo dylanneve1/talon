@@ -51,7 +51,7 @@ import {
   getLastBotMessageId,
   setLastBotMessageId,
 } from "../storage/sessions.js";
-import { buildContextDisplay } from "../frontend/shared/status-context.js";
+import { buildContextDisplay } from "../frontend/presentation/status-context.js";
 
 const envBackup = process.env.TALON_DB_PATH;
 

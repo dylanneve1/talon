@@ -41,7 +41,7 @@ import {
   displayReasoningEffort,
   getActiveReasoningLevels,
   supportsReasoningLevel,
-} from "../../../shared/reasoning-levels.js";
+} from "../../../presentation/reasoning-levels.js";
 import { logError } from "../../../../util/log.js";
 import { safeSlice } from "../../formatting.js";
 import type { ComponentContext, ComponentInteraction } from "./types.js";

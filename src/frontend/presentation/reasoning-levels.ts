@@ -8,8 +8,20 @@ import type { TalonConfig } from "../../core/config/index.js";
 import {
   normalizeReasoningLevels,
   supportsReasoningLevel,
+  REASONING_LEVEL_DESCRIPTIONS,
 } from "../../core/models/reasoning-levels.js";
 export { supportsReasoningLevel };
+
+/**
+ * Effort-level descriptions shown next to each option in a picker.
+ *
+ * One home for both frontends: Discord renders them as select-menu
+ * descriptions, and anything else offering the same choice reads the
+ * same table rather than copying it.
+ */
+export const EFFORT_DESCRIPTIONS: Record<string, string> = {
+  ...REASONING_LEVEL_DESCRIPTIONS,
+};
 
 export type ActiveReasoningLevels = {
   activeModel: string | null;

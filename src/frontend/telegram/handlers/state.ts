@@ -13,7 +13,7 @@ import {
   createDmUserTracker,
   createNoticeCooldown,
   createRateLimiter,
-} from "../../shared/access.js";
+} from "../../presentation/access.js";
 
 // ── First-time DM user tracking ──────────────────────────────────────────────
 

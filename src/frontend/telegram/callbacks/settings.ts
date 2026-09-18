@@ -20,14 +20,14 @@ import {
   renderSettingsText,
   renderSettingsKeyboard,
   type SettingsButton,
-} from "../helpers/index.js";
+} from "../render/menu.js";
 import { resolveBackendForChat } from "../model-menu.js";
 import { resolveActiveModelForChat } from "../../../core/models/active-model.js";
 import {
   displayReasoningEffort,
   getActiveReasoningLevels,
   supportsReasoningLevel,
-} from "../../shared/reasoning-levels.js";
+} from "../../presentation/reasoning-levels.js";
 import { answerCallbackQuerySafe, type CallbackDeps } from "./query.js";
 
 export async function handleSettingsCallback(

@@ -1,19 +1,49 @@
 /**
  * Settings + model-picker UI: settings text, the `/model` main/browse/backend
- * keyboards, effort rows, and the menu-state builder. All pure rendering.
+ * keyboards, effort rows, the model-option list, and the menu-state builder.
+ * All pure rendering.
+ *
+ * The settings body itself is `frontend/presentation/reports.ts`, rendered
+ * with Telegram's dialect; everything below it is inline-keyboard shape,
+ * which has no counterpart on Discord (Components, not keyboards).
  */
 
 import { escapeHtml } from "../formatting.js";
 import type { ReasoningEffortLevel } from "../../../core/types.js";
 import { REASONING_LEVEL_LABELS } from "../../../core/models/reasoning-levels.js";
-import { resolveModel, resolveModelId } from "../../../core/models/catalog.js";
 import {
-  DEFAULT_PULSE_INTERVAL_MS,
-  formatDuration,
-  formatModelLabel,
-  formatCompactModelLabel,
-  getTelegramModelOptions,
-} from "./format.js";
+  getModels,
+  resolveModel,
+  resolveModelId,
+  type ModelInfo,
+} from "../../../core/models/catalog.js";
+import { renderSettingsText as renderSettingsTextWith } from "../../presentation/reports.js";
+import { TELEGRAM_REPORTS } from "./html.js";
+
+/** Display name for a known ModelInfo. */
+export function formatModelOptionLabel(model: ModelInfo): string {
+  return model.displayName;
+}
+
+/** Compact display name for a known ModelInfo. */
+export function formatCompactModelLabel(model: ModelInfo): string {
+  return model.displayName;
+}
+
+/** One option per distinct display name, in catalog order. */
+export function getTelegramModelOptions(): ModelInfo[] {
+  const options: ModelInfo[] = [];
+  const seenKeys = new Set<string>();
+
+  for (const model of getModels()) {
+    const key = model.displayName.toLowerCase();
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    options.push(model);
+  }
+
+  return options;
+}
 
 export function renderSettingsText(
   model: string,
@@ -22,17 +52,14 @@ export function renderSettingsText(
   pulseIntervalMs?: number,
   modelDetails?: Array<string>,
 ): string {
-  const intervalStr = pulseIntervalMs
-    ? formatDuration(pulseIntervalMs)
-    : formatDuration(DEFAULT_PULSE_INTERVAL_MS);
-  return [
-    "<b>🦅 Settings</b>",
-    "",
-    `<b>Model:</b> <code>${escapeHtml(formatModelLabel(model))}</code>`,
-    ...(modelDetails?.length ? modelDetails.map(escapeHtml) : []),
-    `<b>Effort:</b> ${effort}`,
-    `<b>Pulse:</b> ${proactive ? "on" : "off"} (every ${intervalStr})`,
-  ].join("\n");
+  return renderSettingsTextWith(
+    TELEGRAM_REPORTS,
+    model,
+    effort,
+    proactive,
+    pulseIntervalMs,
+    modelDetails,
+  );
 }
 
 export function isSelectedModel(

@@ -7,7 +7,7 @@
  */
 
 import pc from "picocolors";
-import { formatUsd } from "../shared/format.js";
+import { formatUsd } from "../presentation/format.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

@@ -2,7 +2,7 @@
  * Session commands — /reset and /status.
  *
  * Data gathering and the reset sequence live in
- * frontend/shared/session-status.ts; this file only renders Discord markdown.
+ * frontend/presentation/session-status.ts; this file only renders Discord markdown.
  */
 
 import { type ChatInputCommandInteraction, MessageFlags } from "discord.js";
@@ -22,11 +22,11 @@ import {
 import {
   performSessionReset,
   collectSessionStatus,
-} from "../../shared/session-status.js";
+} from "../../presentation/session-status.js";
 import {
   formatCacheTempLine,
   formatDaemonLine,
-} from "../../shared/status-context.js";
+} from "../../presentation/status-context.js";
 import { stopCurrentTurn } from "../../../core/engine/dispatcher.js";
 import { reply } from "./interaction.js";
 

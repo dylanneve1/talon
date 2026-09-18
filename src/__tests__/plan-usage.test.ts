@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { parsePlanUsage } from "../backend/claude-sdk/plan-usage.js";
-import { buildPlanDisplay } from "../frontend/shared/status-context.js";
+import { buildPlanDisplay } from "../frontend/presentation/status-context.js";
 import { setTimezone } from "../util/time.js";
 
 /** Shape of one row as the usage endpoint reports it. */

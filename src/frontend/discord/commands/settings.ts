@@ -38,7 +38,7 @@ import {
   displayReasoningEffort,
   getActiveReasoningLevels,
   supportsReasoningLevel,
-} from "../../shared/reasoning-levels.js";
+} from "../../presentation/reasoning-levels.js";
 import {
   getBackendIdForChat,
   resolveChatBackend,

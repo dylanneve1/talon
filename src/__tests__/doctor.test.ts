@@ -5,7 +5,7 @@ import {
   collectDoctorReport,
   type DoctorReport,
 } from "../core/doctor/index.js";
-import { renderDoctorMessage } from "../frontend/telegram/helpers/index.js";
+import { renderDoctorMessage } from "../frontend/telegram/render/reports.js";
 
 describe("checkNativeModules", () => {
   it("verifies every registered module with provenance", async () => {

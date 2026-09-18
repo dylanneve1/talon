@@ -42,7 +42,7 @@ import {
 import {
   buildCacheTempDisplay,
   formatCacheTempLine,
-} from "../frontend/shared/status-context.js";
+} from "../frontend/presentation/status-context.js";
 
 /** Per-worker DBs are shared across a file — keep every chat id distinct. */
 let seq = 0;

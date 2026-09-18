@@ -9,13 +9,13 @@ import {
   type EffortLevel,
 } from "../../../storage/chat-settings.js";
 import { getBackendIdForChat } from "../../../core/engine/backend-controller/index.js";
-import { renderEffortRows } from "../helpers/index.js";
+import { renderEffortRows } from "../render/menu.js";
 import { resolveBackendForChat } from "../model-menu.js";
 import {
   displayReasoningEffort,
   getActiveReasoningLevels,
   supportsReasoningLevel,
-} from "../../shared/reasoning-levels.js";
+} from "../../presentation/reasoning-levels.js";
 import { answerCallbackQuerySafe, type CallbackDeps } from "./query.js";
 
 export async function handleEffortCallback(
