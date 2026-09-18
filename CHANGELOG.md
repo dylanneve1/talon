@@ -1,5 +1,26 @@
 # Changelog
 
+## [5.0.1](https://github.com/dylanneve1/talon/compare/v5.0.0...v5.0.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* **companion:** disable Impeller to dodge Pixel 10 / Android 17 beta crash-loop ([#964](https://github.com/dylanneve1/talon/issues/964)) ([4fff816](https://github.com/dylanneve1/talon/commit/4fff816bd09467c8e3bc4d582c70afb12c30ee23))
+
+
+### Documentation
+
+* the agent host sidecar — the Claude Agent SDK in its own process ([#967](https://github.com/dylanneve1/talon/issues/967)) ([e8d02ff](https://github.com/dylanneve1/talon/commit/e8d02ff95f0c76876cee01c0de2fd5325deafa99))
+
+
+### Code Refactoring
+
+* **agent-host:** the AgentHostClient seam and its protocol fixtures ([#968](https://github.com/dylanneve1/talon/issues/968)) ([41e3b0c](https://github.com/dylanneve1/talon/commit/41e3b0c1d11615a1d840b7d9977315abd157e8e2))
+* **frontend:** one report renderer for Discord and Telegram; frontend/shared → presentation ([#965](https://github.com/dylanneve1/talon/issues/965)) ([24e75b4](https://github.com/dylanneve1/talon/commit/24e75b47af1389777fadaa5555971029c307f86a))
+* **gateway-actions:** split native.ts by concern ([#970](https://github.com/dylanneve1/talon/issues/970)) ([7155dfa](https://github.com/dylanneve1/talon/commit/7155dfaeea5c4f874896ca0a57033428a860016f))
+* **tools:** group the tool catalogue into chat/, ops/, content/ ([#963](https://github.com/dylanneve1/talon/issues/963)) ([462afd7](https://github.com/dylanneve1/talon/commit/462afd717e056e88966ec062e00454da3ae8147d))
+* **util:** move the non-leaf modules to the subsystems that own them ([#966](https://github.com/dylanneve1/talon/issues/966)) ([2d247cf](https://github.com/dylanneve1/talon/commit/2d247cf1d082bad98d9ba6565356259d5539cb59))
+
 ## [5.0.0](https://github.com/dylanneve1/talon/compare/v4.6.1...v5.0.0) (2026-09-18)
 
 
