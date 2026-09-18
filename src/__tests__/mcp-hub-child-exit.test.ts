@@ -55,9 +55,13 @@ import {
   type RemoteAgentClient,
 } from "../backend/remote-server/index.js";
 
+// `--no-warnings`: the children inherit the parent's env (children.ts merges
+// process.env under the spec), so on a proxy-configured box Node would print
+// its `NODE_USE_ENV_PROXY` notice + `--trace-warnings` hint to stderr and the
+// exact-stderr assertions below would see two lines the scripts never wrote.
 const nodeScript = (source: string) => ({
   command: process.execPath,
-  args: ["-e", source],
+  args: ["--no-warnings", "-e", source],
   env: {},
 });
 
