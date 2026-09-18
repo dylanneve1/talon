@@ -179,7 +179,7 @@ flag flip and the core view stay PR 8/9.
 
 ## Stage 2 — Write path
 
-### PR 6 — `feat(tools): remember / forget / recall`
+### PR 6 — `feat(tools): remember / forget / recall` ✅ done
 
 - `core/tools/memory.ts` + `core/engine/gateway-actions/memory.ts`.
 - `remember(kind, text, subject?, key?)` — on assert, FTS near-dupe check turns a
@@ -193,6 +193,35 @@ flag flip and the core view stay PR 8/9.
   `notifyPromptInputsChanged`.** This is the cache invariant from plan §3.6, and it
   is the mistake someone will otherwise make on purpose.
 - Verify Discord.
+
+**Landed** as #948. `core/tools/memory.ts` + `core/engine/gateway-actions/memory.ts`
+export three actions: `remember(kind, text, subject?, key?, confidence?,
+replace_id?, force?)` → `{ ok, id, line }`, `recall(query, kind?, limit?)` →
+`{ ok, rows[] }` (limit capped at 20, each returned row touched so `hit_count`
+feeds PR 8's ranking), `forget(id, reason)` → the graveyard, reason required so
+every removal is auditable. The store gained `findSimilarMemories(kind, subject,
+text, limit)` — the near-duplicate probe `assertMemory` already ran, now exposed
+without inserting and shared by both, so there is one definition of
+"near-duplicate". **Supersede-candidate rule:** `remember` probes first, and a
+live near-match with no `replace_id` writes nothing — it returns
+`{ ok: false, error: "Near-duplicate of #<id>", similar: [...], hint }`; the
+caller answers with `replace_id` (→ `supersedeMemory`, old row kept and linked)
+or `force: true`. `state` skips the probe because `replaceStateKey` already
+replaces the live row for its key. **Trust rule:** `trustForChat` reads the
+canonical chat-id grammar through a new `chatScope` in `util/chat-id.ts` —
+`discord_guild_…` / `wa_group_…` / a negative Telegram id are groups, `…_dm_…` /
+positive Telegram / `t_…` / `d_…` are DMs, and `teams_chat_…` names 1:1 and group
+chats alike, so it is "unknown". Group *or* unknown → `group_chat` trust (fail
+closed: never pinnable, never in the core view, plan §5); a `directive` from a
+group context is refused outright. Every store error surfaces as
+`{ ok: false, error }` — nothing throws through `handleSharedAction`. The cache
+invariant is a test: the module never imports `core/prompt/invalidation.js`, and
+`memory-actions.test.ts` mocks it with a spy and asserts all three actions leave
+it untouched. Norm in `prompts/system/memory-recall.md` (a "Remembering"
+section), not protocol prose. **Reads are still flag-gated** behind
+`TALON_MEMORY_STORE` until PR 9 flips it; **writes through these tools are
+always live**, so the store fills up and becomes measurable before the read path
+turns on.
 
 ### PR 7 — `refactor(soul): taps into the shared engine seam`
 
