@@ -1,5 +1,19 @@
 # Changelog
 
+## [4.3.2](https://github.com/dylanneve1/talon/compare/v4.3.1...v4.3.2) (2026-09-18)
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump the dev-dependencies group with 2 updates ([#926](https://github.com/dylanneve1/talon/issues/926)) ([9fb2c34](https://github.com/dylanneve1/talon/commit/9fb2c34944843238e3aa91f9f7075596f828da69))
+* **deps:** Bump the production-dependencies group with 2 updates ([#927](https://github.com/dylanneve1/talon/issues/927)) ([f69e8c8](https://github.com/dylanneve1/talon/commit/f69e8c81c8eda7bb030b03b45f0a4faf8789946e))
+
+
+### Code Refactoring
+
+* name storage stores and shared helper files by what they hold ([#929](https://github.com/dylanneve1/talon/issues/929)) ([4afcb00](https://github.com/dylanneve1/talon/commit/4afcb00d2ee5ea60ef2e21aac8b61554e6a724e7))
+* **teams:** split the frontend closure into runtime + modules ([#928](https://github.com/dylanneve1/talon/issues/928)) ([963fb78](https://github.com/dylanneve1/talon/commit/963fb7809e138dcb9e8aa74c25664ba2a302caf5))
+
 ## [4.3.1](https://github.com/dylanneve1/talon/compare/v4.3.0...v4.3.1) (2026-09-17)
 
 
