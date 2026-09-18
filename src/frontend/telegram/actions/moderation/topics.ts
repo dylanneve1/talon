@@ -3,7 +3,7 @@
  */
 
 import type { Bot } from "grammy";
-import { toPositiveId } from "../shared.js";
+import { toPositiveId } from "../coerce.js";
 import type { ModerationOp, ModerationOps } from "./types.js";
 
 /** An op on an existing topic: validates `thread_id`, then runs `call`. */

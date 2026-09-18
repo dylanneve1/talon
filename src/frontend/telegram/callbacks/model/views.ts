@@ -17,7 +17,7 @@ import {
   buildModelBrowseViewForChat,
   buildBackendMenuViewForChat,
 } from "../../model-menu.js";
-import { editOrIgnoreSame, type CallbackDeps } from "../shared.js";
+import { editOrIgnoreSame, type CallbackDeps } from "../query.js";
 import type { ModelView } from "./types.js";
 
 export async function renderModelView(

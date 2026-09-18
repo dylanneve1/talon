@@ -21,7 +21,7 @@ import type { Bot } from "grammy";
 import type { TalonConfig } from "../../../core/config/index.js";
 import type { Backend } from "../../../core/agent-runtime/capabilities.js";
 import { handleCallbackQuery } from "../handlers/index.js";
-import type { CallbackDeps } from "./shared.js";
+import type { CallbackDeps } from "./query.js";
 import { handleSettingsCallback } from "./settings.js";
 import { handlePulseCallback } from "./pulse.js";
 import { handleEffortCallback } from "./effort.js";
@@ -30,7 +30,7 @@ import { handleModelCallback } from "./model.js";
 import { handleAuthCallback } from "./auth.js";
 import { handleWhatsAppCallback } from "./whatsapp.js";
 
-export { answerCallbackQuerySafe } from "./shared.js";
+export { answerCallbackQuerySafe } from "./query.js";
 
 export function registerCallbacks(
   bot: Bot,

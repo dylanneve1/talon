@@ -19,7 +19,7 @@ import { resolveActiveModelForChat } from "../../../../core/models/active-model.
 import { logWarn } from "../../../../util/log.js";
 import type { ModelCallback } from "../../model-callbacks.js";
 import { resolveBackendForChat } from "../../model-menu.js";
-import { answerCallbackQuerySafe, type CallbackDeps } from "../shared.js";
+import { answerCallbackQuerySafe, type CallbackDeps } from "../query.js";
 import type { ModelOutcome } from "./types.js";
 
 /**

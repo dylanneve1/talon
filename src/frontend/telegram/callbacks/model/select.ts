@@ -15,7 +15,7 @@ import { getBackendIdForChat } from "../../../../core/engine/backend-controller/
 import { resolveActiveModelForChat } from "../../../../core/models/active-model.js";
 import type { ModelCallback } from "../../model-callbacks.js";
 import { resolveBackendForChat, toggleChatFreeOnly } from "../../model-menu.js";
-import { answerCallbackQuerySafe, type CallbackDeps } from "../shared.js";
+import { answerCallbackQuerySafe, type CallbackDeps } from "../query.js";
 import type { ModelOutcome } from "./types.js";
 
 export async function handleSelect(

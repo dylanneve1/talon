@@ -4,7 +4,7 @@
  */
 
 import type { Context } from "grammy";
-import { answerCallbackQuerySafe } from "../shared.js";
+import { answerCallbackQuerySafe } from "../query.js";
 import type { ModelOutcome } from "./types.js";
 
 // Acknowledge fast (within Telegram's 30s window) so the user

@@ -28,7 +28,7 @@ import {
   getActiveReasoningLevels,
   supportsReasoningLevel,
 } from "../../shared/reasoning-levels.js";
-import { answerCallbackQuerySafe, type CallbackDeps } from "./shared.js";
+import { answerCallbackQuerySafe, type CallbackDeps } from "./query.js";
 
 export async function handleSettingsCallback(
   ctx: Context,

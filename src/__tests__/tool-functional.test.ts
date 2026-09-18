@@ -349,7 +349,7 @@ import {
   createTelegramActionHandler,
   // re-export for test side-only — handler depends on the InputFile constructor
 } from "../frontend/telegram/actions/index.js";
-import { resetRichMessageSupport } from "../frontend/telegram/actions/shared.js";
+import { resetRichMessageSupport } from "../frontend/telegram/actions/rich-messages.js";
 import type { Bot } from "grammy";
 import type { Gateway } from "../core/engine/gateway.js";
 

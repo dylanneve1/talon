@@ -11,7 +11,7 @@ import {
   whatsAppPanel,
 } from "../commands/whatsapp-pairing.js";
 import { isAuthorizedAdmin } from "../commands/state.js";
-import { answerCallbackQuerySafe } from "./shared.js";
+import { answerCallbackQuerySafe } from "./query.js";
 
 export async function handleWhatsAppCallback(
   ctx: Context,

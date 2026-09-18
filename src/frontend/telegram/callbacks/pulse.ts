@@ -9,7 +9,7 @@ import {
   enablePulse,
   isPulseEnabled,
 } from "../../../core/background/pulse.js";
-import { answerCallbackQuerySafe } from "./shared.js";
+import { answerCallbackQuerySafe } from "./query.js";
 
 export async function handlePulseCallback(
   ctx: Context,

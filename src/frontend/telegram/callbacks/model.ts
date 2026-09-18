@@ -17,7 +17,7 @@
 
 import type { Context } from "grammy";
 import { parseModelCallback } from "../model-callbacks.js";
-import { answerCallbackQuerySafe, type CallbackDeps } from "./shared.js";
+import { answerCallbackQuerySafe, type CallbackDeps } from "./query.js";
 import { handleDone, handleNoop } from "./model/control.js";
 import { handleSelect, handleReset, handleToggleFree } from "./model/select.js";
 import {

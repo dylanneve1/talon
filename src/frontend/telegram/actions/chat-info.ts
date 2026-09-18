@@ -22,7 +22,7 @@ import {
   getOnlineCount as userbotOnlineCount,
 } from "../userbot.js";
 import { savePackToLibrary } from "../sticker-library.js";
-import { toPositiveId } from "./shared.js";
+import { toPositiveId } from "./coerce.js";
 import type { TelegramActionHandlers } from "./types.js";
 
 export const chatInfoHandlers: TelegramActionHandlers = {

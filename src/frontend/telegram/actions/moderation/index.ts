@@ -14,7 +14,7 @@
  *   - `topics`  — create / edit / close / reopen / delete_topic
  */
 
-import { toPositiveId } from "../shared.js";
+import { toPositiveId } from "../coerce.js";
 import type { TelegramActionHandlers } from "../types.js";
 import { memberOps } from "./members.js";
 import { chatOps } from "./chat.js";

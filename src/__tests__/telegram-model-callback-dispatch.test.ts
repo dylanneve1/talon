@@ -84,7 +84,7 @@ import {
   MODEL_CALLBACK_HANDLERS,
   handleModelCallback,
 } from "../frontend/telegram/callbacks/model.js";
-import type { CallbackDeps } from "../frontend/telegram/callbacks/shared.js";
+import type { CallbackDeps } from "../frontend/telegram/callbacks/query.js";
 import type { Context } from "grammy";
 
 const deps = { config: {}, gateway: undefined } as unknown as CallbackDeps;

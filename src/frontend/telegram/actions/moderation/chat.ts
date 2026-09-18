@@ -3,7 +3,7 @@
  * leave_chat.
  */
 
-import { toPositiveId } from "../shared.js";
+import { toPositiveId } from "../coerce.js";
 import { resolveMediaInput } from "../media.js";
 import { toChatPermissions } from "./permissions.js";
 import type { ModerationOps } from "./types.js";

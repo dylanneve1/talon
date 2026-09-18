@@ -12,7 +12,7 @@ import { activeLoginFlow } from "../../../core/auth/login-flow.js";
 import { currentAuthPanel, driveLogin, isAuthProvider } from "../auth-panel.js";
 import { loginBinariesFrom } from "../commands/auth.js";
 import { isAuthorizedAdmin } from "../commands/state.js";
-import { answerCallbackQuerySafe, type CallbackDeps } from "./shared.js";
+import { answerCallbackQuerySafe, type CallbackDeps } from "./query.js";
 
 export async function handleAuthCallback(
   ctx: Context,

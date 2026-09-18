@@ -15,13 +15,12 @@ import {
   MAX_OVERDUE_MS,
   type ScheduledMessage,
 } from "../../../storage/scheduled.js";
+import { sendOpts, sendText } from "./send.js";
 import {
   noteRichMessageFailure,
   richMessagesAvailable,
-  sendOpts,
-  sendText,
-  toPositiveId,
-} from "./shared.js";
+} from "./rich-messages.js";
+import { toPositiveId } from "./coerce.js";
 import { resolveThreadId } from "../topics.js";
 import { TELEGRAM_MAX_TEXT, type TelegramActionHandlers } from "./types.js";
 

@@ -25,7 +25,7 @@ import { chatInfoHandlers } from "./chat-info.js";
 import { moderationHandlers } from "./moderation/index.js";
 import type { TelegramActionContext, TelegramActionHandlers } from "./types.js";
 
-export { sendText } from "./shared.js";
+export { sendText } from "./send.js";
 
 // Null-prototype so a request `action` of "toString" / "constructor" / etc.
 // can't resolve an inherited Object.prototype method via `handlers[action]`.

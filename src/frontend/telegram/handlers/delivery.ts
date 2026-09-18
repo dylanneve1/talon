@@ -10,7 +10,7 @@ import { toolInputToRecord } from "../../../core/agent-runtime/events.js";
 import { appendDailyLogResponse } from "../../../storage/daily-log.js";
 import { stripMcpPrefix } from "../../../core/tools/index.js";
 import { logWarn } from "../../../util/log.js";
-import { replyParamsFor, sendText } from "../actions/shared.js";
+import { replyParamsFor, sendText } from "../actions/send.js";
 import { ambientThreadId } from "../topics.js";
 import { trackDmUser } from "./access.js";
 

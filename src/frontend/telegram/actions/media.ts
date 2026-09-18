@@ -9,7 +9,7 @@ import { expandFsPath } from "../../../util/fs-path.js";
 import { markdownToTelegramHtml } from "../formatting.js";
 import { withRetry } from "../../../core/engine/gateway.js";
 import { resolveStickerByEmoji } from "../sticker-library.js";
-import { replyParams, sendOpts } from "./shared.js";
+import { replyParams, sendOpts } from "./send.js";
 import type { TelegramActionHandlers } from "./types.js";
 
 type MediaSource = {

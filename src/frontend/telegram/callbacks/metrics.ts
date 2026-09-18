@@ -14,7 +14,7 @@ import {
   type MetricsView,
 } from "../helpers/index.js";
 import { isAuthorizedAdmin } from "../commands/state.js";
-import { answerCallbackQuerySafe, editOrIgnoreSame } from "./shared.js";
+import { answerCallbackQuerySafe, editOrIgnoreSame } from "./query.js";
 
 export async function handleMetricsCallback(
   ctx: Context,

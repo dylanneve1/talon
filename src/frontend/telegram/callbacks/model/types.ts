@@ -10,7 +10,7 @@
 
 import type { Context } from "grammy";
 import type { ModelCallback } from "../../model-callbacks.js";
-import type { CallbackDeps } from "../shared.js";
+import type { CallbackDeps } from "../query.js";
 
 export type ModelView =
   | { kind: "menu" }

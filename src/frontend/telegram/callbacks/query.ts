@@ -1,5 +1,6 @@
 /**
- * Shared callback helpers + the dependency bundle passed to each handler.
+ * Callback-query plumbing shared by the Telegram callback handlers: the
+ * dependency bundle, edit-or-ignore-same, and the safe query ack.
  */
 
 import type { Context } from "grammy";
