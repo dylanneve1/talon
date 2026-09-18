@@ -33,6 +33,10 @@ those into three PRs, measurement first.
 
 ## PR A — measure (no behaviour change)
 
+**Landed: #954.** The metric names below are live; `/status` carries the
+`Cache: <verdict> last turn · idle <duration>` line and `talon metrics`
+shows the rollups.
+
 1. Roll the existing per-turn verdict up: counters
    `cache.first_request.{hit,miss,none}` and histograms
    `cache.first_request.read_tokens` / `write_tokens` (the turn's FIRST
