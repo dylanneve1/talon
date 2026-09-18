@@ -25,8 +25,16 @@ import { buildDeliveryContract } from "../backend/runtime/prompt/delivery-contra
 import { kiloProfile } from "../backend/remote-server/profiles/kilo.js";
 import { opencodeProfile } from "../backend/remote-server/profiles/opencode.js";
 
+// The suffix is rendered from prompt templates read off disk. A Windows
+// checkout (core.autocrlf) hands them over with CRLF line endings, so the
+// digests — recorded from the LF sources — are taken over LF-normalised
+// text; the identity being pinned is the template content, not the
+// platform's newline convention.
 const digest = (s: string): string =>
-  createHash("sha256").update(s, "utf8").digest("hex").slice(0, 16);
+  createHash("sha256")
+    .update(s.replace(/\r\n/g, "\n"), "utf8")
+    .digest("hex")
+    .slice(0, 16);
 
 /** Every frontend with its own delivery tool names, plus the fallbacks. */
 const FRONTENDS = [
