@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.5.0](https://github.com/dylanneve1/talon/compare/v4.4.0...v4.5.0) (2026-09-18)
+
+
+### Features
+
+* **memory:** /memory in Telegram and the native bridge ([#941](https://github.com/dylanneve1/talon/issues/941)) ([d57a471](https://github.com/dylanneve1/talon/commit/d57a4713e61cbec34694795b8d7c06e0a7924ff7))
+* **memory:** import memory.md and daily notes into the store, render them back ([#940](https://github.com/dylanneve1/talon/issues/940)) ([24e9488](https://github.com/dylanneve1/talon/commit/24e9488d784850b680c8e5da17d7c6da05bd92fc))
+
 ## [4.4.0](https://github.com/dylanneve1/talon/compare/v4.3.3...v4.4.0) (2026-09-18)
 
 
