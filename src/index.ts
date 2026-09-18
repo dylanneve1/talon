@@ -3,12 +3,15 @@
  *
  * Dispatches the hidden `_mcp-launch` (MCP supervisor) and `_lua-run`
  * (WASM Lua trigger runner) subcommands BEFORE the app graph loads —
- * both are Talon re-invoking itself (see util/mcp-launcher.ts). The
+ * both are Talon re-invoking itself (see core/mcp-hub/launcher.ts). The
  * dynamic import keeps these helper processes light: they evaluate this
  * shim and their own module, never the backends/frontends/plugins.
  */
 
-import { MCP_LAUNCH_SUBCOMMAND, runSupervisor } from "./util/mcp-launcher.js";
+import {
+  MCP_LAUNCH_SUBCOMMAND,
+  runSupervisor,
+} from "./core/mcp-hub/launcher.js";
 import { LUA_RUN_SUBCOMMAND, runLuaMain } from "./core/scripts/lua.js";
 
 if (process.argv[2] === MCP_LAUNCH_SUBCOMMAND) {

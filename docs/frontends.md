@@ -100,7 +100,8 @@ terminal claims the legacy chat id `"1"` ahead of telegram (10).
 1. Implement `createMyFrontend(config, gateway): Frontend` under
    `src/frontend/my/`.
 2. Register the descriptor in `core/frontend-runtime/builtins.ts` (id,
-   label, chat-id matcher — add the predicate to `util/chat-id.ts`).
+   label, chat-id matcher — add the predicate to
+   `core/frontend-runtime/chat-id.ts`).
 3. Drop a `factory.ts` beside the implementation and list it in
    `src/frontend/factories.ts`.
 4. Add the id to the config `frontendEnum` in `util/config.ts`, plus a

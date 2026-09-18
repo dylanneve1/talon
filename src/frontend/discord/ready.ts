@@ -6,7 +6,7 @@
 
 import { ActivityType, type Client } from "discord.js";
 import { log, logError } from "../../util/log.js";
-import { deriveNumericChatId } from "../../util/chat-id.js";
+import { deriveNumericChatId } from "../../core/frontend-runtime/chat-id.js";
 import { registerCommandsForGuilds } from "./commands/index.js";
 import { registerDiscordChat } from "./handlers/index.js";
 import { leaveNonWhitelistedGuilds } from "./guild-policy.js";

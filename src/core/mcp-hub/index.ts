@@ -38,7 +38,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { getPluginMcpServers } from "../plugin/index.js";
-import { wrapMcpServer } from "../../util/mcp-launcher.js";
+import { wrapMcpServer } from "./launcher.js";
 import { log, logError } from "../../util/log.js";
 import { buildTalonToolServer, VALID_TOOL_FRONTENDS } from "./talon-server.js";
 import { buildProxyServer } from "./proxy-server.js";

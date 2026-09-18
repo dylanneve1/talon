@@ -53,11 +53,18 @@ module.exports = {
       name: "util-is-a-leaf",
       comment:
         "util/ is the bottom of the stack — anything it imported from the " +
-        "layers above would be a cycle waiting to happen. The #prompt-assets " +
-        "subpath import is exempt: it is the build-time asset seam " +
-        "(package.json `imports` switches disk/embedded prompts per runtime), " +
-        "not a layering edge. metrics.ts is carved out below with its own " +
-        "migration rule.",
+        "layers above would be a cycle waiting to happen. util/ is the " +
+        "kernel's lib/: leaf helpers only, nothing that knows what a chat, " +
+        "a session or a model is (docs/structure.md, worklist item 4 moved " +
+        "the rest to their owning subsystems). What is left has nothing to " +
+        "carve out: both exemptions below are now vestigial guards rather " +
+        "than live exceptions. The #prompt-assets subpath import is the " +
+        "build-time asset seam (package.json `imports` switches " +
+        "disk/embedded prompts per runtime) and not a layering edge — its " +
+        "last util/ caller left with workspace.ts. metrics.ts left earlier, " +
+        "for storage/metrics.ts. Both stay so the seam and " +
+        "metrics-read-shape-moves-down keep speaking for their paths if " +
+        "anything tries to come back.",
       severity: "error",
       from: {
         path: "^src/util/",
@@ -182,8 +189,9 @@ module.exports = {
         "by importing backend/ directly. The last violation was " +
         "`extractSessionName`, a 41-line import-free string helper that was " +
         "simply misfiled under backend/runtime; it now lives in " +
-        "util/session-name.ts (still re-exported from the backend/runtime " +
-        "barrel, so backends keep one import site). With that gone the " +
+        "core/weaver/session-name.ts (still re-exported from the " +
+        "backend/runtime barrel, so backends keep one import site). " +
+        "With that gone the " +
         "boundary is clean, so this is an error rather than a target.",
       severity: "error",
       from: { path: "^src/frontend/" },

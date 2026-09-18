@@ -37,7 +37,7 @@ import {
   type MemorySource,
   type MemoryTrust,
 } from "../../storage/memory.js";
-import { chatScope } from "../../util/chat-id.js";
+import { chatScope } from "../frontend-runtime/chat-id.js";
 import { log, logWarn } from "../../util/log.js";
 
 /**

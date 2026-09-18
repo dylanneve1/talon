@@ -39,7 +39,7 @@ import {
   resetIdentityCache,
   resolveIdentity,
 } from "../frontend/whatsapp/connection/identity.js";
-import { isWhatsAppChatId } from "../util/chat-id.js";
+import { isWhatsAppChatId } from "../core/frontend-runtime/chat-id.js";
 
 describe("WhatsApp formatting", () => {
   it("translates Markdown emphasis into WhatsApp's dialect", () => {

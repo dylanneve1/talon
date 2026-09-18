@@ -20,7 +20,7 @@ import { clearHistory } from "../../storage/history.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { resetPulseCheckpoint } from "../../core/background/pulse/pulse.js";
 import { isPulseEnabled } from "../../core/background/pulse/pulse.js";
-import { getWorkspaceDiskUsage } from "../../util/workspace.js";
+import { getWorkspaceDiskUsage } from "../../core/vfs/workspace.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { resolveActiveModelForChat } from "../../core/models/active-model.js";
 import { getPooledBackend } from "../../core/engine/backend-controller/index.js";

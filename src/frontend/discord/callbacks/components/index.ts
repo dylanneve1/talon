@@ -24,7 +24,7 @@
 import { MessageFlags } from "discord.js";
 import type { TalonConfig } from "../../../../core/config/index.js";
 import type { Gateway } from "../../../../core/engine/gateway.js";
-import { deriveNumericChatId } from "../../../../util/chat-id.js";
+import { deriveNumericChatId } from "../../../../core/frontend-runtime/chat-id.js";
 import { logError } from "../../../../util/log.js";
 import {
   isInteractionAllowed,

@@ -54,7 +54,7 @@ const STUB_BINARY = resolve(
 // MCP supervisor embedder hook: this harness runs inside vitest, so
 // process.argv[1] is vitest's entry — which doesn't dispatch the
 // `_mcp-launch` subcommand. Point wrapMcpServer() at a Talon entry
-// that does (see SUPERVISOR_CMD_ENV in util/mcp-launcher.ts).
+// that does (see SUPERVISOR_CMD_ENV in core/mcp-hub/launcher.ts).
 process.env.TALON_MCP_SUPERVISOR_CMD = JSON.stringify([
   process.execPath,
   "--import",

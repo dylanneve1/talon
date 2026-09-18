@@ -16,7 +16,7 @@ import { log } from "../../util/log.js";
 import {
   deriveNumericChatId,
   generateTerminalChatId,
-} from "../../util/chat-id.js";
+} from "../../core/frontend-runtime/chat-id.js";
 import { resolveModel } from "../../core/models/catalog.js";
 import { toolInputToRecord } from "../../core/agent-runtime/events.js";
 import { createRenderer } from "./renderer.js";

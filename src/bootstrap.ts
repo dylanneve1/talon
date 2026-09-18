@@ -10,7 +10,7 @@
  */
 
 import { loadConfig, rebuildSystemPrompt } from "./core/config/index.js";
-import { initWorkspace } from "./util/workspace.js";
+import { initWorkspace } from "./core/vfs/workspace.js";
 import { loadSessions, resetSession } from "./storage/sessions.js";
 import { loadChatSettings } from "./storage/chat-settings.js";
 import { loadCronJobs } from "./storage/cron.js";
@@ -36,7 +36,7 @@ import {
 import { initDream, maybeStartDream } from "./core/background/dream/index.js";
 import { initHeartbeat } from "./core/background/heartbeat/index.js";
 import { log, logWarn, logDebug } from "./util/log.js";
-import { bootPhase } from "./util/boot-timer.js";
+import { bootPhase } from "./core/daemon/boot-timer.js";
 import { mapConcurrent } from "./util/concurrency.js";
 import type { TalonConfig } from "./core/config/index.js";
 import { resolveFrontendIdAmong } from "./core/frontend-runtime/routing.js";

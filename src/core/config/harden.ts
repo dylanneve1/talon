@@ -14,7 +14,7 @@
  */
 
 import { chmodSync } from "node:fs";
-import { dirs, files } from "./paths.js";
+import { dirs, files } from "../../util/paths.js";
 
 const OWNER_DIR = 0o700;
 const OWNER_FILE = 0o600;

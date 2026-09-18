@@ -9,7 +9,7 @@
  */
 
 import { isJidGroup, jidNormalizedUser } from "baileys";
-import { deriveNumericChatId } from "../../util/chat-id.js";
+import { deriveNumericChatId } from "../../core/frontend-runtime/chat-id.js";
 import { bareId } from "./connection/identity.js";
 
 export type WhatsAppChatInfo = {

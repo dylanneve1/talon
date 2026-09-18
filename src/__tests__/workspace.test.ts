@@ -59,7 +59,7 @@ import {
   startUploadCleanup,
   stopUploadCleanup,
   migrateLayout,
-} from "../util/workspace.js";
+} from "../core/vfs/workspace.js";
 
 const TEST_ROOT = join(tmpdir(), `talon-ws-test-${Date.now()}`);
 

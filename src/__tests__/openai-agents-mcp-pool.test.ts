@@ -82,7 +82,7 @@ vi.mock("../core/plugin/index.js", () => ({
 }));
 
 // Mock the mcp-launcher to keep wrapMcpCommand simple.
-vi.mock("../util/mcp-launcher.js", () => ({
+vi.mock("../core/mcp-hub/launcher.js", () => ({
   wrapMcpCommand: (cmd: string[]) => cmd,
 }));
 

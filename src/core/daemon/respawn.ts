@@ -29,7 +29,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { log, logError } from "./log.js";
+import { log, logError } from "../../util/log.js";
 
 let pendingReason: string | null = null;
 

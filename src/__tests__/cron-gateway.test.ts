@@ -58,10 +58,6 @@ vi.mock("write-file-atomic", () => ({
   }),
 }));
 
-vi.mock("../util/cleanup-registry.js", () => ({
-  registerCleanup: vi.fn(),
-}));
-
 // ── Heavy-module mocks ───────────────────────────────────────────────────────
 
 // run_cron_job → runJobNow. Mocked so we never import the dispatcher / runtime.

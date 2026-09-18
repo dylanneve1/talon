@@ -8,7 +8,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CronJob } from "../storage/cron.js";
-import { deriveNumericChatId } from "../util/chat-id.js";
+import { deriveNumericChatId } from "../core/frontend-runtime/chat-id.js";
 
 const mocks = vi.hoisted(() => ({
   existsSync: vi.fn(() => false),
@@ -50,10 +50,6 @@ vi.mock("write-file-atomic", () => ({
   default: Object.assign((...args: unknown[]) => mocks.atomicWrite(...args), {
     sync: mocks.atomicWrite,
   }),
-}));
-
-vi.mock("../util/cleanup-registry.js", () => ({
-  registerCleanup: vi.fn(),
 }));
 
 vi.mock("../util/paths.js", () => ({

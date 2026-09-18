@@ -2,7 +2,7 @@
 
 import pc from "picocolors";
 import { formatTimeAgo } from "../renderer.js";
-import { isTerminalChatId } from "../../../util/chat-id.js";
+import { isTerminalChatId } from "../../../core/frontend-runtime/chat-id.js";
 import { resolveModel as coreResolveModel } from "../../../core/models/catalog.js";
 import {
   getAllSessions,

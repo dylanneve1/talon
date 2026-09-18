@@ -6,7 +6,7 @@
  * protocol the way Talon will actually drive it.
  *
  * With `supervise`, the server runs under Talon's own `_mcp-launch`
- * supervisor (util/mcp-launcher.ts), re-invoked from this repo's
+ * supervisor (core/mcp-hub/launcher.ts), re-invoked from this repo's
  * src/cli.ts on the current runtime — bun natively, node via tsx —
  * exactly the chain a source run produces. That is what makes the same
  * test meaningful under both runtimes: the supervisor is the part that
@@ -18,7 +18,10 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { TalonPlugin } from "../../core/plugin/types.js";
-import { SUPERVISOR_CMD_ENV, wrapMcpServer } from "../../util/mcp-launcher.js";
+import {
+  SUPERVISOR_CMD_ENV,
+  wrapMcpServer,
+} from "../../core/mcp-hub/launcher.js";
 import { isBunRuntime } from "../../util/runtime.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");

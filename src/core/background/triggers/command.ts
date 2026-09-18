@@ -6,7 +6,7 @@
 
 import { spawnSync } from "node:child_process";
 import type { Trigger } from "../../../storage/triggers.js";
-import { selfInvocation } from "../../../util/mcp-launcher.js";
+import { selfInvocation } from "../../mcp-hub/launcher.js";
 import { LUA_RUN_SUBCOMMAND } from "../../scripts/lua.js";
 
 export function commandForLanguage(

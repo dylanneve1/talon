@@ -11,7 +11,7 @@ import {
   generateNativeChatId,
   deriveNumericChatId,
   isNativeChatId,
-} from "../../../util/chat-id.js";
+} from "../../../core/frontend-runtime/chat-id.js";
 import {
   getAllSessions,
   setSessionName,

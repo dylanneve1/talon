@@ -50,7 +50,7 @@ import {
 } from "../frontend/discord/callbacks/components/index.js";
 import type { ComponentInteraction } from "../frontend/discord/callbacks/components/types.js";
 import { setAccessControl } from "../frontend/discord/handlers/index.js";
-import { deriveNumericChatId } from "../util/chat-id.js";
+import { deriveNumericChatId } from "../core/frontend-runtime/chat-id.js";
 import { logError } from "../util/log.js";
 import type { TalonConfig } from "../core/config/index.js";
 import type { Gateway } from "../core/engine/gateway.js";

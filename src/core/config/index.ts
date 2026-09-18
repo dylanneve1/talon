@@ -2,7 +2,7 @@ import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import writeFileAtomic from "write-file-atomic";
 import { z } from "zod";
 import { dirs, files as pathFiles } from "../../util/paths.js";
-import { hardenTalonPermissions } from "../../util/harden.js";
+import { hardenTalonPermissions } from "./harden.js";
 import { setTimezone } from "../../util/time.js";
 import { BACKEND_IDS } from "../agent-runtime/model-ref.js";
 import { REASONING_LEVEL_ORDER } from "../models/reasoning-levels.js";

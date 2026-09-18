@@ -11,7 +11,7 @@ import {
   startResourceSampler,
   stopResourceSampler,
 } from "../core/daemon/resource-sampler.js";
-import { bootPhase, resetBootPhases } from "../util/boot-timer.js";
+import { bootPhase, resetBootPhases } from "../core/daemon/boot-timer.js";
 import { getMetrics, resetMetrics } from "../storage/metrics.js";
 import { Weaver } from "../core/weaver/index.js";
 import type { ExecuteParams } from "../core/types.js";

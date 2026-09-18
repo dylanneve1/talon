@@ -209,7 +209,8 @@ live near-match with no `replace_id` writes nothing — it returns
 caller answers with `replace_id` (→ `supersedeMemory`, old row kept and linked)
 or `force: true`. `state` skips the probe because `replaceStateKey` already
 replaces the live row for its key. **Trust rule:** `trustForChat` reads the
-canonical chat-id grammar through a new `chatScope` in `util/chat-id.ts` —
+canonical chat-id grammar through a new `chatScope` in
+`core/frontend-runtime/chat-id.ts` —
 `discord_guild_…` / `wa_group_…` / a negative Telegram id are groups, `…_dm_…` /
 positive Telegram / `t_…` / `d_…` are DMs, and `teams_chat_…` names 1:1 and group
 chats alike, so it is "unknown". Group *or* unknown → `group_chat` trust (fail

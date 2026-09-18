@@ -11,7 +11,7 @@
  *     gateway may fall back to a different port on EADDRINUSE, so the
  *     port is only known at runtime).
  *   - Removal is guarded by pid. During a `/restart` handoff
- *     (util/respawn.ts) the successor overwrites the file with its own
+ *     (./respawn.ts) the successor overwrites the file with its own
  *     pid *before* the dying parent finishes its graceful shutdown — an
  *     unconditional unlink there would orphan the new daemon, making
  *     `talon stop`/`talon restart` report "not running" and spawn

@@ -18,7 +18,7 @@ import {
   supervisorInvocation,
   wrapMcpServer,
   wrapMcpCommand,
-} from "../util/mcp-launcher.js";
+} from "../core/mcp-hub/launcher.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const CLI_ENTRY = resolve(REPO_ROOT, "src/cli.ts");

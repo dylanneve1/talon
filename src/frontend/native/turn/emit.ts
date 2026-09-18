@@ -4,7 +4,7 @@
  */
 
 import { pushMessage } from "../../../storage/history.js";
-import { extractSessionName } from "../../../util/session-name.js";
+import { extractSessionName } from "../../../core/weaver/session-name.js";
 import { broadcastChatUpdated } from "../chats/chat-wire.js";
 import { DEFAULT_CHAT_TITLE, type ChatEntry } from "../chats/chats.js";
 import { mediaUrl, registerMedia } from "../media/media.js";

@@ -25,7 +25,7 @@ import {
   setSessionName,
 } from "../../../storage/sessions.js";
 import { log } from "../../../util/log.js";
-import { extractSessionName } from "../../../util/session-name.js";
+import { extractSessionName } from "../../../core/weaver/session-name.js";
 import { traceMessage } from "../../../util/trace.js";
 import {
   FLOW_VIOLATION_MAX_RETRIES,

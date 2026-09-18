@@ -41,7 +41,7 @@ afterEach(() => {
 
 describe("migrateLayout", () => {
   it("is a no-op when workspace/ does not exist", async () => {
-    const { migrateLayout } = await import("../util/workspace.js");
+    const { migrateLayout } = await import("../core/vfs/workspace.js");
     expect(() => migrateLayout()).not.toThrow();
     // workspace/sessions.json should NOT have been created since migration never ran
     expect(existsSync(join(NEW_ROOT, "data", "sessions.json"))).toBe(false);
@@ -51,7 +51,7 @@ describe("migrateLayout", () => {
     mkdirSync(OLD_WORKSPACE, { recursive: true });
     mkdirSync(NEW_ROOT, { recursive: true });
 
-    const { migrateLayout } = await import("../util/workspace.js");
+    const { migrateLayout } = await import("../core/vfs/workspace.js");
     expect(() => migrateLayout()).not.toThrow();
     // workspace/ should still exist — migration was skipped
     expect(existsSync(OLD_WORKSPACE)).toBe(true);
@@ -67,7 +67,7 @@ describe("migrateLayout", () => {
     process.cwd = () => TEST_ROOT;
 
     try {
-      const { migrateLayout } = await import("../util/workspace.js");
+      const { migrateLayout } = await import("../core/vfs/workspace.js");
       migrateLayout();
 
       const dataDir = join(NEW_ROOT, "data");
@@ -91,7 +91,7 @@ describe("migrateLayout", () => {
     process.cwd = () => TEST_ROOT;
 
     try {
-      const { migrateLayout } = await import("../util/workspace.js");
+      const { migrateLayout } = await import("../core/vfs/workspace.js");
       migrateLayout();
 
       const newMemory = join(NEW_ROOT, "workspace", "memory");
@@ -110,7 +110,7 @@ describe("migrateLayout", () => {
     process.cwd = () => TEST_ROOT;
 
     try {
-      const { migrateLayout } = await import("../util/workspace.js");
+      const { migrateLayout } = await import("../core/vfs/workspace.js");
       migrateLayout();
 
       // Empty workspace/ should be removed
@@ -145,7 +145,7 @@ describe("migrateLayout", () => {
     });
 
     try {
-      const { migrateLayout } = await import("../util/workspace.js");
+      const { migrateLayout } = await import("../core/vfs/workspace.js");
       migrateLayout();
 
       // File was copied via copyFileSync fallback (line 57)
@@ -168,7 +168,7 @@ describe("migrateLayout", () => {
     process.cwd = () => TEST_ROOT;
 
     try {
-      const { migrateLayout } = await import("../util/workspace.js");
+      const { migrateLayout } = await import("../core/vfs/workspace.js");
       migrateLayout();
 
       // workspace/ should still exist since it's not empty
@@ -188,7 +188,7 @@ describe("initWorkspace — identity and prompt seeding", () => {
     process.cwd = () => TEST_ROOT;
 
     try {
-      const { initWorkspace } = await import("../util/workspace.js");
+      const { initWorkspace } = await import("../core/vfs/workspace.js");
       initWorkspace(join(TEST_ROOT, "ws"));
 
       // identity.md is at ~/.talon/workspace/identity.md
@@ -205,7 +205,7 @@ describe("initWorkspace — identity and prompt seeding", () => {
     // Seeding reads the PACKAGE prompts dir (resolved relative to the
     // module, not process.cwd()) — a daemon launched from any other
     // directory used to silently seed nothing.
-    const { initWorkspace } = await import("../util/workspace.js");
+    const { initWorkspace } = await import("../core/vfs/workspace.js");
     initWorkspace(join(TEST_ROOT, "ws"));
 
     // prompts are seeded to ~/.talon/prompts/
@@ -230,7 +230,7 @@ describe("initWorkspace — identity and prompt seeding", () => {
       "# User customized version",
     );
 
-    const { initWorkspace } = await import("../util/workspace.js");
+    const { initWorkspace } = await import("../core/vfs/workspace.js");
     initWorkspace(join(TEST_ROOT, "ws"));
 
     // User version should be preserved
@@ -248,7 +248,7 @@ describe("initWorkspace — upgrade-aware prompt seeding (.seeded.json)", () => 
   };
 
   it("records seeded hashes in the manifest on first run", async () => {
-    const { initWorkspace } = await import("../util/workspace.js");
+    const { initWorkspace } = await import("../core/vfs/workspace.js");
     initWorkspace(join(TEST_ROOT, "ws"));
 
     const manifest = JSON.parse(readFileSync(manifestPath(), "utf-8"));
@@ -267,7 +267,7 @@ describe("initWorkspace — upgrade-aware prompt seeding (.seeded.json)", () => 
       JSON.stringify({ "base.md": await sha256(oldVersion) }),
     );
 
-    const { initWorkspace } = await import("../util/workspace.js");
+    const { initWorkspace } = await import("../core/vfs/workspace.js");
     initWorkspace(join(TEST_ROOT, "ws"));
 
     const content = readFileSync(join(talonPromptsDir(), "base.md"), "utf-8");
@@ -288,7 +288,7 @@ describe("initWorkspace — upgrade-aware prompt seeding (.seeded.json)", () => 
       JSON.stringify({ "base.md": await sha256("whatever was seeded") }),
     );
 
-    const { initWorkspace } = await import("../util/workspace.js");
+    const { initWorkspace } = await import("../core/vfs/workspace.js");
     initWorkspace(join(TEST_ROOT, "ws"));
 
     expect(readFileSync(join(talonPromptsDir(), "base.md"), "utf-8")).toBe(
@@ -299,7 +299,7 @@ describe("initWorkspace — upgrade-aware prompt seeding (.seeded.json)", () => 
   it("adopts a pre-manifest file only when byte-identical to the package", async () => {
     // First run seeds everything; drop the manifest to simulate a
     // deployment that predates it, and edit one file.
-    const { initWorkspace } = await import("../util/workspace.js");
+    const { initWorkspace } = await import("../core/vfs/workspace.js");
     initWorkspace(join(TEST_ROOT, "ws"));
     rmSync(manifestPath());
     writeFileSync(join(talonPromptsDir(), "dream.md"), "# edited\n");
@@ -318,7 +318,7 @@ describe("initWorkspace — upgrade-aware prompt seeding (.seeded.json)", () => 
 
   it("promptSeedReport classifies tracking vs user-edited prompts", async () => {
     const { initWorkspace, promptSeedReport } =
-      await import("../util/workspace.js");
+      await import("../core/vfs/workspace.js");
     initWorkspace(join(TEST_ROOT, "ws"));
 
     // Fresh seed: everything tracks the package.
@@ -338,7 +338,7 @@ describe("initWorkspace — upgrade-aware prompt seeding (.seeded.json)", () => 
     // A user edit that lands byte-identical to the current package copy
     // (e.g. hand-applying an upstream change) must not strand the file
     // as user-owned-forever: content matching the package re-adopts it.
-    const { initWorkspace } = await import("../util/workspace.js");
+    const { initWorkspace } = await import("../core/vfs/workspace.js");
     initWorkspace(join(TEST_ROOT, "ws"));
     const pkgContent = readFileSync(
       join(talonPromptsDir(), "base.md"),

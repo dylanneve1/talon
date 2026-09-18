@@ -46,7 +46,7 @@ on:
       - "src/__tests__/native-provision.test.ts"
       - "src/__tests__/integration/provision-real.test.ts"
       - "src/__tests__/integration/mcp-stdio-probe.ts"
-      - "src/util/mcp-launcher.ts"
+      - "src/core/mcp-hub/launcher.ts"
       - "src/util/runtime.ts"
       - ".github/workflows/native-provision.yml"
   schedule:

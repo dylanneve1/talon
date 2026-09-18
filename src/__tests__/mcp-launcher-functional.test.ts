@@ -22,7 +22,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const LAUNCHER_MODULE = pathToFileURL(
-  resolve(REPO_ROOT, "src/util/mcp-launcher.ts"),
+  resolve(REPO_ROOT, "src/core/mcp-hub/launcher.ts"),
 ).href;
 const TSX_IMPORT = pathToFileURL(
   resolve(REPO_ROOT, "node_modules/tsx/dist/esm/index.mjs"),

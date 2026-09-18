@@ -9,7 +9,7 @@ import { ChannelType } from "discord.js";
 import type { TalonConfig } from "../../../core/config/index.js";
 import { setMessageFilePath } from "../../../storage/history.js";
 import { addMedia } from "../../../storage/media-index.js";
-import { deriveNumericChatId } from "../../../util/chat-id.js";
+import { deriveNumericChatId } from "../../../core/frontend-runtime/chat-id.js";
 import { logError } from "../../../util/log.js";
 import {
   shouldHandleInGuild,

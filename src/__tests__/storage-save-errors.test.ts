@@ -248,9 +248,6 @@ describe("sessions — migration paths for usage fields", () => {
       files: { sessions: "/fake/sessions.json" },
       dirs: { root: "/fake/.talon", data: "/fake/.talon/data" },
     }));
-    vi.doMock("../util/cleanup-registry.js", () => ({
-      registerCleanup: vi.fn(),
-    }));
 
     const { loadSessions, getSession } = await import("../storage/sessions.js");
     loadSessions();
@@ -296,9 +293,6 @@ describe("sessions — migration paths for usage fields", () => {
     vi.doMock("../util/paths.js", () => ({
       files: { sessions: "/fake/sessions.json" },
       dirs: { root: "/fake/.talon", data: "/fake/.talon/data" },
-    }));
-    vi.doMock("../util/cleanup-registry.js", () => ({
-      registerCleanup: vi.fn(),
     }));
 
     const { loadSessions, getSession } = await import("../storage/sessions.js");

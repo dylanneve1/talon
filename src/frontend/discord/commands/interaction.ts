@@ -4,7 +4,7 @@
  */
 
 import { type ChatInputCommandInteraction, MessageFlags } from "discord.js";
-import { deriveNumericChatId } from "../../../util/chat-id.js";
+import { deriveNumericChatId } from "../../../core/frontend-runtime/chat-id.js";
 import {
   suppressMentions,
   splitMessage,

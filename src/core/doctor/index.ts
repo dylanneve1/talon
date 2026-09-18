@@ -423,7 +423,7 @@ export async function collectDoctorReport(opts: {
   // is which is the difference between "why didn't my prompt update?"
   // and a one-line answer.
   {
-    const { promptSeedReport } = await import("../../util/workspace.js");
+    const { promptSeedReport } = await import("../vfs/workspace.js");
     try {
       const { tracking, edited } = promptSeedReport();
       if (tracking.length + edited.length > 0) {

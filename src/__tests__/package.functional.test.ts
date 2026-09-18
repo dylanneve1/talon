@@ -159,7 +159,7 @@ function packInto(dir: string): string {
     "bin/talon.js",
     "src/app.ts",
     "src/cli.ts",
-    "src/util/mcp-launcher.ts",
+    "src/core/mcp-hub/launcher.ts",
     "prompts/base.md",
     "tsconfig.json",
   ]) {

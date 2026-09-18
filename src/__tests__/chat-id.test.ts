@@ -6,7 +6,7 @@ import {
   generateTerminalChatId,
   isTerminalChatId,
   numericChatIdFor,
-} from "../util/chat-id.js";
+} from "../core/frontend-runtime/chat-id.js";
 
 describe("deriveNumericChatId", () => {
   it("returns a positive number", () => {

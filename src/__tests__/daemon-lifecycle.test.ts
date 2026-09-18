@@ -3,7 +3,7 @@
  * orchestration.
  *
  * The regression these guard against: a Telegram /restart handoff
- * (util/respawn.ts) where the dying parent's shutdown deleted the
+ * (core/daemon/respawn.ts) where the dying parent's shutdown deleted the
  * successor's freshly-written pidfile, leaving a live daemon untracked
  * — so the next `talon restart` reported "not running" and spawned a
  * duplicate that fought the original over Telegram's getUpdates.

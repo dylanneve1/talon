@@ -40,11 +40,6 @@ vi.mock("write-file-atomic", () => ({
   ),
 }));
 
-// Mock cleanup-registry so we don't register real process.on listeners
-vi.mock("../util/cleanup-registry.js", () => ({
-  registerCleanup: vi.fn(),
-}));
-
 // Mock paths so we get a stable path string in assertions
 vi.mock("../util/paths.js", () => ({
   files: { history: "/mock/data/history.json" },

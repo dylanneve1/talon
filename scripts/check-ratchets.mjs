@@ -25,7 +25,16 @@ const RATCHETS = [
     needle: "throw new Error(",
     // 40 before the soul kernel was removed (#949), which took four of
     // its own throws with it.
-    baseline: 36,
+    //
+    // 36 → 38 when docs/structure.md worklist item 4 moved
+    // util/mcp-launcher.ts to core/mcp-hub/launcher.ts. Both added hits
+    // (`SUPERVISOR_CMD_ENV must be a non-empty JSON string array` and
+    // `wrapMcpCommand: command array must not be empty`) are argument
+    // guards that predate the move and were not rewritten — the count of
+    // naked throws in the repo is unchanged; two of them are now inside
+    // `src/core/`, which is what this ratchet measures. No engine code
+    // gained a throw.
+    baseline: 38,
     why:
       "core/ should throw classified errors (core/errors.ts) so retry and " +
       "interrupt behaviour stays well-defined at the engine boundary. " +

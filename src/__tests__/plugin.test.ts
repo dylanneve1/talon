@@ -17,7 +17,7 @@ vi.mock("../util/log.js", () => ({
 // Identity-wrap so existing assertions can match the raw MCP server shape
 // without the launcher prefix. Dedicated wrap behavior is covered in
 // mcp-launcher.test.ts.
-vi.mock("../util/mcp-launcher.js", () => ({
+vi.mock("../core/mcp-hub/launcher.js", () => ({
   wrapMcpServer: <T>(server: T) => server,
 }));
 

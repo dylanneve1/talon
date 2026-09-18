@@ -42,7 +42,7 @@ import {
   type MemorySource,
   type MemoryTrust,
 } from "../../../storage/memory.js";
-import { chatScope } from "../../../util/chat-id.js";
+import { chatScope } from "../../frontend-runtime/chat-id.js";
 import { log } from "../../../util/log.js";
 import type { ActionResult } from "../../types.js";
 import type { SharedActionHandlers } from "./types.js";
@@ -68,7 +68,7 @@ const KIND_LIST = MEMORY_KINDS.join(", ");
  * for its own principal, so that is `agent`.
  *
  * "Group" is read off the canonical chat-id grammar (`chatScope` in
- * util/chat-id.ts), which is the only identity a gateway action holds.
+ * core/frontend-runtime/chat-id.ts), which is the only identity a gateway action holds.
  * When the grammar cannot tell — Teams' `teams_chat_…` is 1:1 and group
  * alike — this fails closed to `group_chat`: over-restricting a claim
  * costs a pin, under-restricting one is a permanent prompt injection.

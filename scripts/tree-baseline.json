@@ -15,15 +15,6 @@
     "files": 17
   },
   {
-    "kind": "banned-dir",
-    "path": "src/backend/shared"
-  },
-  {
-    "kind": "flat",
-    "path": "src/backend/shared",
-    "files": 21
-  },
-  {
     "kind": "flat",
     "path": "src/cli",
     "files": 18
@@ -74,6 +65,6 @@
   {
     "kind": "flat",
     "path": "src/util",
-    "files": 22
+    "files": 13
   }
 ]

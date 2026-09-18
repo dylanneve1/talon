@@ -7,7 +7,7 @@
  * imports `src/frontend/factories.ts`.
  *
  * Chat-id shapes are the long-standing conventions from
- * `util/chat-id.ts`. Priorities encode the historical resolution order
+ * `./chat-id.ts`. Priorities encode the historical resolution order
  * (terminal, native, teams, discord, telegram) — load-bearing in two
  * places: telegram's numeric matcher is a near-catch-all so it must run
  * last, and the terminal claims the legacy chat id "1" that telegram's
@@ -25,7 +25,7 @@ import {
   isTelegramChatId,
   isTerminalChatId,
   isWhatsAppChatId,
-} from "../../util/chat-id.js";
+} from "./chat-id.js";
 
 function registerBuiltinFrontends(): void {
   registerFrontend({

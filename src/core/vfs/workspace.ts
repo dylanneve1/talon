@@ -20,8 +20,8 @@ import {
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
-import { log } from "./log.js";
-import { dirs, files as pathFiles } from "./paths.js";
+import { log } from "../../util/log.js";
+import { dirs, files as pathFiles } from "../../util/paths.js";
 import { listSeedPrompts, readPromptAsset } from "#prompt-assets";
 
 const IDENTITY_SEED = `# Identity

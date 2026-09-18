@@ -19,7 +19,7 @@ import { ChannelType } from "discord.js";
 import type { TalonConfig } from "../../core/config/index.js";
 import { pushMessage } from "../../storage/history.js";
 import { registerChat } from "../../core/background/pulse/pulse.js";
-import { deriveNumericChatId } from "../../util/chat-id.js";
+import { deriveNumericChatId } from "../../core/frontend-runtime/chat-id.js";
 import { handleMessage, getSenderName } from "./handlers/index.js";
 
 export function registerMiddleware(client: Client, config: TalonConfig): void {

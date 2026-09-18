@@ -7,7 +7,7 @@
  * (kill/respawn, SIGTERM grace, log streaming, TALON_FIRE line scanning)
  * is built around child processes. Lua therefore runs as `talon _lua-run
  * <script>` — the same self-reinvocation shape MCP supervision uses
- * (util/mcp-launcher.ts) — so it works identically for tsx source runs,
+ * (core/mcp-hub/launcher.ts) — so it works identically for tsx source runs,
  * npm installs, and bun-compiled binaries with no source tree on disk.
  *
  * Sandbox (verified empirically, not aspirational):

@@ -4,7 +4,7 @@
  */
 
 import { log, logError } from "../../util/log.js";
-import { deriveNumericChatId } from "../../util/chat-id.js";
+import { deriveNumericChatId } from "../../core/frontend-runtime/chat-id.js";
 import {
   toolInputToRecord,
   type AgentEvent,

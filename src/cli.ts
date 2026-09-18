@@ -16,13 +16,16 @@
  * `cli/index.ts`. Everything else lives under `cli/`.
  */
 
-import { MCP_LAUNCH_SUBCOMMAND, runSupervisor } from "./util/mcp-launcher.js";
+import {
+  MCP_LAUNCH_SUBCOMMAND,
+  runSupervisor,
+} from "./core/mcp-hub/launcher.js";
 import { LUA_RUN_SUBCOMMAND, runLuaMain } from "./core/scripts/lua.js";
 
 // Hidden subcommand dispatch — must run before anything else. Talon
 // supervises MCP stdio children (`_mcp-launch`) and runs WASM-sandboxed
 // Lua trigger scripts (`_lua-run`) by re-invoking its own entrypoint
-// (see util/mcp-launcher.ts). Neither call resolves; the helper process
+// (see core/mcp-hub/launcher.ts). Neither call resolves; the helper process
 // exits from its own handlers.
 if (process.argv[2] === MCP_LAUNCH_SUBCOMMAND) {
   await runSupervisor(process.argv.slice(3));

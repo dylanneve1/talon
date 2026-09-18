@@ -13,7 +13,7 @@
  *   - `boot.total_ms` — process start → frontends listening. The figure
  *     `Ready in …` already logs, kept as a distribution so successive
  *     restarts can be compared instead of grepped.
- *   - `boot.<phase>_ms` — each awaited startup phase (`util/boot-timer.ts`
+ *   - `boot.<phase>_ms` — each awaited startup phase (`./boot-timer.ts`
  *     records them), so a slow boot names its own culprit.
  *   - `boot.rss_mb` / `boot.heap_mb` — what the process costs the moment
  *     it is serving, before any turn has run. The floor an alternative
@@ -27,7 +27,7 @@
  * and a metric that can take the process down is worse than no metric.
  */
 
-import { bootPhases } from "../../util/boot-timer.js";
+import { bootPhases } from "./boot-timer.js";
 import { recordHistogram } from "../../storage/metrics.js";
 
 /** One minute. Idle RSS moves slowly; a tighter loop would only add noise. */

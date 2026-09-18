@@ -11,7 +11,7 @@ const ORIGINAL_TALON_HOME = process.env.TALON_HOME;
 async function importHardenFor(root: string) {
   process.env.TALON_HOME = root;
   vi.resetModules();
-  return import("../util/harden.js");
+  return import("../core/config/harden.js");
 }
 
 afterEach(() => {

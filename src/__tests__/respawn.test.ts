@@ -44,7 +44,7 @@ afterEach(() => {
 describe("respawn handoff ordering", () => {
   it("arms without spawning, and signals itself to shut down", async () => {
     const { respawnSelf, respawnRequested } =
-      await import("../util/respawn.js");
+      await import("../core/daemon/respawn.js");
 
     expect(respawnRequested()).toBe(false);
     respawnSelf("telegram /restart");
@@ -56,7 +56,8 @@ describe("respawn handoff ordering", () => {
   });
 
   it("spawns the successor only once shutdown calls spawnSuccessor", async () => {
-    const { respawnSelf, spawnSuccessor } = await import("../util/respawn.js");
+    const { respawnSelf, spawnSuccessor } =
+      await import("../core/daemon/respawn.js");
 
     respawnSelf("telegram /restart");
     expect(spawnMock).not.toHaveBeenCalled();
@@ -67,7 +68,7 @@ describe("respawn handoff ordering", () => {
   });
 
   it("does not spawn on a plain shutdown that never armed a respawn", async () => {
-    const { spawnSuccessor } = await import("../util/respawn.js");
+    const { spawnSuccessor } = await import("../core/daemon/respawn.js");
 
     spawnSuccessor();
     expect(spawnMock).not.toHaveBeenCalled();
@@ -75,7 +76,7 @@ describe("respawn handoff ordering", () => {
 
   it("hands off at most once", async () => {
     const { respawnSelf, spawnSuccessor, respawnRequested } =
-      await import("../util/respawn.js");
+      await import("../core/daemon/respawn.js");
 
     respawnSelf("telegram /update");
     spawnSuccessor();
@@ -86,7 +87,8 @@ describe("respawn handoff ordering", () => {
   });
 
   it("never throws when the successor cannot be spawned", async () => {
-    const { respawnSelf, spawnSuccessor } = await import("../util/respawn.js");
+    const { respawnSelf, spawnSuccessor } =
+      await import("../core/daemon/respawn.js");
     spawnMock.mockImplementation(() => {
       throw new Error("EAGAIN");
     });

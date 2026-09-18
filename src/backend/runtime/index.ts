@@ -20,7 +20,7 @@
  *   - `prompt/prompt-format` — user-prompt formatter
  *     ([time] [Name] [msg_id:N]).
  *   - `frontends` — config `frontend` → messaging-frontend list.
- *   - `extractSessionName` — re-exported from `util/session-name` so the
+ *   - `extractSessionName` — re-exported from `core/weaver/session-name` so the
  *     backends keep one import site; the helper itself is frontend-neutral.
  *   - `usage` — cache-hit % + log summarisers.
  *   - `prompt/system-prompt` — per-session prompt snapshots + backend

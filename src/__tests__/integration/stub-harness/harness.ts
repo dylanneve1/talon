@@ -20,7 +20,7 @@ import { initBackendAndDispatcher, type Frontend } from "../../../bootstrap.js";
 import { execute as dispatcherExecute } from "../../../core/engine/dispatcher.js";
 import { toolInputToRecord } from "../../../core/agent-runtime/events.js";
 import { resetSession } from "../../../storage/sessions.js";
-import { initWorkspace } from "../../../util/workspace.js";
+import { initWorkspace } from "../../../core/vfs/workspace.js";
 import { Gateway } from "../../../core/engine/gateway.js";
 import {
   makeRecordingHandler,

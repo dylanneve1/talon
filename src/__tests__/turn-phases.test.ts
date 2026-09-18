@@ -11,7 +11,11 @@ import type { AgentEvent } from "../core/agent-runtime/events.js";
 import { getMetrics, resetMetrics } from "../storage/metrics.js";
 import { getSession, recordSessionTurnPhases } from "../storage/sessions.js";
 import { normaliseMetrics } from "../storage/session-record.js";
-import { bootPhase, bootReport, resetBootPhases } from "../util/boot-timer.js";
+import {
+  bootPhase,
+  bootReport,
+  resetBootPhases,
+} from "../core/daemon/boot-timer.js";
 import type { ExecuteParams } from "../core/types.js";
 import { stubBackend, stubResolveActiveModel } from "./helpers/stub-backend.js";
 

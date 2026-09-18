@@ -18,7 +18,7 @@ import {
   isHtmlContent,
   isTextContent,
   matchesBinaryKind,
-} from "../../../util/web-content.js";
+} from "../../tools/content/web-content.js";
 import { dirs } from "../../../util/paths.js";
 import type { SharedActionHandlers } from "./types.js";
 

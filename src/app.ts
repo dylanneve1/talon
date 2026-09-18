@@ -7,7 +7,7 @@
  */
 
 import { getFrontends } from "./core/config/index.js";
-import { startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
+import { startUploadCleanup, stopUploadCleanup } from "./core/vfs/workspace.js";
 import { flushDatabase } from "./storage/db.js";
 import { getActiveCount, stopAllTurns } from "./core/engine/dispatcher.js";
 import {
@@ -28,9 +28,9 @@ import {
 import { shutdownTriggers } from "./core/background/triggers/index.js";
 import { pruneSettledTriggers } from "./storage/triggers.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
-import { spawnSuccessor } from "./util/respawn.js";
+import { spawnSuccessor } from "./core/daemon/respawn.js";
 import { log, logError, logWarn } from "./util/log.js";
-import { bootPhase, bootReport } from "./util/boot-timer.js";
+import { bootPhase, bootReport } from "./core/daemon/boot-timer.js";
 import {
   getVfs,
   mountNamespaceFs,

@@ -12,7 +12,7 @@ import {
 } from "discord.js";
 import type { TalonConfig } from "../../../core/config/index.js";
 import type { Gateway } from "../../../core/engine/gateway.js";
-import { respawnSelf } from "../../../util/respawn.js";
+import { respawnSelf } from "../../../core/daemon/respawn.js";
 import { forceDream } from "../../../core/background/dream/index.js";
 import {
   formatDuration,

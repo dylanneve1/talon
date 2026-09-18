@@ -6,7 +6,7 @@
 
 import { resolve } from "node:path";
 import { logWarn } from "../../util/log.js";
-import { wrapMcpServer } from "../../util/mcp-launcher.js";
+import { wrapMcpServer } from "../mcp-hub/launcher.js";
 import { isBunRuntime } from "../../util/runtime.js";
 import { registry, reloadState } from "./registry.js";
 import type { McpServerConfig } from "./types.js";

@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { extractSessionName } from "../util/session-name.js";
+import { extractSessionName } from "../core/weaver/session-name.js";
 
 describe("extractSessionName", () => {
   it("strips leading `[Name]` prefix", () => {

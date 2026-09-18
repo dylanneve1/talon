@@ -11,7 +11,7 @@
  *
  * Bun-COMPILED binaries are a third shape detected separately (argv[1]
  * points into the embedded virtual fs) — see the existing `$bunfs`
- * checks at the spawn sites and in `util/mcp-launcher.ts`.
+ * checks at the spawn sites and in `core/mcp-hub/launcher.ts`.
  */
 
 /** True when the current process is executing under the Bun runtime. */
