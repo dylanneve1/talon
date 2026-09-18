@@ -99,6 +99,11 @@ export class Gateway {
   private readonly frontendHandlers = new Map<string, FrontendActionHandler>();
   private readonly chatFrontendOwners = new Map<number, string>();
   private server: ReturnType<typeof createServer> | null = null;
+  /**
+   * In-flight `start()` bind, so concurrent callers share one HTTP server.
+   * Non-null only between the first `start()` call and its bind settling.
+   */
+  private starting: Promise<number> | null = null;
   private port = 0;
   private readonly startedAt = new Date().toISOString();
   private startedListeners: Array<(port: number) => void> = [];
@@ -359,8 +364,38 @@ export class Gateway {
 
   // ── HTTP server ──────────────────────────────────────────────────────────
 
+  /**
+   * Bind the action gateway's HTTP server, returning the bound port.
+   *
+   * Single-flight: every frontend calls this from its own `start()`, and
+   * `app.ts` starts the non-stdin frontends concurrently with `Promise.all`,
+   * so two or more callers routinely land here at once. All of them await the
+   * same bind and get the same port; the FIRST caller's requested port is the
+   * one attempted (later callers' `port` arguments are ignored), and
+   * `onStarted` listeners fire exactly once. Without this, each caller built
+   * its own `http.Server` and `listenWithRetry` walked them onto consecutive
+   * ports — one process listening on :19876 AND :19877, `/health` and the
+   * pidfile disagreeing about which, and `stop()` leaking the other listener.
+   *
+   * A failed bind clears the in-flight state, so a later `start()` retries;
+   * so does `stop()`, so start-after-stop binds afresh.
+   */
   async start(port = 19876): Promise<number> {
     if (this.server) return this.port;
+    if (this.starting) return this.starting;
+    const attempt = this.bind(port);
+    this.starting = attempt;
+    try {
+      return await attempt;
+    } finally {
+      // Only clear our own attempt — never a newer one started after a
+      // stop() that raced this bind.
+      if (this.starting === attempt) this.starting = null;
+    }
+  }
+
+  /** The actual bind. Always called through `start()`'s single-flight guard. */
+  private async bind(port: number): Promise<number> {
     const host: GatewayRouteHost = {
       healthSnapshot: () => this.healthSnapshot(),
       requestShutdown: () => {
@@ -427,6 +462,15 @@ export class Gateway {
   }
 
   async stop(): Promise<void> {
+    // A start() racing this stop() would otherwise hand us back a bound
+    // server with nothing left to close it. Let it finish first.
+    if (this.starting) {
+      try {
+        await this.starting;
+      } catch {
+        // The bind failed — nothing was left listening.
+      }
+    }
     return new Promise((resolve) => {
       if (!this.server) {
         resolve();
@@ -435,6 +479,7 @@ export class Gateway {
       const server = this.server;
       const settle = (): void => {
         this.server = null;
+        this.starting = null;
         this.port = 0;
         resolve();
       };
