@@ -143,10 +143,12 @@ job. Adoption checklist:
 - [ ] grammY long-poll + GramJS soak (24h shadow instance) — no fd/RSS creep
 - [x] `_mcp-launch` supervisor re-exec works under `process.execPath` = bun —
       live daemon supervises python, node, and bun MCP children
-- [ ] Update packaging (nfpm, Docker) to ship bun. nfpm already ships the
-      `bun build --compile` binary with no Node dependency; the Dockerfile is
-      still `node:24-slim` + tsx. Keep `npm run start:node` as a fallback
-      entrypoint for one release cycle.
+- [x] Update packaging (nfpm, Docker) to ship bun — the image is `oven/bun:1`
+      with `CMD ["bun", "src/index.ts"]`; deps still come from `npm ci
+      --omit=dev` in a node builder stage (package-lock.json is the lockfile
+      of record), and `--build-arg RUNTIME=node` keeps the node+tsx image as
+      the one-release-cycle fallback. nfpm already shipped the `bun build
+      --compile` binary.
 
 **Exit:** daemon runs on Bun in production for 2 weeks with boot/RSS
 deltas recorded here. This phase alone may deliver most of the felt win.

@@ -523,11 +523,13 @@ Commands: `/model`, `/effort`, `/context`, `/status`, `/reset`, `/rename`, `/res
 
 ## Production
 
-**Docker:**
+**Docker:** the image runs the daemon on Bun (`bun src/index.ts`); `~/.talon` and `~/.claude` are bind-mounted from the host into the container's `HOME=/home/bun`.
 
 ```bash
 docker compose up -d
 ```
+
+A Node 24 + tsx image is kept as a fallback for one release cycle: `docker build --build-arg RUNTIME=node -t talon .` (or set `build.args.RUNTIME` in `docker-compose.yml`). Mount paths are the same for both. See [`packaging/README.md`](packaging/README.md#docker-image) for the build's details.
 
 **Systemd:** unit file at `packaging/systemd/talon.service` — copy to `/etc/systemd/system/`, set `User=` and `WorkingDirectory=`, then `systemctl enable --now talon`.
 

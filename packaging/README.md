@@ -14,6 +14,54 @@ root for convention (`docker compose up -d` from the checkout). The
 `docker/` directory holds auxiliary harnesses (e.g. `docker/kilo-test/`
 for backend-specific test bots), not the primary production image.
 
+## Docker image
+
+The production image runs the daemon on Bun — `CMD ["bun", "src/index.ts"]`,
+the same entry as `npm start`, with no tsx loader in the picture.
+
+```sh
+docker build -t talon .                          # Bun (default)
+docker build --build-arg RUNTIME=node -t talon . # Node 24 + tsx fallback
+```
+
+`RUNTIME` selects between two base stages in the one Dockerfile
+(`oven/bun:1` and `node:24-slim`); each carries its own `CMD` and
+healthcheck probe and the final stage inherits whichever was chosen. The
+Node variant is a fallback for one release cycle (see
+[`docs/ts-migration-plan.md`](../docs/ts-migration-plan.md), Phase 1) and
+is expected to go away with it.
+
+Notes on the build:
+
+- **Dependencies are installed by npm, in a `node:24-slim` builder stage,
+  for both variants.** `package-lock.json` is this repo's lockfile of
+  record (CI's Lockfile Portability job gates on it) and `bun install`
+  cannot read it — there is no `bun.lock` to install from. `npm ci
+  --omit=dev` reproduces the tree exactly, runs the postinstalls that
+  unpack native artefacts, and selects the `os`/`cpu`-matching optional
+  deps for the build platform; the runtime stage just copies
+  `node_modules` in. Multi-arch builds work because buildx runs the
+  builder stage natively per target (linux/amd64, linux/arm64).
+- **`claude` on PATH is the Agent SDK's own binary, symlinked.** The SDK
+  ships the full Claude Code CLI as a per-platform optional dep
+  (`@anthropic-ai/claude-agent-sdk-linux-x64` and friends), so the image
+  links that onto `/usr/local/bin/claude` instead of installing
+  `@anthropic-ai/claude-code` globally a second time — same binary, one
+  copy (~220 MB saved), and its version can never drift from the SDK's.
+  A `claude` on PATH is still required: `talon doctor` checks for it,
+  `talon login claude` spawns `claude auth login`, and that is also the
+  in-container OAuth bootstrap documented in `docker-compose.yml`.
+- **The musl SDK variant is pruned** (`rm -rf
+  …claude-agent-sdk-linux-*-musl`). Modern npm honours the packages'
+  `libc` field and skips it on a glibc host, so this is usually a no-op,
+  but it keeps an older npm from leaving a musl binary that the SDK
+  probes first and fails to exec on Debian. Invert it if the runtime is
+  ever rebased onto Alpine.
+- **`HOME=/home/bun` in both variants**, so one `docker-compose.yml`
+  serves either: the bind mounts (`~/.talon`, `~/.claude`) never move.
+  Both base images ship an unprivileged UID 1000 (`bun` / `node`), which
+  is the user the daemon runs as.
+
 ## Native launcher (`talon-driver`)
 
 The binary distribution channels — an apt `.deb`, a Homebrew bottle, a
