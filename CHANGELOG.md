@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.6.0](https://github.com/dylanneve1/talon/compare/v4.5.0...v4.6.0) (2026-09-18)
+
+
+### Features
+
+* **prompt:** store-rendered memory core view behind TALON_MEMORY_STORE ([#943](https://github.com/dylanneve1/talon/issues/943)) ([b013292](https://github.com/dylanneve1/talon/commit/b013292318430ef3fc6e06243197aa21a8390461))
+
 ## [4.5.0](https://github.com/dylanneve1/talon/compare/v4.4.0...v4.5.0) (2026-09-18)
 
 
