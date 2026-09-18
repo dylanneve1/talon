@@ -30,6 +30,11 @@ import { shutdownAgents } from "./core/agents/index.js";
 import { pruneSettledTriggers } from "./storage/triggers.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { spawnSuccessor } from "./core/daemon/respawn.js";
+import {
+  crashCleanup,
+  crashStep,
+  handleUncaughtException,
+} from "./core/daemon/crash.js";
 import { log, logError, logWarn } from "./util/log.js";
 import { bootPhase, bootReport } from "./core/daemon/boot-timer.js";
 import {
@@ -114,6 +119,10 @@ onBackendChange((holder, newBackend, info) => {
 let shuttingDown = false;
 let triggerPruneTimer: ReturnType<typeof setInterval> | null = null;
 
+// The composition root owns the SQLite handle, so it hands the crash
+// path its checkpoint (see core/daemon/crash.ts).
+const crashHooks = { flushDatabase };
+
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 const DRAIN_TIMEOUT_MS = 5_000;
 
@@ -127,7 +136,11 @@ async function shutdownStep(name: string, fn: () => unknown): Promise<void> {
   try {
     await fn();
   } catch (err) {
-    logError("shutdown", `${name} failed`, err);
+    // Even the report is best-effort: a shutdown triggered by a full
+    // disk must not die inside its own error path.
+    crashStep("shutdown report", () =>
+      logError("shutdown", `${name} failed`, err),
+    );
   }
 }
 
@@ -138,15 +151,18 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
   const deadlineAt = Date.now() + SHUTDOWN_TIMEOUT_MS;
   const forceTimer = setTimeout(() => {
-    logError("shutdown", "Timeout exceeded, forcing exit");
-    // Hand off even on the forced path. A restart must survive a
-    // subsystem that won't stop (a wedged FUSE unmount, an MCP server
-    // ignoring SIGTERM, a backend child that never acks): without this
-    // the timeout exits without a successor and `/restart` silently
-    // takes the daemon down for good. The successor may briefly race
-    // the long-poll we failed to release, but grammy retries the 409 —
-    // a few seconds of overlap beats staying down.
-    spawnSuccessor();
+    // Cleanup first, report second. Handing off matters most here: a
+    // restart must survive a subsystem that won't stop (a wedged FUSE
+    // unmount, an MCP server ignoring SIGTERM, a backend child that
+    // never acks), and it must also survive a logger that can't write —
+    // logging first is what cost us the successor on 2026-09-18. The
+    // successor may briefly race the long-poll we failed to release,
+    // but grammy retries the 409 — a few seconds of overlap beats
+    // staying down.
+    crashCleanup(crashHooks);
+    crashStep("timeout report", () =>
+      logError("shutdown", "Timeout exceeded, forcing exit"),
+    );
     process.exit(1);
   }, SHUTDOWN_TIMEOUT_MS);
   forceTimer.unref();
@@ -225,37 +241,29 @@ async function gracefulShutdown(signal: string): Promise<void> {
     const { shutdownHub } = await import("./core/mcp-hub/index.js");
     await shutdownHub();
   });
-  flushDatabase();
+  // Each tail step stands alone: a full disk can make any of them throw,
+  // and none of them may cost us the ones that follow.
+  crashStep("database flush", () => flushDatabase());
   // Guarded removal: only clear the record if it still names us. A
   // successor that raced ahead and wrote its own pid here must not be
   // orphaned (the bug that made `talon restart` spawn duplicate daemons).
-  removePidRecordIfOwnedBy(process.pid);
-  log("shutdown", "State saved");
+  crashStep("pid record removal", () => removePidRecordIfOwnedBy(process.pid));
+  crashStep("shutdown report", () => log("shutdown", "State saved"));
   // Hand off last: the frontends are stopped, so the successor binds
   // Telegram's long-poll only after we have released it. No-op unless
   // /restart or /update armed a respawn.
-  spawnSuccessor();
+  crashStep("respawn handoff", () => spawnSuccessor());
   process.exit(0);
 }
 
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
-process.on("uncaughtException", (err) => {
-  // EPIPE errors from network sockets (e.g. Telegram MTProto) are transient —
-  // gramjs will reconnect; crashing the process here is wrong.
-  if ((err as NodeJS.ErrnoException).code === "EPIPE") {
-    logWarn("bot", `Suppressed transient EPIPE error: ${err.message}`);
-    return;
-  }
-  logError("bot", "Uncaught exception", err);
-  flushDatabase();
-  // Same pid-guarded removal as the graceful path — a crashed daemon
-  // must not leave a record that makes `talon status` chase a dead or
-  // recycled pid.
-  removePidRecordIfOwnedBy(process.pid);
-  process.exit(1);
-});
+// Cleanup runs before the crash is reported (and the EPIPE suppression
+// is unchanged) — see core/daemon/crash.ts for why the order matters.
+process.on("uncaughtException", (err) =>
+  handleUncaughtException(err, crashHooks),
+);
 
 process.on("unhandledRejection", (reason) => {
   logWarn(
@@ -333,8 +341,9 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logError("bot", "Fatal startup error", err);
-  flushDatabase();
-  removePidRecordIfOwnedBy(process.pid);
+  crashCleanup(crashHooks);
+  crashStep("startup report", () =>
+    logError("bot", "Fatal startup error", err),
+  );
   process.exit(1);
 });

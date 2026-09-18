@@ -57,7 +57,9 @@ describe("log.ts — module-level initialization branches", () => {
       readFileSync: vi.fn(() => "{}"),
       createWriteStream: vi.fn(() => ({ write: vi.fn() })),
     }));
-    vi.doMock("pino-pretty", () => ({ default: () => ({ write: vi.fn() }) }));
+    vi.doMock("pino-pretty", () => ({
+      default: () => ({ write: vi.fn(), on: vi.fn() }),
+    }));
     vi.doMock("pino", () => mockPino());
 
     await import("../util/log.js");
@@ -85,7 +87,9 @@ describe("log.ts — module-level initialization branches", () => {
       readFileSync: vi.fn(() => "{}"),
       createWriteStream: vi.fn(() => ({ write: vi.fn() })),
     }));
-    vi.doMock("pino-pretty", () => ({ default: () => ({ write: vi.fn() }) }));
+    vi.doMock("pino-pretty", () => ({
+      default: () => ({ write: vi.fn(), on: vi.fn() }),
+    }));
     vi.doMock("pino", () => mockPino());
 
     await import("../util/log.js");
@@ -116,7 +120,9 @@ describe("log.ts — module-level initialization branches", () => {
       readFileSync: readFileSyncMock,
       createWriteStream: vi.fn(() => ({ write: vi.fn() })),
     }));
-    vi.doMock("pino-pretty", () => ({ default: () => ({ write: vi.fn() }) }));
+    vi.doMock("pino-pretty", () => ({
+      default: () => ({ write: vi.fn(), on: vi.fn() }),
+    }));
     vi.doMock("pino", () => mockPino());
 
     await import("../util/log.js");

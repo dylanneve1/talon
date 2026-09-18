@@ -20,7 +20,9 @@ vi.mock("pino", () => ({
     { multistream: vi.fn(() => ({ write: vi.fn() })) },
   ),
 }));
-vi.mock("pino-pretty", () => ({ default: () => ({ write: vi.fn() }) }));
+vi.mock("pino-pretty", () => ({
+  default: () => ({ write: vi.fn(), on: vi.fn() }),
+}));
 
 const { log, logError, logWarn, logDebug } = await import("../util/log.js");
 
