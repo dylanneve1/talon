@@ -845,3 +845,113 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
     expect(oauthIncompat.isKnownOAuthIncompat("gpt-future-model")).toBe(true);
   });
 });
+
+// ── The assistant-text hook ─────────────────────────────────────────────────
+
+describe("codex / runOneShotAgent — onAssistantText", () => {
+  /**
+   * Same fresh-SDK-mock drive as the item-type coverage above, plus the
+   * optional hook under test.
+   */
+  async function runWithHook(
+    events: AsyncGenerator<Record<string, unknown>>,
+    onAssistantText?: (text: string) => void,
+  ): Promise<string[]> {
+    vi.resetModules();
+    vi.doMock("../core/plugin/index.js", () => ({
+      getPluginMcpServers: vi.fn(() => ({})),
+    }));
+    vi.doMock("@openai/codex-sdk", () => {
+      class MockThread {
+        async runStreamed(_input: string, options?: { signal?: AbortSignal }) {
+          void options;
+          return { events };
+        }
+      }
+      return {
+        Codex: class {
+          startThread() {
+            return new MockThread();
+          }
+          resumeThread() {
+            return new MockThread();
+          }
+        },
+      };
+    });
+
+    const initMod = await import("../backend/codex/init.js");
+    const runMod = await import("../backend/codex/one-shot.js");
+
+    initMod.initCodexAgent(
+      {
+        model: "gpt-5-codex",
+        workspace: "/tmp",
+        systemPrompt: "test",
+        frontend: "terminal",
+        openaiApiKey: "test-key",
+      } as never,
+      () => 19876,
+      "terminal",
+    );
+
+    const lines: string[] = [];
+    await runMod.runOneShotAgent({
+      prompt: "Hello",
+      systemPrompt: "You are an assistant.",
+      workspace: "/tmp",
+      model: "gpt-5-codex",
+      contextLabel: "heartbeat",
+      abortController: new AbortController(),
+      appendLog: async (text: string) => {
+        lines.push(text);
+      },
+      ...(onAssistantText ? { onAssistantText } : {}),
+    });
+    return lines;
+  }
+
+  function mixedStream(): AsyncGenerator<Record<string, unknown>> {
+    return (async function* () {
+      yield { type: "turn.started" };
+      yield {
+        type: "item.completed",
+        item: { id: "i1", type: "reasoning", text: "deliberating quietly" },
+      };
+      yield {
+        type: "item.completed",
+        item: { id: "i2", type: "agent_message", text: "the answer" },
+      };
+      yield {
+        type: "item.completed",
+        item: {
+          id: "i3",
+          type: "mcp_tool_call",
+          server: "telegram-tools",
+          tool: "send",
+          arguments: { text: "ok" },
+        },
+      };
+      yield { type: "turn.completed" };
+    })();
+  }
+
+  it("reports agent_message items and not reasoning or tool items", async () => {
+    const seen: string[] = [];
+    const lines = await runWithHook(mixedStream(), (text) => seen.push(text));
+
+    expect(seen).toEqual(["the answer"]);
+    // Reasoning and tool calls stay log-only.
+    expect(lines.join("")).toContain("deliberating quietly");
+    expect(lines.join("")).toContain("MCP tool call");
+  });
+
+  it("swallows a throwing hook and still writes the run log", async () => {
+    const lines = await runWithHook(mixedStream(), () => {
+      throw new Error("consumer blew up");
+    });
+
+    expect(lines.join("")).toContain("the answer");
+    expect(lines.join("")).toContain("Turn completed");
+  });
+});

@@ -103,6 +103,9 @@ export interface ChatBackend {
  *     trigger log-file producers keep their direct write path.
  *     Resolves with the run's token usage when the SDK reports it
  *     (the task table records it at settlement); void otherwise.
+ *     Implementations must also honour the optional `onAssistantText`
+ *     hook — the run's final answers as data, for callers (the
+ *     sub-agent runner) that need a result rather than a markdown log.
  *   - `evictOrphanSubprocesses(label)` — backends that spawn
  *     per-run subprocesses (Claude SDK) implement this so a hung
  *     run can be force-cleaned after the abort grace window.

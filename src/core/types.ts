@@ -162,12 +162,14 @@ export type OneShotAgentParams = {
   /** Append a string to the run log (markdown). */
   appendLog: (text: string) => Promise<void>;
   /**
-   * Called with each assistant text block the run produces, in order.
+   * Called with each assistant text segment as the run produces it (final
+   * answers, not reasoning/thinking, not tool-call payloads). Optional so
+   * heartbeat/dream/cron callers are untouched; a sub-agent runner uses it to
+   * capture the run's result without parsing the markdown log.
    *
-   * Background callers use the last one as a fallback result: a sub-agent
-   * that finishes without calling `report_result` still has *something* to
-   * hand its parent. Host-local like `appendLog` — it does not cross the
-   * agent-host process boundary (see `core/agent-runtime/agent-host.ts`).
+   * Synchronous and best-effort: every backend invokes it through
+   * `emitAssistantText` (backend/runtime/one-shot-hooks.ts), which swallows
+   * and logs a throwing callback so a consumer bug can never fail the run.
    */
   onAssistantText?: (text: string) => void;
 };

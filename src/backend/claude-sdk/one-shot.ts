@@ -21,6 +21,7 @@ import { EFFORT_MAP } from "./constants.js";
 import { buildMcpServers, buildPluginMcpServers } from "./options.js";
 import { isBackgroundToolContext } from "../../core/agents/context.js";
 import { warnIfBelowCacheMinimum } from "../runtime/cache/cache-telemetry.js";
+import { emitAssistantText } from "../runtime/one-shot-hooks.js";
 
 const DEFAULT_SUBPROCESS_KILL_GRACE_MS = 5 * 1000;
 
@@ -128,14 +129,7 @@ export async function runOneShotAgent(
   // settlement figure the task table records.
   let usage: OneShotUsage | undefined;
   for await (const msg of qi) {
-    await formatAndAppendMessage(appendLog, msg);
-    if (onAssistantText && msg.type === "assistant") {
-      for (const block of msg.message.content) {
-        if (block.type === "text" && "text" in block) {
-          onAssistantText((block as { text: string }).text);
-        }
-      }
-    }
+    await formatAndAppendMessage(appendLog, msg, onAssistantText);
     if (msg.type === "result") {
       const u = msg.usage;
       usage = {
@@ -199,6 +193,7 @@ function assembleMcpServers(contextLabel: string): Record<string, unknown> {
 async function formatAndAppendMessage(
   appendLog: (text: string) => Promise<void>,
   msg: SDKMessage,
+  onAssistantText?: OneShotAgentParams["onAssistantText"],
 ): Promise<void> {
   try {
     const ts = new Date().toISOString().slice(11, 19);
@@ -216,7 +211,11 @@ async function formatAndAppendMessage(
           });
 
         if (textBlocks.length > 0) {
-          await appendLog(`\n## [${ts}] Assistant\n${textBlocks.join("\n")}\n`);
+          const assistantText = textBlocks.join("\n");
+          // Report before the log write: an append failure (full disk, closed
+          // handle) must not also swallow the run's result for a hook caller.
+          emitAssistantText(onAssistantText, assistantText);
+          await appendLog(`\n## [${ts}] Assistant\n${assistantText}\n`);
         }
         if (toolUseBlocks.length > 0) {
           await appendLog(`\n${toolUseBlocks.join("\n\n")}\n`);
@@ -224,6 +223,14 @@ async function formatAndAppendMessage(
         break;
       }
       case "result": {
+        // Deliberately NOT reported through `onAssistantText`. The SDK's
+        // terminal `result` message restates the last assistant turn's text
+        // (`subtype: "success"`) or carries an error string (the
+        // `error_*` subtypes) — never anything the `assistant` case above
+        // has not already emitted. Reporting it too would hand every hook
+        // caller a duplicate final segment, and the truncated copy at that
+        // (2000 chars, below). The log keeps it because a run log wants the
+        // settlement line; a sub-agent result does not.
         const result =
           "result" in msg
             ? (msg as { result: string }).result

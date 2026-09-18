@@ -31,11 +31,11 @@
  * They are deliberately not the same types. Two client arguments do not
  * survive a process boundary and the wire shapes say so:
  *
- *   - `OneShotAgentParams` carries an `AbortController` and the
- *     `appendLog` / `onAssistantText` callbacks. `HostOneShotParams` is the
- *     serialisable subset; Phase 2 maps `appendLog` onto `log` notices,
- *     `onAssistantText` onto the assistant `event`s the host already
- *     streams, and the abort onto an `interrupt`-shaped request.
+ *   - `OneShotAgentParams` carries an `AbortController` and two
+ *     callbacks (`appendLog`, `onAssistantText`). `HostOneShotParams`
+ *     is the serialisable subset; Phase 2 maps `appendLog` onto `log`
+ *     notices, `onAssistantText` onto a notice of its own, and the
+ *     abort onto an `interrupt`-shaped request.
  *   - `hello.config` is the `claude-sdk` slice of `TalonConfig` as
  *     JSON. The in-process client takes the real `TalonConfig` object.
  *

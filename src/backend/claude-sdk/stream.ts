@@ -422,6 +422,15 @@ function readResultError(msg: SDKResultMessage, state: StreamState): void {
       .filter((e) => typeof e === "string" && !e.startsWith("[ede_diagnostic]"))
       .join("; ")
       .slice(0, 500);
+    // A known startup failure (SDK ≥ 0.3.274) names its cause — the CLI
+    // never ran a turn, so nothing else in the result says why. Lead with
+    // it; the diagnostics text is the same line stderr carried.
+    if (msg.startup_failure_reason) {
+      state.resultErrorText =
+        `Claude Code failed to start (${msg.startup_failure_reason})` +
+        (diagnostics ? `: ${diagnostics}` : "");
+      return;
+    }
     state.resultErrorText =
       state.lastTrailingText.trim() ||
       diagnostics ||

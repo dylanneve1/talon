@@ -1,5 +1,23 @@
 # Changelog
 
+## [5.1.0](https://github.com/dylanneve1/talon/compare/v5.0.1...v5.1.0) (2026-09-18)
+
+
+### Features
+
+* **backend:** one-shot runs surface assistant text through onAssistantText ([#979](https://github.com/dylanneve1/talon/issues/979)) ([0ed8a06](https://github.com/dylanneve1/talon/commit/0ed8a0636e1408bf25359f079c9e76782b746112))
+
+
+### Bug Fixes
+
+* **claude-sdk:** an interrupted turn is a stop, not an SDK error ([#976](https://github.com/dylanneve1/talon/issues/976)) ([48e6d1e](https://github.com/dylanneve1/talon/commit/48e6d1ee5d1bc99a7199f69f8e182cb3c071a690))
+* **mcp-hub:** render hub child keys readably in log lines ([#973](https://github.com/dylanneve1/talon/issues/973)) ([9507a58](https://github.com/dylanneve1/talon/commit/9507a5853366bb0a0164e13aa1fb02c333950028))
+
+
+### Miscellaneous Chores
+
+* **claude-sdk:** bump to 0.3.277 and name startup failures ([#978](https://github.com/dylanneve1/talon/issues/978)) ([f13d144](https://github.com/dylanneve1/talon/commit/f13d144aa5c91b34320439c610f0dcea96cf4918))
+
 ## [5.0.1](https://github.com/dylanneve1/talon/compare/v5.0.0...v5.0.1) (2026-09-18)
 
 

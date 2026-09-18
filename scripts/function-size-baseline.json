@@ -2,8 +2,8 @@
   {
     "file": "src/backend/claude-sdk/handler.ts",
     "name": "runChatTurn",
-    "lines": 195,
-    "cx": 16
+    "lines": 159,
+    "cx": 12
   },
   {
     "file": "src/backend/codex/handler/message.ts",
@@ -14,7 +14,7 @@
   {
     "file": "src/backend/codex/one-shot.ts",
     "name": "appendCodexItem",
-    "lines": 92,
+    "lines": 91,
     "cx": 29
   },
   {

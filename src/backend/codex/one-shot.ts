@@ -20,6 +20,7 @@
 import type { OneShotAgentParams, OneShotUsage } from "../../core/types.js";
 import { log, logWarn } from "../../util/log.js";
 import { appendBackendSuffix } from "../runtime/index.js";
+import { emitAssistantText } from "../runtime/one-shot-hooks.js";
 import { ensureCodex, getCodexAuthInfo } from "./init.js";
 import {
   CODEX_SYSTEM_PROMPT_SUFFIX,
@@ -144,8 +145,7 @@ export async function runOneShotAgent(
     let usage: OneShotUsage | undefined;
     for await (const event of events) {
       if (abortController.signal.aborted) break;
-      await appendCodexEvent(appendLog, event);
-      captureAssistantText(event, onAssistantText);
+      await appendCodexEvent(appendLog, event, onAssistantText);
       if (event.type === "turn.completed") {
         const u = (event as { usage?: Record<string, number> }).usage;
         if (u) {
@@ -205,24 +205,6 @@ export async function runOneShotAgent(
 }
 
 /**
- * Feed a completed `agent_message` item to the run's assistant-text hook.
- *
- * Codex has no "final text" event — the last completed agent message is the
- * run's answer, so background callers that need a fallback result (notably
- * sub-agents that never called `report_result`) take the last one seen.
- */
-function captureAssistantText(
-  event: { type: string } & Record<string, unknown>,
-  onAssistantText?: (text: string) => void,
-): void {
-  if (!onAssistantText || event.type !== "item.completed") return;
-  const item = (event as { item?: { type?: string; text?: unknown } }).item;
-  if (item?.type === "agent_message" && typeof item.text === "string") {
-    onAssistantText(item.text);
-  }
-}
-
-/**
  * Append one Codex `ThreadEvent` to the run log. We surface:
  *
  *   - `thread.started` — record the thread id for diagnostic purposes.
@@ -237,6 +219,7 @@ function captureAssistantText(
 async function appendCodexEvent(
   appendLog: (text: string) => Promise<void>,
   event: { type: string } & Record<string, unknown>,
+  onAssistantText?: OneShotAgentParams["onAssistantText"],
 ): Promise<void> {
   const ts = new Date().toISOString().slice(11, 19);
 
@@ -280,7 +263,7 @@ async function appendCodexEvent(
     case "item.completed": {
       const item = (event as unknown as { item?: Record<string, unknown> })
         .item;
-      if (item) await appendCodexItem(appendLog, item, ts);
+      if (item) await appendCodexItem(appendLog, item, ts, onAssistantText);
       return;
     }
     default:
@@ -288,17 +271,28 @@ async function appendCodexEvent(
   }
 }
 
-/** Append one `ThreadItem` to the run log. */
+/**
+ * Append one `ThreadItem` to the run log, and report the model's final
+ * answers to the run's optional `onAssistantText` consumer.
+ *
+ * Only `agent_message` items are reported: `reasoning` items are the model's
+ * thinking and the rest are tool/command/diff payloads, none of which is the
+ * run's answer.
+ */
 async function appendCodexItem(
   appendLog: (text: string) => Promise<void>,
   item: Record<string, unknown>,
   ts: string,
+  onAssistantText?: OneShotAgentParams["onAssistantText"],
 ): Promise<void> {
   const type = typeof item.type === "string" ? item.type : "unknown";
 
   if (type === "agent_message") {
     const text = typeof item.text === "string" ? item.text : "";
-    if (text) await appendLog(`\n## [${ts}] Assistant\n${text}\n`);
+    if (text) {
+      emitAssistantText(onAssistantText, text);
+      await appendLog(`\n## [${ts}] Assistant\n${text}\n`);
+    }
     return;
   }
 
