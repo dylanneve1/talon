@@ -1,5 +1,6 @@
 /**
- * Plugin and skill toggles over the bridge (frontend/native/extensions.ts).
+ * Plugin and skill toggles over the bridge
+ * (frontend/native/surface/extensions.ts).
  * The stores own the toggle semantics; what this module adds is the
  * apply-live step — persist, hot-reload, rebuild the prompt — and the
  * error contract around it. Those are what is pinned here.
@@ -28,18 +29,19 @@ vi.mock("../storage/skills.js", () => ({
   setSkillEnabled: vi.fn(),
 }));
 vi.mock("../core/config/index.js", () => ({ rebuildSystemPrompt: vi.fn() }));
-vi.mock("../frontend/native/settings.js", () => ({
+vi.mock("../frontend/native/surface/settings.js", () => ({
   persistConfigPatch: vi.fn(),
 }));
 
 const { pluginItems, skillItems, togglePlugin, toggleSkill } =
-  await import("../frontend/native/extensions.js");
+  await import("../frontend/native/surface/extensions.js");
 const { performPluginReload } =
   await import("../core/engine/gateway-actions/plugins.js");
 const { setPluginEnabled } = await import("../core/plugin/manage.js");
 const { setSkillEnabled } = await import("../storage/skills.js");
 const { rebuildSystemPrompt } = await import("../core/config/index.js");
-const { persistConfigPatch } = await import("../frontend/native/settings.js");
+const { persistConfigPatch } =
+  await import("../frontend/native/surface/settings.js");
 const { notifyPromptInputsChanged } =
   await import("../core/prompt/invalidation.js");
 import type { TalonConfig } from "../core/config/index.js";

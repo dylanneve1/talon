@@ -15,7 +15,7 @@
 
 import { describe, it, expect, afterEach } from "vitest";
 import http from "node:http";
-import { BridgeServer } from "../frontend/native/server.js";
+import { BridgeServer } from "../frontend/native/bridge/server.js";
 
 type Res = { status: number; acao: string | undefined };
 

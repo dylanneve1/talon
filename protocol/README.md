@@ -5,7 +5,7 @@ implementations**:
 
 | Implementation | Language | Role | Source |
 | --- | --- | --- | --- |
-| Daemon | TypeScript | serves the protocol | `src/frontend/native/protocol.ts` (types), `src/frontend/native/server.ts` (routes) |
+| Daemon | TypeScript | serves the protocol | `src/frontend/native/protocol.ts` (types), `src/frontend/native/bridge/server.ts` (routes) |
 | Companion app | Dart | GUI client + mesh device | `apps/companion/lib/src/models/bridge_models.dart`, `state/app_state.dart`, `services/mesh_service.dart` |
 | talon-node | Go | headless mesh device | `apps/node/bridge.go`, `apps/node/commands.go` |
 

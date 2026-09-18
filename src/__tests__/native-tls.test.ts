@@ -18,11 +18,11 @@ import {
   generateSelfSignedCertificate,
   isLoopbackHost,
   loadOrCreateBridgeTlsIdentity,
-} from "../frontend/native/tls.js";
+} from "../frontend/native/bridge/tls.js";
 import {
   BridgeServer,
   type BridgeServerHandlers,
-} from "../frontend/native/server.js";
+} from "../frontend/native/bridge/server.js";
 
 describe("bridge TLS identity", () => {
   it("mints a well-formed self-signed certificate", () => {

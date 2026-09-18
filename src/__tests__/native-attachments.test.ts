@@ -26,16 +26,17 @@ const {
   resolveUpload,
   safeUploadName,
   saveUploadStream,
-} = await import("../frontend/native/media.js");
-const { attachmentPrompt } = await import("../frontend/native/turn.js");
-const { emitUser } = await import("../frontend/native/emit.js");
-const { historyPage } = await import("../frontend/native/history.js");
+} = await import("../frontend/native/media/media.js");
+const { attachmentPrompt } = await import("../frontend/native/turn/turn.js");
+const { emitUser } = await import("../frontend/native/turn/emit.js");
+const { historyPage } = await import("../frontend/native/chats/history.js");
 const { createNativeRuntime } = await import("../frontend/native/runtime.js");
 type Runtime = Awaited<
   ReturnType<typeof import("../frontend/native/runtime.js").createNativeRuntime>
 >;
-const { toClientChat } = await import("../frontend/native/chat-wire.js");
-const { setQueued, takeQueued } = await import("../frontend/native/queue.js");
+const { toClientChat } = await import("../frontend/native/chats/chat-wire.js");
+const { setQueued, takeQueued } =
+  await import("../frontend/native/turn/queue.js");
 import type { TalonConfig } from "../core/config/index.js";
 import type { Gateway } from "../core/engine/gateway.js";
 import type { BridgeEvent } from "../frontend/native/protocol.js";
@@ -262,7 +263,8 @@ describe("a queued follow-up's attachments", () => {
 
 describe("the upload route's answers", () => {
   it("reports too-large, empty and server failures apart", async () => {
-    const { chatRoutes } = await import("../frontend/native/routes/chats.js");
+    const { chatRoutes } =
+      await import("../frontend/native/bridge/routes/chats.js");
     const answers: Array<{ status: number; body: Record<string, unknown> }> =
       [];
     const host = {

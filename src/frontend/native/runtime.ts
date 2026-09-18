@@ -11,7 +11,7 @@
 import type { TalonConfig } from "../../core/config/index.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { getMeshService, type MeshService } from "../../core/mesh/index.js";
-import { NativeChats } from "./chats.js";
+import { NativeChats } from "./chats/chats.js";
 import type {
   BridgeEvent,
   ClientAttachment,

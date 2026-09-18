@@ -23,8 +23,8 @@ vi.mock("../util/log.js", () => ({
 import {
   BridgeServer,
   type BridgeServerHandlers,
-} from "../frontend/native/server.js";
-import { listMemory, memoryWhy } from "../frontend/native/memory.js";
+} from "../frontend/native/bridge/server.js";
+import { listMemory, memoryWhy } from "../frontend/native/surface/memory.js";
 import type {
   MemoryRowWire,
   MemoryWhyWire,

@@ -1,4 +1,4 @@
--- Statements for the turn_meta table (see frontend/native/turn-meta.ts).
+-- Statements for the turn_meta table (see frontend/native/turn/turn-meta.ts).
 
 -- name: get
 SELECT meta FROM turn_meta WHERE chat_id = ? AND msg_id = ?

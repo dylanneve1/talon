@@ -13,7 +13,7 @@ vi.mock("../util/log.js", () => ({
 import {
   bridgeTokenPath,
   loadOrCreateBridgeToken,
-} from "../frontend/native/auth.js";
+} from "../frontend/native/bridge/auth.js";
 
 const POSIX = process.platform !== "win32";
 

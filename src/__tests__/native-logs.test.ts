@@ -1,11 +1,11 @@
 /**
- * Bridge log parsing (frontend/native/logs.ts) — pino JSON tail →
+ * Bridge log parsing (frontend/native/surface/logs.ts) — pino JSON tail →
  * wire LogEntry[], with level/component filtering and malformed-line
  * tolerance.
  */
 
 import { describe, it, expect } from "vitest";
-import { parseLogTail } from "../frontend/native/logs.js";
+import { parseLogTail } from "../frontend/native/surface/logs.js";
 import { isLogLevel } from "../frontend/native/protocol.js";
 
 function line(obj: Record<string, unknown>): string {

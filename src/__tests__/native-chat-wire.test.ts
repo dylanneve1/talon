@@ -17,8 +17,8 @@ import {
   createNativeRuntime,
   type NativeRuntime,
 } from "../frontend/native/runtime.js";
-import { toClientChat } from "../frontend/native/chat-wire.js";
-import { setQueued, takeQueued } from "../frontend/native/queue.js";
+import { toClientChat } from "../frontend/native/chats/chat-wire.js";
+import { setQueued, takeQueued } from "../frontend/native/turn/queue.js";
 import type {
   BridgeEvent,
   ClientAttachment,

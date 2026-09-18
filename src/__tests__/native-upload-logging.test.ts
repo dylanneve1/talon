@@ -15,7 +15,8 @@ vi.mock("../util/log.js", () => ({
  */
 describe("the upload route's logging", () => {
   const routesFor = async (host: unknown) => {
-    const { chatRoutes } = await import("../frontend/native/routes/chats.js");
+    const { chatRoutes } =
+      await import("../frontend/native/bridge/routes/chats.js");
     return chatRoutes(host as never);
   };
 

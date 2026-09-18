@@ -29,7 +29,7 @@ vi.mock("../core/engine/backend-controller/index.js", () => ({
 
 // The context readout is a fire-and-forget tail on every turn; stubbing it
 // keeps the turn assertions about the turn, and lets one test reject it.
-vi.mock("../frontend/native/context.js", () => ({
+vi.mock("../frontend/native/turn/context.js", () => ({
   refreshContext: vi.fn(async () => {}),
 }));
 
@@ -37,14 +37,14 @@ import type { AgentEvent } from "../core/agent-runtime/events.js";
 import { getBackendForChat } from "../core/engine/backend-controller/index.js";
 import { execute } from "../core/engine/dispatcher.js";
 import type { ExecuteParams, ExecuteResult } from "../core/types.js";
-import { refreshContext } from "../frontend/native/context.js";
-import { setQueued } from "../frontend/native/queue.js";
+import { refreshContext } from "../frontend/native/turn/context.js";
+import { setQueued } from "../frontend/native/turn/queue.js";
 import {
   interruptTurn,
   isBusy,
   liveTurnEvents,
   startTurn,
-} from "../frontend/native/turn.js";
+} from "../frontend/native/turn/turn.js";
 import { makeNativeHarness, settle } from "./helpers/native-bridge.js";
 
 function result(over: Partial<ExecuteResult> = {}): ExecuteResult {

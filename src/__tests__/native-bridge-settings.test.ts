@@ -1,5 +1,5 @@
 /**
- * Settings sync over the bridge (frontend/native/settings.ts): the
+ * Settings sync over the bridge (frontend/native/surface/settings.ts): the
  * allowlist, per-key validation and coercion, live timer re-arming, and
  * the on-disk patch. The companion writes config through this path, so
  * "an unknown key is ignored" and "a bad value leaves the config alone"
@@ -39,7 +39,7 @@ vi.mock("../core/background/heartbeat/index.js", () => ({
 }));
 
 const { applyConfigUpdate, configSnapshot, persistConfigPatch, EDITABLE } =
-  await import("../frontend/native/settings.js");
+  await import("../frontend/native/surface/settings.js");
 const { setTimezone } = await import("../util/time.js");
 const { startPulseTimer, stopPulseTimer } =
   await import("../core/background/pulse/pulse.js");

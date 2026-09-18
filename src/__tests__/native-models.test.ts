@@ -49,7 +49,7 @@ import {
   setBackend,
   setEffort,
   setModel,
-} from "../frontend/native/models.js";
+} from "../frontend/native/surface/models.js";
 import {
   getChatSettings,
   getChatModelForBackend,

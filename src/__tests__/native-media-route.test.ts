@@ -21,9 +21,9 @@ vi.mock("../util/log.js", () => ({
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildBridgeHandlers } from "../frontend/native/handlers.js";
-import { registerMedia } from "../frontend/native/media.js";
-import { BridgeServer } from "../frontend/native/server.js";
+import { buildBridgeHandlers } from "../frontend/native/surface/handlers.js";
+import { registerMedia } from "../frontend/native/media/media.js";
+import { BridgeServer } from "../frontend/native/bridge/server.js";
 import { makeNativeHarness } from "./helpers/native-bridge.js";
 
 const TOKEN = "media-route-secret";

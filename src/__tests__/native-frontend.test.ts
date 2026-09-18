@@ -18,25 +18,28 @@ import {
   USER_SENDER_ID,
   type BridgeStatus,
 } from "../frontend/native/protocol.js";
-import { NativeChats, DEFAULT_CHAT_TITLE } from "../frontend/native/chats.js";
+import {
+  NativeChats,
+  DEFAULT_CHAT_TITLE,
+} from "../frontend/native/chats/chats.js";
 import { MeshRegistry } from "../core/mesh/index.js";
 import { TransferStore } from "../core/mesh/transfers.js";
 import { writeFile as fsWriteFile } from "node:fs/promises";
 import {
   BridgeServer,
   type BridgeServerHandlers,
-} from "../frontend/native/server.js";
+} from "../frontend/native/bridge/server.js";
 import { extractSessionName } from "../util/session-name.js";
-import { createNativeActionHandler } from "../frontend/native/actions.js";
+import { createNativeActionHandler } from "../frontend/native/turn/actions.js";
 import {
   configSnapshot,
   applyConfigUpdate,
   EDITABLE,
-} from "../frontend/native/settings.js";
+} from "../frontend/native/surface/settings.js";
 import {
   removeBridgeDiscovery,
   writeBridgeDiscovery,
-} from "../frontend/native/discovery.js";
+} from "../frontend/native/bridge/discovery.js";
 import { summarizeToolResult } from "../frontend/native/index.js";
 import { files } from "../util/paths.js";
 import type { Gateway } from "../core/engine/gateway.js";

@@ -10,7 +10,7 @@ vi.mock("../util/log.js", () => ({
 import {
   BridgeServer,
   type BridgeServerHandlers,
-} from "../frontend/native/server.js";
+} from "../frontend/native/bridge/server.js";
 import type { BridgeEvent } from "../frontend/native/protocol.js";
 
 const handlers: BridgeServerHandlers = {

@@ -9,7 +9,7 @@ import 'package:talon_companion/src/services/bridge_trust.dart';
 
 /// End-to-end certificate pinning against a real TLS server using the
 /// fixture certificate minted by the daemon's own generator
-/// (src/frontend/native/tls.ts) — so this doubles as proof that Dart's TLS
+/// (src/frontend/native/bridge/tls.ts) — so this doubles as proof that Dart's TLS
 /// stack accepts what the daemon serves.
 void main() {
   const certPath = 'test/fixtures/bridge-cert.pem';

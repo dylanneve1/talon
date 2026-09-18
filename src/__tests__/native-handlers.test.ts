@@ -38,10 +38,10 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execute } from "../core/engine/dispatcher.js";
-import { buildBridgeHandlers } from "../frontend/native/handlers.js";
+import { buildBridgeHandlers } from "../frontend/native/surface/handlers.js";
 import { BRIDGE_PROTOCOL_VERSION } from "../frontend/native/protocol.js";
-import { registerMedia } from "../frontend/native/media.js";
-import type { BridgeServerHandlers } from "../frontend/native/server.js";
+import { registerMedia } from "../frontend/native/media/media.js";
+import type { BridgeServerHandlers } from "../frontend/native/bridge/server.js";
 import {
   getChatModelForBackend,
   getChatSettings,

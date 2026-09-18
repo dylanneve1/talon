@@ -24,7 +24,7 @@ import {
   BridgeServer,
   type BridgeRouteKey,
   type BridgeServerHandlers,
-} from "../frontend/native/server.js";
+} from "../frontend/native/bridge/server.js";
 
 const handlers: BridgeServerHandlers = {
   status: () => ({

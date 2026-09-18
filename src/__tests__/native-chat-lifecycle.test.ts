@@ -32,10 +32,13 @@ import {
   createChat,
   deleteChat,
   renameChat,
-} from "../frontend/native/chat-lifecycle.js";
-import { startEmptyChatSweep } from "../frontend/native/empty-chat-sweep.js";
-import { resetChat } from "../frontend/native/reset.js";
-import { recordTurnMeta, getTurnMeta } from "../frontend/native/turn-meta.js";
+} from "../frontend/native/chats/chat-lifecycle.js";
+import { startEmptyChatSweep } from "../frontend/native/chats/empty-chat-sweep.js";
+import { resetChat } from "../frontend/native/chats/reset.js";
+import {
+  recordTurnMeta,
+  getTurnMeta,
+} from "../frontend/native/turn/turn-meta.js";
 import { getRecentHistory, pushMessage } from "../storage/history.js";
 import { BOT_SENDER_ID } from "../frontend/native/protocol.js";
 import { makeNativeHarness } from "./helpers/native-bridge.js";

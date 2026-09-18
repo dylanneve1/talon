@@ -18,18 +18,21 @@ import type { TalonConfig } from "../../core/config/index.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { log, logError } from "../../util/log.js";
-import { createNativeActionHandler } from "./actions.js";
-import { loadOrCreateBridgeToken } from "./auth.js";
-import { warmContextCache } from "./context.js";
-import { removeBridgeDiscovery, writeBridgeDiscovery } from "./discovery.js";
-import { emitAssistant, emitPhoto } from "./emit.js";
-import { startEmptyChatSweep } from "./empty-chat-sweep.js";
-import { buildBridgeHandlers } from "./handlers.js";
+import { createNativeActionHandler } from "./turn/actions.js";
+import { loadOrCreateBridgeToken } from "./bridge/auth.js";
+import { warmContextCache } from "./turn/context.js";
+import {
+  removeBridgeDiscovery,
+  writeBridgeDiscovery,
+} from "./bridge/discovery.js";
+import { emitAssistant, emitPhoto } from "./turn/emit.js";
+import { startEmptyChatSweep } from "./chats/empty-chat-sweep.js";
+import { buildBridgeHandlers } from "./surface/handlers.js";
 import { createNativeRuntime, type NativeRuntime } from "./runtime.js";
-import { BridgeServer } from "./server.js";
-import { isLoopbackHost, loadOrCreateBridgeTlsIdentity } from "./tls.js";
+import { BridgeServer } from "./bridge/server.js";
+import { isLoopbackHost, loadOrCreateBridgeTlsIdentity } from "./bridge/tls.js";
 
-export { summarizeToolResult } from "./tool-result.js";
+export { summarizeToolResult } from "./turn/tool-result.js";
 
 export type NativeFrontend = {
   name: "native";

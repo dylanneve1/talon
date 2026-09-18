@@ -96,13 +96,13 @@
     "cx": 28
   },
   {
-    "file": "src/frontend/native/routes/chats.ts",
+    "file": "src/frontend/native/bridge/routes/chats.ts",
     "name": "chatRoutes",
     "lines": 139,
     "cx": 28
   },
   {
-    "file": "src/frontend/native/settings.ts",
+    "file": "src/frontend/native/surface/settings.ts",
     "name": "applyConfigUpdate",
     "lines": 81,
     "cx": 29
