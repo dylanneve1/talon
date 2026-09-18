@@ -20,6 +20,7 @@
 import type { OneShotAgentParams, OneShotUsage } from "../../core/types.js";
 import { log, logWarn } from "../../util/log.js";
 import { appendBackendSuffix } from "../runtime/index.js";
+import { emitAssistantText } from "../runtime/one-shot-hooks.js";
 import { ensureCodex, getCodexAuthInfo } from "./init.js";
 import {
   CODEX_SYSTEM_PROMPT_SUFFIX,
@@ -79,6 +80,7 @@ export async function runOneShotAgent(
     contextLabel,
     abortController,
     appendLog,
+    onAssistantText,
   } = params;
 
   const codex = ensureCodex(contextLabel);
@@ -143,7 +145,7 @@ export async function runOneShotAgent(
     let usage: OneShotUsage | undefined;
     for await (const event of events) {
       if (abortController.signal.aborted) break;
-      await appendCodexEvent(appendLog, event);
+      await appendCodexEvent(appendLog, event, onAssistantText);
       if (event.type === "turn.completed") {
         const u = (event as { usage?: Record<string, number> }).usage;
         if (u) {
@@ -217,6 +219,7 @@ export async function runOneShotAgent(
 async function appendCodexEvent(
   appendLog: (text: string) => Promise<void>,
   event: { type: string } & Record<string, unknown>,
+  onAssistantText?: OneShotAgentParams["onAssistantText"],
 ): Promise<void> {
   const ts = new Date().toISOString().slice(11, 19);
 
@@ -260,7 +263,7 @@ async function appendCodexEvent(
     case "item.completed": {
       const item = (event as unknown as { item?: Record<string, unknown> })
         .item;
-      if (item) await appendCodexItem(appendLog, item, ts);
+      if (item) await appendCodexItem(appendLog, item, ts, onAssistantText);
       return;
     }
     default:
@@ -268,17 +271,28 @@ async function appendCodexEvent(
   }
 }
 
-/** Append one `ThreadItem` to the run log. */
+/**
+ * Append one `ThreadItem` to the run log, and report the model's final
+ * answers to the run's optional `onAssistantText` consumer.
+ *
+ * Only `agent_message` items are reported: `reasoning` items are the model's
+ * thinking and the rest are tool/command/diff payloads, none of which is the
+ * run's answer.
+ */
 async function appendCodexItem(
   appendLog: (text: string) => Promise<void>,
   item: Record<string, unknown>,
   ts: string,
+  onAssistantText?: OneShotAgentParams["onAssistantText"],
 ): Promise<void> {
   const type = typeof item.type === "string" ? item.type : "unknown";
 
   if (type === "agent_message") {
     const text = typeof item.text === "string" ? item.text : "";
-    if (text) await appendLog(`\n## [${ts}] Assistant\n${text}\n`);
+    if (text) {
+      emitAssistantText(onAssistantText, text);
+      await appendLog(`\n## [${ts}] Assistant\n${text}\n`);
+    }
     return;
   }
 

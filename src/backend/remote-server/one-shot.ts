@@ -42,6 +42,7 @@ import {
   type RemoteAssistantInfo,
 } from "./session-helpers.js";
 import { appendBackendSuffix, sleep } from "../runtime/index.js";
+import { emitAssistantText } from "../runtime/one-shot-hooks.js";
 import { buildPermissionRuleset } from "./sessions.js";
 
 // ── Client surface ──────────────────────────────────────────────────────────
@@ -108,6 +109,7 @@ export async function runRemoteOneShotAgent<
     contextLabel,
     abortController,
     appendLog,
+    onAssistantText,
   } = params;
   const { label, errMsg } = bindings;
 
@@ -210,7 +212,7 @@ export async function runRemoteOneShotAgent<
       : [];
 
     for (const part of parts) {
-      await appendResponsePart(appendLog, part);
+      await appendResponsePart(appendLog, part, onAssistantText);
     }
 
     // The prompt response's assistant info carries the run's token usage —
@@ -250,17 +252,28 @@ export async function runRemoteOneShotAgent<
 
 // ── Run-log rendering ───────────────────────────────────────────────────────
 
-/** Render one response part into the Markdown run log. */
+/**
+ * Render one response part into the Markdown run log, and report the
+ * assistant's final text to the run's optional `onAssistantText` consumer.
+ *
+ * Only the `text` parts are reported: `reasoning` parts are the model's
+ * thinking and tool parts are call payloads, neither of which is the run's
+ * answer.
+ */
 async function appendResponsePart(
   appendLog: (text: string) => Promise<void>,
   part: Record<string, unknown>,
+  onAssistantText?: OneShotAgentParams["onAssistantText"],
 ): Promise<void> {
   const ts = new Date().toISOString().slice(11, 19);
   const type = typeof part.type === "string" ? part.type : "unknown";
 
   if (type === "text") {
     const text = typeof part.text === "string" ? part.text : "";
-    if (text) await appendLog(`\n## [${ts}] Assistant\n${text}\n`);
+    if (text) {
+      emitAssistantText(onAssistantText, text);
+      await appendLog(`\n## [${ts}] Assistant\n${text}\n`);
+    }
     return;
   }
 

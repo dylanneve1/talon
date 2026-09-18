@@ -161,6 +161,17 @@ export type OneShotAgentParams = {
   abortController: AbortController;
   /** Append a string to the run log (markdown). */
   appendLog: (text: string) => Promise<void>;
+  /**
+   * Called with each assistant text segment as the run produces it (final
+   * answers, not reasoning/thinking, not tool-call payloads). Optional so
+   * heartbeat/dream/cron callers are untouched; a sub-agent runner uses it to
+   * capture the run's result without parsing the markdown log.
+   *
+   * Synchronous and best-effort: every backend invokes it through
+   * `emitAssistantText` (backend/runtime/one-shot-hooks.ts), which swallows
+   * and logs a throwing callback so a consumer bug can never fail the run.
+   */
+  onAssistantText?: (text: string) => void;
 };
 
 /** How much cache telemetry a backend can surface in /status. */
