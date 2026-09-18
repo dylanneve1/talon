@@ -263,6 +263,51 @@ export type SkillItem = {
  */
 export type ToggleResult = { ok: boolean; error?: string };
 
+/**
+ * One row of the typed memory store, as `GET /memory` lists it.
+ *
+ * A projection, not the stored row: the internal `source`, `contentHash`
+ * and supersede/drop pointers stay daemon-side, and the numbers that
+ * decide where a row ranks (trust, confidence, hits, salience) come
+ * along so a client can show WHY something is remembered, not just
+ * what. `kind` and `trust` are the store's vocabularies as plain
+ * strings — a client renders what it gets rather than refusing an
+ * unknown one.
+ */
+export type MemoryRowWire = {
+  id: number;
+  kind: string;
+  subject: string;
+  /** Present only on keyed `state` rows. */
+  key?: string;
+  text: string;
+  trust: string;
+  /** 0..1. */
+  confidence: number;
+  pinned: boolean;
+  hitCount: number;
+  salience: number;
+  /** Epoch milliseconds. */
+  createdAt: number;
+  /** Epoch milliseconds. */
+  lastSeenAt: number;
+};
+
+/** One audit entry from a row's trail, oldest first in `MemoryWhyWire`. */
+export type MemoryHistoryWire = {
+  /** assert | supersede | drop | merge | pin | unpin | replace_state. */
+  op: string;
+  /** Epoch milliseconds. */
+  at: number;
+  reason?: string;
+};
+
+/** `GET /memory/why?id=` — one row plus everything that happened to it. */
+export type MemoryWhyWire = {
+  row: MemoryRowWire;
+  history: MemoryHistoryWire[];
+};
+
 // Mesh device shapes are canonical in core (the mesh is daemon-wide state,
 // readable from every frontend); re-exported here so bridge clients keep
 // depending on the protocol module alone.

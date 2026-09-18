@@ -5,6 +5,7 @@
  *   - `definitions` — the TELEGRAM_COMMANDS menu (single source of truth)
  *   - `state`       — shared admin-id holder + admin guard
  *   - `info`        — /start /help /ping /plugins
+ *   - `memory`      — /memory (read-only view of the typed memory store)
  *   - `session`     — /reset /status
  *   - `settings`    — /model /effort /pulse /settings
  *   - `admin`       — /admin /metrics /doctor /dream /soul /restart /update
@@ -19,6 +20,7 @@ import type { Bot } from "grammy";
 import type { TalonConfig } from "../../../core/config/index.js";
 import type { Backend } from "../../../core/agent-runtime/capabilities.js";
 import { registerInfoCommands } from "./info.js";
+import { registerMemoryCommand } from "./memory.js";
 import { registerSessionCommands } from "./session.js";
 import { registerSettingsCommands } from "./settings.js";
 import { registerAdminCommands } from "./admin.js";
@@ -35,6 +37,7 @@ export function registerCommands(
 ): void {
   const deps = { config, gateway };
   registerInfoCommands(bot);
+  registerMemoryCommand(bot);
   registerSessionCommands(bot, deps);
   registerSettingsCommands(bot, deps);
   registerWhatsAppPairingCommand(bot);

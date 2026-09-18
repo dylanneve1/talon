@@ -7,6 +7,7 @@ import type { RouteHost } from "./host.js";
 import type { BridgeRoutes } from "./table.js";
 import { preAuthRoutes } from "./pre-auth.js";
 import { chatRoutes } from "./chats.js";
+import { memoryRoutes } from "./memory.js";
 import { modelRoutes } from "./models.js";
 import { daemonRoutes } from "./daemon.js";
 import { meshRoutes } from "./mesh.js";
@@ -15,6 +16,7 @@ export function buildRoutes(host: RouteHost): BridgeRoutes {
   return {
     ...preAuthRoutes(host),
     ...chatRoutes(host),
+    ...memoryRoutes(host),
     ...modelRoutes(host),
     ...daemonRoutes(host),
     ...meshRoutes(host),

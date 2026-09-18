@@ -126,6 +126,8 @@ describe("bridge server over TLS", () => {
     deleteChat: () => false,
     history: () => [],
     search: () => [],
+    listMemory: () => ({ ok: true, rows: [] }),
+    memoryWhy: () => null,
     send: () => {},
     upload: async () => ({
       path: "",

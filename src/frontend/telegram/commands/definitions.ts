@@ -44,6 +44,10 @@ export const TELEGRAM_COMMANDS: ReadonlyArray<{
     description: "Environment and native-module health",
   },
   { command: "dream", description: "Force memory consolidation" },
+  {
+    command: "memory",
+    description: "What Talon remembers — list, search, why <id>",
+  },
   { command: "plugins", description: "List loaded plugins" },
   { command: "help", description: "All commands and features" },
 ];

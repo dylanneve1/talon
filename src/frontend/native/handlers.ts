@@ -18,6 +18,7 @@ import {
 } from "./extensions.js";
 import { historyPage, searchHistory } from "./history.js";
 import { readLogEntries } from "./logs.js";
+import { listMemory, memoryWhy } from "./memory.js";
 import {
   describeAttachment,
   MAX_UPLOAD_BYTES,
@@ -98,6 +99,10 @@ export function buildBridgeHandlers(
     deleteChat: (id) => deleteChat(runtime, id),
     history: (id, opts) => historyPage(runtime, id, opts),
     search: (query, chatId) => searchHistory(runtime, query, chatId),
+    // Memory is daemon-wide state in SQLite, not per-runtime — these are
+    // straight delegations to the read-only half of the store.
+    listMemory,
+    memoryWhy,
     send: (id, text, opts) => {
       const entry = chats.get(id) ?? chats.ensure(id);
       // Resolve the client's references into the records this daemon minted

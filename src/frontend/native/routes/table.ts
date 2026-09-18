@@ -47,6 +47,13 @@ export const BRIDGE_ROUTE_AUTH = {
   "POST /queue": "bearer",
   "GET /history": "bearer",
   "GET /search": "bearer",
+
+  // Memory — read-only. The typed memory store is readable over the
+  // bridge but never writable from it: asserting and dropping stay with
+  // the daemon's own write path.
+  "GET /memory": "bearer",
+  "GET /memory/why": "bearer",
+
   "POST /send": "bearer",
   "POST /upload": "bearer",
   "GET /media": "bearer",

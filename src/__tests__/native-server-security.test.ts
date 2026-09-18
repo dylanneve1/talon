@@ -31,6 +31,8 @@ const handlers: BridgeServerHandlers = {
   deleteChat: () => false,
   history: () => [],
   search: () => [],
+  listMemory: () => ({ ok: true, rows: [] }),
+  memoryWhy: () => null,
   send: () => {},
   upload: async () => ({
     path: "",

@@ -12,12 +12,14 @@ import type {
   DeviceLocation,
   LogEntry,
   LogLevel,
+  MemoryWhyWire,
   ModelOption,
   PluginItem,
   SearchResult,
   SkillItem,
   ToggleResult,
 } from "../protocol.js";
+import type { MemoryListQuery, MemoryListResult } from "../memory.js";
 import type { ConfigSnapshot } from "../settings.js";
 
 /** Optional attachment references carried alongside a sent message. */
@@ -48,6 +50,13 @@ export type BridgeServerHandlers = {
   ): ClientMessage[];
   /** Full-text search across chats (or one chat when `chatId` is given). */
   search(query: string, chatId?: string): SearchResult[];
+  /**
+   * Live memory rows — a full-text search when `q` is given, else the
+   * ranked listing. Read-only: the bridge exposes no memory writes.
+   */
+  listMemory(query: MemoryListQuery): MemoryListResult;
+  /** One memory row plus its audit trail, or null when no such id. */
+  memoryWhy(id: number): MemoryWhyWire | null;
   /** Fire-and-forget: streams its results back through `broadcast`. */
   send(id: string, text: string, opts?: SendOptions): void;
   /**
