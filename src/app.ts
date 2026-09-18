@@ -41,6 +41,7 @@ import { Gateway } from "./core/engine/gateway.js";
 import {
   createFrontendById,
   getFrontendDescriptor,
+  startFrontends,
 } from "./core/frontend-runtime/index.js";
 import type { Frontend } from "./bootstrap.js";
 // Attach every built-in frontend's create() to its registry descriptor.
@@ -174,6 +175,10 @@ async function gracefulShutdown(signal: string): Promise<void> {
     }
   }
 
+  // stop() takes the surface down AND awaits the run loop start() left
+  // running, so a frontend is provably finished before the stores below
+  // are flushed. The force timer above is the backstop for one that
+  // won't end.
   await shutdownStep("frontends", () =>
     Promise.allSettled(frontends.map((frontend) => frontend.stop())),
   );
@@ -303,23 +308,13 @@ async function main(): Promise<void> {
   );
   triggerPruneTimer.unref();
 
-  // A stdin-reading frontend (terminal) blocks in start() for the
-  // process lifetime — run it without awaiting alongside the others.
-  const stdinFrontends = frontends.filter(
-    (frontend) => getFrontendDescriptor(frontend.name)?.sharesStdin === true,
-  );
-  const blockingFrontends = frontends.filter(
-    (frontend) => !stdinFrontends.includes(frontend),
-  );
-  if (stdinFrontends.length > 0 && frontends.length > 1) {
-    log(
-      "bot",
-      "Terminal frontend shares stdin with the other frontends; it will run alongside them without blocking startup.",
-    );
-  }
-  await bootPhase("frontends start", () =>
-    Promise.all(blockingFrontends.map((frontend) => frontend.start())),
-  );
+  // Every frontend's start() resolves when it is LISTENING, never when
+  // it stops (contract in core/frontend-runtime/capabilities.ts): the
+  // long-poll / reconnect loop lives inside the frontend and is awaited
+  // by its stop(). So this await ends at the real end of the boot, and
+  // what follows runs while the daemon is alive — not, as it once did,
+  // hours later during shutdown.
+  await bootPhase("frontends start", () => startFrontends(frontends));
   // Phase 0 accounting (docs/ts-migration-plan.md): the boot is over the
   // moment the frontends are listening, so the totals are folded into the
   // metrics store here, from the same uptime figure the log line prints.
@@ -327,16 +322,10 @@ async function main(): Promise<void> {
   recordBootMetrics(bootMs);
   startResourceSampler();
   log("bot", `Ready in ${bootReport(bootMs)}`);
-  for (const frontend of stdinFrontends) {
-    void frontend
-      .start()
-      .catch((err) =>
-        logError("bot", `Terminal frontend start failed: ${String(err)}`),
-      );
-  }
 
-  // NOTE: nothing may be sequenced after this point — the await above only
-  // resolves when the frontends stop (i.e. at shutdown).
+  // main() returning is not the process ending: the daemon stays alive on
+  // the handles the frontends hold (gateway listener, bridge server,
+  // long-poll, readline) until a signal reaches gracefulShutdown().
 }
 
 main().catch((err) => {

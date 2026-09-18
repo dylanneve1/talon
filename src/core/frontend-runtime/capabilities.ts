@@ -33,6 +33,12 @@ import type { FrontendDescriptor } from "./registry.js";
  * The runtime interface every frontend implements (moved here from
  * `bootstrap.ts`; `bootstrap.ts` re-exports it for existing importers).
  * Lifecycle: `create → init → start → stop`.
+ *
+ * `start()` resolves at STARTED, never at STOPPED. A frontend that kept
+ * its run-until-stopped loop as the `start()` promise made the boot end
+ * at shutdown: boot metrics, the resource sampler and the "Ready in …"
+ * line all fired hours late, and anything the composition root
+ * sequenced after the await never ran while the daemon was alive.
  */
 export type Frontend = {
   /** Registry id of the frontend that created this instance. */
@@ -42,7 +48,19 @@ export type Frontend = {
   sendMessage: (chatId: number, text: string) => Promise<void>;
   getBridgePort: () => number;
   init: () => Promise<void>;
+  /**
+   * Bring the surface up and resolve once it is LISTENING: bot identity
+   * fetched and polling running, socket connecting, server bound, prompt
+   * loop drawn. A frontend with a run-until-stopped loop (long-poll,
+   * reconnect loop) keeps that promise internally — see
+   * `runUntilStopped` in `run-loop.ts` — and awaits it in `stop()`.
+   * Rejecting means the frontend never came up; the boot fails loudly.
+   */
   start: () => Promise<void>;
+  /**
+   * Take the surface down and resolve once it is fully stopped,
+   * including the run loop `start()` left running.
+   */
   stop: () => Promise<void>;
 };
 

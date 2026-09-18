@@ -10,6 +10,10 @@
 import "./builtins.js";
 
 export type { Frontend } from "./capabilities.js";
+export { startFrontends } from "./lifecycle.js";
+// `runUntilStopped` (run-loop.js) is imported by the frontends that own a
+// run loop, straight from its module — it is not part of the composition
+// root's surface.
 export {
   getFrontendDescriptor,
   hasFrontend,

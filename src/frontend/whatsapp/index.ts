@@ -35,6 +35,7 @@ import { flushAuthWrites } from "./connection/auth-state.js";
 import { registerPairingProvider } from "../../core/frontend-runtime/pairing-broker.js";
 import { beginPairingAttempt } from "./connection/pairing-service.js";
 import { runConnectionLoop } from "./connection/connection.js";
+import { runUntilStopped } from "../../core/frontend-runtime/run-loop.js";
 import { lookupWhatsAppChat, type WhatsAppChatInfo } from "./registry.js";
 import { createWhatsAppRuntime } from "./runtime.js";
 
@@ -74,6 +75,9 @@ export function createWhatsAppFrontend(
     release: (chatId: number) => gateway.clearContext(chatId),
     getMessageCount: (chatId: number) => gateway.getMessageCount(chatId),
   };
+
+  /** The connection loop, from start() until stop() awaits it. */
+  let connectionLoop: Promise<void> | null = null;
 
   return {
     name: "whatsapp",
@@ -132,10 +136,28 @@ export function createWhatsAppFrontend(
       log("whatsapp", `Gateway on port ${port}`);
     },
 
-    start: () => runConnectionLoop(runtime),
+    // The connection loop reconnects and re-pairs for the whole process
+    // lifetime, so it is the run promise, not the start: start() is over
+    // once the first socket is up (or the loop has parked waiting to be
+    // paired), and stop() below awaits the loop itself.
+    async start() {
+      const run = runUntilStopped(
+        (signalReady) => runConnectionLoop(runtime, signalReady),
+        (err) =>
+          logError(
+            "whatsapp",
+            `Connection loop failed: ${err instanceof Error ? err.message : err}`,
+          ),
+      );
+      connectionLoop = run.stopped;
+      await run.ready;
+    },
 
     async stop() {
       runtime.stopping = true;
+      // Wakes the reconnect backoff and the park-until-paired wait, so
+      // the loop we are about to await ends now rather than on its timer.
+      runtime.stopRequest.abort();
       registerPairingProvider(null);
       try {
         runtime.sock?.end(undefined);
@@ -143,6 +165,8 @@ export function createWhatsAppFrontend(
         /* already closed */
       }
       runtime.sock = null;
+      await connectionLoop;
+      connectionLoop = null;
       // Drain queued credential writes before the process exits — a key
       // half-written at shutdown is invisible until the server starts
       // rejecting stanzas with it.

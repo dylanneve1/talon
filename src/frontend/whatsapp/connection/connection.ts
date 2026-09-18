@@ -132,8 +132,34 @@ function onClose(
   }
 }
 
-/** One socket lifetime. Resolves with what the caller should do next. */
-async function connectOnce(runtime: WhatsAppRuntime): Promise<ConnectOutcome> {
+/**
+ * Wait `ms`, or until `stop()` asks the loop to end — whichever comes
+ * first. A shutdown awaits this loop, so no wait may outlast it.
+ */
+function sleep(runtime: WhatsAppRuntime, ms: number): Promise<void> {
+  const { signal } = runtime.stopRequest;
+  if (signal.aborted || runtime.stopping) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    timer.unref?.();
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
+
+/**
+ * One socket lifetime. Resolves with what the caller should do next.
+ * `onSocket` fires once the socket exists — that is the earliest honest
+ * "connecting", and what the frontend's `start()` resolves on.
+ */
+async function connectOnce(
+  runtime: WhatsAppRuntime,
+  onSocket: () => void,
+): Promise<ConnectOutcome> {
   // Atomic replacement for Baileys' useMultiFileAuthState — same disk
   // format, torn-write-proof (see auth-state.ts for why that matters).
   const { state, saveCreds } = await useAtomicAuthState(dirs.whatsappAuth);
@@ -155,6 +181,7 @@ async function connectOnce(runtime: WhatsAppRuntime): Promise<ConnectOutcome> {
     keepAliveIntervalMs: 25_000,
   });
   runtime.sock = socket;
+  onSocket();
   socket.ev.on("creds.update", saveCreds);
   bindInbound(runtime, socket);
 
@@ -204,40 +231,65 @@ async function parkUntilPaired(runtime: WhatsAppRuntime): Promise<void> {
     }
     const paired = await new Promise<boolean>((r) => {
       const off = onPairingComplete(() => {
-        clearTimeout(timer);
         off();
         r(true);
       });
-      const timer = setTimeout(() => {
+      // Wakes on the next poll, or at once when stop() aborts the wait.
+      void sleep(runtime, 30_000).then(() => {
         off();
         r(false);
-      }, 30_000);
-      timer.unref?.();
+      });
     });
     if (paired) return;
   }
 }
 
-/** The frontend's whole `start()`: connect, reconnect, park, until stopped. */
+/**
+ * The frontend's run loop: connect, reconnect, park, until stopped. It
+ * ends at shutdown, so it is NOT what `start()` resolves on —
+ * `signalReady` is: it fires as soon as the first socket exists, or as
+ * soon as the loop parks waiting for a human to pair, whichever comes
+ * first. A loop that ends without either still releases the boot
+ * (`finally`), because a boot may fail but must never hang.
+ */
 export async function runConnectionLoop(
   runtime: WhatsAppRuntime,
+  signalReady: () => void,
 ): Promise<void> {
   log("whatsapp", "WhatsApp frontend starting (Baileys multi-device)");
+  try {
+    await connectionLoop(runtime, signalReady);
+  } finally {
+    signalReady();
+    log("whatsapp", "WhatsApp connection loop ended");
+  }
+}
+
+async function connectionLoop(
+  runtime: WhatsAppRuntime,
+  signalReady: () => void,
+): Promise<void> {
   while (!runtime.stopping) {
     // A manual pairing attempt owns the auth dir: two sockets on one
     // keypair corrupt it and burn rate-limited pairing attempts.
     if (isManualPairingActive()) {
-      await new Promise((r) => setTimeout(r, 5_000));
+      // Boot is not held behind someone typing a pairing code.
+      signalReady();
+      await sleep(runtime, 5_000);
       continue;
     }
     let outcome: ConnectOutcome;
     try {
-      outcome = await connectOnce(runtime);
+      outcome = await connectOnce(runtime, signalReady);
     } catch (err) {
       logError(
         "whatsapp",
         `Socket error: ${err instanceof Error ? err.message : err}`,
       );
+      // Up and retrying is still up: a socket that cannot be built (a
+      // half-written auth dir, say) must not hold the boot open while
+      // the loop keeps trying.
+      signalReady();
       outcome = "reconnect";
     }
     runtime.sock = null;
@@ -270,11 +322,10 @@ export async function runConnectionLoop(
       runtime.reconnectDelay = RECONNECT_BASE_MS;
       continue;
     }
-    await new Promise((r) => setTimeout(r, runtime.reconnectDelay));
+    await sleep(runtime, runtime.reconnectDelay);
     runtime.reconnectDelay = Math.min(
       runtime.reconnectDelay * 2,
       RECONNECT_MAX_MS,
     );
   }
-  log("whatsapp", "WhatsApp connection loop ended");
 }

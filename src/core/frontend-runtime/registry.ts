@@ -65,9 +65,9 @@ export type FrontendDescriptor = {
    */
   messaging: boolean;
   /**
-   * Reads stdin interactively, so `start()` blocks for the process
-   * lifetime. The composition root starts such frontends without
-   * awaiting them when they run alongside others.
+   * Reads stdin interactively (terminal only). Its `start()` returns
+   * like any other frontend's — this says that keystrokes belong to it,
+   * which the composition root notes when it runs alongside others.
    */
   sharesStdin?: boolean;
 };

@@ -6,6 +6,11 @@
  *   - User presses Enter → rl.pause() immediately → processing begins
  *   - Processing finishes → all output written → rl.resume() + rl.prompt()
  *   - Renderer NEVER touches readline. Only this file does.
+ *
+ * `start()` returns once that prompt is drawn — the frontend lifecycle
+ * contract (core/frontend-runtime/capabilities.ts). It used to park on a
+ * promise that never resolved, which is why the composition root had to
+ * special-case the terminal and start it without awaiting.
  */
 
 import pc from "picocolors";
@@ -287,8 +292,7 @@ export function createTerminalFrontend(
         }
       });
 
-      input.prompt();
-      await new Promise(() => {});
+      input.prompt(); // started: turns run from the input callbacks above
     },
 
     async stop() {

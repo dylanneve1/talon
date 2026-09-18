@@ -47,4 +47,9 @@ export async function startChat(): Promise<void> {
     process.exit(0);
   });
   await frontend.start();
+  // start() resolves once the prompt is up (the frontend lifecycle
+  // contract); readline drives the session from its own callbacks after
+  // that, so hold this entry point open until /exit or SIGINT exits the
+  // process.
+  await new Promise<never>(() => {});
 }

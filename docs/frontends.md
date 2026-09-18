@@ -16,11 +16,11 @@ Frontends had the interface (the `Frontend` type, formerly in
 `bootstrap.ts`) but not the registry. Frontend _identity_ was smeared
 across four hand-maintained copies of the same if/else chain:
 
-| Concern                                    | Lived in                                                                         |
-| ------------------------------------------ | -------------------------------------------------------------------------------- |
-| Creation switch                            | `app.ts` (`switch (name)` over dynamic imports)                                  |
-| Dispatch routing (chat id → live frontend) | `bootstrap.ts` `resolveFrontendName`                                             |
-| Gateway action routing                     | `core/engine/gateway.ts` `resolveOwnedFrontendName`                              |
+| Concern                                    | Lived in                                                                          |
+| ------------------------------------------ | --------------------------------------------------------------------------------- |
+| Creation switch                            | `app.ts` (`switch (name)` over dynamic imports)                                   |
+| Dispatch routing (chat id → live frontend) | `bootstrap.ts` `resolveFrontendName`                                              |
+| Gateway action routing                     | `core/engine/gateway.ts` `resolveOwnedFrontendName`                               |
 | MCP tool scoping                           | `backend/runtime/frontends.ts` `frontendForChatId` + literal `"terminal"` filters |
 
 Adding a frontend meant touching all four, and they could silently drift.
@@ -34,6 +34,10 @@ Adding a frontend meant touching all four, and they could silently drift.
 capabilities.ts   Frontend (runtime contract: init/start/stop, context,
                   sendMessage/sendTyping, getBridgePort) and
                   FrontendCreate ((config, gateway) → Frontend)
+lifecycle.ts      startFrontends(): what a composition root calls to
+                  bring them all up and wait for readiness.
+run-loop.ts       runUntilStopped(): splits a run-until-stopped loop
+                  into "listening" (for start) and "stopped" (for stop).
 registry.ts       id → FrontendDescriptor map + chat-id resolution.
                   Self-contained: create functions are stored opaquely
                   so routing-only consumers never import engine types.
@@ -56,7 +60,7 @@ A **descriptor** is cheap, static identity:
   ownsChatId: isDiscordChatId,      // chat-id shape convention
   routePriority: 40,                // lower checks first; broad matchers last
   messaging: true,                  // gets a per-frontend MCP tool server
-  sharesStdin: false,               // start() blocks on stdin (terminal only)
+  sharesStdin: false,               // owns the process's stdin (terminal only)
 }
 ```
 
@@ -78,6 +82,31 @@ The split exists for layering: `core/` never imports `frontend/`, so
 descriptors register from core while create functions attach from the
 frontend layer. Everything that only needs "whose chat id is this?"
 works from descriptors alone.
+
+## Lifecycle: `start()` means started, not stopped
+
+`create → init → start → stop`, and the one rule that keeps a
+composition root honest:
+
+- **`start()` resolves when the frontend is LISTENING** — Telegram's
+  `onStart` (identity fetched, polling up), Discord's `READY`, WhatsApp's
+  first socket (or the park that waits for a human to pair), the bound
+  bridge server, the drawn terminal prompt. It rejects only if the
+  surface never came up.
+- **The run-until-stopped loop is the frontend's own business.** A
+  long-poll or reconnect loop is kept internally — `runUntilStopped()`
+  splits it into `ready` (what `start()` awaits) and `stopped` (what
+  `stop()` awaits) — so `stop()` resolving means the loop has ended.
+
+This is not a style point. When `start()` returned the run loop instead,
+`await`ing the frontends at boot resolved at _shutdown_: boot metrics
+and the resource sampler were armed hours late, the "Ready in …" line
+printed a lifetime as a boot time (`Ready in 17796980ms`), and anything
+sequenced after the await never ran while the daemon lived.
+
+`startFrontends()` (lifecycle.ts) is what a composition root calls: it
+starts every frontend in parallel — terminal included, no special case —
+and resolves when they are all listening.
 
 ## Routing semantics (preserved from the old chains)
 

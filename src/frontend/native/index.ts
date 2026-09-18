@@ -195,6 +195,8 @@ export function createNativeFrontend(
       });
     },
 
+    // Nothing to run: init() already bound the bridge server, so the
+    // frontend is listening the moment start() is called.
     async start() {
       log(
         "native",

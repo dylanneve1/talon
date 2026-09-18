@@ -38,6 +38,12 @@ export type WhatsAppRuntime = {
   /** The live socket. Reconnects replace it, so read it at each use. */
   sock: WASocket | null;
   stopping: boolean;
+  /**
+   * Aborted by `stop()`. The connection loop's waits (reconnect backoff,
+   * the park that holds an unpaired account) listen for it, so a
+   * shutdown that awaits the loop never sits out a timer it could skip.
+   */
+  readonly stopRequest: AbortController;
   reconnectDelay: number;
   /** One "not linked" admin note per outage, not one per QR window. */
   unpairedNotified: boolean;
@@ -67,6 +73,7 @@ export function createWhatsAppRuntime(
     groupAllowCache: new Map(),
     sock: null,
     stopping: false,
+    stopRequest: new AbortController(),
     reconnectDelay: RECONNECT_BASE_MS,
     unpairedNotified: false,
     selfIds: [],

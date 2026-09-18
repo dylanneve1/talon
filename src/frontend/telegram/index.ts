@@ -12,6 +12,7 @@ import { apiThrottler } from "@grammyjs/transformer-throttler";
 import type { TalonConfig } from "../../core/config/index.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
+import { runUntilStopped } from "../../core/frontend-runtime/run-loop.js";
 import { createTelegramActionHandler, sendText } from "./actions/index.js";
 import { ambientThreadId } from "./topics.js";
 import { initUserClient, disconnectUserClient } from "./userbot.js";
@@ -55,6 +56,9 @@ export function createTelegramFrontend(
     release: (chatId: number) => gateway.clearContext(chatId),
     getMessageCount: (chatId: number) => gateway.getMessageCount(chatId),
   };
+
+  /** The long-poll, from start() until stop() awaits it. */
+  let polling: Promise<void> | null = null;
 
   return {
     name: "telegram",
@@ -131,15 +135,34 @@ export function createTelegramFrontend(
         ...API_CONSTANTS.DEFAULT_UPDATE_TYPES,
         "chat_join_request" as const,
       ];
-      await bot.start({
-        allowed_updates: allowedUpdates,
-        onStart: (info) => log("bot", `Talon running as @${info.username}`),
-      });
+      // grammY's bot.start() promise is the long-poll: it resolves when
+      // POLLING STOPS, i.e. at shutdown. Readiness is onStart, which
+      // fires once getMe() succeeded and the first poll is out — so that
+      // is what start() waits for, while the poll itself is kept for
+      // stop().
+      const run = runUntilStopped(
+        (signalReady) =>
+          bot.start({
+            allowed_updates: allowedUpdates,
+            onStart: (info) => {
+              log("bot", `Talon running as @${info.username}`);
+              signalReady();
+            },
+          }),
+        (err) => logError("bot", "Long-poll ended with an error", err),
+      );
+      polling = run.stopped;
+      await run.ready;
     },
 
     async stop() {
       try {
         await bot.stop();
+        // The long-poll is the promise bot.start() returned — awaiting it
+        // here is what makes "stopped" mean stopped, before the offset is
+        // confirmed below.
+        await polling;
+        polling = null;
         // grammY advances the update offset on its NEXT poll, which never
         // comes once we are shutting down — so confirm it explicitly or
         // Telegram redelivers the command that triggered this shutdown.

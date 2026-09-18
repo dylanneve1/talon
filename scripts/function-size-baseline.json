@@ -128,7 +128,7 @@
   {
     "file": "src/frontend/terminal/index.ts",
     "name": "createTerminalFrontend",
-    "lines": 186,
+    "lines": 182,
     "cx": 15
   },
   {

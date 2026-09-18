@@ -97,10 +97,11 @@ export function createTeamsFrontend(
         `Receive: Graph API chat polling every ${runtime.pollIntervalMs / 1000}s`,
       );
 
+      // The receive side is a timer on the runtime, not a loop to sit in:
+      // once the first poll is done the frontend is listening, and
+      // start() is finished. (It used to park on a promise that never
+      // resolved, which made the boot end at shutdown.)
       await startPolling(runtime, chatId);
-
-      // Hold process open
-      await new Promise(() => {});
     },
 
     async stop() {
