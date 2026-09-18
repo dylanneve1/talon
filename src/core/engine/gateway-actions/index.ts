@@ -43,7 +43,7 @@ import {
   whatsappAccountHandlers,
   whatsappAccountChatFreeActions,
 } from "./whatsapp-account.js";
-import { nativeHandlers } from "./native.js";
+import { nativeHandlers } from "./native/index.js";
 
 // Null-prototype so a request `action` of "toString" / "constructor" / etc.
 // can't resolve an inherited Object.prototype method — `handlers[action]` only

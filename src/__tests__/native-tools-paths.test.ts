@@ -23,7 +23,7 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
-import { nativeHandlers } from "../core/engine/gateway-actions/native.js";
+import { nativeHandlers } from "../core/engine/gateway-actions/native/index.js";
 
 let workdir: string;
 

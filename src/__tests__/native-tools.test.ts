@@ -17,7 +17,7 @@ import {
   setMeshService,
 } from "../core/mesh/index.js";
 import { resetTeleportCache } from "../core/mesh/teleport.js";
-import { nativeHandlers } from "../core/engine/gateway-actions/native.js";
+import { nativeHandlers } from "../core/engine/gateway-actions/native/index.js";
 import { composeTools } from "../core/tools/index.js";
 
 let workdir: string;
@@ -47,6 +47,27 @@ function freshMesh(): MeshService {
     }),
   );
 }
+
+describe("native handler registry", () => {
+  it("pins the action names and their order", () => {
+    // Action names are the model's tool vocabulary, and they ride in the
+    // prompt-cache prefix through the tool descriptions — renaming or
+    // reordering one re-bills every live chat. This list was captured from
+    // the single `nativeHandlers` object literal before it was split into
+    // per-concern modules; the spread order in native/index.ts must keep
+    // reproducing it exactly.
+    expect(Object.keys(nativeHandlers)).toEqual([
+      "teleport",
+      "teleport_back",
+      "native_bash",
+      "native_read",
+      "native_write",
+      "native_edit",
+      "native_glob",
+      "native_search",
+    ]);
+  });
+});
 
 describe("native tool composition gating", () => {
   it("excludes the native set by default and includes it on request", () => {

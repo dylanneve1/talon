@@ -63,7 +63,7 @@ files; the same discipline scales it down. This document is the contract,
 | `backend/shared` | 21 | it is a library, not a dumping ground: rename to `backend/runtime/` and split `turn/` (turn-phases, stream-state, handler-to-events, result-events, delivered-text, delivery, model-retry, handle-retry, turn-interrupt), `prompt/` (system-prompt, prompt-format), `cache/` (cache-telemetry, cache-metrics), `usage.ts`, `metrics.ts`, `frontends.ts` |
 | ~~`frontend/whatsapp`~~ (done #958) | 19 | `connection/` (connection, auth-state, wa-logger, pairing, pairing-lock, pairing-service, identity), `messages/` (inbound, message-store, media-store, turn-recovery, pins), `access.ts`, `commands.ts`, `actions/` |
 | `cli` | 18 | `commands/` one file per command (already nearly so) + `index.ts` |
-| `core/engine/gateway-actions` | 17 | domain files are right; split `native.ts` (1 k lines) by route group and move validation next to its users |
+| `core/engine/gateway-actions` | ~~17~~ 16 | ~~domain files are right; split `native.ts` (1 k lines) by route group and move validation next to its users~~ → landed in #970 as `native/` (11 files, from 1,035 lines): `index.ts` (registry only), `teleport.ts`, `exec.ts`, `exec-background.ts`, `exec-remote.ts`, `read.ts`, `write.ts`, `search.ts`, plus `params.ts`, `results.ts`, `shell.ts` for what they share — no `shared.ts` (rule 3). The spread order in `native/index.ts` reproduces the old object literal's key order byte for byte: action names are the model's tool vocabulary and sit in the prompt-cache prefix, so `native-tools.test.ts` pins `Object.keys(nativeHandlers)`. `validation.ts` stays put — three importers (`goals`, `cron`, `triggers`), not a one-importer module. The directory is still over the limit at 16; the remaining domain files are one concern each. |
 | `backend/remote-server` | 17 | `session/`, `model-catalog/` (exists), `server/` |
 | `native` | 15 | one directory per brick loader |
 | `frontend/telegram`, `frontend/discord` | 14 | `connection/` for both; `telegram/helpers/` dissolved (item 7): `diagnostics` → `telegram/render/reports.ts`, `menu` → `telegram/render/menu.ts`, `format` → `frontend/presentation/format` |
@@ -99,7 +99,7 @@ surfaces of entry files do not change.
    fold `core/scripting` into `core/scripts`.
 4. **util → owners** — the move list above; `util` ends at 12 leaves.
 5. **backend/shared → backend/runtime** with the three subdirectories.
-6. ~~**tools groups**~~ (done), **gateway-actions/native split**.
+6. ~~**tools groups**~~ (done), ~~**gateway-actions/native split**~~ (done #970).
 7. **frontend presentation** — dedupe the report renderers and the access
    gate; dissolve `telegram/helpers`; `frontend/shared` → `frontend/presentation`.
    Reports, renames and `telegram/helpers` done; the access gate
