@@ -98,10 +98,12 @@ pattern. Revisit with Phase 0 data in hand.
 
 **The baseline**
 
-Every figure below comes off a running daemon: `/metrics` → **All time**
-(Telegram `/metrics`, Discord `/metrics all`). The idle-memory and
-per-turn rows need a daemon that has been up for a while and served
-turns — a freshly booted process has the boot row and nothing else.
+Every figure below comes off a running daemon: run `/metrics` (Telegram
+or Discord, admin-only) and tap **All time** — these are process-lifetime
+histograms, so the default *today* view does not carry them. The
+idle-memory and per-turn rows need a daemon that has been up for a while
+and served turns; a freshly booted process has the boot rows and nothing
+else.
 Nothing here is estimated or back-filled; the cells stay empty until
 Dylan pastes a reading in.
 
