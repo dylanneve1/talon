@@ -1,5 +1,19 @@
 # Changelog
 
+## [4.3.3](https://github.com/dylanneve1/talon/compare/v4.3.2...v4.3.3) (2026-09-18)
+
+
+### Code Refactoring
+
+* **core:** move doctor, notify and pairing-broker out of the core root ([#931](https://github.com/dylanneve1/talon/issues/931)) ([e3dc8fa](https://github.com/dylanneve1/talon/commit/e3dc8fa10eb792b85c779c96d2c11e05f34abe5c))
+* **telegram:** dispatch tables for callbacks, admin, moderation and middleware ([#935](https://github.com/dylanneve1/talon/issues/935)) ([9e1401a](https://github.com/dylanneve1/talon/commit/9e1401ab687c759fc534bac19ef4bf6d6c2cc2c4))
+* **terminal:** split builtin commands and input closure into modules ([#932](https://github.com/dylanneve1/talon/issues/932)) ([b6c1454](https://github.com/dylanneve1/talon/commit/b6c1454990d161fea0dfad7e70728541d7fecceb))
+
+
+### Tests
+
+* **mcp-hub:** run child-exit fixtures with --no-warnings ([#930](https://github.com/dylanneve1/talon/issues/930)) ([50ea87a](https://github.com/dylanneve1/talon/commit/50ea87abe6324a831274c9d6bef65cbd8dcb4841))
+
 ## [4.3.2](https://github.com/dylanneve1/talon/compare/v4.3.1...v4.3.2) (2026-09-18)
 
 
