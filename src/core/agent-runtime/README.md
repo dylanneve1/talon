@@ -69,6 +69,21 @@ onto the SQLite layer in `src/storage/` (typed tables or the `kv`
 singleton store). Legacy files import once at boot via
 `storage/legacy-import.ts` and are renamed `*.imported`.
 
+### `agent-host.ts`
+
+The seam the Claude Agent SDK moves out of the daemon across
+(`docs/agent-host-sidecar.md`). Two halves: the NDJSON wire vocabulary
+(`HostRequest` / `HostReply` / `HostEvent` / `HostNotice`, plus
+`parseHostMessage` / `serializeHostMessage` — unknown types parse to a
+typed `unknown` the reader logs and drops, never a throw), and
+`AgentHostClient`, the interface the daemon holds. Phase 1 ships one
+implementation, `backend/claude-sdk/host/in-process.ts`; Phase 2 adds a
+process-backed one behind the same interface. Fixtures:
+`protocol/fixtures/agent-host_v1.json`.
+
+The interface and codec live here, not in `backend/`, because `core/` may
+not import `backend/` — the implementations live under `backend/`.
+
 ### `contract-tests.ts`
 
 Backend contract assertions any conforming `Backend` must pass:

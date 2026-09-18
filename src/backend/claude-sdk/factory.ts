@@ -24,23 +24,12 @@ import {
   type ToolRuntime,
   type UsageTelemetry,
 } from "../../core/agent-runtime/capabilities.js";
-import { getPlanUsage } from "./plan-usage.js";
 
 import {
-  initAgent as initClaudeAgent,
   updateSystemPrompt as claudeUpdateSystemPrompt,
-  warmSession as claudeWarmSession,
-  getActiveQuery,
-  buildMcpServers,
-  buildPluginMcpServers,
-  runOneShotAgent as claudeRunOneShotAgent,
   evictOrphanSubprocesses as claudeEvictOrphanSubprocesses,
 } from "./index.js";
-import {
-  runChatTurn as claudeRunChatTurn,
-  interruptChatTurn as claudeInterruptChatTurn,
-} from "./handler.js";
-import { waitForMcpServersReady } from "./mcp-ready.js";
+import { createInProcessAgentHost } from "./host/in-process.js";
 
 import * as modelProvider from "./model-provider.js";
 import { claudeDoctorChecks } from "./doctor.js";
@@ -54,16 +43,25 @@ const claudeSdkFactory: BackendFactory = {
   doctor: (config, isActive) => claudeDoctorChecks(config, isActive),
 
   async init(config, ctx) {
-    await initClaudeAgent(config, ctx.getBridgePort);
+    // Everything SDK-side goes through the agent-host seam
+    // (docs/agent-host-sidecar.md). Phase 1 binds the in-process client,
+    // which calls the same functions this factory used to call inline;
+    // Phase 2 swaps in a process-backed client behind the same interface.
+    const host = createInProcessAgentHost(config, ctx.getBridgePort);
+    await host.hello();
     log("bot", "Backend: Claude SDK (@anthropic-ai/claude-agent-sdk)");
 
     const chat: ChatBackend = {
-      runChatTurn: (params) => claudeRunChatTurn(params),
-      interruptChatTurn: (chatId) => claudeInterruptChatTurn(chatId),
+      runChatTurn: (params) => host.runTurn(params),
+      interruptChatTurn: (chatId) => host.interrupt(chatId),
     };
 
     const background: BackgroundRunner = {
-      runOneShotAgent: (p) => claudeRunOneShotAgent(p),
+      runOneShotAgent: (p) => host.runOneShot(p),
+      // Not a protocol-table row yet: subprocess eviction reaches into
+      // the SDK's own children, so it belongs to the host — but the
+      // design's message table has no request for it. Tracked as an open
+      // question against Phase 2; bound directly until it gains one.
       evictOrphanSubprocesses: (label) => claudeEvictOrphanSubprocesses(label),
     };
 
@@ -81,7 +79,10 @@ const claudeSdkFactory: BackendFactory = {
       getProviderModels: (p, pg, ps) =>
         modelProvider.getProviderModels(p, pg, ps),
       formatModelError: (q, r) => modelProvider.formatModelError(q, r),
-      listModels: (f) => modelProvider.listModels(f),
+      // The one catalog member that asks the host: `list_models` is the
+      // protocol's model row. The seven above are daemon-side formatting
+      // over `core/models/catalog.ts`, which `hello` populates.
+      listModels: (f) => host.listModels(f),
     };
 
     // Claude SDK's per-turn subprocess model has no shared session
@@ -89,32 +90,11 @@ const claudeSdkFactory: BackendFactory = {
     // dispatcher's `/reset` clears Talon's stored session id via
     // `storage/sessions.ts:resetSession` regardless.
     const sessions: SessionBackend = {
-      warmSession: (chatId) => claudeWarmSession(chatId),
+      warmSession: (chatId) => host.warmSession(chatId),
     };
 
     const tools: ToolRuntime = {
-      refreshTools: async (chatId) => {
-        const qi = getActiveQuery(chatId);
-        if (!qi) return null;
-        // Two-phase teardown: remove all MCP servers first so each
-        // subprocess receives an OS-agnostic shutdown via stdio, then
-        // install the fresh set.
-        await qi.setMcpServers({});
-        const freshServers = {
-          ...buildMcpServers(chatId),
-          ...buildPluginMcpServers(chatId),
-        };
-        const result = await qi.setMcpServers(freshServers);
-        // setMcpServers resolves on REGISTER, not CONNECT — MCP startup is
-        // non-blocking. A stdio server that dials a slow remote (e.g. the
-        // playwright plugin connecting to the Camoufox websocket) is still
-        // 'pending' at this point and its tools are absent from the live
-        // registry, so the turn would proceed with mcp__playwright-tools__*
-        // stuck "connecting" until the next refresh. Wait (bounded) for the
-        // newly-added servers to finish connecting before returning.
-        await waitForMcpServersReady(qi, result.added);
-        return result;
-      },
+      refreshTools: (chatId) => host.refreshTools(chatId),
     };
 
     const control: SystemControl = {
@@ -124,7 +104,7 @@ const claudeSdkFactory: BackendFactory = {
     // No per-session snapshot to offer (each turn is a fresh subprocess),
     // but the subscription's rate-limit windows are readable.
     const usage: UsageTelemetry = {
-      getPlanUsage: () => getPlanUsage(),
+      getPlanUsage: () => host.planUsage(),
     };
 
     const backend = composeBackend({

@@ -1,0 +1,317 @@
+{
+  "_comment": "Canonical agent-host protocol v1 wire samples (docs/agent-host-sidecar.md). NDJSON: one object per line, both directions. Every request carries an `id` and its reply carries the same one; turn traffic carries a `runId`. Replayed through the real TypeScript codec (parseHostMessage / serializeHostMessage in src/core/agent-runtime/agent-host.ts) by src/__tests__/agent-host-protocol.test.ts; Phase 2's host binary replays the same file from the other side. The `requests` and `replies` arrays cover every member of the HostRequest / HostReply unions — a new member fails compilation there until a sample is added here. The `events` array is one coherent turn in order, one sample per AgentEvent kind: `error` and `completed` are the two alternative terminators, so a real turn carries exactly one of them and a replay must not assert that both appear. `forwardCompat` frames must be tolerated, never rejected: an unknown message type parses to the typed `unknown` result the reader logs and drops, and unknown fields on a known type are preserved.",
+  "protocol": 1,
+  "requests": [
+    {
+      "type": "hello",
+      "id": "req-1",
+      "protocol": 1,
+      "daemon": "5.0.0",
+      "config": {
+        "model": "claude-sonnet-5",
+        "workspace": "/home/dylan/talon",
+        "claudeBinary": "/usr/local/bin/claude",
+        "backend": "claude"
+      }
+    },
+    {
+      "type": "run_turn",
+      "id": "req-2",
+      "runId": "run_7f3a",
+      "params": {
+        "chatId": "d_abc123",
+        "model": {
+          "backend": "claude",
+          "id": "claude-sonnet-5",
+          "displayName": "Sonnet 5",
+          "provider": "anthropic",
+          "source": "chat",
+          "contextWindow": 200000,
+          "effortLevels": ["low", "medium", "high"],
+          "defaultEffort": "medium",
+          "cacheSupport": "readwrite",
+          "selectable": true
+        },
+        "text": "find the fox",
+        "senderName": "Dylan",
+        "senderHandle": "dylanneve",
+        "isGroup": false,
+        "messageId": 2001,
+        "retrievedMemory": "#1 [fact] the fox is in protocol/"
+      }
+    },
+    { "type": "interrupt", "id": "req-3", "chatId": "d_abc123" },
+    {
+      "type": "one_shot",
+      "id": "req-4",
+      "runId": "run_8b21",
+      "params": {
+        "prompt": "Summarise today's commits.",
+        "systemPrompt": "You are Talon's heartbeat.",
+        "workspace": "/home/dylan/talon",
+        "model": "claude-sonnet-5",
+        "reasoningEffort": "low",
+        "contextLabel": "heartbeat"
+      }
+    },
+    { "type": "warm_session", "id": "req-5", "chatId": "d_abc123" },
+    {
+      "type": "set_mcp_servers",
+      "id": "req-6",
+      "chatId": "d_abc123",
+      "servers": {
+        "talon-tools": {
+          "type": "http",
+          "url": "http://127.0.0.1:19876/mcp/d_abc123"
+        }
+      }
+    },
+    { "type": "refresh_tools", "id": "req-7", "chatId": "d_abc123" },
+    { "type": "list_models", "id": "req-8", "filter": "all" },
+    { "type": "plan_usage", "id": "req-9" },
+    { "type": "session_info", "id": "req-10", "chatId": "d_abc123" },
+    { "type": "reset_session", "id": "req-11", "chatId": "d_abc123" },
+    { "type": "shutdown", "id": "req-12" }
+  ],
+  "replies": [
+    {
+      "type": "ready",
+      "id": "req-1",
+      "protocol": 1,
+      "host": "5.0.0",
+      "sdk": "0.3.14"
+    },
+    { "type": "run_done", "id": "req-2", "runId": "run_7f3a" },
+    { "type": "ok", "id": "req-3", "interrupted": true },
+    {
+      "type": "run_done",
+      "id": "req-4",
+      "runId": "run_8b21",
+      "usage": {
+        "inputTokens": 4210,
+        "outputTokens": 318,
+        "cacheRead": 3900,
+        "cacheWrite": 210
+      }
+    },
+    { "type": "ok", "id": "req-5" },
+    {
+      "type": "ok",
+      "id": "req-6",
+      "tools": { "added": ["talon-tools"], "removed": [], "errors": {} }
+    },
+    {
+      "type": "ok",
+      "id": "req-7",
+      "tools": {
+        "added": ["talon-tools", "playwright-tools"],
+        "removed": ["mempalace"],
+        "errors": { "brave-search": "spawn ENOENT" }
+      }
+    },
+    {
+      "type": "models",
+      "id": "req-8",
+      "models": [
+        {
+          "id": "claude-sonnet-5",
+          "displayName": "Sonnet 5",
+          "provider": "anthropic",
+          "providerName": "Anthropic",
+          "selectable": true,
+          "contextWindow": 200000,
+          "supportedReasoningLevels": ["low", "medium", "high"],
+          "defaultReasoningLevel": "medium"
+        }
+      ],
+      "total": 1
+    },
+    {
+      "type": "usage",
+      "id": "req-9",
+      "usage": {
+        "plan": "max",
+        "windows": [
+          {
+            "label": "5h",
+            "percent": 42,
+            "resetsAt": "2026-09-18T18:00:00.000Z"
+          },
+          {
+            "label": "7d",
+            "percent": 71,
+            "resetsAt": "2026-09-22T09:00:00.000Z"
+          }
+        ],
+        "resetsAvailable": 2,
+        "fetchedAt": 1789660800000
+      }
+    },
+    {
+      "type": "session",
+      "id": "req-10",
+      "session": {
+        "chatId": "d_abc123",
+        "sessionId": "sess-91c4",
+        "turns": 12,
+        "contextTokens": 41200,
+        "contextWindow": 200000
+      }
+    },
+    { "type": "ok", "id": "req-11", "cleared": false },
+    { "type": "bye", "id": "req-12" },
+    {
+      "type": "error",
+      "id": "req-13",
+      "error": {
+        "kind": "session_expired",
+        "message": "No conversation found with session ID sess-91c4",
+        "retryable": true,
+        "raw": "Error: No conversation found with session ID sess-91c4"
+      }
+    }
+  ],
+  "events": [
+    {
+      "type": "event",
+      "runId": "run_7f3a",
+      "event": { "type": "run_started", "sessionId": "sess-91c4" }
+    },
+    {
+      "type": "event",
+      "runId": "run_7f3a",
+      "event": {
+        "type": "reasoning",
+        "text": "The fox is probably under protocol/fixtures.",
+        "signature": "EqQBCkYIBRgCKkB2",
+        "effort": "medium"
+      }
+    },
+    {
+      "type": "event",
+      "runId": "run_7f3a",
+      "event": { "type": "text_delta", "text": "Looking " }
+    },
+    {
+      "type": "event",
+      "runId": "run_7f3a",
+      "event": {
+        "type": "assistant_message",
+        "text": "Looking for the fox now."
+      }
+    },
+    {
+      "type": "event",
+      "runId": "run_7f3a",
+      "event": {
+        "type": "tool_call",
+        "id": "toolu_01H9",
+        "name": "Grep",
+        "input": { "pattern": "fox", "path": "protocol/" }
+      }
+    },
+    {
+      "type": "event",
+      "runId": "run_7f3a",
+      "event": {
+        "type": "tool_result",
+        "id": "toolu_01H9",
+        "name": "Grep",
+        "result": {
+          "matches": 1,
+          "files": ["protocol/fixtures/events_v1.json"]
+        }
+      }
+    },
+    {
+      "type": "event",
+      "runId": "run_7f3a",
+      "event": {
+        "type": "model_swapped",
+        "from": "claude-opus-5",
+        "to": "claude-sonnet-5",
+        "reason": "overloaded"
+      }
+    },
+    {
+      "type": "event",
+      "runId": "run_7f3a",
+      "event": {
+        "type": "warning",
+        "message": "mcp__playwright-tools__* still connecting; proceeding without them"
+      }
+    },
+    {
+      "type": "event",
+      "runId": "run_7f3a",
+      "event": {
+        "type": "usage",
+        "usage": {
+          "inputTokens": 12844,
+          "outputTokens": 512,
+          "cacheRead": 12000,
+          "cacheWrite": 640,
+          "modelId": "claude-sonnet-5"
+        }
+      }
+    },
+    {
+      "type": "event",
+      "runId": "run_7f3a",
+      "event": {
+        "type": "error",
+        "error": {
+          "kind": "rate_limit",
+          "message": "You've hit your weekly limit · resets Sep 22, 9am",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "type": "event",
+      "runId": "run_7f3a",
+      "event": {
+        "type": "completed",
+        "result": {
+          "text": "Found the fox in protocol/fixtures/events_v1.json.",
+          "durationMs": 4120,
+          "usage": {
+            "inputTokens": 12844,
+            "outputTokens": 512,
+            "cacheRead": 12000,
+            "cacheWrite": 640,
+            "modelId": "claude-sonnet-5"
+          },
+          "modelId": "claude-sonnet-5"
+        }
+      }
+    }
+  ],
+  "notices": [
+    {
+      "type": "log",
+      "level": "warn",
+      "component": "agent",
+      "msg": "[d_abc123] warm-up failed: warm-up timed out"
+    },
+    { "type": "metric", "name": "cache.first_request.hit", "value": 1 }
+  ],
+  "forwardCompat": [
+    {
+      "type": "resume_turn",
+      "id": "req-14",
+      "runId": "run_7f3a",
+      "note": "a request type from a newer daemon — the host logs and drops it"
+    },
+    {
+      "type": "event",
+      "runId": "run_7f3a",
+      "event": {
+        "type": "text_delta",
+        "text": "for the fox.",
+        "sparkle": "additive-field"
+      },
+      "emittedAt": 1789660800123
+    }
+  ]
+}

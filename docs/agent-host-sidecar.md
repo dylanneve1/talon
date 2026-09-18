@@ -86,11 +86,38 @@ host and forwarded as `metric` messages, so the rollups are unchanged.
 
 ## Phases
 
-1. **Seam.** `AgentHostClient` interface in `core/agent-runtime/`; an
-   in-process implementation that wraps today's `backend/claude-sdk/`
-   functions directly. The claude-sdk `BackendFactory` binds through it.
-   Fixtures written and replayed against the in-process implementation.
-   No process yet; zero behaviour change; the PR is the contract.
+1. **Seam.** — **landed, PR #968.** `AgentHostClient` interface in
+   `core/agent-runtime/agent-host.ts` with the NDJSON codec
+   (`parseHostMessage` / `serializeHostMessage`); the in-process
+   implementation in `backend/claude-sdk/host/in-process.ts` wrapping
+   today's functions directly; the claude-sdk `BackendFactory` binds
+   through it. `protocol/fixtures/agent-host_v1.json` replayed by
+   `src/__tests__/agent-host-protocol.test.ts`, which also asserts the
+   in-process client yields the same `AgentEvent` sequence
+   `runChatTurn` yields directly. No process yet; zero behaviour change.
+
+   Three things the table above did not cover, found while binding the
+   real factory — each is Phase 2's to answer:
+
+   - **`evictOrphanSubprocesses(label)`.** A `BackgroundRunner` member
+     that force-cleans the SDK's own children after an abort grace
+     window. It is host-side by definition and has no request row.
+   - **`SystemControl.updateSystemPrompt(prompt)`.** Plugin hot-reload
+     pokes the live claude-sdk config through it. That config lives in
+     the host once the host is a process, so it needs a row too.
+   - **The rest of `ModelCatalog`.** `list_models` covers one of the
+     eight members the factory binds; the other seven are daemon-side
+     formatting over `core/models/catalog.ts` — a registry that
+     `initAgent` (i.e. `hello`) populates from the SDK. So `ready` or
+     `list_models` has to carry the raw model list home, or `/model`
+     goes empty the moment the SDK moves out.
+
+   Two shapes could not cross the boundary as written, and the wire
+   types say so: `OneShotAgentParams` carries an `AbortController` and
+   an `appendLog` callback (the wire type is the serialisable subset;
+   `appendLog` becomes `log` notices and the abort becomes an
+   interrupt), and `warm_session`'s context figures are written into
+   the daemon's session store today — hence the `session_info` query.
 2. **Host.** `bin/talon-agent-host` — the claude-sdk code behind the
    NDJSON loop; `core/daemon/sidecar.ts`; the process-backed
    `AgentHostClient`. Flag `TALON_AGENT_HOST=process` selects it;
