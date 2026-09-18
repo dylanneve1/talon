@@ -9,7 +9,7 @@ import {
   describeSchedule,
   nextRunAt,
 } from "../../../storage/cron.js";
-import { getPulseStatus } from "../../../core/background/pulse.js";
+import { getPulseStatus } from "../../../core/background/pulse/pulse.js";
 import { replyHtmlChunked } from "./chunked-reply.js";
 
 export async function replyCronJobs(ctx: Context): Promise<void> {

@@ -13,8 +13,8 @@ place the runtime actually starts an agent:
 | ------------------ | ------------------------------------------------------ | -------- | -------------- |
 | `turn`             | `core/weaver` (every chat turn)                        | yes      | yes            |
 | `heartbeat`        | `core/background/heartbeat/agent.ts`                   | yes      | no             |
-| `dream`            | `core/background/dream.ts`                             | yes      | no             |
-| `cron` / `trigger` | `core/background/job-oneshot.ts` (isolated query jobs) | yes      | no             |
+| `dream`            | `core/background/dream/index.ts`                             | yes      | no             |
+| `cron` / `trigger` | `core/background/cron/job-oneshot.ts` (isolated query jobs) | yes      | no             |
 
 Deliberately **not** tasks: trigger watcher scripts (long-lived OS processes
 the trigger store already tracks, pid and all), cron `message` jobs (a single

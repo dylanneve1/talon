@@ -22,7 +22,7 @@ vi.mock("../util/watchdog.js", () => ({
   recordMessageProcessed: vi.fn(),
   recordMessageReceived: vi.fn(),
 }));
-vi.mock("../core/background/pulse.js", () => ({
+vi.mock("../core/background/pulse/pulse.js", () => ({
   isPulseEnabled: vi.fn(() => false),
   resetPulseCheckpoint: vi.fn(),
 }));

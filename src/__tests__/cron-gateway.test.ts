@@ -17,7 +17,7 @@
  *   1. cron-store — used REAL (fs mocked out, in-memory) so create_cron_job
  *      actually persists and we can read the stored job back and assert on
  *      its fields (e.g. everyMs).
- *   2. background/cron.js (runJobNow) — mocked, so we never drag in the
+ *   2. background/cron/scheduler.js (runJobNow) — mocked, so we never drag in the
  *      dispatcher / backend / agent runtime for run_cron_job.
  *   3. backend-controller + active-model — mocked, so the per-job model
  *      override validation is deterministic (a known model resolves, an
@@ -68,7 +68,7 @@ vi.mock("../util/cleanup-registry.js", () => ({
 const runJobNowMock = vi.fn(
   async (_id: string) => ({ ok: true }) as { ok: boolean; error?: string },
 );
-vi.mock("../core/background/cron.js", () => ({
+vi.mock("../core/background/cron/scheduler.js", () => ({
   runJobNow: (id: string) => runJobNowMock(id),
 }));
 

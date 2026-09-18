@@ -54,7 +54,7 @@
     "cx": 30
   },
   {
-    "file": "src/core/background/dream.ts",
+    "file": "src/core/background/dream/index.ts",
     "name": "runDreamAgent",
     "lines": 183,
     "cx": 20

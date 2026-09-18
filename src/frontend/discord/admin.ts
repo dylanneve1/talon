@@ -21,7 +21,7 @@ import {
   nextRunAt,
 } from "../../storage/cron.js";
 import { getActiveCount } from "../../core/engine/dispatcher.js";
-import { getPulseStatus } from "../../core/background/pulse.js";
+import { getPulseStatus } from "../../core/background/pulse/pulse.js";
 import { getHealthStatus, getRecentErrors } from "../../util/watchdog.js";
 import { formatDuration, formatModelLabel } from "./render.js";
 import {

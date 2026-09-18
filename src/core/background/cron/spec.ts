@@ -18,7 +18,7 @@ import {
   type CatchupPolicy,
   type CronJob,
   type CronJobType,
-} from "../../storage/cron.js";
+} from "../../../storage/cron.js";
 
 /** The scheduler ticks once a minute, so sub-minute intervals are meaningless. */
 const MIN_INTERVAL_SECONDS = 60;

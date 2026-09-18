@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { isBunRuntime } from "../../util/runtime.js";
 import { logError } from "../../util/log.js";
 import { PKG_ROOT } from "../../cli/context.js";
-import { forceDream } from "../../core/background/dream.js";
+import { forceDream } from "../../core/background/dream/index.js";
 
 /**
  * Restart the daemon by spawning a detached `talon restart` — the same

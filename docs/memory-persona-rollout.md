@@ -476,7 +476,7 @@ Pure deletion, easy review. Everything worth keeping was relocated by PRs 7, 13,
   `embedder` `talon-embedder` `projector` `service` `reflex` `signals` `types`
   `settings` `index`.
 - Remove `TALON_SOUL_ENABLED`, the `assemble.ts` soul section, `getSoul().dream()`
-  in `background/dream.ts`, and the `/soul` admin command (repoint at `/memory`).
+  in `background/dream/index.ts`, and the `/soul` admin command (repoint at `/memory`).
 - Remove the `TALON_MEMORY_STORE` flag in the same window.
 - `knip` + `depcruise` + `ratchets` confirm nothing dangles.
 

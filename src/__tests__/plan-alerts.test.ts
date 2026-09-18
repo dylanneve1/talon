@@ -3,7 +3,7 @@ import {
   initPlanAlerts,
   checkPlanAlerts,
   resetPlanAlertsForTest,
-} from "../core/background/plan-alerts.js";
+} from "../core/background/pulse/plan-alerts.js";
 import type { PlanUsage } from "../core/agent-runtime/capabilities.js";
 
 const getPooledBackend = vi.hoisted(() => vi.fn());

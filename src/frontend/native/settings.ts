@@ -23,7 +23,7 @@ import { getActiveSessionCount } from "../../storage/sessions.js";
 import {
   startPulseTimer,
   stopPulseTimer,
-} from "../../core/background/pulse.js";
+} from "../../core/background/pulse/pulse.js";
 import {
   startHeartbeatTimer,
   stopHeartbeatTimer,

@@ -20,7 +20,7 @@
  */
 
 import { Cron } from "croner";
-import { getActiveCount } from "../engine/dispatcher.js";
+import { getActiveCount } from "../../engine/dispatcher.js";
 import {
   getAllCronJobs,
   getCronJob,
@@ -31,10 +31,10 @@ import {
   describeSchedule,
   type CronJob,
   type CronRunOutcome,
-} from "../../storage/cron.js";
-import { appendDailyLog } from "../../storage/daily-log.js";
-import { log, logError, logWarn } from "../../util/log.js";
-import { numericChatIdFor } from "../../util/chat-id.js";
+} from "../../../storage/cron.js";
+import { appendDailyLog } from "../../../storage/daily-log.js";
+import { log, logError, logWarn } from "../../../util/log.js";
+import { numericChatIdFor } from "../../../util/chat-id.js";
 import { runJobOneShot } from "./job-oneshot.js";
 import {
   jobAllowsRun,
@@ -46,7 +46,7 @@ import {
 import {
   catchupRunCount,
   missedRunCount,
-} from "../../native/scheduler-core.js";
+} from "../../../native/scheduler-core.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 

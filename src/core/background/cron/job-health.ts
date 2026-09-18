@@ -22,7 +22,7 @@ import {
   CLOSED_BREAKER,
   stepBreaker,
   type Breaker,
-} from "../../native/scheduler-core.js";
+} from "../../../native/scheduler-core.js";
 
 export type JobHealthOptions = {
   /** Consecutive failures before the breaker opens. */

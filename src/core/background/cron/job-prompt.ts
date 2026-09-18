@@ -5,7 +5,7 @@
  */
 
 import { resolve } from "node:path";
-import { dirs } from "../../util/paths.js";
+import { dirs } from "../../../util/paths.js";
 
 export type JobKind = "trigger" | "cron";
 

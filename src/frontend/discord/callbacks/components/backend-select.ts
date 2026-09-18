@@ -21,7 +21,7 @@ import {
 } from "../../../../core/engine/backend-controller/index.js";
 import { resetSession } from "../../../../storage/sessions.js";
 import { clearHistory } from "../../../../storage/history.js";
-import { resetPulseCheckpoint } from "../../../../core/background/pulse.js";
+import { resetPulseCheckpoint } from "../../../../core/background/pulse/pulse.js";
 import { resolveActiveModelForChat } from "../../../../core/models/active-model.js";
 import { logError } from "../../../../util/log.js";
 import { safeSlice } from "../../formatting.js";

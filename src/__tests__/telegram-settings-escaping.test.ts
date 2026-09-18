@@ -33,7 +33,7 @@ vi.mock("../storage/chat-settings.js", () => ({
   setChatEffort: vi.fn(),
   setChatPulseInterval: vi.fn(),
 }));
-vi.mock("../core/background/pulse.js", () => ({
+vi.mock("../core/background/pulse/pulse.js", () => ({
   registerChat: vi.fn(),
   disablePulse: vi.fn(),
   enablePulse: vi.fn(),

@@ -12,8 +12,8 @@ import {
   describeSchedule,
   nextRunAt,
 } from "../../../storage/cron.js";
-import { runJobNow } from "../../background/cron.js";
-import { parseCronSpec } from "../../background/cron-spec.js";
+import { runJobNow } from "../../background/cron/scheduler.js";
+import { parseCronSpec } from "../../background/cron/spec.js";
 import { log } from "../../../util/log.js";
 import type { Backend } from "../../agent-runtime/capabilities.js";
 import {

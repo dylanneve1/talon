@@ -19,7 +19,7 @@ import {
   disablePulse,
   enablePulse,
   isPulseEnabled,
-} from "../../../../core/background/pulse.js";
+} from "../../../../core/background/pulse/pulse.js";
 import type { ComponentContext, ComponentInteraction } from "./types.js";
 
 // ── /pulse "Set interval…" button → opens modal ───────────────────────

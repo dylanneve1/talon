@@ -22,10 +22,10 @@ vi.mock("node:child_process", () => ({
   spawn: vi.fn(() => ({ unref: vi.fn() })),
 }));
 
-vi.mock("../core/background/dream.js", () => ({ forceDream: vi.fn() }));
+vi.mock("../core/background/dream/index.js", () => ({ forceDream: vi.fn() }));
 
 import { spawn } from "node:child_process";
-import { forceDream } from "../core/background/dream.js";
+import { forceDream } from "../core/background/dream/index.js";
 import { control } from "../frontend/native/control.js";
 import { logError } from "../util/log.js";
 import { settle } from "./helpers/native-bridge.js";

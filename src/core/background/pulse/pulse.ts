@@ -8,16 +8,19 @@
  * Knows nothing about the backend or frontend — uses the dispatcher.
  */
 
-import { execute, getActiveCount } from "../engine/dispatcher.js";
+import { execute, getActiveCount } from "../../engine/dispatcher.js";
 import {
   setChatPulse,
   getRegisteredPulseChats,
   getChatSettings,
   setPulseLastCheckMsgId,
-} from "../../storage/chat-settings.js";
-import { getRecentHistory, getLatestMessageId } from "../../storage/history.js";
-import { log, logError } from "../../util/log.js";
-import { formatSmartTimestamp } from "../../util/time.js";
+} from "../../../storage/chat-settings.js";
+import {
+  getRecentHistory,
+  getLatestMessageId,
+} from "../../../storage/history.js";
+import { log, logError } from "../../../util/log.js";
+import { formatSmartTimestamp } from "../../../util/time.js";
 
 // ── State ────────────────────────────────────────────────────────────────────
 

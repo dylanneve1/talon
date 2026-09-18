@@ -17,7 +17,7 @@ import {
   disablePulse,
   enablePulse,
   isPulseEnabled,
-} from "../../../core/background/pulse.js";
+} from "../../../core/background/pulse/pulse.js";
 import { escapeHtml } from "../formatting.js";
 import {
   formatModelLabel,

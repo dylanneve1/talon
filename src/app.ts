@@ -10,8 +10,11 @@ import { getFrontends } from "./core/config/index.js";
 import { startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
 import { flushDatabase } from "./storage/db.js";
 import { getActiveCount, stopAllTurns } from "./core/engine/dispatcher.js";
-import { startPulseTimer, stopPulseTimer } from "./core/background/pulse.js";
-import { stopPlanAlerts } from "./core/background/plan-alerts.js";
+import {
+  startPulseTimer,
+  stopPulseTimer,
+} from "./core/background/pulse/pulse.js";
+import { stopPlanAlerts } from "./core/background/pulse/plan-alerts.js";
 import {
   startHeartbeatTimer,
   stopHeartbeatTimer,
@@ -21,7 +24,7 @@ import {
   startCronTimer,
   stopCronTimer,
   runStartupCatchup,
-} from "./core/background/cron.js";
+} from "./core/background/cron/scheduler.js";
 import { shutdownTriggers } from "./core/background/triggers/index.js";
 import { pruneSettledTriggers } from "./storage/triggers.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";

@@ -14,7 +14,7 @@ import {
   disablePulse,
   enablePulse,
   isPulseEnabled,
-} from "../../../core/background/pulse.js";
+} from "../../../core/background/pulse/pulse.js";
 import { getBackendIdForChat } from "../../../core/engine/backend-controller/index.js";
 import {
   renderSettingsText,

@@ -29,7 +29,7 @@ vi.mock("../core/models/catalog.js", () => ({
   resolveModel: (id: string) =>
     id === "known" ? { displayName: "Known Model" } : undefined,
 }));
-vi.mock("../core/background/pulse.js", () => ({
+vi.mock("../core/background/pulse/pulse.js", () => ({
   startPulseTimer: vi.fn(),
   stopPulseTimer: vi.fn(),
 }));
@@ -42,7 +42,7 @@ const { applyConfigUpdate, configSnapshot, persistConfigPatch, EDITABLE } =
   await import("../frontend/native/settings.js");
 const { setTimezone } = await import("../util/time.js");
 const { startPulseTimer, stopPulseTimer } =
-  await import("../core/background/pulse.js");
+  await import("../core/background/pulse/pulse.js");
 const { startHeartbeatTimer, stopHeartbeatTimer } =
   await import("../core/background/heartbeat/index.js");
 import type { TalonConfig } from "../core/config/index.js";

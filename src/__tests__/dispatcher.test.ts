@@ -652,7 +652,7 @@ describe("typing indicator — non-Error throws", () => {
       logWarn: vi.fn(),
       logError: vi.fn(),
     }));
-    vi.doMock("../core/background/dream.js", () => ({
+    vi.doMock("../core/background/dream/index.js", () => ({
       maybeStartDream: vi.fn(),
     }));
 
@@ -706,7 +706,7 @@ describe("typing indicator — non-Error throws", () => {
       logWarn: vi.fn(),
       logError: vi.fn(),
     }));
-    vi.doMock("../core/background/dream.js", () => ({
+    vi.doMock("../core/background/dream/index.js", () => ({
       maybeStartDream: vi.fn(),
     }));
 
@@ -783,7 +783,7 @@ describe("dispatcher — uninitialized guard", () => {
       logWarn: vi.fn(),
       logError: vi.fn(),
     }));
-    vi.doMock("../core/background/dream.js", () => ({
+    vi.doMock("../core/background/dream/index.js", () => ({
       maybeStartDream: vi.fn(),
     }));
 

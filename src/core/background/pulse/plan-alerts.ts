@@ -11,9 +11,9 @@
  * also what covers windows the plan reports no reset for).
  */
 
-import { getPooledBackend } from "../engine/backend-controller/index.js";
-import { log, logWarn } from "../../util/log.js";
-import { formatSmartTimestamp } from "../../util/time.js";
+import { getPooledBackend } from "../../engine/backend-controller/index.js";
+import { log, logWarn } from "../../../util/log.js";
+import { formatSmartTimestamp } from "../../../util/time.js";
 
 const CHECK_INTERVAL_MS = 5 * 60_000;
 

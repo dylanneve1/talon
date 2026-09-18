@@ -12,7 +12,7 @@ import {
   recordJobFailure,
   recordJobSuccess,
   resetJobHealth,
-} from "../core/background/job-health.js";
+} from "../core/background/cron/job-health.js";
 
 const OPTS = {
   threshold: 3,

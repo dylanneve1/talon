@@ -53,7 +53,7 @@ export default defineConfig({
         // The Lua runner is a process entry (`_lua-run`): exercised end-to-end
         // by lua-runner.test.ts as a real child process, which v8 in-process
         // coverage can't see.
-        "src/core/scripting/lua-runner.ts",
+        "src/core/scripts/lua.ts",
         "**/*.d.ts",
         "**/dist/**",
       ],

@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { parseCronSpec } from "../core/background/cron-spec.js";
+import { parseCronSpec } from "../core/background/cron/spec.js";
 import type { CronJob } from "../storage/cron.js";
 
 const HOUR = 60 * 60_000;

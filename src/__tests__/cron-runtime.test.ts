@@ -1,7 +1,7 @@
 /**
- * Runtime-wiring tests for src/core/background/cron.ts.
+ * Runtime-wiring tests for src/core/background/cron/scheduler.ts.
  *
- * These exercise the parts of cron.ts that actually run jobs: run-now,
+ * These exercise the parts of scheduler.ts that actually run jobs: run-now,
  * last-run telemetry, one-shot retirement, startup catch-up, and isolated
  * query execution via runJobOneShot.
  */
@@ -70,15 +70,16 @@ vi.mock("../core/engine/dispatcher.js", () => ({
   getActiveCount: mocks.getActiveCount,
 }));
 
-vi.mock("../core/background/job-oneshot.js", () => ({
+vi.mock("../core/background/cron/job-oneshot.js", () => ({
   runJobOneShot: mocks.runJobOneShot,
 }));
 
 const { executeJob, initCron, runJobNow, runStartupCatchup } =
-  await import("../core/background/cron.js");
+  await import("../core/background/cron/scheduler.js");
 const { addCronJob, getCronJob, getAllCronJobs, deleteCronJob } =
   await import("../storage/cron.js");
-const { resetJobHealth } = await import("../core/background/job-health.js");
+const { resetJobHealth } =
+  await import("../core/background/cron/job-health.js");
 
 let seq = 0;
 function uniqueId(): string {

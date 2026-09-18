@@ -14,14 +14,14 @@
  */
 
 import { mkdir, appendFile } from "node:fs/promises";
-import { dirs } from "../../util/paths.js";
-import { log, logWarn } from "../../util/log.js";
+import { dirs } from "../../../util/paths.js";
+import { log, logWarn } from "../../../util/log.js";
 import {
   acquireBackendInstance,
   isModelValidForBackend,
-} from "../engine/backend-controller/index.js";
-import { taskTable } from "../tasks/index.js";
-import type { OneShotAgentParams } from "../types.js";
+} from "../../engine/backend-controller/index.js";
+import { taskTable } from "../../tasks/index.js";
+import type { OneShotAgentParams } from "../../types.js";
 import { runIsolatedAgent } from "./isolated-agent.js";
 import {
   buildJobSystemPrompt,

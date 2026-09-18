@@ -13,7 +13,7 @@ import {
 import type { TalonConfig } from "../../../core/config/index.js";
 import type { Gateway } from "../../../core/engine/gateway.js";
 import { respawnSelf } from "../../../util/respawn.js";
-import { forceDream } from "../../../core/background/dream.js";
+import { forceDream } from "../../../core/background/dream/index.js";
 import {
   formatDuration,
   renderMetricsMessages,

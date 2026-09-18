@@ -24,16 +24,16 @@ import {
 } from "./core/engine/dispatcher.js";
 import { bus } from "./core/bus/index.js";
 import { appendToJournal } from "./storage/journal.js";
-import { initPulse, resetPulseTimer } from "./core/background/pulse.js";
-import { initCron } from "./core/background/cron.js";
-import { initPlanAlerts } from "./core/background/plan-alerts.js";
+import { initPulse, resetPulseTimer } from "./core/background/pulse/pulse.js";
+import { initCron } from "./core/background/cron/scheduler.js";
+import { initPlanAlerts } from "./core/background/pulse/plan-alerts.js";
 import { setAdminNotifier } from "./core/frontend-runtime/admin-notify.js";
 import { startAuthExpiryMonitor } from "./core/auth/expiry-monitor.js";
 import {
   initTriggers,
   resumeAfterRestart as resumeTriggersAfterRestart,
 } from "./core/background/triggers/index.js";
-import { initDream, maybeStartDream } from "./core/background/dream.js";
+import { initDream, maybeStartDream } from "./core/background/dream/index.js";
 import { initHeartbeat } from "./core/background/heartbeat/index.js";
 import { log, logWarn, logDebug } from "./util/log.js";
 import { bootPhase } from "./util/boot-timer.js";

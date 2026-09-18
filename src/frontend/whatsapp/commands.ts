@@ -15,7 +15,7 @@
 import { log } from "../../util/log.js";
 import { recordMessageProcessed } from "../../util/watchdog.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
-import { isPulseEnabled } from "../../core/background/pulse.js";
+import { isPulseEnabled } from "../../core/background/pulse/pulse.js";
 import {
   DEFAULT_PULSE_INTERVAL_MS,
   formatBytes,

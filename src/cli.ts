@@ -17,7 +17,7 @@
  */
 
 import { MCP_LAUNCH_SUBCOMMAND, runSupervisor } from "./util/mcp-launcher.js";
-import { LUA_RUN_SUBCOMMAND, runLuaMain } from "./core/scripting/lua-runner.js";
+import { LUA_RUN_SUBCOMMAND, runLuaMain } from "./core/scripts/lua.js";
 
 // Hidden subcommand dispatch — must run before anything else. Talon
 // supervises MCP stdio children (`_mcp-launch`) and runs WASM-sandboxed

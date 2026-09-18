@@ -14,7 +14,7 @@ import {
   rebindChat,
   releaseChat,
 } from "../../../../core/engine/backend-controller/index.js";
-import { resetPulseCheckpoint } from "../../../../core/background/pulse.js";
+import { resetPulseCheckpoint } from "../../../../core/background/pulse/pulse.js";
 import { resolveActiveModelForChat } from "../../../../core/models/active-model.js";
 import { logWarn } from "../../../../util/log.js";
 import type { ModelCallback } from "../../model-callbacks.js";

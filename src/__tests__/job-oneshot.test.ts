@@ -22,9 +22,9 @@ import {
   jobSlug,
   jobLogPath,
   JOB_CONTEXT_LABEL,
-} from "../core/background/job-prompt.js";
-import { runIsolatedAgent } from "../core/background/isolated-agent.js";
-import { runJobOneShot } from "../core/background/job-oneshot.js";
+} from "../core/background/cron/job-prompt.js";
+import { runIsolatedAgent } from "../core/background/cron/isolated-agent.js";
+import { runJobOneShot } from "../core/background/cron/job-oneshot.js";
 import {
   cleanupBackendPool,
   initBackendPool,

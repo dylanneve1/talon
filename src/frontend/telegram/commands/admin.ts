@@ -14,7 +14,7 @@ import {
   getRepoRoot,
   runSelfUpdate,
 } from "../../../core/update/self-update.js";
-import { forceDream } from "../../../core/background/dream.js";
+import { forceDream } from "../../../core/background/dream/index.js";
 import { escapeHtml } from "../formatting.js";
 import { closestMatch } from "../../../native/strsim.js";
 import {

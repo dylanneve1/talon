@@ -14,9 +14,9 @@
  * unset to avoid sweeping the other context's subprocesses.
  */
 
-import type { BackgroundRunner } from "../agent-runtime/capabilities.js";
-import type { OneShotAgentParams, OneShotUsage } from "../types.js";
-import { logWarn, logError } from "../../util/log.js";
+import type { BackgroundRunner } from "../../agent-runtime/capabilities.js";
+import type { OneShotAgentParams, OneShotUsage } from "../../types.js";
+import { logWarn, logError } from "../../../util/log.js";
 
 /** Default bounded grace after an abort before giving up on the backend. */
 const DEFAULT_ABORT_GRACE_MS = 30 * 1000;

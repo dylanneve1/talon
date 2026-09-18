@@ -5,7 +5,7 @@
 
 import { resetSession } from "../../storage/sessions.js";
 import { clearHistory } from "../../storage/history.js";
-import { resetPulseCheckpoint } from "../../core/background/pulse.js";
+import { resetPulseCheckpoint } from "../../core/background/pulse/pulse.js";
 import { getBackendForChat } from "../../core/engine/backend-controller/index.js";
 import { broadcastChatUpdated } from "./chat-wire.js";
 import { emitSystem } from "./emit.js";

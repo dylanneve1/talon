@@ -31,11 +31,11 @@ vi.mock("../core/engine/dispatcher.js", () => ({
   getActiveCount: vi.fn(() => 0),
 }));
 
-vi.mock("../core/background/job-oneshot.js", () => ({
+vi.mock("../core/background/cron/job-oneshot.js", () => ({
   runJobOneShot: vi.fn(async () => ({ status: "ran" as const })),
 }));
 
-const { _cronInternals } = await import("../core/background/cron.js");
+const { _cronInternals } = await import("../core/background/cron/scheduler.js");
 const { isCronDue, isDue } = _cronInternals;
 
 let seq = 0;

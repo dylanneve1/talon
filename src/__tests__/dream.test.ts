@@ -1,5 +1,5 @@
 /**
- * Tests for src/core/background/dream.ts
+ * Tests for src/core/background/dream/index.ts
  *
  * Covers: initDream, maybeStartDream (guard paths), forceDream (concurrency),
  * state persistence, prompt template / mempalace gating, and timeout handling.
@@ -106,7 +106,7 @@ function makeMockBackend(): Backend {
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 const { initDream, maybeStartDream, forceDream, dreamFailureBackoff } =
-  await import("../core/background/dream.js");
+  await import("../core/background/dream/index.js");
 
 beforeEach(() => {
   runOneShotAgentMock.mockReset();
@@ -290,7 +290,7 @@ describe("readDreamState — edge cases", () => {
 });
 
 describe("dream timeout", () => {
-  let mod: typeof import("../core/background/dream.js");
+  let mod: typeof import("../core/background/dream/index.js");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let timeoutRunOneShotMock: any;
 
@@ -324,7 +324,7 @@ describe("dream timeout", () => {
       },
     }));
     timeoutRunOneShotMock = vi.fn();
-    mod = await import("../core/background/dream.js");
+    mod = await import("../core/background/dream/index.js");
     mod.initDream({
       model: "claude-sonnet-4-6",
       getBackend: () =>

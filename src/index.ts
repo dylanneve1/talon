@@ -9,7 +9,7 @@
  */
 
 import { MCP_LAUNCH_SUBCOMMAND, runSupervisor } from "./util/mcp-launcher.js";
-import { LUA_RUN_SUBCOMMAND, runLuaMain } from "./core/scripting/lua-runner.js";
+import { LUA_RUN_SUBCOMMAND, runLuaMain } from "./core/scripts/lua.js";
 
 if (process.argv[2] === MCP_LAUNCH_SUBCOMMAND) {
   await runSupervisor(process.argv.slice(3));

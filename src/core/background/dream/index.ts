@@ -13,17 +13,17 @@
 
 import { existsSync, mkdirSync, appendFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { files as pathFiles, dirs } from "../../util/paths.js";
-import { kvGet, kvSet } from "../../storage/kv.js";
-import { importLegacyJson } from "../../storage/legacy-import.js";
+import { files as pathFiles, dirs } from "../../../util/paths.js";
+import { kvGet, kvSet } from "../../../storage/kv.js";
+import { importLegacyJson } from "../../../storage/legacy-import.js";
 import { readPromptAsset } from "#prompt-assets";
-import { log, logError, logWarn } from "../../util/log.js";
-import { getDefaultModel } from "../models/catalog.js";
-import type { OneShotAgentParams, ReasoningEffortLevel } from "../types.js";
-import type { Backend } from "../agent-runtime/capabilities.js";
-import { taskTable } from "../tasks/index.js";
-import { resolveBackgroundEffort } from "./effort.js";
-import { FailureBackoff } from "./failure-backoff.js";
+import { log, logError, logWarn } from "../../../util/log.js";
+import { getDefaultModel } from "../../models/catalog.js";
+import type { OneShotAgentParams, ReasoningEffortLevel } from "../../types.js";
+import type { Backend } from "../../agent-runtime/capabilities.js";
+import { taskTable } from "../../tasks/index.js";
+import { resolveBackgroundEffort } from "../effort.js";
+import { FailureBackoff } from "../failure-backoff.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

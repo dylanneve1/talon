@@ -38,7 +38,7 @@ vi.mock("../core/engine/dispatcher.js", () => ({
   getActiveCount: vi.fn(() => 0),
 }));
 const getPulseStatus = vi.hoisted(() => vi.fn());
-vi.mock("../core/background/pulse.js", () => ({ getPulseStatus }));
+vi.mock("../core/background/pulse/pulse.js", () => ({ getPulseStatus }));
 vi.mock("../util/watchdog.js", () => ({
   getHealthStatus: vi.fn(),
   getRecentErrors: vi.fn(() => []),

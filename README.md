@@ -120,8 +120,8 @@ index.ts                    Composition root
   |   +-- vfs/              The talon:// namespace (~/.talon/ns), FUSE-backed
   |   +-- mesh/             Device mesh: presence, exec/fs channel, teleport
   |   +-- memory/           Typed memory store policy: core view, import, taps
-  |   +-- scripts/          Run-to-completion execution of saved scripts
-  |   +-- scripting/        WASM-sandboxed Lua runner for trigger scripts
+  |   +-- scripts/          Run-to-completion execution of saved scripts +
+  |   |                     the WASM-sandboxed Lua runner for trigger scripts
   |   +-- daemon/           Start / stop / restart, pidfile, discovery
   |   +-- plugin/           Plugin loader, registry, hot-reload
   |   +-- update/           Self-update for git-checkout deployments

@@ -12,7 +12,7 @@ import type { TalonConfig } from "../../core/config/index.js";
 import { pushMessage } from "../../storage/history.js";
 import type { HistoryMessage } from "../../storage/repositories/history-repo.js";
 import { allowChat, revokeChat } from "./userbot.js";
-import { registerChat } from "../../core/background/pulse.js";
+import { registerChat } from "../../core/background/pulse/pulse.js";
 import { log } from "../../util/log.js";
 import { getSenderName } from "./handlers/index.js";
 import { noteUpdateId } from "./update-offset.js";
