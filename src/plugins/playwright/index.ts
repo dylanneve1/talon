@@ -25,9 +25,9 @@
  * with "428 Precondition Required". @playwright/mcp is therefore pinned
  * exactly in package.json (0.0.56 → playwright 1.58.x, matching python
  * playwright 1.58 which hosts Camoufox — camoufox itself caps playwright at
- * <1.61, so the node client cannot chase latest). Bump BOTH sides together,
- * deliberately — do not let a routine dependency bump move one without the
- * other.
+ * <1.61, so the node client cannot chase latest). The pin is enforced, not
+ * just documented: see version-coupling.ts (unit test that fails CI on a
+ * bump, validateConfig refusal, and a live handshake probe at init).
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -35,6 +35,12 @@ import { dirname, resolve } from "node:path";
 import type { TalonPlugin } from "../../core/plugin/types.js";
 import { files } from "../../util/paths.js";
 import { log } from "../../util/log.js";
+import {
+  ENDPOINT_PLAYWRIGHT_MINOR,
+  bundledPlaywrightVersion,
+  couplingError,
+  probeEndpoint,
+} from "./version-coupling.js";
 
 export function createPlaywrightPlugin(config: {
   browser?: string;
@@ -141,6 +147,13 @@ export function createPlaywrightPlugin(config: {
         );
       }
 
+      // Endpoint mode: refuse to start on a client/server minor mismatch
+      // rather than fail every tool call later (see version-coupling.ts).
+      if (endpoint) {
+        const coupling = couplingError(bundledPlaywrightVersion());
+        if (coupling) errors.push(coupling);
+      }
+
       return errors.length > 0 ? errors : undefined;
     },
 
@@ -149,6 +162,29 @@ export function createPlaywrightPlugin(config: {
         "playwright",
         `Ready (${endpoint ? `Camoufox @ ${endpoint}` : `${browser}, headless=${headless}`})`,
       );
+      if (!endpoint) return;
+      // Live handshake with the bundled client version: catches a drifted
+      // server (the static check only knows the expected minor).
+      const client =
+        bundledPlaywrightVersion() ?? `${ENDPOINT_PLAYWRIGHT_MINOR}.0`;
+      const probe = await probeEndpoint(endpoint, client);
+      switch (probe.state) {
+        case "match":
+          log("playwright", `Endpoint handshake OK (Playwright ${client})`);
+          break;
+        case "mismatch":
+          log(
+            "playwright",
+            `ERROR: endpoint ${endpoint} is on Playwright ${probe.server} but the bundled client is ${probe.client} — every browser tool call will fail with 428. Align the python playwright hosting Camoufox with ENDPOINT_PLAYWRIGHT_MINOR (${ENDPOINT_PLAYWRIGHT_MINOR}) or re-pin @playwright/mcp.`,
+          );
+          break;
+        case "unreachable":
+          log(
+            "playwright",
+            `Warning: endpoint ${endpoint} did not answer the handshake probe (${probe.reason}); browser tools will fail until it is up.`,
+          );
+          break;
+      }
     },
   };
 }

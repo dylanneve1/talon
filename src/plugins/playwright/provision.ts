@@ -28,6 +28,11 @@ import {
   type ProvisionOutcome,
 } from "../../core/plugin/provision.js";
 import { dirs } from "../../util/paths.js";
+import {
+  ENDPOINT_PLAYWRIGHT_MINOR,
+  bundledPlaywrightVersion,
+  couplingError,
+} from "./version-coupling.js";
 
 /** Engines whose builds Playwright manages (vs system channels). */
 const MANAGED_ENGINES = new Set(["chromium", "firefox", "webkit"]);
@@ -54,6 +59,8 @@ export interface PlaywrightProvisionDeps {
   listDir?: (p: string) => string[];
   /** playwright-core's browser registry (default: browsers.json beside the CLI). */
   registry?: BrowserDescriptor[];
+  /** Bundled playwright-core version (default: read from node_modules). */
+  bundledPlaywrightVersion?: string;
 }
 
 /** One entry of playwright-core's browsers.json. */
@@ -287,12 +294,26 @@ export function inspectPlaywright(
   deps: PlaywrightProvisionDeps = {},
 ): DoctorCheck[] {
   if (section.endpoint ?? section.endpointFile) {
+    const bundled = deps.bundledPlaywrightVersion ?? bundledPlaywrightVersion();
+    const coupling = couplingError(bundled);
     return [
       {
         label: "Playwright: remote endpoint mode",
         status: "info",
         detail: "browser lives on the remote end",
       },
+      coupling
+        ? {
+            label: "Playwright: client/endpoint version mismatch",
+            status: "fail",
+            detail: coupling,
+            issue: true,
+          }
+        : {
+            label: `Playwright: client on endpoint minor ${ENDPOINT_PLAYWRIGHT_MINOR}`,
+            status: "ok",
+            detail: bundled ? `playwright-core ${bundled}` : undefined,
+          },
     ];
   }
   const browser = section.browser ?? "chromium";
