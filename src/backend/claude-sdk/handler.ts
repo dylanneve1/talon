@@ -156,23 +156,48 @@ function createPostResultWatchdog(
 }
 
 // ── Active query store ──────────────────────────────────────────────────────
-// Holds the Query reference for each in-flight chat so gateway actions
-// (e.g. reload_plugins) can call control methods like setMcpServers().
+// Holds the in-flight turn for each chat so gateway actions (e.g.
+// reload_plugins) can call control methods like setMcpServers(), and so a
+// user-driven stop can mark the very turn it interrupts.
 
-const activeQueries = new Map<string, Query>();
+type ActiveTurn = {
+  qi: Query;
+  /**
+   * Set by `interruptChatTurn` the moment a stop is requested. The turn's
+   * close-out reads it to tell a deliberate stop from a fault: whatever
+   * the SDK does after an interrupt is the stop.
+   *
+   * Since SDK 0.3.x that is emphatically not a clean `result`. The CLI
+   * emits an `is_error` result whose `errors[]` holds only an
+   * `[ede_diagnostic] …` line, `Query.readMessages` keeps it as
+   * `lastErrorResultText`, and when the underlying stream then errors the
+   * SDK replaces the error with `Error("Claude Code returned an error
+   * result: " + lastErrorResultText)`. Unmarked, that reads as a genuine
+   * SDK failure: an ERROR log per /stop, failed-turn accounting, and a
+   * fallback-model retry of the turn the user just stopped.
+   */
+  interrupted: boolean;
+};
+
+const activeQueries = new Map<string, ActiveTurn>();
 
 /**
  * Best-effort graceful interrupt of a chat's in-flight turn. Uses the SDK's
- * native `Query.interrupt()`, which stops the agent loop and closes the stream
- * with a `result` (subtype `interrupt`) — so the turn ends as a normal
- * completion (turn_end + usage), NOT an error, and never trips the
- * model-fallback retry path. No-op (returns false) when no turn is running.
+ * native `Query.interrupt()`, which stops the agent loop — so the turn ends
+ * as a normal completion (turn_end + usage), NOT an error, and never trips
+ * the model-fallback retry path.
+ *
+ * The turn is marked BEFORE the native interrupt is fired, exactly as the
+ * shared `runtime/turn/turn-interrupt.ts` marks `state.turnTerminated`
+ * first: the mark, not the SDK's own close-out shape, is what makes the
+ * contract above true. No-op (returns false) when no turn is running.
  */
 export async function interruptChatTurn(chatId: string): Promise<boolean> {
-  const qi = activeQueries.get(chatId);
-  if (!qi) return false;
+  const active = activeQueries.get(chatId);
+  if (!active) return false;
+  active.interrupted = true;
   try {
-    await qi.interrupt();
+    await active.qi.interrupt();
     log("agent", `[${chatId}] turn interrupted by user`);
     incrementCounter("sdk.turn_interrupted");
     return true;
@@ -187,7 +212,7 @@ export async function interruptChatTurn(chatId: string): Promise<boolean> {
 
 /** Get the active Query for a chat, if one is in flight. */
 export function getActiveQuery(chatId: string): Query | undefined {
-  return activeQueries.get(chatId);
+  return activeQueries.get(chatId)?.qi;
 }
 
 // ── Internal state passed across recursive retry calls ──────────────────────
@@ -428,12 +453,6 @@ function accountFailedClaudeTurn(
   model: string,
   durationMs: number,
 ): void {
-  const sawResultUsage =
-    state.sdkInputTokens +
-      state.sdkOutputTokens +
-      state.sdkCacheRead +
-      state.sdkCacheWrite >
-    0;
   accountFailedTurn({
     backend: "claude",
     chatId,
@@ -441,7 +460,7 @@ function accountFailedClaudeTurn(
     durationMs,
     model,
     apiCalls: state.numApiCalls || live.calls,
-    usage: sawResultUsage
+    usage: sawResultUsage(state)
       ? turnUsageSnapshot(state)
       : {
           inputTokens: live.input,
@@ -450,6 +469,37 @@ function accountFailedClaudeTurn(
           cacheWrite: live.cacheWrite,
         },
   });
+}
+
+/** Whether the turn's `result` message reported any tokens at all. */
+function sawResultUsage(state: StreamState): boolean {
+  return (
+    state.sdkInputTokens +
+      state.sdkOutputTokens +
+      state.sdkCacheRead +
+      state.sdkCacheWrite >
+    0
+  );
+}
+
+/**
+ * Close out a turn the user stopped. An interrupt is a completion, so it
+ * accounts like one (`accountTurn`, not `accountFailedTurn` — nothing
+ * failed) — but the `result` message may never have landed, leaving
+ * `state.sdk*` at zero while the per-API-call accumulator holds what the
+ * turn really burned. Fold the accumulator in so a stop doesn't lose the
+ * tokens, and mark the turn terminated so the flow-violation re-prompt
+ * can't resurrect what the user just stopped (the same guarantee
+ * `runtime/turn/turn-interrupt.ts` gives the callback backends).
+ */
+function closeInterruptedTurn(state: StreamState, live: LiveUsage): void {
+  state.turnTerminated = true;
+  if (sawResultUsage(state)) return;
+  state.sdkInputTokens = live.input;
+  state.sdkOutputTokens = live.output;
+  state.sdkCacheRead = live.cacheRead;
+  state.sdkCacheWrite = live.cacheWrite;
+  if (!state.numApiCalls) state.numApiCalls = live.calls;
 }
 
 /**
@@ -488,6 +538,105 @@ function reportCacheVerdict(
   noteLookbackRisk(chatId, state.toolCalls);
 }
 
+// ── Stream phase ────────────────────────────────────────────────────────────
+
+/** What the stream phase left for the rest of the turn to do. */
+type StreamOutcome =
+  /** Run the normal post-stream phases (this includes every user stop). */
+  | { kind: "ok" }
+  /** A retry already ran to completion and yielded its own events. */
+  | { kind: "retried" }
+  /** Terminal failure — account for it and yield this `error` event. */
+  | { kind: "failed"; event: AgentEvent };
+
+/**
+ * Drive the SDK stream to exhaustion and decide what its ending means.
+ * Owns the error recovery (retry decision, model fallback) and the
+ * user-interrupt contract; releases the watchdog timer and the
+ * `activeQueries` entry on every exit.
+ */
+async function* runTurnStream(inputs: {
+  chatId: string;
+  params: ChatRunParams;
+  internal: InternalState;
+  active: ActiveTurn;
+  state: StreamState;
+  live: LiveUsage;
+  watchdog: PostResultWatchdog;
+  /** Model the turn is accounted against. */
+  activeModel: string;
+  /** Model string the SDK attributes the result message's usage to. */
+  sdkModel: string;
+}): AsyncGenerator<AgentEvent, StreamOutcome, void> {
+  const { chatId, active, state, live, watchdog } = inputs;
+  try {
+    yield* consumeSdkStream({
+      chatId,
+      qi: active.qi,
+      state,
+      live,
+      watchdog,
+      model: inputs.sdkModel,
+      pendingTools: new Map(),
+    });
+    // The SDK doesn't throw on API errors — it converts them into a
+    // synthetic assistant message and finishes the turn with an error-
+    // flagged result (usage limits, 429s, auth failures all land here).
+    // Rethrow so this turn takes the SAME path as a thrown SDK error
+    // instead of tripping the flow-violation re-prompt loop against an
+    // already-exhausted limit.
+    //
+    // …unless the user stopped this turn: an interrupted turn's result is
+    // flagged `is_error` with nothing but an `[ede_diagnostic]` line
+    // behind it, which `readResultError` then renders as bare trailing
+    // text or "Claude SDK turn failed (<subtype>)". That is the stop, not
+    // a failure — the turn closes as a completion.
+    if (state.resultErrorText && !active.interrupted) {
+      throw new Error(state.resultErrorText);
+    }
+  } catch (err) {
+    if (active.interrupted) {
+      // Same deal one layer down: after an interrupt the SDK re-labels the
+      // stream error with that error-result text. Quiet by design — no
+      // `logError`, no retry decision (which would classify the ede text,
+      // bump `errors.*`, and could fall back to another model for a turn
+      // the user just stopped), no `error` event. The shutdown drain takes
+      // this same path: its abort interrupts through here too.
+      log(
+        "agent",
+        `[${chatId}] turn ended by user interrupt: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      incrementCounter("sdk.interrupt_closed_stream");
+    } else if (!watchdog.forceClosed) {
+      const { retried, classified } = yield* applyRetryDecisionStream({
+        err,
+        chatId,
+        activeModel: inputs.activeModel,
+        retried: inputs.internal.errorRetried ?? false,
+        buildRetryStream: retryStreamBuilder(inputs.params, inputs.internal),
+        // No backendLabel — historical claude-sdk log shape was un-prefixed.
+      });
+      if (retried) return { kind: "retried" };
+      logError("agent", `[${chatId}] SDK error: ${classified.message}`);
+      // Returning (rather than yielding) here defers the `error` event
+      // until after `finally` releases the watchdog timer and the
+      // activeQueries entry.
+      return {
+        kind: "failed",
+        event: { type: "error", error: classifiedToAgentError(classified) },
+      };
+    }
+  } finally {
+    watchdog.clear();
+    if (activeQueries.get(chatId) === active) {
+      activeQueries.delete(chatId);
+    }
+  }
+  return { kind: "ok" };
+}
+
 // ── Main chat-turn generator ────────────────────────────────────────────────
 
 /**
@@ -498,7 +647,11 @@ function reportCacheVerdict(
  * recurse via `yield*` and produce the retry's event stream
  * transparently). On flow violation: `yield* runChatTurn(retry
  * params)` — the recursive call owns its `incrementTurns`, the
- * caller deliberately doesn't increment.
+ * caller deliberately doesn't increment. On a user interrupt
+ * (`interruptChatTurn`, which also backs the shutdown drain): the turn
+ * closes as a completion carrying the partial text and the real usage —
+ * never an `error` event, never a retry, whatever shape the SDK chose to
+ * end the stream in.
  */
 export async function* runChatTurn(
   params: ChatRunParams,
@@ -552,7 +705,8 @@ export async function* runChatTurn(
   yield { type: "run_started" };
 
   const qi = query({ prompt, options });
-  activeQueries.set(chatId, qi);
+  const active: ActiveTurn = { qi, interrupted: false };
+  activeQueries.set(chatId, active);
 
   // Cold-start delivery-tool race: on the FIRST turn of a freshly-opened
   // chat the hub's `${frontend}-tools` binding can still be `pending` when
@@ -567,58 +721,26 @@ export async function* runChatTurn(
   const live = createLiveUsage();
   const watchdog = createPostResultWatchdog(chatId, abortController, qi);
 
-  let propagateError: AgentEvent | null = null;
-  try {
-    yield* consumeSdkStream({
-      chatId,
-      qi,
-      state,
-      live,
-      watchdog,
-      model: options.model ?? activeModel,
-      pendingTools: new Map(),
-    });
-    // The SDK doesn't throw on API errors — it converts them into a
-    // synthetic assistant message and finishes the turn with an error-
-    // flagged result (usage limits, 429s, auth failures all land here).
-    // Rethrow so this turn takes the SAME path as a thrown SDK error
-    // instead of tripping the flow-violation re-prompt loop against an
-    // already-exhausted limit.
-    if (state.resultErrorText) {
-      throw new Error(state.resultErrorText);
-    }
-  } catch (err) {
-    if (!watchdog.forceClosed) {
-      const { retried, classified } = yield* applyRetryDecisionStream({
-        err,
-        chatId,
-        activeModel,
-        retried: _internal.errorRetried ?? false,
-        buildRetryStream: retryStreamBuilder(params, _internal),
-        // No backendLabel — historical claude-sdk log shape was un-prefixed.
-      });
-      // The recursive stream already yielded its own usage + completed.
-      if (retried) return;
-      logError("agent", `[${chatId}] SDK error: ${classified.message}`);
-      // Defer the yield until after `finally` releases the watchdog timer
-      // and the activeQueries entry.
-      propagateError = {
-        type: "error",
-        error: classifiedToAgentError(classified),
-      };
-    }
-  } finally {
-    watchdog.clear();
-    if (activeQueries.get(chatId) === qi) {
-      activeQueries.delete(chatId);
-    }
-  }
-
-  if (propagateError) {
+  const outcome = yield* runTurnStream({
+    chatId,
+    params,
+    internal: _internal,
+    active,
+    state,
+    live,
+    watchdog,
+    activeModel,
+    sdkModel: options.model ?? activeModel,
+  });
+  // The recursive retry stream already yielded its own usage + completed.
+  if (outcome.kind === "retried") return;
+  if (outcome.kind === "failed") {
     accountFailedClaudeTurn(chatId, state, live, activeModel, Date.now() - t0);
-    yield propagateError;
+    yield outcome.event;
     return;
   }
+
+  if (active.interrupted) closeInterruptedTurn(state, live);
 
   const durationMs = Date.now() - t0;
   accountTurn({
