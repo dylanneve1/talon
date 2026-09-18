@@ -35,24 +35,27 @@
 
 import { randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
-import { clampExecOutput } from "../../util/exec-output.js";
-import { BridgeLinks, type MeshBridgeInfo } from "./bridge-links.js";
+import { clampExecOutput } from "../../../util/exec-output.js";
+import { BridgeLinks, type MeshBridgeInfo } from "../links/bridge-links.js";
 import {
   age,
   formatBytes,
   FS_COMMAND_TIMEOUT_MS,
   requirePath,
   type MeshToolResult,
-} from "./common.js";
-import { DeviceFiles } from "./device-files.js";
-import { resolveNodeBinary, type NodeBinaryResolver } from "./node-binaries.js";
+} from "../tool-surface.js";
+import { DeviceFiles } from "../transfers/device-files.js";
+import {
+  resolveNodeBinary,
+  type NodeBinaryResolver,
+} from "../links/node-binaries.js";
 import { MeshRegistry } from "./registry.js";
 import type {
   DeviceCommand,
   DeviceCommandResult,
   DeviceInfo,
   DeviceLocation,
-} from "./types.js";
+} from "../types.js";
 
 /** How a transport pushes mesh traffic to connected companion devices. */
 export type MeshTransport = {
@@ -62,7 +65,7 @@ export type MeshTransport = {
   command(command: DeviceCommand): void;
 };
 
-export type { MeshToolResult } from "./common.js";
+export type { MeshToolResult } from "../tool-surface.js";
 
 /** Outcome of pinging one device (see {@link MeshService.pingAll}). */
 export type MeshPingResult = {
@@ -88,7 +91,7 @@ export type MeshServiceOptions = {
   nodeBinaryResolver?: NodeBinaryResolver;
 };
 
-export type { MeshBridgeInfo } from "./bridge-links.js";
+export type { MeshBridgeInfo } from "../links/bridge-links.js";
 
 const DEFAULT_FRESH_FIX_TIMEOUT_MS = 8_000;
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
@@ -604,7 +607,7 @@ export class MeshService {
     return { ok: true, text: `${p} — ${fields.join(" · ")}` };
   }
 
-  // ── File transfer + self-update (see device-files.ts) ─────────────────────
+  // ── File transfer + self-update (see transfers/device-files.ts) ───────────
 
   /** POST /devices/file — a device streams a pull's file body up. */
   acceptFileUpload(
@@ -681,7 +684,7 @@ export class MeshService {
     return this.files.updateNodeBinary(query, localBinaryPath, remotePath);
   }
 
-  // ── Provisioning + pairing (see bridge-links.ts) ──────────────────────────
+  // ── Provisioning + pairing (see links/bridge-links.ts) ────────────────────
 
   /** `get_node_binary`: materialize a talon-node binary on the daemon host. */
   getNodeBinary(os: unknown, arch: unknown): Promise<MeshToolResult> {

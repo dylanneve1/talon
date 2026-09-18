@@ -34,11 +34,11 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { TalonError } from "../errors.js";
-import { getRepoRoot } from "../update/self-update.js";
-import { dirs } from "../../util/paths.js";
-import { talonVersion } from "../../util/version.js";
-import type { DevicePlatform } from "./types.js";
+import { TalonError } from "../../errors.js";
+import { getRepoRoot } from "../../update/self-update.js";
+import { dirs } from "../../../util/paths.js";
+import { talonVersion } from "../../../util/version.js";
+import type { DevicePlatform } from "../types.js";
 
 /** A cross-compile target, named exactly as Go (and the release assets) do. */
 export type NodeTarget = {

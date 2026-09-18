@@ -18,7 +18,7 @@ import {
   DeviceFiles,
   streamTransferTimeoutMs,
   type DeviceFilesHost,
-} from "../core/mesh/device-files.js";
+} from "../core/mesh/transfers/device-files.js";
 import type { DeviceInfo } from "../core/mesh/types.js";
 
 const HOUR_MS = 60 * 60 * 1000;

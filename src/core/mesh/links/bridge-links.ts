@@ -16,7 +16,7 @@ import {
   pairPage,
   type CompanionPairPayload,
 } from "./companion-pairing.js";
-import { formatBytes, type MeshToolResult } from "./common.js";
+import { formatBytes, type MeshToolResult } from "../tool-surface.js";
 import {
   NODE_TARGETS,
   normalizeGoarch,

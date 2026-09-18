@@ -9,7 +9,7 @@
  */
 
 import { getMeshService } from "../../../mesh/index.js";
-import { getTeleport, setTeleportCwd } from "../../../mesh/teleport.js";
+import { getTeleport, setTeleportCwd } from "../../../mesh/devices/teleport.js";
 import { renderExec, type Result } from "./results.js";
 import { shellQuote } from "./shell.js";
 

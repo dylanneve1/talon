@@ -16,7 +16,7 @@ import {
   MeshService,
   setMeshService,
 } from "../core/mesh/index.js";
-import { resetTeleportCache } from "../core/mesh/teleport.js";
+import { resetTeleportCache } from "../core/mesh/devices/teleport.js";
 import { nativeHandlers } from "../core/engine/gateway-actions/native/index.js";
 import { composeTools } from "../core/tools/index.js";
 

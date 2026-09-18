@@ -69,8 +69,8 @@ files; the same discipline scales it down. This document is the contract,
 | `native` | 15 | one directory per brick loader |
 | `frontend/telegram`, `frontend/discord` | 14 | `connection/` for both; `telegram/helpers/` dissolved (item 7): `diagnostics` → `telegram/render/reports.ts`, `menu` → `telegram/render/menu.ts`, `format` → `frontend/presentation/format` |
 | `backend/codex`, `backend/claude-sdk` | 14 | `session/`, `stream/`, `options.ts` |
-| `core/mesh` | 13 | `devices/`, `links/`, `transfers/`; rename `common.ts` |
-| `mesh/common.ts` | names | rename per rule 3. Done: `frontend/shared` → `frontend/presentation/` and `telegram/helpers` → `telegram/render/` (item 7); `backend/shared` → `backend/runtime/` (item 5). `util` keeps its name as the documented `lib/` exception (item 4). |
+| ~~`core/mesh`~~ (done #971) | 13 | ~~`devices/`, `links/`, `transfers/`; rename `common.ts`~~ → landed as `devices/` (service, registry, teleport), `links/` (bridge-links, companion-pairing, node-provision, node-binaries), `transfers/` (transfers, device-files), with `index.ts`, `types.ts`, `persist.ts` and `tool-surface.ts` (was `common.ts`) at the root. `service.ts` is the device service, not the whole mesh: files and links are collaborators it delegates to, so it sits in `devices/`. No per-subdirectory `index.ts` — nothing outside one imports more than two of its modules. |
+| ~~`mesh/common.ts`~~ | names | rename per rule 3. Done: `mesh/common.ts` → `mesh/tool-surface.ts` (#971). Done: `frontend/shared` → `frontend/presentation/` and `telegram/helpers` → `telegram/render/` (item 7); `backend/shared` → `backend/runtime/` (item 5). `util` keeps its name as the documented `lib/` exception (item 4). |
 
 Also on the list, not gate-detected: `core/scripting/` + `core/scripts/`
 are one subsystem (`core/scripts/{runner,lua}.ts`); `core/background/`

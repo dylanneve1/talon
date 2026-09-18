@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import {
   installOneLiner,
   NodeProvisionStore,
-} from "../core/mesh/node-provision.js";
+} from "../core/mesh/links/node-provision.js";
 
 const BASE = {
   goos: "linux" as const,

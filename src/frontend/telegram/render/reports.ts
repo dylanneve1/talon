@@ -9,7 +9,7 @@
 
 import { escapeHtml } from "../formatting.js";
 import type { DoctorReport } from "../../../core/doctor/index.js";
-import type { MeshPingResult } from "../../../core/mesh/service.js";
+import type { MeshPingResult } from "../../../core/mesh/devices/service.js";
 import type { BackendUsageEntry } from "../../presentation/plan-usage-report.js";
 import type { SettingsButton } from "./menu.js";
 import {

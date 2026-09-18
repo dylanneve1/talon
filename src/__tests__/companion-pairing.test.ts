@@ -5,7 +5,7 @@ import {
   pairDeepLink,
   pairLink,
   pairPage,
-} from "../core/mesh/companion-pairing.js";
+} from "../core/mesh/links/companion-pairing.js";
 import {
   renderMeshPairLink,
   renderMeshReport,

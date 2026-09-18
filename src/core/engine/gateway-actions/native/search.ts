@@ -9,7 +9,7 @@
 
 import { glob as fsGlob, readFile, stat as fsStat } from "node:fs/promises";
 import { join } from "node:path";
-import { getTeleport } from "../../../mesh/teleport.js";
+import { getTeleport } from "../../../mesh/devices/teleport.js";
 import { bashTeleported } from "./exec-remote.js";
 import { resolvePathParam, str } from "./params.js";
 import type { Result } from "./results.js";

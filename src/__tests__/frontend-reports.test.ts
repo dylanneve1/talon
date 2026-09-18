@@ -14,7 +14,7 @@
 
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { DoctorReport } from "../core/doctor/index.js";
-import type { MeshPingResult } from "../core/mesh/service.js";
+import type { MeshPingResult } from "../core/mesh/devices/service.js";
 import type { BackendUsageEntry } from "../frontend/presentation/plan-usage-report.js";
 
 import {

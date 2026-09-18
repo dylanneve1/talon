@@ -10,7 +10,7 @@
 import { readFile, stat as fsStat } from "node:fs/promises";
 import { extname } from "node:path";
 import { getMeshService } from "../../../mesh/index.js";
-import { getTeleport } from "../../../mesh/teleport.js";
+import { getTeleport } from "../../../mesh/devices/teleport.js";
 import { num, resolvePathParam, str } from "./params.js";
 import type { Result } from "./results.js";
 import type { SharedActionHandlers } from "../types.js";

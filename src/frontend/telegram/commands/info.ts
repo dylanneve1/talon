@@ -14,7 +14,7 @@ import {
 import { isAuthorizedAdmin } from "./state.js";
 import { getLoadedPlugins } from "../../../core/plugin/index.js";
 import { getMeshService } from "../../../core/mesh/index.js";
-import type { MeshPingResult } from "../../../core/mesh/service.js";
+import type { MeshPingResult } from "../../../core/mesh/devices/service.js";
 
 export function registerInfoCommands(bot: Bot): void {
   bot.command("start", (ctx) =>

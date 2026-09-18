@@ -23,7 +23,7 @@ import {
   DEFAULT_CHAT_TITLE,
 } from "../frontend/native/chats/chats.js";
 import { MeshRegistry } from "../core/mesh/index.js";
-import { TransferStore } from "../core/mesh/transfers.js";
+import { TransferStore } from "../core/mesh/transfers/transfers.js";
 import { writeFile as fsWriteFile } from "node:fs/promises";
 import {
   BridgeServer,

@@ -6,5 +6,9 @@
  * from here.
  */
 
-export { MeshRegistry } from "./registry.js";
-export { MeshService, getMeshService, setMeshService } from "./service.js";
+export { MeshRegistry } from "./devices/registry.js";
+export {
+  MeshService,
+  getMeshService,
+  setMeshService,
+} from "./devices/service.js";

@@ -8,9 +8,9 @@
  */
 
 import { resolve } from "node:path";
-import { logWarn } from "../../util/log.js";
-import { dirs } from "../../util/paths.js";
-import { readArray, writePrivateJson } from "./persist.js";
+import { logWarn } from "../../../util/log.js";
+import { dirs } from "../../../util/paths.js";
+import { readArray, writePrivateJson } from "../persist.js";
 import {
   sanitizeCapabilities,
   toDeviceInfo,
@@ -18,7 +18,7 @@ import {
   type DeviceInfo,
   type DeviceLocation,
   type DevicePlatform,
-} from "./types.js";
+} from "../types.js";
 
 /**
  * A device is offline once it misses several heartbeats. The companion

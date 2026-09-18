@@ -6,7 +6,7 @@
  */
 
 import { getMeshService } from "../../../mesh/index.js";
-import { clearTeleport, setTeleport } from "../../../mesh/teleport.js";
+import { clearTeleport, setTeleport } from "../../../mesh/devices/teleport.js";
 import type { Result } from "./results.js";
 import type { SharedActionHandlers } from "../types.js";
 

@@ -26,15 +26,6 @@
   },
   {
     "kind": "flat",
-    "path": "src/core/mesh",
-    "files": 13
-  },
-  {
-    "kind": "banned-file",
-    "path": "src/core/mesh/common.ts"
-  },
-  {
-    "kind": "flat",
     "path": "src/frontend/discord",
     "files": 14
   },

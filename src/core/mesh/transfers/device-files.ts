@@ -21,20 +21,20 @@ import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Readable } from "node:stream";
-import { dirs } from "../../util/paths.js";
+import { dirs } from "../../../util/paths.js";
 import {
   formatBytes,
   FS_COMMAND_TIMEOUT_MS,
   requirePath,
   type MeshToolResult,
-} from "./common.js";
+} from "../tool-surface.js";
 import {
   normalizeGoarch,
   platformToGoos,
   type NodeBinaryResolver,
-} from "./node-binaries.js";
+} from "../links/node-binaries.js";
 import { TransferStore } from "./transfers.js";
-import type { DeviceCommandResult, DeviceInfo } from "./types.js";
+import type { DeviceCommandResult, DeviceInfo } from "../types.js";
 
 /** The slice of MeshService a transfer needs. */
 export interface DeviceFilesHost {
@@ -531,7 +531,7 @@ export class DeviceFiles {
    *
    * With no binary_path, the replacement is auto-resolved for the node's
    * registered platform/arch (source build in a dev checkout, else the
-   * version-matched release download — see node-binaries.ts).
+   * version-matched release download — see links/node-binaries.ts).
    */
   async updateNodeBinary(
     query: unknown,

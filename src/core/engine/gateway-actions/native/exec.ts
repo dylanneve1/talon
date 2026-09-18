@@ -10,7 +10,7 @@
 
 import { spawn } from "node:child_process";
 import { stat as fsStat } from "node:fs/promises";
-import { getTeleport } from "../../../mesh/teleport.js";
+import { getTeleport } from "../../../mesh/devices/teleport.js";
 import { createOutputCapture } from "../../../../util/exec-output.js";
 import { bashBackground } from "./exec-background.js";
 import { bashTeleported } from "./exec-remote.js";

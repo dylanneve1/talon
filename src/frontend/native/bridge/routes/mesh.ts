@@ -3,7 +3,7 @@ import type { BridgeRoutes } from "./table.js";
 import type { ServerResponse } from "node:http";
 import { deviceIdParam } from "./params.js";
 
-// Streamed device file transfers (see core/mesh/transfers.ts). The
+// Streamed device file transfers (see core/mesh/transfers/transfers.ts). The
 // one-time `transfer` token authorizes exactly one direction+path; the
 // caller names itself so the token's device binding can be checked.
 function transferToken(

@@ -17,7 +17,7 @@ import {
   normalizeGoos,
   platformToGoos,
   resolveNodeBinary,
-} from "../core/mesh/node-binaries.js";
+} from "../core/mesh/links/node-binaries.js";
 
 const VERSION = "9.9.9";
 

@@ -18,7 +18,7 @@ import {
   renderMetricsKeyboard,
   renderMetricsPanel,
 } from "../frontend/telegram/render/reports.js";
-import type { MeshPingResult } from "../core/mesh/service.js";
+import type { MeshPingResult } from "../core/mesh/devices/service.js";
 
 describe("telegram render", () => {
   beforeEach(() => {

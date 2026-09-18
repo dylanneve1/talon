@@ -23,7 +23,7 @@
  */
 
 import type { DoctorReport } from "../../core/doctor/index.js";
-import type { MeshPingResult } from "../../core/mesh/service.js";
+import type { MeshPingResult } from "../../core/mesh/devices/service.js";
 import type { BackendUsageEntry } from "./plan-usage-report.js";
 import {
   DEFAULT_PULSE_INTERVAL_MS,

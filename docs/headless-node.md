@@ -67,7 +67,7 @@ curl -fsSk "https://<daemon>:19880/node/install?provision=<token>" | sh
 ```
 
 The bridge serves a generated installer over a single-use, expiring grant
-token (`src/core/mesh/node-provision.ts`): it downloads the matching
+token (`src/core/mesh/links/node-provision.ts`): it downloads the matching
 talon-node binary from the same bridge, verifies its sha256 against the
 digest baked into the script, installs it, pre-pins the bridge TLS
 fingerprint, embeds the bearer token, and registers the boot service.
@@ -89,7 +89,7 @@ publicly. Scoping per-device tokens is a known follow-up.
 
 ## Where node binaries come from
 
-`src/core/mesh/node-binaries.ts` materializes a binary for any supported
+`src/core/mesh/links/node-binaries.ts` materializes a binary for any supported
 target regardless of how the daemon was installed, trying in order:
 
 1. **source build** — a dev checkout with Go on PATH cross-compiles

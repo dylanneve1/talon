@@ -11,7 +11,7 @@
  *
  * The routes must work pre-auth — the whole point is a host that holds no
  * bridge credential yet — so the grant token IS the authorization, exactly
- * like streamed-transfer tokens (transfers.ts): random 192-bit, single-use
+ * like streamed-transfer tokens (transfers/transfers.ts): random 192-bit, single-use
  * per leg, expiring unused. The script carries the bridge bearer token and
  * pinned TLS fingerprint into the node's config, verifies the downloaded
  * binary against the grant's digest (integrity is the script's own sha256

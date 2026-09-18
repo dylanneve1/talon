@@ -11,7 +11,7 @@
  * So the daemon mints a grant and hands out ONE link. The bridge serves it
  * on a route that must work pre-auth — the phone holds no credential yet, so
  * the grant token IS the authorization, the same trust model as node
- * provisioning (node-provision.ts) and streamed transfers (transfers.ts):
+ * provisioning (node-provision.ts) and streamed transfers (transfers/transfers.ts):
  * random 192-bit, single-use, expiring unused.
  *
  *   GET /pair?grant=<token>              → the pairing page (once)

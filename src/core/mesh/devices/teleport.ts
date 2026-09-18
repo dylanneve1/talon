@@ -13,8 +13,8 @@
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { dirs } from "../../util/paths.js";
-import { writePrivateJson } from "./persist.js";
+import { dirs } from "../../../util/paths.js";
+import { writePrivateJson } from "../persist.js";
 
 export type TeleportState = {
   /** Target device id (as registered in the mesh). */

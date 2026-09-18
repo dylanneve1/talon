@@ -1,6 +1,11 @@
 /**
- * Small helpers shared by the mesh service and its collaborators
- * (device-files.ts, bridge-links.ts).
+ * The mesh's model-facing tool surface — the vocabulary every mesh tool
+ * answers in: the result shape, the timeout a single device filesystem
+ * command runs under, and the formatters those answer texts are written
+ * with.
+ *
+ * All three concerns speak it (devices/service.ts, links/bridge-links.ts,
+ * transfers/device-files.ts), so it sits at the component root.
  */
 
 /** The model-facing shape every mesh tool answers with. */

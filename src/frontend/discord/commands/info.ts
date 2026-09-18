@@ -16,7 +16,7 @@ import type { TalonConfig } from "../../../core/config/index.js";
 import { collectPlanUsage } from "../../presentation/plan-usage-report.js";
 import { getLoadedPlugins } from "../../../core/plugin/index.js";
 import { getMeshService } from "../../../core/mesh/index.js";
-import type { MeshPingResult } from "../../../core/mesh/service.js";
+import type { MeshPingResult } from "../../../core/mesh/devices/service.js";
 import { reply } from "./interaction.js";
 
 export async function handleStart(
