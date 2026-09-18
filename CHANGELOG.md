@@ -1,5 +1,39 @@
 # Changelog
 
+## [5.2.0](https://github.com/dylanneve1/talon/compare/v5.1.0...v5.2.0) (2026-09-18)
+
+
+### Features
+
+* **agents:** backend-agnostic sub-agents with mailboxes and wake-turn delivery ([#982](https://github.com/dylanneve1/talon/issues/982)) ([0555535](https://github.com/dylanneve1/talon/commit/0555535f141e56f3684bb2a3d5488ca3e178ccec))
+* **cli:** the launcher prefers Bun when it is installed ([#981](https://github.com/dylanneve1/talon/issues/981)) ([ae6b0b1](https://github.com/dylanneve1/talon/commit/ae6b0b1f8843b9dee7fa6e20b5a9a30c986cc693))
+* **prompts:** freedom is the core of the Talon identity ([#980](https://github.com/dylanneve1/talon/issues/980)) ([b24145d](https://github.com/dylanneve1/talon/commit/b24145dec5f61d6a10889725778846c16587cbb1))
+
+
+### Bug Fixes
+
+* **app:** frontends report started, not stopped, so boot completes at boot ([#987](https://github.com/dylanneve1/talon/issues/987)) ([23949db](https://github.com/dylanneve1/talon/commit/23949dbc465ab5db8a4be8629e52f236eb4b0258))
+* **gateway:** make Gateway.start() single-flight so concurrent frontends share one bind ([#975](https://github.com/dylanneve1/talon/issues/975)) ([3c9248d](https://github.com/dylanneve1/talon/commit/3c9248d6d127167d60772eddc5ee5064ab23333e))
+* **telegram:** stop /mesh printing bridge credentials into a group ([#974](https://github.com/dylanneve1/talon/issues/974)) ([b0273c5](https://github.com/dylanneve1/talon/commit/b0273c5cac4c8db7b6c83494f9337987ec4ff062))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump the dev-dependencies group with 4 updates ([#983](https://github.com/dylanneve1/talon/issues/983)) ([2f8d229](https://github.com/dylanneve1/talon/commit/2f8d229720efed8e7a77d70c7a8102e8f2c3b3a6))
+* **deps:** Bump the production-dependencies group with 2 updates ([#984](https://github.com/dylanneve1/talon/issues/984)) ([775d2cc](https://github.com/dylanneve1/talon/commit/775d2cc0663ea2b5fcf9482996ca7eb2225acce0))
+* **docker:** run the image on Bun, Node as a build-arg fallback ([#986](https://github.com/dylanneve1/talon/issues/986)) ([fdd5229](https://github.com/dylanneve1/talon/commit/fdd52293ea1b08eb3304d8a189e270b3506e1e05))
+
+
+### Code Refactoring
+
+* **backend:** kilo and opencode become remote-server profiles ([#972](https://github.com/dylanneve1/talon/issues/972)) ([c7a290d](https://github.com/dylanneve1/talon/commit/c7a290da4c6caf7b2c4c5bcdc054a01ac387e31d))
+* **mesh:** tree core/mesh into devices/, links/, transfers/; name common.ts ([#971](https://github.com/dylanneve1/talon/issues/971)) ([c98bbbc](https://github.com/dylanneve1/talon/commit/c98bbbc4683e98fa53c33a998c55769b079b4428))
+
+
+### Tests
+
+* **openai-agents:** prove builtin dispatch with Read, not a shell spawn ([#988](https://github.com/dylanneve1/talon/issues/988)) ([ae10222](https://github.com/dylanneve1/talon/commit/ae10222b05f42fad5c38f36e45a300d77155cfb4))
+
 ## [5.1.0](https://github.com/dylanneve1/talon/compare/v5.0.1...v5.1.0) (2026-09-18)
 
 
