@@ -105,6 +105,15 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- TEMPORARY: Impeller's Vulkan backend crash-loops on the Pixel 10
+             Android 17 beta (driver rejects the BackdropFilter snapshot
+             texture with VK_ERROR_COMPRESSION_EXHAUSTED_EXT → fatal
+             back_texture check in canvas.cc). Fall back to Skia until the
+             engine/driver fix ships, then delete this.
+             See https://github.com/jameskokoska/Cashew/pull/1242 -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
         <!-- stopWithTask=false: swiping the app from recents must NOT stop the
              mesh — the service keeps running (and the plugin's onTaskRemoved
              restart alarm re-arms it if the OS kills the process anyway). -->
