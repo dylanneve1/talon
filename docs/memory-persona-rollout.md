@@ -131,6 +131,16 @@ prompt isn't cacheable at all.
   history; drop lands in the graveyard; `TALON_DB_PATH` isolation.
 - Fold PR 5 in if `knip` objects to the API landing without consumers.
 
+**Landed** as #937. The store is `storage/memory.ts` (not `memory-store.ts`) and
+the API is `assertMemory` / `supersedeMemory` / `dropMemory` / `mergeMemory` /
+`pinMemory` / `unpinMemory` / `replaceStateKey` / `touchMemory` / `getMemory` /
+`listMemories` / `searchMemories` / `memoryHistory`, per the naming settled in
+#929. `assertMemory` returns the bm25-ranked near-duplicates of the same kind +
+subject alongside the new id, so PR 6 can offer supersede-instead-of-append
+without the store ever auto-superseding. knip took `talon memory` (list /
+search / show / remember / forget / state) as the consumer, so PR 5 stayed
+separate. 36 tests.
+
 ### PR 5 — `feat(memory): import memory.md, render it back`
 
 - `core/memory/import.ts`: `memory.md` + daily notes → rows, reusing PR 1's parser.
