@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.1](https://github.com/dylanneve1/talon/compare/v5.2.0...v5.2.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* **log:** a full disk pauses file logging instead of killing the daemon ([#989](https://github.com/dylanneve1/talon/issues/989)) ([48e3861](https://github.com/dylanneve1/talon/commit/48e3861db62d3e9296f06f2a38e368ea0a6c75e4))
+
 ## [5.2.0](https://github.com/dylanneve1/talon/compare/v5.1.0...v5.2.0) (2026-09-18)
 
 
