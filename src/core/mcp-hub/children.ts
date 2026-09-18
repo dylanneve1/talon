@@ -101,6 +101,16 @@ export function formatChildExit(
 }
 
 /**
+ * Human-readable form of a child key for log lines. Keys join server name
+ * and chat id with a NUL byte (see `childKey` in index.ts) — unambiguous
+ * as a Map key, but it renders as `\u0000` in the JSON log.
+ */
+function describeKey(key: string): string {
+  const nul = key.indexOf("\u0000");
+  return nul === -1 ? key : `${key.slice(0, nul)} chat=${key.slice(nul + 1)}`;
+}
+
+/**
  * Bookkeeping for a child process that has gone away, asked or not.
  * Wired as the transport's `onclose` BEFORE `client.connect` so the SDK
  * chains it ahead of its own close handling — set afterwards it would
@@ -125,7 +135,7 @@ function onChildClosed(key: string, transport: HubChildTransport): void {
     : "died before registration";
   logWarn(
     "gateway",
-    `hub child ${key} ${phase} (pid ${transport.pid ?? "?"}): ${formatChildExit(record)}`,
+    `hub child ${describeKey(key)} ${phase} (pid ${transport.pid ?? "?"}): ${formatChildExit(record)}`,
   );
 }
 
@@ -199,7 +209,10 @@ async function spawnChild(key: string, spec: ChildSpec): Promise<ChildHandle> {
           try {
             await client.close();
           } catch (err) {
-            logWarn("gateway", `hub child ${key} close failed: ${String(err)}`);
+            logWarn(
+              "gateway",
+              `hub child ${describeKey(key)} close failed: ${String(err)}`,
+            );
           }
         })());
     })(),
@@ -226,7 +239,10 @@ async function spawnChild(key: string, spec: ChildSpec): Promise<ChildHandle> {
   };
 
   children.set(key, entry);
-  log("gateway", `hub child started: ${key} (pid ${transport.pid ?? "?"})`);
+  log(
+    "gateway",
+    `hub child started: ${describeKey(key)} (pid ${transport.pid ?? "?"})`,
+  );
   return entry.handle;
 }
 
@@ -327,9 +343,9 @@ function reapIdle(): void {
     if (entry.lastActivity >= cutoff) continue;
     children.delete(key);
     entry.close().catch((err) => {
-      logError("gateway", `hub reap of ${key} failed`, err);
+      logError("gateway", `hub reap of ${describeKey(key)} failed`, err);
     });
-    log("gateway", `hub child reaped (idle): ${key}`);
+    log("gateway", `hub child reaped (idle): ${describeKey(key)}`);
   }
 }
 
