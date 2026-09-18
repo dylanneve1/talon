@@ -95,6 +95,70 @@ Config (`cache` block): `idleCompactAfterMs`, `idleCompactMinContextTokens`,
 (pre − post). The heartbeat's "cold big chat" list can show up in
 `/status` before the policy is on, so the numbers are visible first.
 
+## Where the money goes on one turn
+
+Every request the SDK makes for a turn sends `tools → system(static |
+dynamic) → history → this user turn`. Prices (Opus 5): cache read is
+0.1× input, a 5-minute cache write is 1.25×, a 1-hour write is 2×. So:
+
+| Situation | What is billed |
+| --- | --- |
+| Warm chat, next turn | prefix + history at 0.1×; only the new user turn and the model's output at full price. Cheap. |
+| Same frontend, different chat, warm | `tools + static system` at 0.1× (shared), that chat's own history at full price the first time, then cached. This is the cross-chat reuse Dylan asked for — it already happens whenever the bytes match. |
+| Cold chat (idle > TTL), next turn | the whole prefix **and the whole transcript** re-written at 2× (1h TTL). A 60 k-token idle chat costs ~120 k-token-equivalents to wake up, before the model says a word. |
+| Model switch | a separate cache per model; the first turn after a switch is a cold start. |
+| Background agents (heartbeat, dream, cron) | their own system prompts, so their own prefixes — they never warm the chat prefix and the chat never warms theirs. |
+
+Two consequences the plan turns into work:
+
+1. **Compact while the cache is still warm, not after it has gone cold.**
+   Compacting reads the transcript once. If that read happens inside the
+   TTL it is a 0.1× cache read plus a short summary; if it happens on the
+   next message after expiry it is the full 2× re-write we were trying to
+   avoid. So PR C's policy runs on a timer, not on the next message: a
+   sweep every few minutes finds chats with `contextTokens > minContext`
+   whose `lastTurnEndedAt` is inside `[ttl − margin, ttl)` (default margin
+   10 min) and compacts them then. The user's return then re-writes only
+   the compacted context. If the user never returns, the compaction cost
+   a cache read and ~1–2 k output tokens — small, bounded, and only paid
+   for chats that were big enough to matter.
+2. **Infer the TTL from data instead of assuming it.** The SDK reports
+   `cache_ttl` only in model-switch hook inputs. PR A's
+   `cache.first_request.{hit,miss}` next to the idle age at that turn
+   gives the empirical TTL (hits at 50 min idle, misses at 70 min ⇒ 1 h).
+   `/status` shows both; PR C's timer reads the measured value with 1 h
+   as the fallback.
+
+## Things to verify in PR B, not assume
+
+- The SDK exports `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` and Talon splits its
+  prompt on it (`backend/claude-sdk/options.ts`). Confirm from the
+  telemetry that a change in `dynamicText` (the daily-note pointer at
+  midnight, a skill install) leaves `cache.first_request` a **hit**, not
+  a miss. If it misses, the boundary is cosmetic and the dynamic block
+  must move into the user turn.
+- The tool array: `composeTools` per frontend plus per-chat MCP servers.
+  Two chats on one frontend must produce the same fingerprint; if MCP
+  servers differ per chat, that is a per-chat prefix and the sharing
+  win is gone for those chats — measure how many.
+- `/reset` and a Companion "new chat" start a fresh session: same prefix,
+  so a hit if any chat on that frontend was active within the TTL. This
+  is the concrete case Dylan described; PR A's `cache.session_start.hit`
+  is the number that proves it.
+
+## Considered and parked
+
+- **Keep-warm pings.** Re-reading the prefix every ~55 min costs 0.1× of
+  the prefix per hour (≈ 2 k tokens/h for a 20 k prefix). Cheap, but it
+  only pays off for a chat that would otherwise cold-start *more* than
+  once an hour, which a bot with a human on the other end rarely does.
+  Decide from PR A's cold-start counts, not up front.
+- **Sharing the chat prefix with the heartbeat/dream agents.** They would
+  need the chat's tools and system prompt, which is not what they are
+  for. Not worth distorting them to warm a cache.
+- **Client-side `cache_control`.** The SDK owns it; there is nothing to
+  place.
+
 ## Non-goals
 
 No client-side `cache_control` (the SDK owns it). No second TTL. No
