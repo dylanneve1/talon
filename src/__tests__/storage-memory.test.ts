@@ -110,12 +110,15 @@ describe("memory store CRUD", () => {
     expect(listMemories({ subject, limit: 1 })).toHaveLength(1);
   });
 
-  it("touch bumps the hit count and records the op", () => {
+  it("touch bumps the hit count without auditing the hit", () => {
     const { id } = assertMemory(input({ subject }));
+    const before = memoryHistory(id).length;
     touchMemory(id);
     touchMemory(id);
     expect(getMemory(id)!.hitCount).toBe(2);
-    expect(memoryHistory(id).filter((e) => e.op === "touch")).toHaveLength(2);
+    expect(getMemory(id)!.lastSeenAt).toBeGreaterThan(0);
+    // A touch changes no content, so it writes no history row.
+    expect(memoryHistory(id)).toHaveLength(before);
   });
 
   it("formats a row as one line with its markers", () => {
@@ -241,6 +244,26 @@ describe("supersede", () => {
     expect(() => supersedeMemory(id, "next")).toThrow(/dropped/);
   });
 
+  it("keeps the chain linear: a superseded row cannot be changed again", () => {
+    const { id } = assertMemory(input({ subject, text: "first" }));
+    const second = supersedeMemory(id, "second", "restated");
+    expect(() => supersedeMemory(id, "fork", "second try")).toThrow(
+      new RegExp(`superseded by #${second}`),
+    );
+    for (const mutate of [
+      () => dropMemory(id, "late"),
+      () => mergeMemory([id], "folded"),
+      () => pinMemory(id),
+      () => unpinMemory(id),
+      () => touchMemory(id),
+    ]) {
+      expect(mutate).toThrow(/is superseded by/);
+    }
+    // The successor is untouched by the refused writes.
+    expect(getMemory(second)!.text).toBe("second");
+    expect(getMemory(id)!.supersededBy).toBe(second);
+  });
+
   it("refuses an unknown id", () => {
     expect(() => supersedeMemory(-7, "next")).toThrow(/No memory with id/);
   });
@@ -309,8 +332,14 @@ describe("merge", () => {
       input({ subject, kind: "episode", text: "something happened" }),
     ).id;
     expect(() => mergeMemory([a, b], "combined")).toThrow(/across kinds/);
-    // The transaction never opened — both rows are untouched.
+    // The transaction rolled back — no survivor row, both inputs live.
     expect(getMemory(a)!.supersededBy).toBeUndefined();
+    expect(getMemory(b)!.supersededBy).toBeUndefined();
+    expect(
+      listMemories({ subject })
+        .map((r) => r.id)
+        .sort(),
+    ).toEqual([a, b].sort());
   });
 
   it("refuses an empty id list", () => {

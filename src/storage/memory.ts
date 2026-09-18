@@ -206,12 +206,22 @@ function similarityQuery(text: string): string {
     .join(" OR ");
 }
 
-/** Load a row that a mutation is about to touch, or explain why it can't. */
+/**
+ * Load a row that a mutation is about to change, or explain why it
+ * can't. Only a live row is mutable: a dropped one is in the graveyard
+ * and a superseded one has a successor, so editing it would fork the
+ * chain that `/memory diff` and `/memory undo` walk. Always called
+ * inside the mutation's own transaction — read-then-write is one unit.
+ */
 function requireLive(id: number, what: string): MemoryRow {
   const row = repo.get(id);
   if (!row) throw new Error(`No memory with id ${id}`);
   if (row.droppedAt !== undefined)
     throw new Error(`Memory ${id} is dropped; cannot ${what} it`);
+  if (row.supersededBy !== undefined)
+    throw new Error(
+      `Memory ${id} is superseded by #${row.supersededBy}; cannot ${what} it`,
+    );
   return row;
 }
 
@@ -288,9 +298,10 @@ export function supersedeMemory(
   text: string,
   reason?: string,
 ): number {
-  const old = requireLive(id, "supersede");
-  const next = successorOf(old, validateText(text));
+  const valid = validateText(text);
   return inTransaction(() => {
+    const old = requireLive(id, "supersede");
+    const next = successorOf(old, valid);
     const newId = insertWithHistory(next, "assert", reason);
     markSuperseded(old, newId, next.text, reason);
     return newId;
@@ -303,11 +314,11 @@ export function supersedeMemory(
  * one guard against a bad reconcile turn dropping human intent.
  */
 export function dropMemory(id: number, reason?: string): void {
-  const row = requireLive(id, "drop");
   const why = reason?.trim();
-  if (row.pinned && !why)
-    throw new Error(`Memory ${id} is pinned; dropping it requires a reason`);
   inTransaction(() => {
+    const row = requireLive(id, "drop");
+    if (row.pinned && !why)
+      throw new Error(`Memory ${id} is pinned; dropping it requires a reason`);
     const at = Date.now();
     repo.setDropped(id, at);
     repo.insertHistory({
@@ -330,15 +341,16 @@ export function mergeMemory(
   reason?: string,
 ): number {
   if (ids.length === 0) throw new Error("Merge needs at least one memory id");
-  const rows = ids.map((id) => requireLive(id, "merge"));
-  const first = rows[0]!;
-  const odd = rows.find((row) => row.kind !== first.kind);
-  if (odd)
-    throw new Error(
-      `Cannot merge across kinds (${first.kind} vs ${odd.kind} at id ${odd.id})`,
-    );
-  const next = successorOf(first, validateText(text));
+  const valid = validateText(text);
   return inTransaction(() => {
+    const rows = ids.map((id) => requireLive(id, "merge"));
+    const first = rows[0]!;
+    const odd = rows.find((row) => row.kind !== first.kind);
+    if (odd)
+      throw new Error(
+        `Cannot merge across kinds (${first.kind} vs ${odd.kind} at id ${odd.id})`,
+      );
+    const next = successorOf(first, valid);
     const newId = insertWithHistory(next, "merge", reason);
     for (const row of rows) markSuperseded(row, newId, next.text, reason);
     return newId;
@@ -347,19 +359,19 @@ export function mergeMemory(
 
 /** Promote a row to the never-truncated tier. */
 export function pinMemory(id: number): void {
-  const row = requireLive(id, "pin");
-  if (UNPINNABLE_TRUSTS.includes(row.trust))
-    throw new Error(`A ${row.trust} memory can never be pinned`);
-  setPinned(row, true, "pin");
+  setPinned(id, true, "pin");
 }
 
 /** Return a pinned row to the ranked pool. */
 export function unpinMemory(id: number): void {
-  setPinned(requireLive(id, "unpin"), false, "unpin");
+  setPinned(id, false, "unpin");
 }
 
-function setPinned(row: MemoryRow, pinned: boolean, op: MemoryOp): void {
+function setPinned(id: number, pinned: boolean, op: MemoryOp): void {
   inTransaction(() => {
+    const row = requireLive(id, op);
+    if (pinned && UNPINNABLE_TRUSTS.includes(row.trust))
+      throw new Error(`A ${row.trust} memory can never be pinned`);
     repo.setPinned(row.id, pinned);
     repo.insertHistory({
       memoryId: row.id,
@@ -412,13 +424,17 @@ export function replaceStateKey(
   });
 }
 
-/** Record a retrieval hit: one more use, seen just now. */
+/**
+ * Record a retrieval hit: one more use, seen just now.
+ *
+ * Deliberately writes no `memory_history` row — a touch changes no
+ * content, and the retriever calls it per hit, so auditing it would
+ * bury the entries that describe real changes.
+ */
 export function touchMemory(id: number): void {
-  const row = requireLive(id, "touch");
   inTransaction(() => {
-    const at = Date.now();
-    repo.touch(row.id, at);
-    repo.insertHistory({ memoryId: row.id, op: "touch", at });
+    const row = requireLive(id, "touch");
+    repo.touch(row.id, Date.now());
   });
 }
 

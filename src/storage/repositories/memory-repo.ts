@@ -19,14 +19,7 @@ export type MemoryTrust = "operator" | "agent" | "user_claim" | "group_chat";
 
 /** The mutation vocabulary recorded in memory_history. */
 export type MemoryOp =
-  | "assert"
-  | "supersede"
-  | "drop"
-  | "merge"
-  | "pin"
-  | "unpin"
-  | "replace_state"
-  | "touch";
+  "assert" | "supersede" | "drop" | "merge" | "pin" | "unpin" | "replace_state";
 
 /** Provenance of a claim: which frontend, chat, actor and turn asserted it. */
 export type MemorySource = {

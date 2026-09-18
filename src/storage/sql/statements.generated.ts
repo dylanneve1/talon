@@ -124,11 +124,12 @@ END;
 
 -- The audit log: one row per mutation, so every change is diffable and
 -- revertible (\`/memory diff\`, \`/memory undo\`). Ops are the reconcile
--- vocabulary of plan §3.3 plus the store's own touch/replace_state.
+-- vocabulary of plan §3.3 plus the store's own replace_state. A touch
+-- (hit_count / last_seen_at) changes no content and is not audited.
 CREATE TABLE IF NOT EXISTS memory_history (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   memory_id   INTEGER NOT NULL,
-  -- assert | supersede | drop | merge | pin | unpin | replace_state | touch
+  -- assert | supersede | drop | merge | pin | unpin | replace_state
   op          TEXT    NOT NULL,
   before_text TEXT,
   after_text  TEXT,
