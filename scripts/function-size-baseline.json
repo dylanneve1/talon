@@ -58,29 +58,5 @@
     "name": "registerMiddleware",
     "lines": 230,
     "cx": 39
-  },
-  {
-    "file": "src/frontend/terminal/commands.ts",
-    "name": ".handler",
-    "lines": 134,
-    "cx": 36
-  },
-  {
-    "file": "src/frontend/terminal/commands.ts",
-    "name": ".handler#3",
-    "lines": 134,
-    "cx": 41
-  },
-  {
-    "file": "src/frontend/terminal/commands.ts",
-    "name": "registerBuiltinCommands",
-    "lines": 501,
-    "cx": 111
-  },
-  {
-    "file": "src/frontend/terminal/input.ts",
-    "name": "createInput",
-    "lines": 292,
-    "cx": 53
   }
 ]
