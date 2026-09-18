@@ -80,7 +80,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint src/",
+    "lint": "oxlint --max-warnings 0 src/",
     "depcruise": "node scripts/check-architecture.mjs",
     "ratchets": "node scripts/check-ratchets.mjs",
     "function-size": "node scripts/check-function-size.mjs",

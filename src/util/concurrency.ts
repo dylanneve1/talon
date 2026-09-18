@@ -8,7 +8,7 @@ export async function mapConcurrent<T, R>(
   limit: number,
   fn: (item: T, index: number) => Promise<R>,
 ): Promise<R[]> {
-  const results: R[] = new Array(items.length);
+  const results: R[] = Array.from({ length: items.length });
   const errors: unknown[] = [];
   let next = 0;
   const worker = async (): Promise<void> => {

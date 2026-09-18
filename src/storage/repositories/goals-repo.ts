@@ -59,7 +59,8 @@ function rowToGoal(row: Row): Goal {
 }
 
 /**
- * Expand the `(/* statuses *​/)` placeholder list in a statement to
+ * Expand the `statuses` placeholder — a block comment naming it inside
+ * the parenthesised IN list of a statement — to
  * one `?` per status. The status values themselves stay bound
  * parameters — only the placeholder count is interpolated, never
  * caller data.

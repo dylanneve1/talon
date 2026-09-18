@@ -33,7 +33,6 @@ import {
   accountFailedTurn,
   nameSessionFromFirstMessage,
   finishCallbackTurn,
-  type StreamState,
 } from "../shared/index.js";
 import type { RemoteAgentClient } from "./client.js";
 import type { RemoteServerBindings } from "./server-bindings.js";
