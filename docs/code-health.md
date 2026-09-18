@@ -99,21 +99,38 @@ closed only through a dynamic import — and reports **zero** violations now tha
 it runs. madge models neither type-only imports nor dynamic-import cycle
 breaks. Prefer the `no-circular` rule; treat madge as a smoke test only.
 
-## 3. The native bridge is the thinnest-covered security surface — open
+## 3. The native bridge is the thinnest-covered security surface — improved
 
-`src/frontend/native` sits at **38.7% statements / 35.3% branches**, against
-`src/core` at 86.2%.
+`src/frontend/native` was at **38.7% statements / 35.3% branches** when this
+pass was written; it is now at **88.4% / 78.4%**, against `src/core` at
+84.6%. The auth-shaped half — bearer-token authentication, the failed-auth
+lockout, the pre-auth routes (`/health`, `/pair`, `/node/install`,
+`/node/binary`), transfer-token scoping — was covered first, and the request
+path behind it followed: the turn loop (`turn.ts` 11% → 98.2%), the chat
+lifecycle, reset, the empty-chat sweep, the model/backend pickers and the
+handler table the routes call were all between 0% and 12.5%, and are now
+pinned as behaviour rather than lines (a message runs a turn and its events
+reach the client, a second message queues and sends after, an interrupt stops
+the turn, a dispatcher throw surfaces as an error event without wedging the
+chat). Every security-relevant file now clears 80% — `server.ts` 85.8%,
+`tls.ts` 97.8%, `routes/pre-auth.ts` 96.0%, `settings.ts` 100% — so this is
+no longer where coverage effort pays best. What is left inside the frontend
+is `index.ts` (0%, the composition root the daemon integration tier
+exercises) and `context.ts` (59%).
 
-That is the code doing bearer-token authentication, the failed-auth lockout,
-the pre-auth routes (`/health`, `/pair`, `/node/install`, `/node/binary`), and
-transfer-token scoping — the parts where a missed branch is a security bug
-rather than a cosmetic one. Coverage effort belongs here before anywhere else,
-notably ahead of `src/cli` (14.3%), which is composition-root glue that
-integration tests already exercise end to end.
+Other thin areas, re-measured, in rough priority order:
 
-Other thin areas, in rough priority order: `frontend/discord/handlers` (5.2%),
-`frontend/telegram/commands` (27.2%), `frontend/telegram/callbacks` (29.5%),
-`frontend/whatsapp/actions` (26.3%).
+| Area | Statements | Branches |
+| --- | --- | --- |
+| `frontend/discord/handlers` | 7.3% | 1.4% |
+| `src/cli` | 19.3% | 26.6% |
+| `frontend/telegram/callbacks` | 22.6% | 13.8% |
+| `frontend/telegram/commands` | 30.0% | 14.7% |
+| `frontend/whatsapp/actions` | 41.0% | 30.2% |
+
+`src/cli` stays low by design — composition-root glue the integration tests
+already exercise end to end. `frontend/discord/handlers` is now the thinnest
+surface in the tree and the natural next target.
 
 ## 4. 255 unused exports, ungated — open
 
