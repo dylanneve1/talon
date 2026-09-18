@@ -31,8 +31,8 @@ import { join, relative } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const BASELINE_PATH = join(ROOT, "scripts", "function-size-baseline.json");
-const LINE_LIMIT = 200;
-const CX_LIMIT = 30;
+const LINE_LIMIT = 150;
+const CX_LIMIT = 25;
 
 const BRANCHES = new Set([
   "IfStatement",

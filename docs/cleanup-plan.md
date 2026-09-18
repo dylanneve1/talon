@@ -67,7 +67,7 @@ item is the one that turns hypotheses into numbers.
 
 ## Worklist, ordered by value over risk
 
-**A. Function-size ratchet** — `scripts/check-function-size.mjs` on
+**A. Function-size ratchet** (limits tightened to 150 / 25 in Tooth 2 below) — `scripts/check-function-size.mjs` on
 `oxc-parser` (already in `node_modules` via oxlint), a committed baseline
 of the functions currently over the limits (200 lines, complexity 30),
 and a Code Quality step. Same contract as `check-ratchets.mjs`: counts
@@ -116,6 +116,22 @@ in so it did not collide with their import rewrites).
 **J. Performance PRs, each quoting B's numbers** — boot concurrency,
 native context cache, console log level, native type stripping. In that
 order; each is independent and revertible.
+
+## Tooth 2 (2026-09-18)
+
+Worklist A–I landed; the 200-line / complexity-30 baseline was down to
+one function. The ratchet now runs at **150 lines / complexity 25**, with
+a fresh baseline of 28 functions. Same contract: the count only falls,
+and the PR that shrinks a function lowers or deletes its entry. The 28
+fall into the same shapes as before, and the splits should follow the
+same fixes:
+
+| Shape | Functions | Fix |
+| --- | --- | --- |
+| Backend turn loop (still ~190 L each after #867) | `remote-server/chat-turn.ts runRemoteChatTurn` (200), `codex/handler/message.ts handleMessage` (199), `claude-sdk/handler.ts runChatTurn` (195), `openai-agents/handler/message.ts handleMessage` (186), `shared/handler-to-events.ts handlerToEvents` (161) | Extract the stream-event switch and the prompt/session setup from each loop into named phases; the loop keeps only the iteration. |
+| Composition-root wiring | `bootstrap.ts initBackendAndDispatcher` (316), `cli/index.ts runCli` (cx 30), `frontend/terminal/index.ts createTerminalFrontend` (186), `plugins/mempalace/index.ts createMempalacePlugin` (cx 28) | One function per wired subsystem; the root becomes a list of calls. |
+| Big switch / classifier | `core/errors.ts classify` (cx 29), `frontend/discord/admin.ts handleAdminSubcommand` (cx 28), `frontend/native/routes/chats.ts chatRoutes` (cx 28), `core/engine/gateway.ts .handleAction` (cx 28), `telegram/model-callbacks.ts parseModelCallback` (cx 28), `telegram/middleware.ts mediaHistoryEntry` (cx 26), `gateway-actions/cross-send.ts .send_via` (cx 30), `native/settings.ts applyConfigUpdate` (cx 29), `codex/one-shot.ts appendCodexItem` (cx 29), `openai-agents/handler/events.ts handleToolCalled` (cx 26) | Table or one-predicate-per-branch; the dispatch-table shape the frontends already use. |
+| Long straight-line procedures | `core/tools/messaging.ts .execute#2` (191), `telegram/commands/info.ts registerInfoCommands` (188), `util/mcp-launcher.ts runSupervisor` (187), `core/background/dream.ts runDreamAgent` (183), `core/doctor/index.ts collectDoctorReport` (179), `plugins/mempalace/provision.ts reconcile` (156), `native/warden.ts spawnWarden` (cx 28), `frontend/shared/session-status.ts collectSessionStatus` (cx 26), `gateway-actions/fetch-url.ts .fetch_url` (cx 26) | Split at the phase comments they already carry. |
 
 ## Out of scope
 
