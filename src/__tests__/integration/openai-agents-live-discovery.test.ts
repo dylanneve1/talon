@@ -27,6 +27,9 @@
  * The bot is bootstrapped with `frontend: "terminal"` so no Telegram
  * MCP servers spawn — keeps the test self-contained and fast.
  */
+import { rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 
 import { Gateway } from "../../core/engine/gateway.js";
@@ -178,20 +181,24 @@ describe("openai-agents live (dummy) / tool call dispatch", () => {
     bootBackend();
     await fetchEndpointModels(server.url, "sk-test-fake");
 
-    // Two requests: the first one returns a Bash tool call (which the
+    // Two requests: the first one returns a Read tool call (which the
     // backend executes locally via the openai-agents builtin), the
     // second returns the final assistant text containing the tool's
-    // output.
+    // output. Read is used rather than Bash on purpose: the case proves
+    // builtin dispatch, and Bash spawns a real shell — on the Windows
+    // runner a PowerShell cold start under load ate the whole 15 s
+    // budget (#975, #982), which had nothing to do with dispatch.
+    const toolFile = join(
+      tmpdir(),
+      `talon-tool-dispatch-${process.pid}-${Date.now()}.txt`,
+    );
+    writeFileSync(toolFile, "dummy-tool-output\n");
     server.setScript([
       {
         toolCalls: [
           {
-            name: "Bash",
-            arguments: {
-              command: "echo dummy-tool-output",
-              description: null,
-              timeout_ms: null,
-            },
+            name: "Read",
+            arguments: { file_path: toolFile },
           },
         ],
         finishReason: "tool_calls",
@@ -203,16 +210,21 @@ describe("openai-agents live (dummy) / tool call dispatch", () => {
     ]);
 
     const tools: string[] = [];
-    const result = await handleMessage({
-      chatId: "test-chat",
-      text: "run that command",
-      senderName: "Tester",
-      isGroup: false,
-      messageId: 2,
-      onToolUse: (name) => tools.push(name),
-    });
+    let result: Awaited<ReturnType<typeof handleMessage>>;
+    try {
+      result = await handleMessage({
+        chatId: "test-chat",
+        text: "read that file",
+        senderName: "Tester",
+        isGroup: false,
+        messageId: 2,
+        onToolUse: (name) => tools.push(name),
+      });
+    } finally {
+      rmSync(toolFile, { force: true });
+    }
 
-    expect(tools).toContain("Bash");
+    expect(tools).toContain("Read");
     expect(result.text).toContain("dummy-tool-output");
 
     const reqs = server
