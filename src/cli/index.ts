@@ -157,7 +157,7 @@ export async function runCli(): Promise<void> {
         `    ${pc.cyan("skill")}      Manage skills (install/enable/disable)`,
       );
       console.log(
-        `    ${pc.cyan("memory")}     Read/edit the memory store (list/search/remember)`,
+        `    ${pc.cyan("memory")}     Read/edit the memory store (list/search/import/render)`,
       );
       console.log(`    ${pc.cyan("config")}     View/edit configuration`);
       console.log(`    ${pc.cyan("logs")}       Tail log file`);

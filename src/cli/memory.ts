@@ -8,6 +8,11 @@
  */
 
 import pc from "picocolors";
+import { importAll } from "../core/memory/import.js";
+import {
+  renderMemoryMarkdown,
+  writeRenderedMemory,
+} from "../core/memory/render.js";
 import {
   assertMemory,
   dropMemory,
@@ -33,6 +38,8 @@ const USAGE = [
   `    ${pc.cyan("remember <kind> <subject> <text>")} Record an operator claim`,
   `    ${pc.cyan("forget <id> [reason]")}           Drop a row to the graveyard`,
   `    ${pc.cyan("state <key> <text>")}             Replace the row for a state key`,
+  `    ${pc.cyan("import")}                         Fold memory.md + daily notes into the store`,
+  `    ${pc.cyan("render [--write]")}               Render the store as memory.md`,
   "",
   `  Kinds: ${MEMORY_KINDS.join(", ")}`,
   "",
@@ -134,6 +141,24 @@ function cmdState(args: readonly string[]): void {
   console.log(`  ${pc.green("●")} ${key} is now #${id}\n`);
 }
 
+function cmdImport(): void {
+  const { inserted, superseded, skipped } = importAll();
+  console.log(
+    `  ${pc.green("●")} Imported: ${inserted} new, ${superseded} updated, ${skipped} unchanged\n`,
+  );
+}
+
+function cmdRender(args: readonly string[]): void {
+  if (!args.includes("--write")) {
+    console.log(renderMemoryMarkdown());
+    return;
+  }
+  const { path, bytes, backup } = writeRenderedMemory();
+  console.log(`  ${pc.green("●")} Wrote ${bytes} chars to ${path}`);
+  if (backup) console.log(`  ${pc.dim(`Previous file archived to ${backup}`)}`);
+  console.log();
+}
+
 /** Route a `talon memory <command>` invocation. */
 export function runMemoryCommand(args: readonly string[]): void {
   try {
@@ -156,6 +181,12 @@ export function runMemoryCommand(args: readonly string[]): void {
         break;
       case "state":
         cmdState(args.slice(1));
+        break;
+      case "import":
+        cmdImport();
+        break;
+      case "render":
+        cmdRender(args.slice(1));
         break;
       default:
         console.log(USAGE);

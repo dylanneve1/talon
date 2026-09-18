@@ -440,6 +440,14 @@ export function touchMemory(id: number): void {
 
 // ── Reads ───────────────────────────────────────────────────────────────────
 
+/**
+ * The idempotency key a re-import compares against: sha256 of
+ * `kind|subject|key|text`. Re-exported from the repository so
+ * core/memory/import.ts can decide skip-vs-supersede without reaching
+ * past the store (plan §3.1).
+ */
+export const memoryContentHash = repo.contentHash;
+
 /** Any row by id — including superseded and dropped ones. */
 export function getMemory(id: number): MemoryRow | undefined {
   return repo.get(id);

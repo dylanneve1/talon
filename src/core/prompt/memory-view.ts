@@ -60,7 +60,7 @@ const MAX_OMITTED_NAMED = 8;
  * dropped and most cheaply re-derived. `historical` is last for the mirror
  * reason: it will never change again, so it is the least urgent to carry.
  */
-const TIER_ORDER = [
+export const TIER_ORDER = [
   "directive",
   "people",
   "active",
@@ -69,7 +69,7 @@ const TIER_ORDER = [
   "historical",
 ] as const;
 
-type Tier = (typeof TIER_ORDER)[number];
+export type Tier = (typeof TIER_ORDER)[number];
 
 const tier = (name: Tier): number => TIER_ORDER.indexOf(name);
 
@@ -107,7 +107,7 @@ const MATCHERS: readonly { readonly tier: Tier; readonly match: RegExp }[] = [
 const STATUS_TIER = tier("status");
 const GENERAL_TIER = tier("general");
 
-function classify(title: string): number {
+export function classify(title: string): number {
   for (const m of MATCHERS) {
     if (m.match.test(title)) return tier(m.tier);
   }
@@ -116,7 +116,7 @@ function classify(title: string): number {
 
 // ── Parsing ─────────────────────────────────────────────────────────────────
 
-type Section = {
+export type Section = {
   /** Heading with markup and trailing qualifiers stripped — the display name. */
   readonly title: string;
   /** Whole section including its heading and any `###` children. */
@@ -131,7 +131,7 @@ type Section = {
 };
 
 /** Strip `## ` markup and bold markers from a heading line. */
-function headingTitle(heading: string): string {
+export function headingTitle(heading: string): string {
   return heading
     .replace(/^#+\s*/, "")
     .replace(/\*\*/g, "")
@@ -144,7 +144,7 @@ function headingTitle(heading: string): string {
  * parenthetical is exactly what makes each snapshot look unique while the
  * underlying topic repeats, so removing it is what lets a family collapse.
  */
-function familyKey(title: string): string {
+export function familyKey(title: string): string {
   return title
     .replace(/\s*\([^)]*\)\s*$/, "")
     .replace(/\s*[—–-]\s*(?:as of|run #).*$/i, "")
@@ -172,7 +172,7 @@ function recencyKey(heading: string): string {
  * the first `## `) plus one entry per `## ` section. The split is on `## `
  * only, so an `h3` travels with the section it belongs to.
  */
-function parseSections(content: string): {
+export function parseSections(content: string): {
   preamble: string;
   sections: Section[];
 } {
@@ -201,7 +201,7 @@ function parseSections(content: string): {
  * the one that appeared first. Only the `status` tier collapses — two
  * sections about people are two different people, not two snapshots of one.
  */
-function collapseFamilies(sections: readonly Section[]): {
+export function collapseFamilies(sections: readonly Section[]): {
   kept: Section[];
   dropped: Section[];
 } {

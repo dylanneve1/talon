@@ -141,7 +141,7 @@ without the store ever auto-superseding. knip took `talon memory` (list /
 search / show / remember / forget / state) as the consumer, so PR 5 stayed
 separate. 36 tests.
 
-### PR 5 — `feat(memory): import memory.md, render it back`
+### PR 5 — `feat(memory): import memory.md, render it back` ✅ done
 
 - `core/memory/import.ts`: `memory.md` + daily notes → rows, reusing PR 1's parser.
   Idempotent via content hash. Original files preserved.
@@ -151,6 +151,27 @@ separate. 36 tests.
 - `/memory` (telegram + native): top rows, search, `/memory why <id>` for provenance.
 - With the flag on, the store is authoritative and `memory.md` is rendered output.
   Hand-edits to the file are folded back as an inbox on next import.
+
+**Landed** as #940. `core/memory/import.ts` exports `importMemoryFile` /
+`importDailyNotes` / `importAll`, all returning `{ inserted, superseded, skipped }`;
+`core/memory/render.ts` exports `renderMemoryMarkdown` / `writeRenderedMemory`.
+PR 1's parser is reused rather than reimplemented — `parseSections`,
+`collapseFamilies`, `classify`, `TIER_ORDER`, `familyKey` and `headingTitle` became
+exports of `prompt/memory-view.ts`, unchanged in behaviour — and the store
+re-exports the repo's hash as `memoryContentHash`. Kind follows the heading tier:
+`directives`→`directive`, `people`→`relationship`, `status`→`state` (keyed on a slug
+of the family key, written through `replaceStateKey`), `historical`→`episode`,
+`active`/`general`→`fact`; a bare `YYYY-MM-DD` heading is an `episode`, which is what
+makes a rendered daily note read back as the episode it came from. Idempotency is by
+content hash over `kind|subject|key|text` against the live row with
+`source.actor = "import"`: same hash skips, a different hash supersedes (that is the
+hand-edit fold-back), nothing else inserts. Sections over the store's 4000-char cap
+split at blank lines into ` (n/N)` rows, which the render regroups, so
+import → render → import is a fixed point. CLI: `talon memory import` and
+`talon memory render [--write]` (`--write` archives the current file to
+`memory-before-render-<date>.md` first, once a day). The `/memory` frontend command
+(telegram + native) is **deferred to its own PR** — this one is the store-side half.
+`assemble.ts` is untouched; the flag flip and the core view stay PR 8/9.
 
 ---
 
