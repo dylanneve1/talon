@@ -2,7 +2,7 @@
  * Settings commands — /model, /effort, /pulse, /settings.
  */
 
-import type { Bot } from "grammy";
+import type { Bot, Context } from "grammy";
 import {
   getChatSettings,
   setChatModelForBackend,
@@ -43,10 +43,56 @@ import {
 } from "../../shared/reasoning-levels.js";
 import type { RegisterDeps } from "./state.js";
 
-export function registerSettingsCommands(
-  bot: Bot,
-  { config, gateway }: RegisterDeps,
-): void {
+/** `/model <query>` — resolve the query against the per-chat backend and
+ * persist the pick. `be` + `beId` are the caller's (override-aware). */
+async function replyModelSet(
+  ctx: Context,
+  arg: string,
+  cid: string,
+  be: ReturnType<typeof resolveBackendForChat>,
+  beId: string,
+): Promise<void> {
+  if (be?.models?.resolveModelInfo) {
+    const resolution = await be.models?.resolveModelInfo(arg);
+    if (resolution.kind !== "exact") {
+      // Every backend's formatModelError returns plain text and
+      // interpolates the raw query, so escape at this boundary — the
+      // same fix as the model menu's status lines. `/model <name>`
+      // (which the OpenCode/Kilo hint literally tells you to type)
+      // otherwise reaches Telegram as an unsupported `<name>` tag and
+      // the whole reply 400s, leaving the command looking dead.
+      const msg =
+        be.models?.formatModelError?.(arg, resolution) ??
+        `No model matched "${arg}".`;
+      await ctx.reply(escapeHtml(msg), { parse_mode: "HTML" });
+      return;
+    }
+    if (!resolution.model.selectable) {
+      const msg =
+        resolution.model.unavailableReason ??
+        `${resolution.model.providerName} is not connected.`;
+      await ctx.reply(escapeHtml(msg), { parse_mode: "HTML" });
+      return;
+    }
+    setChatModelForBackend(cid, beId, resolution.storedValue);
+    setChatBackend(cid, beId);
+    await ctx.reply(
+      `Model set to <code>${escapeHtml(resolution.storedValue)}</code> (${escapeHtml(resolution.model.providerName)}${resolution.model.free ? " · free" : ""}).`,
+      { parse_mode: "HTML" },
+    );
+  } else {
+    // Fallback for backends without model resolution
+    const model = resolveModelName(arg);
+    setChatModelForBackend(cid, beId, model);
+    setChatBackend(cid, beId);
+    await ctx.reply(
+      `Model set to <code>${escapeHtml(formatModelLabel(model))}</code>.`,
+      { parse_mode: "HTML" },
+    );
+  }
+}
+
+function registerModelCommand(bot: Bot, { config, gateway }: RegisterDeps) {
   bot.command("model", async (ctx) => {
     const cid = String(ctx.chat.id);
     const arg = ctx.match?.trim();
@@ -109,46 +155,11 @@ export function registerSettingsCommands(
 
     // `be` + `beId` already resolved above for the activeModel lookup.
     // Reuse them — they point at the per-chat backend (override-aware).
-    if (be?.models?.resolveModelInfo) {
-      const resolution = await be.models?.resolveModelInfo(arg);
-      if (resolution.kind !== "exact") {
-        // Every backend's formatModelError returns plain text and
-        // interpolates the raw query, so escape at this boundary — the
-        // same fix as the model menu's status lines. `/model <name>`
-        // (which the OpenCode/Kilo hint literally tells you to type)
-        // otherwise reaches Telegram as an unsupported `<name>` tag and
-        // the whole reply 400s, leaving the command looking dead.
-        const msg =
-          be.models?.formatModelError?.(arg, resolution) ??
-          `No model matched "${arg}".`;
-        await ctx.reply(escapeHtml(msg), { parse_mode: "HTML" });
-        return;
-      }
-      if (!resolution.model.selectable) {
-        const msg =
-          resolution.model.unavailableReason ??
-          `${resolution.model.providerName} is not connected.`;
-        await ctx.reply(escapeHtml(msg), { parse_mode: "HTML" });
-        return;
-      }
-      setChatModelForBackend(cid, beId, resolution.storedValue);
-      setChatBackend(cid, beId);
-      await ctx.reply(
-        `Model set to <code>${escapeHtml(resolution.storedValue)}</code> (${escapeHtml(resolution.model.providerName)}${resolution.model.free ? " · free" : ""}).`,
-        { parse_mode: "HTML" },
-      );
-    } else {
-      // Fallback for backends without model resolution
-      const model = resolveModelName(arg);
-      setChatModelForBackend(cid, beId, model);
-      setChatBackend(cid, beId);
-      await ctx.reply(
-        `Model set to <code>${escapeHtml(formatModelLabel(model))}</code>.`,
-        { parse_mode: "HTML" },
-      );
-    }
+    await replyModelSet(ctx, arg, cid, be, beId);
   });
+}
 
+function registerEffortCommand(bot: Bot, { config, gateway }: RegisterDeps) {
   bot.command("effort", async (ctx) => {
     const cid = String(ctx.chat.id);
     const arg = ctx.match?.trim().toLowerCase();
@@ -207,7 +218,9 @@ export function registerSettingsCommands(
       `Unknown level for this model. Valid: ${reasoning.levels.join(", ")}, or adaptive.`,
     );
   });
+}
 
+function registerPulseCommand(bot: Bot) {
   bot.command("pulse", async (ctx) => {
     const cid = String(ctx.chat.id);
     const arg = ctx.match?.trim().toLowerCase();
@@ -270,7 +283,9 @@ export function registerSettingsCommands(
 
     await ctx.reply("Use: /pulse on, /pulse off, /pulse 30m, /pulse 2h");
   });
+}
 
+function registerSettingsCommand(bot: Bot, { config, gateway }: RegisterDeps) {
   bot.command("settings", async (ctx) => {
     const cid = String(ctx.chat.id);
     const chatSets = getChatSettings(cid);
@@ -348,4 +363,11 @@ export function registerSettingsCommands(
       },
     );
   });
+}
+
+export function registerSettingsCommands(bot: Bot, deps: RegisterDeps): void {
+  registerModelCommand(bot, deps);
+  registerEffortCommand(bot, deps);
+  registerPulseCommand(bot);
+  registerSettingsCommand(bot, deps);
 }

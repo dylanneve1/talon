@@ -4,41 +4,5 @@
     "name": "initBackendAndDispatcher",
     "lines": 316,
     "cx": 16
-  },
-  {
-    "file": "src/frontend/telegram/actions/moderation.ts",
-    "name": ".moderate",
-    "lines": 163,
-    "cx": 43
-  },
-  {
-    "file": "src/frontend/telegram/admin.ts",
-    "name": "handleAdminCommand",
-    "lines": 191,
-    "cx": 31
-  },
-  {
-    "file": "src/frontend/telegram/callbacks/model.ts",
-    "name": "handleModelCallback",
-    "lines": 267,
-    "cx": 42
-  },
-  {
-    "file": "src/frontend/telegram/commands/admin.ts",
-    "name": "registerAdminCommands",
-    "lines": 219,
-    "cx": 34
-  },
-  {
-    "file": "src/frontend/telegram/commands/settings.ts",
-    "name": "registerSettingsCommands",
-    "lines": 304,
-    "cx": 36
-  },
-  {
-    "file": "src/frontend/telegram/middleware.ts",
-    "name": "registerMiddleware",
-    "lines": 230,
-    "cx": 39
   }
 ]

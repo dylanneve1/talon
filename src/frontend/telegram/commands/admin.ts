@@ -7,6 +7,7 @@
  */
 
 import type { Bot } from "grammy";
+import type { TalonConfig } from "../../../util/config.js";
 import { respawnSelf } from "../../../util/respawn.js";
 import { isStaleCommand } from "../stale-command.js";
 import {
@@ -31,10 +32,7 @@ import { getTodayMetrics } from "../../../storage/metrics.js";
 import { isAuthorizedAdmin, type RegisterDeps } from "./state.js";
 import { telegramCommandMenu } from "./definitions.js";
 
-export function registerAdminCommands(
-  bot: Bot,
-  { config }: RegisterDeps,
-): void {
+function registerAdminCommand(bot: Bot, config: TalonConfig): void {
   bot.command("admin", async (ctx) => {
     if (!isAuthorizedAdmin(ctx)) {
       await ctx.reply("Not authorized.");
@@ -42,7 +40,9 @@ export function registerAdminCommands(
     }
     await handleAdminCommand(ctx, bot, config);
   });
+}
 
+function registerMetricsCommand(bot: Bot): void {
   bot.command("metrics", async (ctx) => {
     if (!isAuthorizedAdmin(ctx)) {
       await ctx.reply("Not authorized.");
@@ -55,15 +55,19 @@ export function registerAdminCommands(
       reply_markup: { inline_keyboard: renderMetricsKeyboard("today") },
     });
   });
+}
 
-  // /usage — plan limits across every exposed backend, not just this
-  // chat's. Not admin-gated: it says how close the shared account is to a
-  // wall, which is exactly what a user hitting one needs to know.
+// /usage — plan limits across every exposed backend, not just this
+// chat's. Not admin-gated: it says how close the shared account is to a
+// wall, which is exactly what a user hitting one needs to know.
+function registerUsageCommand(bot: Bot, config: TalonConfig): void {
   bot.command("usage", async (ctx) => {
     const entries = await collectPlanUsage(config);
     await ctx.reply(renderUsageMessage(entries), { parse_mode: "HTML" });
   });
+}
 
+function registerDoctorCommand(bot: Bot, config: TalonConfig): void {
   bot.command("doctor", async (ctx) => {
     if (!isAuthorizedAdmin(ctx)) {
       await ctx.reply("Not authorized.");
@@ -90,7 +94,9 @@ export function registerAdminCommands(
       );
     }
   });
+}
 
+function registerDreamCommand(bot: Bot): void {
   bot.command("dream", async (ctx) => {
     if (!isAuthorizedAdmin(ctx)) {
       await ctx.reply("Not authorized.");
@@ -118,10 +124,12 @@ export function registerAdminCommands(
         );
       });
   });
+}
 
-  // /soul — introspect the compiled identity (read-only). `/soul dream`
-  // (admin) runs the organic maintenance pass. Inert when the soul is
-  // disabled (TALON_SOUL_ENABLED), so it's safe to ship dormant.
+// /soul — introspect the compiled identity (read-only). `/soul dream`
+// (admin) runs the organic maintenance pass. Inert when the soul is
+// disabled (TALON_SOUL_ENABLED), so it's safe to ship dormant.
+function registerSoulCommand(bot: Bot): void {
   bot.command("soul", async (ctx) => {
     const soul = getSoul();
     if (!soul.enabled) {
@@ -149,7 +157,9 @@ export function registerAdminCommands(
     }
     await ctx.reply(soul.introspect());
   });
+}
 
+function registerRestartCommand(bot: Bot): void {
   bot.command("restart", async (ctx) => {
     if (!isAuthorizedAdmin(ctx)) {
       await ctx.reply("Not authorized.");
@@ -162,77 +172,82 @@ export function registerAdminCommands(
     await ctx.reply("♻️ Restarting...");
     respawnSelf("telegram /restart");
   });
+}
 
-  // /update — pull latest, reinstall, run setup, restart. Only wired
-  // up for developer builds running from a git checkout; packaged
-  // binaries have no source tree (getRepoRoot() === null) so the
-  // command stays absent entirely.
-  const updateRepoRoot = config.devBuild ? getRepoRoot() : null;
-  if (updateRepoRoot) {
-    bot.command("update", async (ctx) => {
-      if (!isAuthorizedAdmin(ctx)) {
-        await ctx.reply("Not authorized.");
-        return;
-      }
-      // Same redelivery hazard as /restart — it also ends the process.
-      if (isStaleCommand(ctx.message?.date, "/update")) return;
-      const remote = config.update?.remote ?? "origin";
-      const branch = config.update?.branch ?? "main";
-      const sent = await ctx.reply(
-        `⏳ Updating from <code>${escapeHtml(remote)}/${escapeHtml(branch)}</code>…`,
-        { parse_mode: "HTML" },
-      );
-      const edit = (text: string) =>
-        bot.api
-          .editMessageText(ctx.chat.id, sent.message_id, text, {
-            parse_mode: "HTML",
-          })
-          .catch(() => {});
-
-      // Fire-and-forget so grammY keeps processing other updates.
-      runSelfUpdate({
-        remote,
-        branch,
-        setup: config.update?.setup,
-        repoRoot: updateRepoRoot,
-      })
-        .then(async (res) => {
-          if (!res.ok) {
-            const tail = res.steps[res.steps.length - 1]?.output ?? "";
-            await edit(
-              `⚠️ Update failed: ${escapeHtml(res.error ?? "unknown error")}` +
-                (tail ? `\n\n<pre>${escapeHtml(tail.slice(-1500))}</pre>` : ""),
-            );
-            return;
-          }
-          if (!res.changed) {
-            await edit(
-              `✅ Already up to date at <code>${escapeHtml(res.before ?? "?")}</code> — no restart needed.`,
-            );
-            return;
-          }
-          await edit(
-            `✅ Updated <code>${escapeHtml(res.before ?? "?")}</code> → <code>${escapeHtml(res.after ?? "?")}</code>. ♻️ Restarting…`,
-          );
-          // The successor documents any provisioning changes (plugin
-          // runtime upgrades, migrations) back to this chat once it's up.
-          const { armProvisionReport } =
-            await import("../../../core/plugin/provision-journal.js");
-          armProvisionReport("telegram", String(ctx.chat.id));
-          respawnSelf("telegram /update");
+// /update — pull latest, reinstall, run setup, restart. Only wired
+// up for developer builds running from a git checkout; packaged
+// binaries have no source tree (getRepoRoot() === null) so the
+// command stays absent entirely.
+function registerUpdateCommand(
+  bot: Bot,
+  config: TalonConfig,
+  updateRepoRoot: string,
+): void {
+  bot.command("update", async (ctx) => {
+    if (!isAuthorizedAdmin(ctx)) {
+      await ctx.reply("Not authorized.");
+      return;
+    }
+    // Same redelivery hazard as /restart — it also ends the process.
+    if (isStaleCommand(ctx.message?.date, "/update")) return;
+    const remote = config.update?.remote ?? "origin";
+    const branch = config.update?.branch ?? "main";
+    const sent = await ctx.reply(
+      `⏳ Updating from <code>${escapeHtml(remote)}/${escapeHtml(branch)}</code>…`,
+      { parse_mode: "HTML" },
+    );
+    const edit = (text: string) =>
+      bot.api
+        .editMessageText(ctx.chat.id, sent.message_id, text, {
+          parse_mode: "HTML",
         })
-        .catch(async (err: unknown) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          await edit(`⚠️ Update crashed: ${escapeHtml(msg)}`);
-        });
-    });
-  }
+        .catch(() => {});
 
-  // Unknown /command → "did you mean ...?" via the C similarity core
-  // (native/strsim-wasm). Registered after every real command, so grammY
-  // only reaches this when nothing above matched. Only bare commands
-  // are intercepted — a close miss gets a suggestion, anything else
-  // keeps flowing to the agent as a normal message.
+    // Fire-and-forget so grammY keeps processing other updates.
+    runSelfUpdate({
+      remote,
+      branch,
+      setup: config.update?.setup,
+      repoRoot: updateRepoRoot,
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const tail = res.steps[res.steps.length - 1]?.output ?? "";
+          await edit(
+            `⚠️ Update failed: ${escapeHtml(res.error ?? "unknown error")}` +
+              (tail ? `\n\n<pre>${escapeHtml(tail.slice(-1500))}</pre>` : ""),
+          );
+          return;
+        }
+        if (!res.changed) {
+          await edit(
+            `✅ Already up to date at <code>${escapeHtml(res.before ?? "?")}</code> — no restart needed.`,
+          );
+          return;
+        }
+        await edit(
+          `✅ Updated <code>${escapeHtml(res.before ?? "?")}</code> → <code>${escapeHtml(res.after ?? "?")}</code>. ♻️ Restarting…`,
+        );
+        // The successor documents any provisioning changes (plugin
+        // runtime upgrades, migrations) back to this chat once it's up.
+        const { armProvisionReport } =
+          await import("../../../core/plugin/provision-journal.js");
+        armProvisionReport("telegram", String(ctx.chat.id));
+        respawnSelf("telegram /update");
+      })
+      .catch(async (err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        await edit(`⚠️ Update crashed: ${escapeHtml(msg)}`);
+      });
+  });
+}
+
+// Unknown /command → "did you mean ...?" via the C similarity core
+// (native/strsim-wasm). Registered after every real command, so grammY
+// only reaches this when nothing above matched. Only bare commands
+// are intercepted — a close miss gets a suggestion, anything else
+// keeps flowing to the agent as a normal message.
+function registerUnknownCommandSuggester(bot: Bot, config: TalonConfig): void {
   const commandNames = telegramCommandMenu(config).map((c) => c.command);
   bot.on("message::bot_command", async (ctx, next) => {
     const typed = /^\/([a-zA-Z0-9_]+)(?:@(\w+))?\s*$/.exec(ctx.msg.text ?? "");
@@ -249,4 +264,20 @@ export function registerAdminCommands(
       `Unknown command /${name} — did you mean /${suggestion.value}?`,
     );
   });
+}
+
+export function registerAdminCommands(
+  bot: Bot,
+  { config }: RegisterDeps,
+): void {
+  registerAdminCommand(bot, config);
+  registerMetricsCommand(bot);
+  registerUsageCommand(bot, config);
+  registerDoctorCommand(bot, config);
+  registerDreamCommand(bot);
+  registerSoulCommand(bot);
+  registerRestartCommand(bot);
+  const updateRepoRoot = config.devBuild ? getRepoRoot() : null;
+  if (updateRepoRoot) registerUpdateCommand(bot, config, updateRepoRoot);
+  registerUnknownCommandSuggester(bot, config);
 }

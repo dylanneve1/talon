@@ -1,11 +1,16 @@
 /**
- * History capture middleware — runs for ALL messages, before handlers.
- * Records every message into the in-memory history buffer.
+ * Update-level middleware — runs for ALL messages, before handlers.
+ * Records every message into the in-memory history buffer, keeps the
+ * update offset / forum topic / userbot access current, and wires the
+ * per-message-type handlers. `registerMiddleware` binds each piece in the
+ * order grammY must see them.
  */
 
-import type { Bot } from "grammy";
+import type { Bot, Context, Filter, NextFunction } from "grammy";
+import type { Message } from "grammy/types";
 import type { TalonConfig } from "../../util/config.js";
 import { pushMessage } from "../../storage/history.js";
+import type { HistoryMessage } from "../../storage/repositories/history-repo.js";
 import { allowChat, revokeChat } from "./userbot.js";
 import { registerChat } from "../../core/background/pulse.js";
 import { log } from "../../util/log.js";
@@ -26,214 +31,165 @@ import {
   handleVideoNoteMessage,
 } from "./handlers/index.js";
 
-export function registerMiddleware(bot: Bot, config: TalonConfig): void {
-  // ── Update-offset tracking (every update, before anything else) ──────────
-  // Telegram redelivers any update whose id was never confirmed; the
-  // shutdown path confirms this one so a process-ending command can't be
-  // served twice. See update-offset.ts.
-  bot.use((ctx, next) => {
-    noteUpdateId(ctx.update.update_id);
-    return next();
-  });
+// ── Update-offset tracking (every update, before anything else) ──────────
+// Telegram redelivers any update whose id was never confirmed; the
+// shutdown path confirms this one so a process-ending command can't be
+// served twice. See update-offset.ts.
+function trackUpdateOffset(ctx: Context, next: NextFunction): Promise<void> {
+  noteUpdateId(ctx.update.update_id);
+  return next();
+}
 
-  // ── History capture (runs for ALL messages, before handlers) ─────────────
-  bot.on("message", (ctx, next) => {
-    const chatId = String(ctx.chat.id);
-    const sender = getSenderName(ctx.from);
-    // Keep the ambient forum topic current so outbound sends (which have no
-    // reply anchor — drafts, media, plain sends) land in the topic the
-    // conversation is actually happening in, not General.
-    noteInboundThread(ctx.chat.id, ctx.message);
-    // The handle is the only addressable form of a user — persist it with
-    // every row so later readers (history views, heartbeat-composed
-    // messages) can mention someone instead of guessing.
-    const senderHandle = ctx.from?.username;
-    const senderId = ctx.from?.id ?? 0;
-    const msgId = ctx.message.message_id;
-    const replyToMsgId = ctx.message.reply_to_message?.message_id;
+type HistoryEntry = Pick<
+  HistoryMessage,
+  "text" | "mediaType" | "stickerFileId"
+>;
 
-    // Register this chat for userbot access
-    allowChat(ctx.chat.id);
-    // Only register groups for pulse (DMs don't need it — bot always responds)
-    const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
-    if (isGroup) registerChat(chatId);
-    const timestamp = ctx.message.date * 1000;
+/** The media kinds history records, checked in this order. */
+function mediaHistoryEntry(message: Message): HistoryEntry | undefined {
+  if ("photo" in message && message.photo) {
+    return { text: message.caption || "(photo)", mediaType: "photo" };
+  }
+  if ("document" in message && message.document) {
+    const name = message.document.file_name || "file";
+    return { text: message.caption || `(sent ${name})`, mediaType: "document" };
+  }
+  if ("voice" in message && message.voice) {
+    return { text: "(voice message)", mediaType: "voice" };
+  }
+  if ("sticker" in message && message.sticker) {
+    return {
+      text: message.sticker.emoji || "(sticker)",
+      mediaType: "sticker",
+      stickerFileId: message.sticker.file_id,
+    };
+  }
+  if ("video" in message && message.video) {
+    return { text: message.caption || "(video)", mediaType: "video" };
+  }
+  if ("animation" in message && message.animation) {
+    return { text: message.caption || "(GIF)", mediaType: "animation" };
+  }
+  if ("audio" in message && message.audio) {
+    const title = message.audio.title || message.audio.file_name || "audio";
+    return {
+      text: message.caption || `(audio: ${title})`,
+      mediaType: "document", // treat audio like documents in history
+    };
+  }
+  if ("video_note" in message && message.video_note) {
+    return { text: "(video note)", mediaType: "video" };
+  }
+  return undefined;
+}
 
-    if ("text" in ctx.message && ctx.message.text) {
-      pushMessage(chatId, {
-        msgId,
-        senderId,
-        senderName: sender,
-        senderHandle,
-        text: ctx.message.text,
-        replyToMsgId,
-        timestamp,
-      });
-    } else if ("photo" in ctx.message && ctx.message.photo) {
-      pushMessage(chatId, {
-        msgId,
-        senderId,
-        senderName: sender,
-        senderHandle,
-        text: ctx.message.caption || "(photo)",
-        replyToMsgId,
-        timestamp,
-        mediaType: "photo",
-      });
-    } else if ("document" in ctx.message && ctx.message.document) {
-      const name = ctx.message.document.file_name || "file";
-      pushMessage(chatId, {
-        msgId,
-        senderId,
-        senderName: sender,
-        senderHandle,
-        text: ctx.message.caption || `(sent ${name})`,
-        replyToMsgId,
-        timestamp,
-        mediaType: "document",
-      });
-    } else if ("voice" in ctx.message && ctx.message.voice) {
-      pushMessage(chatId, {
-        msgId,
-        senderId,
-        senderName: sender,
-        senderHandle,
-        text: "(voice message)",
-        replyToMsgId,
-        timestamp,
-        mediaType: "voice",
-      });
-    } else if ("sticker" in ctx.message && ctx.message.sticker) {
-      pushMessage(chatId, {
-        msgId,
-        senderId,
-        senderName: sender,
-        senderHandle,
-        text: ctx.message.sticker.emoji || "(sticker)",
-        replyToMsgId,
-        timestamp,
-        mediaType: "sticker",
-        stickerFileId: ctx.message.sticker.file_id,
-      });
-    } else if ("video" in ctx.message && ctx.message.video) {
-      pushMessage(chatId, {
-        msgId,
-        senderId,
-        senderName: sender,
-        senderHandle,
-        text: ctx.message.caption || "(video)",
-        replyToMsgId,
-        timestamp,
-        mediaType: "video",
-      });
-    } else if ("animation" in ctx.message && ctx.message.animation) {
-      pushMessage(chatId, {
-        msgId,
-        senderId,
-        senderName: sender,
-        senderHandle,
-        text: ctx.message.caption || "(GIF)",
-        replyToMsgId,
-        timestamp,
-        mediaType: "animation",
-      });
-    } else if ("audio" in ctx.message && ctx.message.audio) {
-      const title =
-        ctx.message.audio.title || ctx.message.audio.file_name || "audio";
-      pushMessage(chatId, {
-        msgId,
-        senderId,
-        senderName: sender,
-        senderHandle,
-        text: ctx.message.caption || `(audio: ${title})`,
-        replyToMsgId,
-        timestamp,
-        mediaType: "document", // treat audio like documents in history
-      });
-    } else if ("video_note" in ctx.message && ctx.message.video_note) {
-      pushMessage(chatId, {
-        msgId,
-        senderId,
-        senderName: sender,
-        senderHandle,
-        text: "(video note)",
-        replyToMsgId,
-        timestamp,
-        mediaType: "video",
-      });
-    } else if ("location" in ctx.message && ctx.message.location) {
-      pushMessage(chatId, {
-        msgId,
-        senderId,
-        senderName: sender,
-        senderHandle,
-        text: `(shared location: ${ctx.message.location.latitude}, ${ctx.message.location.longitude})`,
-        replyToMsgId,
-        timestamp,
-      });
-    } else if ("contact" in ctx.message && ctx.message.contact) {
-      const name = [
-        ctx.message.contact.first_name,
-        ctx.message.contact.last_name,
-      ]
-        .filter(Boolean)
-        .join(" ");
-      pushMessage(chatId, {
-        msgId,
-        senderId,
-        senderName: sender,
-        senderHandle,
-        text: `(shared contact: ${name})`,
-        replyToMsgId,
-        timestamp,
-      });
-    }
+/** The history row's content for one inbound message; nothing for kinds
+ * history doesn't record. */
+function historyEntryFor(message: Message): HistoryEntry | undefined {
+  if ("text" in message && message.text) {
+    return { text: message.text };
+  }
+  const media = mediaHistoryEntry(message);
+  if (media) return media;
+  if ("location" in message && message.location) {
+    return {
+      text: `(shared location: ${message.location.latitude}, ${message.location.longitude})`,
+    };
+  }
+  if ("contact" in message && message.contact) {
+    const name = [message.contact.first_name, message.contact.last_name]
+      .filter(Boolean)
+      .join(" ");
+    return { text: `(shared contact: ${name})` };
+  }
+  return undefined;
+}
 
-    return next();
-  });
+// ── History capture (runs for ALL messages, before handlers) ─────────────
+function captureHistory(
+  ctx: Filter<Context, "message">,
+  next: NextFunction,
+): Promise<void> {
+  const chatId = String(ctx.chat.id);
+  const sender = getSenderName(ctx.from);
+  // Keep the ambient forum topic current so outbound sends (which have no
+  // reply anchor — drafts, media, plain sends) land in the topic the
+  // conversation is actually happening in, not General.
+  noteInboundThread(ctx.chat.id, ctx.message);
+  // The handle is the only addressable form of a user — persist it with
+  // every row so later readers (history views, heartbeat-composed
+  // messages) can mention someone instead of guessing.
+  const senderHandle = ctx.from?.username;
+  const senderId = ctx.from?.id ?? 0;
+  const msgId = ctx.message.message_id;
+  const replyToMsgId = ctx.message.reply_to_message?.message_id;
 
-  // ── Reaction tap — feed reactions on Talon's own messages to the soul ────
-  // Telegram only delivers `message_reaction` updates when subscribed via
-  // allowed_updates (see index.ts) and, in groups, when the bot is an admin.
-  // The handler is inert unless the soul is enabled.
-  bot.on("message_reaction", (ctx) => {
-    const mr = ctx.messageReaction;
-    // Ignore the bot reacting to messages itself.
-    if (mr.user?.id === ctx.me.id) return;
-    const added = newlyAddedEmojis(mr.old_reaction, mr.new_reaction);
-    recordReactionToBot(mr.chat.id, mr.message_id, added);
-  });
+  // Register this chat for userbot access
+  allowChat(ctx.chat.id);
+  // Only register groups for pulse (DMs don't need it — bot always responds)
+  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
+  if (isGroup) registerChat(chatId);
+  const timestamp = ctx.message.date * 1000;
 
-  // ── Join requests — cache for moderate(op="list_join_requests") ─────────
-  // Delivered only when subscribed via allowed_updates (see index.ts) and
-  // the bot admins a chat whose invite link requires approval. Stored, not
-  // enqueued: a join request isn't a conversation turn.
-  bot.on("chat_join_request", (ctx) => {
-    const req = ctx.chatJoinRequest;
-    recordJoinRequest(ctx.chat.id, {
-      userId: req.from.id,
-      name: getSenderName(req.from),
-      username: req.from.username,
-      bio: req.bio,
-      at: Date.now(),
+  const entry = historyEntryFor(ctx.message);
+  if (entry) {
+    pushMessage(chatId, {
+      msgId,
+      senderId,
+      senderName: sender,
+      senderHandle,
+      replyToMsgId,
+      timestamp,
+      ...entry,
     });
-    log(
-      "bot",
-      `Join request for chat ${ctx.chat.id} from ${req.from.id} (@${req.from.username ?? "?"})`,
-    );
-  });
+  }
 
-  // ── Bot removed from group — revoke userbot access ─────────────────────
-  bot.on("my_chat_member", (ctx) => {
-    const newStatus = ctx.myChatMember.new_chat_member.status;
-    if (newStatus === "left" || newStatus === "kicked") {
-      const chatId = ctx.chat.id;
-      revokeChat(chatId);
-      log("bot", `Removed from chat ${chatId} — revoked userbot access`);
-    }
-  });
+  return next();
+}
 
-  // ── Message handlers (delegated to handlers.ts) ──────────────────────────
+// ── Reaction tap — feed reactions on Talon's own messages to the soul ────
+// Telegram only delivers `message_reaction` updates when subscribed via
+// allowed_updates (see index.ts) and, in groups, when the bot is an admin.
+// The handler is inert unless the soul is enabled.
+function tapReaction(ctx: Filter<Context, "message_reaction">): void {
+  const mr = ctx.messageReaction;
+  // Ignore the bot reacting to messages itself.
+  if (mr.user?.id === ctx.me.id) return;
+  const added = newlyAddedEmojis(mr.old_reaction, mr.new_reaction);
+  recordReactionToBot(mr.chat.id, mr.message_id, added);
+}
+
+// ── Join requests — cache for moderate(op="list_join_requests") ─────────
+// Delivered only when subscribed via allowed_updates (see index.ts) and
+// the bot admins a chat whose invite link requires approval. Stored, not
+// enqueued: a join request isn't a conversation turn.
+function cacheJoinRequest(ctx: Filter<Context, "chat_join_request">): void {
+  const req = ctx.chatJoinRequest;
+  recordJoinRequest(ctx.chat.id, {
+    userId: req.from.id,
+    name: getSenderName(req.from),
+    username: req.from.username,
+    bio: req.bio,
+    at: Date.now(),
+  });
+  log(
+    "bot",
+    `Join request for chat ${ctx.chat.id} from ${req.from.id} (@${req.from.username ?? "?"})`,
+  );
+}
+
+// ── Bot removed from group — revoke userbot access ─────────────────────
+function revokeOnRemoval(ctx: Filter<Context, "my_chat_member">): void {
+  const newStatus = ctx.myChatMember.new_chat_member.status;
+  if (newStatus === "left" || newStatus === "kicked") {
+    const chatId = ctx.chat.id;
+    revokeChat(chatId);
+    log("bot", `Removed from chat ${chatId} — revoked userbot access`);
+  }
+}
+
+// ── Message handlers (delegated to handlers.ts) ──────────────────────────
+function registerMessageHandlers(bot: Bot, config: TalonConfig): void {
   bot.on("message:text", (ctx) => handleTextMessage(ctx, bot, config));
   bot.on("message:photo", (ctx) => handlePhotoMessage(ctx, bot, config));
   bot.on("message:document", (ctx) => handleDocumentMessage(ctx, bot, config));
@@ -247,4 +203,13 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
   bot.on("message:video_note", (ctx) =>
     handleVideoNoteMessage(ctx, bot, config),
   );
+}
+
+export function registerMiddleware(bot: Bot, config: TalonConfig): void {
+  bot.use(trackUpdateOffset);
+  bot.on("message", captureHistory);
+  bot.on("message_reaction", tapReaction);
+  bot.on("chat_join_request", cacheJoinRequest);
+  bot.on("my_chat_member", revokeOnRemoval);
+  registerMessageHandlers(bot, config);
 }
