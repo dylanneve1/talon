@@ -234,7 +234,7 @@ static block first makes the retrieval delta readable against a known baseline.
 - Flag flips to default-on here, once the numbers are in.
 - Verify Discord.
 
-**Landed** as #942, still default-off. `core/memory/core-view.ts` exports
+**Landed** as #943, still default-off. `core/memory/core-view.ts` exports
 `selectCoreRows` / `renderCoreView` / `CORE_VIEW_MAX_CHARS` (8 000 chars, ~2 k
 tokens); `core/memory/flag.ts` exports `memoryStoreEnabled()`
 (`TALON_MEMORY_STORE === "1"`). Selection is one `listMemories` call per build,
