@@ -83,6 +83,43 @@ describe("processResultMessage error capture", () => {
     expect(state.resultErrorText).toBe("spawn ENOENT");
   });
 
+  it("leads with the startup failure reason when the CLI never ran a turn", () => {
+    const state = createStreamState();
+    state.lastTrailingText = "stale text from a previous turn";
+    processResultMessage(
+      successResult({
+        subtype: "error_during_execution",
+        is_error: true,
+        result: undefined,
+        errors: ["[ede_diagnostic] result_type=x", "cwd does not exist"],
+        startup_failure_reason: "cwd_unavailable",
+      }),
+      state,
+      "opus",
+    );
+    expect(state.resultErrorText).toBe(
+      "Claude Code failed to start (cwd_unavailable): cwd does not exist",
+    );
+  });
+
+  it("names the startup failure reason alone when it carries no diagnostics", () => {
+    const state = createStreamState();
+    processResultMessage(
+      successResult({
+        subtype: "error_during_execution",
+        is_error: true,
+        result: undefined,
+        errors: [],
+        startup_failure_reason: "cli_version_too_old",
+      }),
+      state,
+      "opus",
+    );
+    expect(state.resultErrorText).toBe(
+      "Claude Code failed to start (cli_version_too_old)",
+    );
+  });
+
   it("names the subtype when an error result carries no usable text", () => {
     const state = createStreamState();
     processResultMessage(
