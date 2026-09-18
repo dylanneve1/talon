@@ -22,6 +22,14 @@ const PHASE_HISTOGRAM: Record<TurnPhase, string> = {
 
 const legacyCounters = new Map<string, number>();
 
+/**
+ * Process-lifetime distributions for values that are not chat-turn
+ * latencies and so have nowhere to live on a session record — currently
+ * `prompt.memory_chars`, the size of the injected memory block, which is
+ * what the `TALON_MEMORY_STORE` before/after comparison reads.
+ */
+const processHistograms = new Map<string, MetricsLatencyAgg>();
+
 export type MetricsSnapshot = {
   counters: Record<string, number>;
   histograms: Record<
@@ -32,6 +40,18 @@ export type MetricsSnapshot = {
 
 export function incrementCounter(name: string, amount = 1): void {
   legacyCounters.set(name, (legacyCounters.get(name) ?? 0) + amount);
+}
+
+/**
+ * Record one observation of a non-turn distribution. Lifetime-scoped and
+ * in-process, like the legacy counters: it surfaces in `getMetrics()`
+ * (count / avg / min / max), not in the daily rollup.
+ */
+export function recordHistogram(name: string, value: number): void {
+  if (!Number.isFinite(value)) return;
+  const agg = processHistograms.get(name) ?? emptyAgg();
+  mergeAgg(agg, { count: 1, sumMs: value, minMs: value, maxMs: value });
+  processHistograms.set(name, agg);
 }
 
 function addCounter(
@@ -158,10 +178,14 @@ function buildSnapshot(
 export function getMetrics(): MetricsSnapshot {
   const counters: Record<string, number> = {};
   for (const [key, value] of legacyCounters) addCounter(counters, key, value);
-  return buildSnapshot(
+  const snapshot = buildSnapshot(
     getAllSessions().map(({ info }) => info.metrics.lifetime),
     counters,
   );
+  for (const [name, agg] of processHistograms) {
+    if (agg.count) snapshot.histograms[name] = snapshotAgg(agg);
+  }
+  return snapshot;
 }
 
 /** Today's (UTC) fleet snapshot, aggregated from the sessions' daily
@@ -177,5 +201,6 @@ export function getTodayMetrics(): MetricsSnapshot {
 
 export function resetMetrics(): void {
   legacyCounters.clear();
+  processHistograms.clear();
   resetAllSessionMetrics();
 }

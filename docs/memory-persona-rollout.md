@@ -172,9 +172,8 @@ hand-edit fold-back), nothing else inserts. Sections over the store's 4000-char 
 split at blank lines into ` (n/N)` rows, which the render regroups, so
 import → render → import is a fixed point. CLI: `talon memory import` and
 `talon memory render [--write]` (`--write` archives the current file to
-`memory-before-render-<date>.md` first, once a day). The `/memory` frontend command
-(telegram + native) is **deferred to its own PR** — this one is the store-side half.
-`assemble.ts` is untouched; the flag flip and the core view stay PR 8/9.
+`memory-before-render-<date>.md` first, once a day). `assemble.ts` is untouched; the
+flag flip and the core view stay PR 8/9.
 
 ---
 
@@ -213,7 +212,9 @@ The PR that makes persona learning frontend-agnostic — what the soul never got
 
 ### PR 8 — `feat(memory): real retriever behind the Phase B seam`
 
-**The PR where memory starts working.**
+**The PR where memory starts working.** Sequenced *after* PR 9: the core view is
+the session-frozen tier and turn retrieval is the per-turn one, so landing the
+static block first makes the retrieval delta readable against a known baseline.
 
 - `core/memory/store-retriever.ts` implements the existing `MemoryRetriever`: FTS
   match on the inbound message + recency decay + salience + `hit_count`. Sub-
@@ -224,7 +225,7 @@ The PR that makes persona learning frontend-agnostic — what the soul never got
 - Tests: relevance; trust filtering; **fail-closed on any db error**; budget cap;
   prompt byte-identical when nothing is retrieved.
 
-### PR 9 — `feat(prompt): core view replaces the head-slice`
+### PR 9 — `feat(prompt): core view replaces the head-slice` ✅ done
 
 - `assemble.ts` §4 renders the store's core view: pinned directives + top facts for
   the chat's subject + fresh `state`. Budgeted ~2 k tokens.
@@ -232,6 +233,37 @@ The PR that makes persona learning frontend-agnostic — what the soul never got
 - Record the prompt-size delta before/after, against PR 3's baseline.
 - Flag flips to default-on here, once the numbers are in.
 - Verify Discord.
+
+**Landed** as #942, still default-off. `core/memory/core-view.ts` exports
+`selectCoreRows` / `renderCoreView` / `CORE_VIEW_MAX_CHARS` (8 000 chars, ~2 k
+tokens); `core/memory/flag.ts` exports `memoryStoreEnabled()`
+(`TALON_MEMORY_STORE === "1"`). Selection is one `listMemories` call per build,
+ranked in memory: pinned rows first (any eligible kind), then `directive`, then
+`relationship`, then `fact` by salience DESC / `last_seen_at` DESC, then `state`
+rows seen inside a 7-day window; `episode` and `reflection` never enter the core
+view (plan §3.1), not even pinned, and stale unpinned `state` is left out. The
+ordered rows go through `renderMemoryMarkdown({ rows, budget })`, so the prompt and
+the rendered `memory.md` projection read identically, and the block is *budgeted*
+rather than truncated — whole sections drop from the bottom of the ranking and the
+tail is named. New wrapper `prompts/system/memory-core-view.md` points at
+`talon memory list` / `/memory` for the rest.
+
+`assemble.ts` §4 is now `coreViewSection() ?? memoryFileSection()`: with the flag
+off, or on but with an empty store, the file path runs exactly as before — a test
+asserts the assembled `staticText`/`dynamicText` are byte-identical with the flag
+absent and with `TALON_MEMORY_STORE=0`. The core view lands in `staticText` only
+(tested), and the store is read exactly once per build (tested with a `listMemories`
+spy), because the prompt is frozen per `(chatId, sessionEpoch)` — nothing here may
+call `notifyPromptInputsChanged()` (plan §3.6).
+
+Both paths record the injected block's size as the `prompt.memory_chars` histogram
+(`storage/metrics.ts` grew a real process-lifetime histogram sink for it — the old
+`recordHistogram` was a no-op stub swept in #820). **The flag stays off until those
+two populations are compared**: file-path chars vs core-view chars is the
+prompt-size delta Decision 4 is waiting on. PR 8 (turn retrieval behind the Phase B
+seam) is sequenced *after* this one — the core view is the frozen tier, turn
+retrieval is the per-turn tier, and it is easier to read the retrieval delta once
+the static block's size is known.
 
 ---
 
@@ -350,4 +382,7 @@ Stage 4 ≈ 600 · Stage 5 ≈ 400 · Stage 6 ≈ −4,300.
    PR 4 could absorb it as a `state` kind instead. Recommend the file first, absorb
    later — it de-risks Stage 0 from Stage 1's schedule.
 4. **Default-on timing for `TALON_MEMORY_STORE`** _(open)_ — proposed at PR 9, after
-   the prompt-size delta is measured against PR 3's baseline.
+   the prompt-size delta is measured against PR 3's baseline. PR 9 landed
+   **default-off** and instrumented instead: both the file path and the core view
+   record `prompt.memory_chars`, so the flag flips once those two populations have
+   been compared on a real deployment.

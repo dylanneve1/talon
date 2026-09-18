@@ -19,6 +19,10 @@
  *   4. Persistent memory (ranked, capped)   prompts/system/persistent-memory.md
  *                                           wrapping ~/.talon/workspace/memory/memory.md
  *                                           via memory-view.ts
+ *                                           — or, with TALON_MEMORY_STORE=1 and a
+ *                                           non-empty store, the typed store's core
+ *                                           view (memory/core-view.ts) wrapped in
+ *                                           prompts/system/memory-core-view.md
  *   4.5 Live state (capped)                 prompts/system/live-state.md
  *                                           wrapping ~/.talon/workspace/memory/state.md
  *                                           (heartbeat-owned, rewritten whole)
@@ -65,6 +69,9 @@ import { renderMemoryView } from "./memory-view.js";
 import { renderWorkspaceListing } from "./workspace-listing.js";
 import { renderSkillsPrompt } from "../../storage/skills.js";
 import { renderStickerLibraryPrompt } from "../../storage/stickers.js";
+import { recordHistogram } from "../../storage/metrics.js";
+import { renderCoreView } from "../memory/core-view.js";
+import { memoryStoreEnabled } from "../memory/flag.js";
 import { getSoul } from "../soul/service.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -109,6 +116,14 @@ export function joinSystemPromptParts(parts: SystemPromptParts): string {
  */
 export const STATE_INJECT_MAX_CHARS = 2_000;
 
+/**
+ * Size of the injected memory block, recorded on every build from both
+ * tiers. The whole point of the flag being default-off is that these two
+ * populations can be compared before the store becomes the default path
+ * (rollout Decision 4).
+ */
+const MEMORY_CHARS_METRIC = "prompt.memory_chars";
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function readOptionalFile(path: string): string {
@@ -121,6 +136,50 @@ function readOptionalFile(path: string): string {
 }
 
 let lastLoggedPromptKey = "";
+
+/** A memory block ready for the static prompt, with the label it logs under. */
+type MemorySection = { section: string; label: string };
+
+/**
+ * The store's core view, when `TALON_MEMORY_STORE` is on and the store
+ * has something to say. Budgeted (not truncated) and computed once per
+ * build — this is the session-frozen tier of plan §3.4, so it belongs in
+ * `staticText` and nowhere else.
+ *
+ * An empty store falls through to the file, which is what makes the flag
+ * safe to turn on before the import has ever run.
+ */
+function coreViewSection(): MemorySection | undefined {
+  if (!memoryStoreEnabled()) return undefined;
+  const view = renderCoreView();
+  if (view.rows === 0) return undefined;
+  recordHistogram(MEMORY_CHARS_METRIC, view.chars);
+  return {
+    section: loadSystemTemplate("memory-core-view", { content: view.text }),
+    label: "memory(store)",
+  };
+}
+
+/**
+ * The rendered `memory.md` file, ranked and capped. The path every
+ * deployment is on until the flag flips: over the cap the view ranks
+ * sections rather than head-slicing, so durable knowledge isn't evicted
+ * by whatever happens to sit at the top of the file (memory-view.ts).
+ */
+function memoryFileSection(): MemorySection | undefined {
+  const memory = readOptionalFile(pathFiles.memory);
+  if (!memory) return undefined;
+  const { text, truncated, omitted } = renderMemoryView(memory);
+  recordHistogram(MEMORY_CHARS_METRIC, text.length);
+  return {
+    section: loadSystemTemplate("persistent-memory", {
+      content: text,
+      truncated: truncated ? "yes" : undefined,
+      omitted: omitted || undefined,
+    }),
+    label: truncated ? "memory(ranked)" : "memory",
+  };
+}
 
 // ── Assembly ────────────────────────────────────────────────────────────────
 
@@ -182,22 +241,16 @@ export function assembleSystemPrompt(
     loaded.push(frontendFile.replace(".md", ""));
   }
 
-  // 4. Persistent memory — size-capped so a memory file that has grown
-  //    for months can't bloat every session from turn 0. Over the cap the
-  //    view ranks sections rather than head-slicing, so durable knowledge
-  //    isn't evicted by whatever happens to sit at the top of the file
-  //    (see prompt/memory-view.ts).
-  const memory = readOptionalFile(pathFiles.memory);
-  if (memory) {
-    const { text, truncated, omitted } = renderMemoryView(memory);
-    staticParts.push(
-      loadSystemTemplate("persistent-memory", {
-        content: text,
-        truncated: truncated ? "yes" : undefined,
-        omitted: omitted || undefined,
-      }),
-    );
-    loaded.push(truncated ? "memory(ranked)" : "memory");
+  // 4. Persistent memory — the store's core view when the flag is on and
+  //    the store has rows, else the ranked, size-capped `memory.md` file,
+  //    so a memory file that has grown for months can't bloat every
+  //    session from turn 0. Static either way: both tiers are frozen for
+  //    the session's lifetime (plan §3.4/§3.6). Anything learned
+  //    mid-session reaches the model through turn retrieval instead.
+  const memorySection = coreViewSection() ?? memoryFileSection();
+  if (memorySection) {
+    staticParts.push(memorySection.section);
+    loaded.push(memorySection.label);
   }
 
   // 4.5. Live state — the heartbeat's rewritten-whole status snapshot, kept
