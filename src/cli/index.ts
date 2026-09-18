@@ -34,6 +34,7 @@ import { showTasks, killTask } from "./tasks.js";
 import { showEvents } from "./events.js";
 import { runPluginCommand } from "./plugin.js";
 import { runSkillCommand } from "./skill.js";
+import { runMemoryCommand } from "./memory.js";
 import { mainMenu } from "./menu.js";
 
 export * from "./context.js";
@@ -56,6 +57,7 @@ const CLI_COMMANDS = [
   "events",
   "plugin",
   "skill",
+  "memory",
 ];
 
 /** Route a `talon <command>` invocation. Called by the entry point. */
@@ -121,6 +123,9 @@ export async function runCli(): Promise<void> {
     case "skill":
       await runSkillCommand(process.argv.slice(3));
       break;
+    case "memory":
+      runMemoryCommand(process.argv.slice(3));
+      break;
     case "--version":
     case "-v": {
       console.log(pkg.version);
@@ -150,6 +155,9 @@ export async function runCli(): Promise<void> {
       );
       console.log(
         `    ${pc.cyan("skill")}      Manage skills (install/enable/disable)`,
+      );
+      console.log(
+        `    ${pc.cyan("memory")}     Read/edit the memory store (list/search/remember)`,
       );
       console.log(`    ${pc.cyan("config")}     View/edit configuration`);
       console.log(`    ${pc.cyan("logs")}       Tail log file`);

@@ -57,6 +57,86 @@ CREATE TRIGGER IF NOT EXISTS history_au AFTER UPDATE OF text, sender_name ON his
   VALUES (new.id, new.text, new.sender_name);
 END;
 
+-- Typed memory: one row per claim, with an FTS5 index over subject +
+-- text. Kinds are lifecycles, not labels (docs/memory-persona-plan.md
+-- §3.1): \`directive\` is durable human intent, \`fact\` is durable and
+-- supersedable, \`state\` is keyed (a write replaces the row for that
+-- key), \`episode\` decays fast, \`relationship\` and \`reflection\` are the
+-- persona layer. Rows are never physically deleted — \`superseded_by\`
+-- points at the replacement and \`dropped_at\` is the graveyard, so ids
+-- stay stable and every change is revertible.
+CREATE TABLE IF NOT EXISTS memory (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- directive | fact | state | episode | relationship | reflection
+  kind            TEXT    NOT NULL,
+  -- Who or what the claim is about; the retrieval scope.
+  subject         TEXT    NOT NULL,
+  -- Required for kind='state' (e.g. 'heartbeat.health'), NULL otherwise.
+  -- One live row per key is enforced by the store's replaceStateKey,
+  -- which supersedes the previous row inside a transaction.
+  key             TEXT,
+  text            TEXT    NOT NULL,
+  -- Provenance: which frontend/chat/actor/turn asserted this.
+  source_frontend TEXT,
+  source_chat     TEXT,
+  source_actor    TEXT,
+  source_turn     TEXT,
+  -- operator | agent | user_claim | group_chat — the trust tier.
+  -- user_claim and group_chat can never be pinned (plan §5).
+  trust           TEXT    NOT NULL,
+  confidence      REAL    NOT NULL DEFAULT 1.0,
+  created_at      INTEGER NOT NULL,
+  last_seen_at    INTEGER NOT NULL,
+  hit_count       INTEGER NOT NULL DEFAULT 0,
+  salience        REAL    NOT NULL DEFAULT 0,
+  pinned          INTEGER NOT NULL DEFAULT 0,
+  -- memory.id of the row that replaced this one; NULL while live.
+  superseded_by   INTEGER,
+  -- Soft delete: the graveyard, not oblivion.
+  dropped_at      INTEGER,
+  -- sha256 of kind|subject|key|text — the idempotency key for import.
+  content_hash    TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memory_kind_subject ON memory(kind, subject);
+CREATE INDEX IF NOT EXISTS idx_memory_key ON memory(key) WHERE key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_memory_salience ON memory(salience);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+  subject,
+  text,
+  content='memory',
+  content_rowid='id'
+);
+CREATE TRIGGER IF NOT EXISTS memory_ai AFTER INSERT ON memory BEGIN
+  INSERT INTO memory_fts(rowid, subject, text)
+  VALUES (new.id, new.subject, new.text);
+END;
+CREATE TRIGGER IF NOT EXISTS memory_ad AFTER DELETE ON memory BEGIN
+  INSERT INTO memory_fts(memory_fts, rowid, subject, text)
+  VALUES ('delete', old.id, old.subject, old.text);
+END;
+CREATE TRIGGER IF NOT EXISTS memory_au AFTER UPDATE OF subject, text ON memory BEGIN
+  INSERT INTO memory_fts(memory_fts, rowid, subject, text)
+  VALUES ('delete', old.id, old.subject, old.text);
+  INSERT INTO memory_fts(rowid, subject, text)
+  VALUES (new.id, new.subject, new.text);
+END;
+
+-- The audit log: one row per mutation, so every change is diffable and
+-- revertible (\`/memory diff\`, \`/memory undo\`). Ops are the reconcile
+-- vocabulary of plan §3.3 plus the store's own touch/replace_state.
+CREATE TABLE IF NOT EXISTS memory_history (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  memory_id   INTEGER NOT NULL,
+  -- assert | supersede | drop | merge | pin | unpin | replace_state | touch
+  op          TEXT    NOT NULL,
+  before_text TEXT,
+  after_text  TEXT,
+  reason      TEXT,
+  at          INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memory_history_memory ON memory_history(memory_id, id);
+
 -- Sessions: real columns rather than a JSON blob. The store's hot
 -- paths (recordUsage, incrementTurns, setSessionId) accumulate into
 -- individual fields per turn, and the usage counters are numeric
@@ -486,6 +566,71 @@ FROM media_index
 WHERE content_hash = ? AND NOT (chat_id = ? AND msg_id = ?)
 ORDER BY timestamp ASC, rowid ASC LIMIT 1`,
   countByFilePath: `SELECT COUNT(*) AS n FROM media_index WHERE file_path = ?`,
+} as const;
+
+export const memorySql = {
+  insert: `-- RETURNING id so the caller gets the new row id without a second
+-- round trip through last_insert_rowid().
+INSERT INTO memory
+  (kind, subject, key, text, source_frontend, source_chat, source_actor,
+   source_turn, trust, confidence, created_at, last_seen_at, hit_count,
+   salience, pinned, superseded_by, dropped_at, content_hash)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+RETURNING id`,
+  get: `SELECT id, kind, subject, key, text, source_frontend, source_chat,
+       source_actor, source_turn, trust, confidence, created_at,
+       last_seen_at, hit_count, salience, pinned, superseded_by,
+       dropped_at, content_hash
+FROM memory WHERE id = ?`,
+  list: `SELECT id, kind, subject, key, text, source_frontend, source_chat,
+       source_actor, source_turn, trust, confidence, created_at,
+       last_seen_at, hit_count, salience, pinned, superseded_by,
+       dropped_at, content_hash
+FROM memory
+WHERE (? IS NULL OR kind = ?)
+  AND (? IS NULL OR subject = ?)
+  AND (? = 1 OR superseded_by IS NULL)
+  AND (? = 1 OR dropped_at IS NULL)
+ORDER BY pinned DESC, salience DESC, last_seen_at DESC, id DESC
+LIMIT ?`,
+  liveStateByKey: `SELECT id, kind, subject, key, text, source_frontend, source_chat,
+       source_actor, source_turn, trust, confidence, created_at,
+       last_seen_at, hit_count, salience, pinned, superseded_by,
+       dropped_at, content_hash
+FROM memory
+WHERE kind = 'state' AND key = ?
+  AND superseded_by IS NULL AND dropped_at IS NULL
+ORDER BY id DESC LIMIT 1`,
+  searchFts: `-- The match param must already be a valid FTS5 expression
+-- (see memory.ts ftsQuery). Live rows only, best match first.
+SELECT m.id, m.kind, m.subject, m.key, m.text, m.source_frontend,
+       m.source_chat, m.source_actor, m.source_turn, m.trust, m.confidence,
+       m.created_at, m.last_seen_at, m.hit_count, m.salience, m.pinned,
+       m.superseded_by, m.dropped_at, m.content_hash
+FROM memory m JOIN memory_fts ON memory_fts.rowid = m.id
+WHERE memory_fts MATCH ?
+  AND m.superseded_by IS NULL AND m.dropped_at IS NULL
+  AND (? IS NULL OR m.kind = ?)
+ORDER BY bm25(memory_fts) LIMIT ?`,
+  similar: `-- Near-duplicate candidates for a fresh assert: live rows of the same
+-- kind + subject that match the new text, the new row itself excluded.
+SELECT m.id, m.kind, m.subject, m.key, m.text, m.source_frontend,
+       m.source_chat, m.source_actor, m.source_turn, m.trust, m.confidence,
+       m.created_at, m.last_seen_at, m.hit_count, m.salience, m.pinned,
+       m.superseded_by, m.dropped_at, m.content_hash
+FROM memory m JOIN memory_fts ON memory_fts.rowid = m.id
+WHERE memory_fts MATCH ?
+  AND m.kind = ? AND m.subject = ? AND m.id <> ?
+  AND m.superseded_by IS NULL AND m.dropped_at IS NULL
+ORDER BY bm25(memory_fts) LIMIT ?`,
+  setSupersededBy: `UPDATE memory SET superseded_by = ? WHERE id = ?`,
+  setDropped: `UPDATE memory SET dropped_at = ? WHERE id = ?`,
+  setPinned: `UPDATE memory SET pinned = ? WHERE id = ?`,
+  touch: `UPDATE memory SET hit_count = hit_count + 1, last_seen_at = ? WHERE id = ?`,
+  insertHistory: `INSERT INTO memory_history (memory_id, op, before_text, after_text, reason, at)
+VALUES (?, ?, ?, ?, ?, ?)`,
+  historyFor: `SELECT id, memory_id, op, before_text, after_text, reason, at
+FROM memory_history WHERE memory_id = ? ORDER BY id`,
 } as const;
 
 export const scriptsSql = {

@@ -62,7 +62,7 @@ cache-write cost. 14 tests; full suite green.
   prompt-cache tests honest.
 - Not wasted work when PR 5 lands: this parser becomes the importer.
 
-### PR 2 — `fix(prompts): write discipline + state/memory split`
+### PR 2 — `fix(prompts): write discipline + state/memory split` ✅ done
 
 - `prompts/heartbeat.md`: heartbeat **stops writing `memory.md`**. It writes
   `memory/state.md` — fully rewritten each run, one keyed section per domain — plus
@@ -77,6 +77,8 @@ cache-write cost. 14 tests; full suite green.
 - `prompts/system/workspace.md` + `persistent-memory.md`: document the split and
   who owns which file.
 - `npm run build:prompts`, commit the regenerated embed.
+
+**Landed** as #694.
 
 ### PR 3 — `feat(metrics): per-turn cache read:write telemetry` ✅ done
 
@@ -115,7 +117,7 @@ prompt isn't cacheable at all.
 
 ## Stage 1 — The store
 
-### PR 4 — `feat(storage): typed memory store with FTS5`
+### PR 4 — `feat(storage): typed memory store with FTS5` ✅ done
 
 - `sql/schema.sql`: `memory` table; `memory_fts` (external-content FTS5 + the three
   `ai`/`ad`/`au` triggers — copy `history_fts` exactly, it is the established
@@ -225,7 +227,7 @@ it forgot.
 
 ## Stage 5 — Persona
 
-### PR 12 — `feat(prompts): identity.md as voice + stances`
+### PR 12 — `feat(prompts): identity.md as voice + stances` ✅ done
 
 Prompt-only; independent of every other PR; could ship at any point.
 
@@ -237,6 +239,8 @@ Prompt-only; independent of every other PR; could ship at any point.
 - `identity.md` stays **seeded and user-editable** — a shipped rewrite updates the
   package default; a local edit wins and is never clobbered. (Settled: Dylan does not
   need the live NPUW-Agent copy preserved.)
+
+**Landed** as #691.
 
 ### PR 13 — `feat(persona): relationship block`
 
