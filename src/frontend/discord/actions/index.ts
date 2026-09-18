@@ -23,7 +23,7 @@
 import type { Client } from "discord.js";
 import type { Gateway } from "../../../core/engine/gateway.js";
 import type { ActionResult } from "../../../core/types.js";
-import { resolveChannel } from "./shared.js";
+import { resolveChannel } from "./channels.js";
 import { messagingHandlers, restoreScheduledMessages } from "./messaging.js";
 import { mediaHandlers } from "./media.js";
 import { chatInfoHandlers } from "./chat-info.js";

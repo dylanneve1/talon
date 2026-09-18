@@ -21,7 +21,7 @@ import {
   handleComponentInteraction,
   handleModalSubmit,
 } from "../callbacks/index.js";
-import { chatIdFromInteraction, reply, client } from "./shared.js";
+import { chatIdFromInteraction, reply, client } from "./interaction.js";
 import {
   handleStart,
   handleHelp,

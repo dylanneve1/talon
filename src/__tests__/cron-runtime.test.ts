@@ -7,7 +7,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CronJob } from "../storage/cron-store.js";
+import type { CronJob } from "../storage/cron.js";
 import { deriveNumericChatId } from "../util/chat-id.js";
 
 const mocks = vi.hoisted(() => ({
@@ -77,7 +77,7 @@ vi.mock("../core/background/job-oneshot.js", () => ({
 const { executeJob, initCron, runJobNow, runStartupCatchup } =
   await import("../core/background/cron.js");
 const { addCronJob, getCronJob, getAllCronJobs, deleteCronJob } =
-  await import("../storage/cron-store.js");
+  await import("../storage/cron.js");
 const { resetJobHealth } = await import("../core/background/job-health.js");
 
 let seq = 0;

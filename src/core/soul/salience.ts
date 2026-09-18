@@ -60,7 +60,7 @@ export function confidence(state: ActivationState): number {
   return Math.tanh(state.evidence / 4);
 }
 
-export interface ReinforceOpts {
+export interface ReinforceOptions {
   readonly now: number;
   readonly halfLifeMs: number;
   /** Salience increment for this activation (>= 0). */
@@ -74,7 +74,11 @@ export interface ReinforceOpts {
  * first (so the additive bump composes correctly with time), then adds the
  * increment and accumulates signed evidence.
  */
-export function reinforce(dag: SoulDag, hash: Hash, opts: ReinforceOpts): void {
+export function reinforce(
+  dag: SoulDag,
+  hash: Hash,
+  opts: ReinforceOptions,
+): void {
   const s = dag.stateOf(hash);
   s.salience = effectiveSalience(s, opts.now, opts.halfLifeMs) + opts.amount;
   s.evidence += opts.valence;
@@ -111,7 +115,7 @@ export function coactivate(
   }
 }
 
-export interface PredictionErrorOpts {
+export interface PredictionErrorOptions {
   readonly now: number;
   readonly halfLifeMs: number;
   /** How strongly the observed signal corrects the prediction, in (0, 1]. */
@@ -129,7 +133,7 @@ export function applyPredictionError(
   dag: SoulDag,
   hash: Hash,
   observed: number,
-  opts: PredictionErrorOpts,
+  opts: PredictionErrorOptions,
 ): number {
   const s = dag.stateOf(hash);
   const predicted = effectiveSalience(s, opts.now, opts.halfLifeMs);

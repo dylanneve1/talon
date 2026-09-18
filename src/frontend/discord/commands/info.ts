@@ -11,13 +11,13 @@ import {
   formatDuration,
   renderMeshReport,
   renderUsageMessage,
-} from "../helpers.js";
+} from "../render.js";
 import type { TalonConfig } from "../../../util/config.js";
 import { collectPlanUsage } from "../../shared/plan-usage-report.js";
 import { getLoadedPlugins } from "../../../core/plugin/index.js";
 import { getMeshService } from "../../../core/mesh/index.js";
 import type { MeshPingResult } from "../../../core/mesh/service.js";
-import { reply } from "./shared.js";
+import { reply } from "./interaction.js";
 
 export async function handleStart(
   i: ChatInputCommandInteraction,

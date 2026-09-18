@@ -21,7 +21,7 @@ vi.mock("../core/plugin/manage.js", () => ({
 vi.mock("../core/prompt/invalidation.js", () => ({
   notifyPromptInputsChanged: vi.fn(),
 }));
-vi.mock("../storage/skill-store.js", () => ({
+vi.mock("../storage/skills.js", () => ({
   listSkills: vi.fn(() => [
     { name: "deploy", description: "Ship it", enabled: true, path: "/x" },
   ]),
@@ -37,7 +37,7 @@ const { pluginItems, skillItems, togglePlugin, toggleSkill } =
 const { performPluginReload } =
   await import("../core/engine/gateway-actions/plugins.js");
 const { setPluginEnabled } = await import("../core/plugin/manage.js");
-const { setSkillEnabled } = await import("../storage/skill-store.js");
+const { setSkillEnabled } = await import("../storage/skills.js");
 const { rebuildSystemPrompt } = await import("../util/config.js");
 const { persistConfigPatch } = await import("../frontend/native/settings.js");
 const { notifyPromptInputsChanged } =

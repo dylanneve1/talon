@@ -53,7 +53,7 @@ vi.mock("../util/paths.js", async () => {
 });
 
 import { closeDatabase } from "../storage/db.js";
-import type { Trigger } from "../storage/trigger-store.js";
+import type { Trigger } from "../storage/triggers.js";
 
 const {
   loadTriggers,
@@ -79,7 +79,7 @@ const {
   MAX_ACTIVE_PER_CHAT,
   pruneSettledTriggers,
   SETTLED_TRIGGER_TTL_MS,
-} = await import("../storage/trigger-store.js");
+} = await import("../storage/triggers.js");
 
 const envBackup = process.env.TALON_DB_PATH;
 const importBackup = process.env.TALON_DISABLE_LEGACY_IMPORT;

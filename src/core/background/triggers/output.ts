@@ -8,7 +8,7 @@ import {
   updateTrigger,
   type TriggerStatus,
   FIRE_PAYLOAD_MAX_BYTES,
-} from "../../../storage/trigger-store.js";
+} from "../../../storage/triggers.js";
 import { logError } from "../../../util/log.js";
 import {
   depsHolder,

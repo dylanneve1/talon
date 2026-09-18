@@ -10,14 +10,9 @@
 
 import type { AnyMessageContent } from "baileys";
 import { toWhatsAppText } from "../formatting.js";
-import {
-  guessMimetype,
-  resolveMediaUpload,
-  resolveQuoted,
-  sendContent,
-  sendText,
-  tryAction,
-} from "./shared.js";
+import { tryAction } from "./try-action.js";
+import { guessMimetype, resolveMediaUpload } from "./media-upload.js";
+import { resolveQuoted, sendContent, sendText } from "./send.js";
 import type { WhatsAppActionHandlers } from "./types.js";
 
 /** Optional caption, translated to WhatsApp's dialect. */

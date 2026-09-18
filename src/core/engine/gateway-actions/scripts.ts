@@ -14,7 +14,7 @@ import {
   validateScriptLanguage,
   validateScriptName,
   validateScriptBody,
-} from "../../../storage/script-store.js";
+} from "../../../storage/scripts.js";
 import {
   runScript,
   validateScriptTimeout,

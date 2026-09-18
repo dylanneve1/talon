@@ -37,7 +37,7 @@ vi.mock("../core/engine/dispatcher.js", () => ({
 }));
 
 // Mock cron-store for shared actions
-vi.mock("../storage/cron-store.js", () => ({
+vi.mock("../storage/cron.js", () => ({
   addCronJob: vi.fn(),
   getCronJob: vi.fn(),
   getCronJobsForChat: vi.fn(() => []),

@@ -14,7 +14,7 @@ import {
   listScheduledForChat,
   MAX_OVERDUE_MS,
   type ScheduledMessage,
-} from "../../../storage/scheduled-store.js";
+} from "../../../storage/scheduled.js";
 import {
   noteRichMessageFailure,
   richMessagesAvailable,

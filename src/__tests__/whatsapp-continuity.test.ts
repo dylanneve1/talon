@@ -31,7 +31,7 @@ import {
 import {
   sendContent,
   setWhatsAppBotName,
-} from "../frontend/whatsapp/actions/shared.js";
+} from "../frontend/whatsapp/actions/send.js";
 import {
   runTurnWithRecovery,
   shouldReplyToCatchUp,

@@ -42,7 +42,7 @@ import {
   type ModelCommandDeps,
   type ModelOverview,
 } from "../shared/model-commands.js";
-import { sendText } from "./actions/shared.js";
+import { sendText } from "./actions/send.js";
 import { identityAllowed, type Identity } from "./identity.js";
 import type { WhatsAppChatInfo } from "./registry.js";
 import type { WhatsAppRuntime } from "./runtime.js";

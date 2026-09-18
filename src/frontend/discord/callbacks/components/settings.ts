@@ -31,7 +31,7 @@ import {
   enablePulse,
   isPulseEnabled,
 } from "../../../../core/background/pulse.js";
-import { renderSettingsText, EFFORT_DESCRIPTIONS } from "../../helpers.js";
+import { renderSettingsText, EFFORT_DESCRIPTIONS } from "../../render.js";
 import {
   getBackendIdForChat,
   resolveChatBackend,

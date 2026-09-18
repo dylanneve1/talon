@@ -12,7 +12,7 @@
  *
  * Only the plain Bot API (`getStickerSet`) is needed — no userbot.
  * The read side (pack listing + the prompt index) lives in
- * `storage/sticker-store.ts`, shared with prompt assembly.
+ * `storage/stickers.ts`, shared with prompt assembly.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -23,7 +23,7 @@ import {
   listSavedPacks,
   type SavedPack,
   type SavedSticker,
-} from "../../storage/sticker-store.js";
+} from "../../storage/stickers.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

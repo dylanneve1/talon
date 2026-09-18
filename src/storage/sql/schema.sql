@@ -140,7 +140,7 @@ CREATE INDEX IF NOT EXISTS idx_goals_chat_status ON goals(chat_id, status, updat
 CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status, updated_at DESC);
 
 -- Agent-authored scripts. Metadata rows only: the script body lives on
--- disk under ~/.talon/workspace/scripts/ (mirroring the trigger-store
+-- disk under ~/.talon/workspace/scripts/ (mirroring the triggers store
 -- split) so the agent can also Read/Edit a script as a normal workspace
 -- file. Scripts are global capabilities, not chat data — no chat_id
 -- column. `name` is the lookup key; UNIQUE enforces one per name.

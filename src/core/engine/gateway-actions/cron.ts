@@ -11,7 +11,7 @@ import {
   generateCronId,
   describeSchedule,
   nextRunAt,
-} from "../../../storage/cron-store.js";
+} from "../../../storage/cron.js";
 import { runJobNow } from "../../background/cron.js";
 import { parseCronSpec } from "../../background/cron-spec.js";
 import { log } from "../../../util/log.js";
@@ -22,7 +22,7 @@ import {
   acquireBackendInstance,
   isModelValidForBackend,
 } from "../backend-controller/index.js";
-import { validateJobModelOverride } from "./shared.js";
+import { validateJobModelOverride } from "./validation.js";
 import type { SharedActionHandlers } from "./types.js";
 
 /**

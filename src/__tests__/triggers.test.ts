@@ -31,7 +31,7 @@ const {
   resumeAfterRestart,
 } = await import("../core/background/triggers/index.js");
 
-import type { Trigger } from "../storage/trigger-store.js";
+import type { Trigger } from "../storage/triggers.js";
 
 const {
   addTrigger,
@@ -41,7 +41,7 @@ const {
   _resetTriggersForTesting,
   DEFAULT_TIMEOUT_SECONDS,
   SHUTDOWN_KILL_ERROR,
-} = await import("../storage/trigger-store.js");
+} = await import("../storage/triggers.js");
 
 import { writeFileSync, mkdirSync } from "node:fs";
 

@@ -1,6 +1,6 @@
 /**
- * Helpers shared across shared-action domains: due-date parsing and per-job
- * model-override validation.
+ * Field validation shared by the goal, cron and trigger actions: due-date
+ * parsing and per-job model-override validation.
  */
 
 import { resolveExplicitModelRef } from "../../models/active-model.js";

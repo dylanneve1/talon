@@ -1,63 +1,10 @@
 /**
- * Shared helpers for Discord action handlers: clean error mapping, channel
- * resolution, and button-row construction.
+ * Button-row construction for model-authored inline buttons (Discord
+ * components), with custom_id namespacing and de-duplication.
  */
 
-import {
-  type Client,
-  type TextBasedChannel,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-} from "discord.js";
-import type { ActionResult } from "../../../core/types.js";
-import { lookupDiscordChat } from "../handlers/index.js";
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import { safeSlice } from "../formatting.js";
-import { logWarn } from "../../../util/log.js";
-import { mapDiscordError } from "../errors.js";
-
-/** Run a Discord action; convert DiscordAPIError into a clean ActionResult. */
-export async function tryAction(
-  context: string,
-  fn: () => Promise<ActionResult>,
-): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    const mapped = mapDiscordError(err, context);
-    if (mapped) return mapped;
-    return {
-      ok: false,
-      error: `${context} failed: ${err instanceof Error ? err.message : err}`,
-    };
-  }
-}
-
-export async function resolveChannel(
-  client: Client,
-  numericChatId: number,
-): Promise<TextBasedChannel | null> {
-  const info = lookupDiscordChat(numericChatId);
-  if (!info) return null;
-  try {
-    const ch = await client.channels.fetch(info.channelId);
-    if (ch && "send" in ch && (ch as TextBasedChannel).isSendable?.()) {
-      return ch as TextBasedChannel;
-    }
-    if (info.userId) {
-      const user = await client.users.fetch(info.userId);
-      const dm = await user.createDM();
-      return dm as TextBasedChannel;
-    }
-    return null;
-  } catch (err) {
-    logWarn(
-      "discord",
-      `resolveChannel failed for chat ${numericChatId}: ${err instanceof Error ? err.message : err}`,
-    );
-    return null;
-  }
-}
 
 export function buildButtonRows(
   rows: Array<

@@ -33,7 +33,7 @@ import {
   parseInterval,
   renderSettingsText,
   EFFORT_DESCRIPTIONS,
-} from "../helpers.js";
+} from "../render.js";
 import {
   displayReasoningEffort,
   getActiveReasoningLevels,
@@ -45,7 +45,7 @@ import {
 } from "../../../core/engine/backend-controller/index.js";
 import { resolveActiveModelForChat } from "../../../core/models/active-model.js";
 import { safeSlice } from "../formatting.js";
-import { reply } from "./shared.js";
+import { reply } from "./interaction.js";
 import {
   buildModelPickerView,
   MODEL_NAV_PREFIX,

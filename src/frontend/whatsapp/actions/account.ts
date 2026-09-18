@@ -16,12 +16,9 @@
 
 import { jidNormalizedUser, type WASocket } from "baileys";
 import type { ActionResult } from "../../../core/types.js";
-import {
-  readStatusText,
-  resolveMediaUpload,
-  toUserJid,
-  tryAction,
-} from "./shared.js";
+import { tryAction } from "./try-action.js";
+import { resolveMediaUpload } from "./media-upload.js";
+import { readStatusText, toUserJid } from "./coerce.js";
 import type { WhatsAppActionContext, WhatsAppActionHandlers } from "./types.js";
 
 /** The account's own JID, device suffix stripped. */

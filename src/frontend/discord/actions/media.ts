@@ -11,7 +11,7 @@ import { withRetry } from "../../../core/engine/gateway.js";
 import { sendChunked } from "../handlers/index.js";
 import { suppressMentions, DISCORD_MAX_TEXT } from "../formatting.js";
 import { maxAttachmentBytes } from "../errors.js";
-import { tryAction } from "./shared.js";
+import { tryAction } from "./try-action.js";
 import type { DiscordActionHandlers } from "./types.js";
 
 const sendAttachment: DiscordActionHandlers[string] = (

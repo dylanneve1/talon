@@ -28,7 +28,7 @@ vi.mock("../util/watchdog.js", () => ({ recordError: vi.fn() }));
 vi.mock("../storage/daily-log.js", () => ({ appendDailyLog: vi.fn() }));
 
 import { LUA_RUN_SUBCOMMAND } from "../core/scripting/lua-runner.js";
-import { languageExtension } from "../storage/trigger-store.js";
+import { languageExtension } from "../storage/triggers.js";
 
 const { _internals } = await import("../core/background/triggers/index.js");
 

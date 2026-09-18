@@ -63,8 +63,8 @@ import { log } from "../../util/log.js";
 import { loadSystemTemplate } from "./templates.js";
 import { renderMemoryView } from "./memory-view.js";
 import { renderWorkspaceListing } from "./workspace-listing.js";
-import { renderSkillsPrompt } from "../../storage/skill-store.js";
-import { renderStickerLibraryPrompt } from "../../storage/sticker-store.js";
+import { renderSkillsPrompt } from "../../storage/skills.js";
+import { renderStickerLibraryPrompt } from "../../storage/stickers.js";
 import { getSoul } from "../soul/service.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────

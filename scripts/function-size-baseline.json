@@ -2,8 +2,8 @@
   {
     "file": "src/bootstrap.ts",
     "name": "initBackendAndDispatcher",
-    "lines": 322,
-    "cx": 17
+    "lines": 316,
+    "cx": 16
   },
   {
     "file": "src/frontend/teams/index.ts",

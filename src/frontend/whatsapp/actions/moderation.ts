@@ -9,7 +9,8 @@
  * rather than retrying something the platform cannot do.
  */
 
-import { toUserJid, tryAction } from "./shared.js";
+import { tryAction } from "./try-action.js";
+import { toUserJid } from "./coerce.js";
 import type { WhatsAppActionHandlers } from "./types.js";
 
 /** Ops that act on one member. */

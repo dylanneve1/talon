@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { buildButtonRows } from "../frontend/discord/actions/shared.js";
+import { buildButtonRows } from "../frontend/discord/actions/buttons.js";
 import { safeSlice } from "../frontend/discord/formatting.js";
 
 type Btn = {

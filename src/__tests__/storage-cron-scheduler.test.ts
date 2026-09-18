@@ -1,5 +1,5 @@
 /**
- * Tests for the pure scheduler helpers in src/storage/cron-store.ts that back
+ * Tests for the pure scheduler helpers in src/storage/cron.ts that back
  * the interval/cron scheduling rewrite:
  *
  *   - isIntervalJob        — cron-mode vs interval-mode discrimination
@@ -49,7 +49,7 @@ vi.mock("../util/paths.js", async () => {
 });
 
 import { closeDatabase } from "../storage/db.js";
-import type { CronJob } from "../storage/cron-store.js";
+import type { CronJob } from "../storage/cron.js";
 
 const {
   isIntervalJob,
@@ -61,7 +61,7 @@ const {
   getCronJob,
   recordCronRun,
   loadCronJobs,
-} = await import("../storage/cron-store.js");
+} = await import("../storage/cron.js");
 
 const envBackup = process.env.TALON_DB_PATH;
 const importBackup = process.env.TALON_DISABLE_LEGACY_IMPORT;

@@ -11,7 +11,7 @@ import {
   SHUTDOWN_KILL_ERROR,
   type Trigger,
   type TriggerStatus,
-} from "../../../storage/trigger-store.js";
+} from "../../../storage/triggers.js";
 import { log, logDebug, logError } from "../../../util/log.js";
 import { appendDailyLog } from "../../../storage/daily-log.js";
 import {

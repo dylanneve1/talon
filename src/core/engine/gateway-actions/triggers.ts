@@ -21,13 +21,13 @@ import {
   DEFAULT_TIMEOUT_SECONDS,
   MAX_ACTIVE_PER_CHAT,
   type TriggerLanguage,
-} from "../../../storage/trigger-store.js";
+} from "../../../storage/triggers.js";
 import {
   cancelTrigger,
   spawnTrigger,
 } from "../../background/triggers/index.js";
 import { log } from "../../../util/log.js";
-import { validateJobModelOverride } from "./shared.js";
+import { validateJobModelOverride } from "./validation.js";
 import type { SharedActionHandlers } from "./types.js";
 
 export const triggerHandlers: SharedActionHandlers = {

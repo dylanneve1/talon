@@ -23,7 +23,7 @@ import {
   runStartupCatchup,
 } from "./core/background/cron.js";
 import { shutdownTriggers } from "./core/background/triggers/index.js";
-import { pruneSettledTriggers } from "./storage/trigger-store.js";
+import { pruneSettledTriggers } from "./storage/triggers.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { spawnSuccessor } from "./util/respawn.js";
 import { log, logError, logWarn } from "./util/log.js";

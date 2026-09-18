@@ -15,7 +15,7 @@ import {
   validateSkillBody,
   validateSkillDescription,
   validateSkillName,
-} from "../../../storage/skill-store.js";
+} from "../../../storage/skills.js";
 import { log } from "../../../util/log.js";
 import type { SharedActionHandlers } from "./types.js";
 

@@ -1,5 +1,5 @@
 /**
- * Extended tests for src/storage/cron-store.ts (SQLite-backed).
+ * Extended tests for src/storage/cron.ts (SQLite-backed).
  *
  * Covers:
  * - validateCronExpression edge cases and generateCronId format/uniqueness
@@ -46,7 +46,7 @@ vi.mock("../util/paths.js", async () => {
 });
 
 import { closeDatabase } from "../storage/db.js";
-import type { CronJob } from "../storage/cron-store.js";
+import type { CronJob } from "../storage/cron.js";
 
 const {
   loadCronJobs,
@@ -60,7 +60,7 @@ const {
   generateCronId,
   validateCronExpression,
   isValidTimezone,
-} = await import("../storage/cron-store.js");
+} = await import("../storage/cron.js");
 
 const envBackup = process.env.TALON_DB_PATH;
 const importBackup = process.env.TALON_DISABLE_LEGACY_IMPORT;

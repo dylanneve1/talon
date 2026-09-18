@@ -14,7 +14,7 @@ import {
   formatTokenCount,
   formatBytes,
   formatUsd,
-} from "../helpers.js";
+} from "../render.js";
 import {
   getBackendIdForChat,
   resolveChatBackend,
@@ -24,7 +24,7 @@ import {
   collectSessionStatus,
 } from "../../shared/session-status.js";
 import { stopCurrentTurn } from "../../../core/engine/dispatcher.js";
-import { reply } from "./shared.js";
+import { reply } from "./interaction.js";
 
 export async function handleReset(
   i: ChatInputCommandInteraction,

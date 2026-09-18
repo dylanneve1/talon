@@ -47,7 +47,7 @@ import {
   saveSkill,
   searchSkills,
   setSkillEnabled,
-} from "../storage/skill-store.js";
+} from "../storage/skills.js";
 
 function writeSkillFolder(
   dir: string,

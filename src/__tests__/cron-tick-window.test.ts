@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import type { CronJob } from "../storage/cron-store.js";
+import type { CronJob } from "../storage/cron.js";
 
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),

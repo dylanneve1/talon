@@ -6,7 +6,7 @@
 
 import { ChannelType } from "discord.js";
 import { logWarn } from "../../../util/log.js";
-import { tryAction } from "./shared.js";
+import { tryAction } from "./try-action.js";
 import type { DiscordActionHandlers } from "./types.js";
 
 export const chatInfoHandlers: DiscordActionHandlers = {

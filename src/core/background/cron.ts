@@ -31,7 +31,7 @@ import {
   describeSchedule,
   type CronJob,
   type CronRunOutcome,
-} from "../../storage/cron-store.js";
+} from "../../storage/cron.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { numericChatIdFor } from "../../util/chat-id.js";

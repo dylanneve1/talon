@@ -1,5 +1,5 @@
 /**
- * Sticker library — the workspace pack store (storage/sticker-store)
+ * Sticker library — the workspace pack store (storage/stickers)
  * and the Telegram write/resolve side (frontend/telegram/sticker-library).
  *
  * The behaviours pinned here are what make stickers usable in practice:
@@ -78,14 +78,14 @@ describe("sticker-store", () => {
     writePack("new_pack", [{ emoji: "🔥", fileId: "B" }], "2026-06-01");
     writeFileSync(join(STICKERS_DIR, "broken.json"), "{not json");
 
-    const { listSavedPacks } = await import("../storage/sticker-store.js");
+    const { listSavedPacks } = await import("../storage/stickers.js");
     const packs = listSavedPacks();
     expect(packs.map((p) => p.name)).toEqual(["new_pack", "old_pack"]);
   });
 
   it("renders a prompt index with emoji inventory, empty when no packs", async () => {
     const { renderStickerLibraryPrompt } =
-      await import("../storage/sticker-store.js");
+      await import("../storage/stickers.js");
     expect(renderStickerLibraryPrompt()).toBe("");
 
     writePack("cats", [
@@ -109,7 +109,7 @@ describe("sticker-store", () => {
     ]);
     writePack("cats", [{ emoji: "😀", fileId: "C" }]);
     const { renderStickerLibraryPrompt } =
-      await import("../storage/sticker-store.js");
+      await import("../storage/stickers.js");
     const section = renderStickerLibraryPrompt();
     expect(section).toContain("(cats,");
     expect(section).not.toContain("(bare,");
@@ -124,7 +124,7 @@ describe("sticker-store", () => {
       );
     }
     const { renderStickerLibraryPrompt } =
-      await import("../storage/sticker-store.js");
+      await import("../storage/stickers.js");
     const section = renderStickerLibraryPrompt();
     // Newest 12 listed; the 2 oldest summarized, not silently invisible.
     expect(section).toContain("(pack_13,");
@@ -146,7 +146,7 @@ describe("sticker-store", () => {
       emojis.map((emoji, i) => ({ emoji, fileId: `F${i}` })),
     );
     const { renderStickerLibraryPrompt } =
-      await import("../storage/sticker-store.js");
+      await import("../storage/stickers.js");
     const line = renderStickerLibraryPrompt()
       .split("\n")
       .find((l) => l.includes("(big,"))!;

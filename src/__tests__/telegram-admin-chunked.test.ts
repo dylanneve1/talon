@@ -29,7 +29,7 @@ vi.mock("../storage/chat-settings.js", () => ({
   getChatSettings: vi.fn(() => ({})),
 }));
 const getAllCronJobs = vi.hoisted(() => vi.fn());
-vi.mock("../storage/cron-store.js", () => ({
+vi.mock("../storage/cron.js", () => ({
   getAllCronJobs,
   describeSchedule: vi.fn(() => "every 5m"),
   nextRunAt: vi.fn(() => null),

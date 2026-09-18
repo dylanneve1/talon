@@ -104,7 +104,10 @@ PRs.
 
 **H. Storage naming** — drop `-store`; `Opts` → `Options`; rename the
 seven `shared.ts` files and `discord/helpers.ts`. Mechanical, one PR,
-after C–G so it does not conflict with them.
+after C–G so it does not conflict with them. Landed for storage,
+`Opts`, discord, whatsapp and gateway-actions; the two telegram
+`shared.ts` files follow the telegram dispatch-table PR (F) so the two
+do not collide.
 
 **I. `core/` root tidy + `config → core/config`** — the ratcheted
 migration. After H.

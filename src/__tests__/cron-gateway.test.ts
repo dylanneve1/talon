@@ -102,13 +102,13 @@ vi.mock("../core/models/active-model.js", () => ({
 // initialized (vi.mock factories are hoisted; a static import of the SUT would
 // pull in the mocked `node:fs` before `existsSyncMock` exists).
 
-import type { CronJob } from "../storage/cron-store.js";
+import type { CronJob } from "../storage/cron.js";
 import type { ActionResult } from "../core/types.js";
 
 const { handleSharedAction } =
   await import("../core/engine/gateway-actions/index.js");
-const { getCronJob, addCronJob } = await import("../storage/cron-store.js");
-const { getTrigger } = await import("../storage/trigger-store.js");
+const { getCronJob, addCronJob } = await import("../storage/cron.js");
+const { getTrigger } = await import("../storage/triggers.js");
 
 const CHAT_ID = 4242;
 

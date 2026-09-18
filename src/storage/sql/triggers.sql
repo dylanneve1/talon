@@ -56,7 +56,7 @@ UPDATE triggers
 SET status = 'terminated',
     pid = NULL,
     ended_at = COALESCE(ended_at, ?),
-    -- Literal must match RESTART_KILL_ERROR in storage/trigger-store.ts.
+    -- Literal must match RESTART_KILL_ERROR in storage/triggers.ts.
     last_error = COALESCE(last_error, 'Talon restarted while trigger was running')
 WHERE status IN ('running', 'pending') AND persistent = 0
 

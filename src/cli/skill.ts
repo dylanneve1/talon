@@ -2,7 +2,7 @@
  * `talon skill` — install / list / enable / disable / remove SKILL.md
  * workflow bundles.
  *
- * All lifecycle logic lives in storage/skill-store.ts; this module only
+ * All lifecycle logic lives in storage/skills.ts; this module only
  * resolves install sources and renders outcomes. Installs accept a local
  * folder, a git URL, or `owner/repo[/subpath]` (so `talon skill install
  * anthropics/skills/skills/pdf` works). A source folder either IS a skill
@@ -22,7 +22,7 @@ import {
   listSkills,
   setSkillEnabled,
   type Skill,
-} from "../storage/skill-store.js";
+} from "../storage/skills.js";
 import { cloneShallow, resolveSource } from "./install-sources.js";
 
 const USAGE = [

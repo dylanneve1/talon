@@ -2,7 +2,7 @@
  * Script + skill gateway actions — save/list/run/delete through
  * handleSharedAction, with run_script executing REAL subprocesses
  * (bash + node) against a tmpdir workspace. Validation and store
- * internals are covered by script-store.test.ts / skill-store.test.ts.
+ * internals are covered by storage-scripts.test.ts / storage-skills.test.ts.
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";

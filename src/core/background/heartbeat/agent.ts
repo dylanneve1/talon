@@ -11,7 +11,7 @@ import { logError, logWarn } from "../../../util/log.js";
 import { toYMD } from "../../../util/time.js";
 import { getDefaultModel } from "../../models/catalog.js";
 import { loadSystemTemplate } from "../../prompt/templates.js";
-import { formatGoal, getOpenGoals } from "../../../storage/goal-store.js";
+import { formatGoal, getOpenGoals } from "../../../storage/goals.js";
 import { taskTable, type TaskHandle } from "../../tasks/index.js";
 import type { Backend } from "../../agent-runtime/capabilities.js";
 import type { OneShotAgentParams } from "../../types.js";

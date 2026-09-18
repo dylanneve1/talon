@@ -7,7 +7,8 @@
  * retrieval (get_message_by_id, download_media) lives in history.ts.
  */
 
-import { readStatusText, toUserJid, tryAction } from "./shared.js";
+import { tryAction } from "./try-action.js";
+import { readStatusText, toUserJid } from "./coerce.js";
 import type { WhatsAppActionHandlers } from "./types.js";
 
 /** Render one participant the way the other frontends render members. */

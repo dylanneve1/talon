@@ -11,7 +11,7 @@ import {
   getTrigger,
   updateTrigger,
   type Trigger,
-} from "../../../storage/trigger-store.js";
+} from "../../../storage/triggers.js";
 import { log, logError, logWarn } from "../../../util/log.js";
 import { spawnWarden, type WardenExitEvent } from "../../../native/warden.js";
 import {

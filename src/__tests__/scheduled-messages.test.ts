@@ -1,5 +1,5 @@
 /**
- * Persistent scheduled messages — the store (storage/scheduled-store)
+ * Persistent scheduled messages — the store (storage/scheduled)
  * and the Telegram schedule/cancel/list/restore handlers.
  *
  * The behaviour pinned here is the whole point of the feature: a
@@ -31,7 +31,7 @@ async function freshImports() {
   vi.resetModules();
   const db = await import("../storage/db.js");
   closeDb = db.closeDatabase;
-  const store = await import("../storage/scheduled-store.js");
+  const store = await import("../storage/scheduled.js");
   const telegram = await import("../frontend/telegram/actions/messaging.js");
   return { store, telegram };
 }

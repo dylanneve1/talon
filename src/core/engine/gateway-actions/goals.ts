@@ -20,9 +20,9 @@ import {
   OPEN_GOAL_STATUSES,
   type Goal,
   type GoalStatus,
-} from "../../../storage/goal-store.js";
+} from "../../../storage/goals.js";
 import { log } from "../../../util/log.js";
-import { parseDueDate } from "./shared.js";
+import { parseDueDate } from "./validation.js";
 import type { SharedActionHandlers } from "./types.js";
 
 export const goalHandlers: SharedActionHandlers = {

@@ -25,7 +25,7 @@ import type { Gateway } from "../../core/engine/gateway.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { maxMsgIdForChatPrefix } from "../../storage/history.js";
 import { createWhatsAppActionHandler } from "./actions/index.js";
-import { sendText, setWhatsAppBotName } from "./actions/shared.js";
+import { sendText, setWhatsAppBotName } from "./actions/send.js";
 import { seedMessageStore } from "./message-store.js";
 import {
   maxWhatsAppMsgId,

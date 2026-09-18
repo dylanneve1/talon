@@ -18,7 +18,7 @@ import {
 } from "../../util/watchdog.js";
 import { isAddressedToSelf, isGroupAllowed } from "./access.js";
 import { handleWhatsAppCommand } from "./commands.js";
-import { sendText } from "./actions/shared.js";
+import { sendText } from "./actions/send.js";
 import {
   bareId,
   canonicalId,

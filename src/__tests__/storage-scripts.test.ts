@@ -51,7 +51,7 @@ import {
   validateScriptLanguage,
   validateScriptName,
   validateScriptBody,
-} from "../storage/script-store.js";
+} from "../storage/scripts.js";
 
 beforeAll(() => {
   workspaceDir = mkdtempSync(join(tmpdir(), "talon-scripts-"));

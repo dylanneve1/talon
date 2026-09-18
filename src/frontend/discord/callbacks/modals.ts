@@ -8,7 +8,7 @@ import type { Gateway } from "../../../core/engine/gateway.js";
 import { setChatPulseInterval } from "../../../storage/chat-settings.js";
 import { registerChat, enablePulse } from "../../../core/background/pulse.js";
 import { isInteractionAllowed } from "../handlers/index.js";
-import { parseInterval, formatDuration } from "../helpers.js";
+import { parseInterval, formatDuration } from "../render.js";
 import { logError } from "../../../util/log.js";
 
 export async function handleModalSubmit(

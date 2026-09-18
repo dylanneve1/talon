@@ -93,7 +93,7 @@ vi.mock("write-file-atomic", () => ({
   default: { sync: vi.fn() },
 }));
 
-vi.mock("../storage/cron-store.js", () => ({
+vi.mock("../storage/cron.js", () => ({
   addCronJob: vi.fn(),
   getCronJob: vi.fn(),
   getCronJobsForChat: vi.fn(() => []),

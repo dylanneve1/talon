@@ -7,7 +7,7 @@ vi.mock("../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-import type { CronJob } from "../storage/cron-store.js";
+import type { CronJob } from "../storage/cron.js";
 
 const {
   loadCronJobs,
@@ -21,7 +21,7 @@ const {
   generateCronId,
   validateCronExpression,
   _resetCronJobsForTesting,
-} = await import("../storage/cron-store.js");
+} = await import("../storage/cron.js");
 
 function makeCronJob(overrides: Partial<CronJob> = {}): CronJob {
   return {

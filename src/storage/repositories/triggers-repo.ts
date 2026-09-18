@@ -1,7 +1,7 @@
 /**
  * Triggers repository — executes the statements in sql/triggers.sql
  * against the `triggers` table; no SQL text lives here. The public
- * store (storage/trigger-store.ts) holds the domain API, validation
+ * store (storage/triggers.ts) holds the domain API, validation
  * and the on-disk script/log handling; this module owns statement
  * execution and the row↔domain mapping.
  */

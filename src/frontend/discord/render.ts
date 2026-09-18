@@ -1,5 +1,6 @@
 /**
- * Shared helpers for Discord commands, callbacks, and the settings panel.
+ * Message rendering for Discord commands, callbacks, and the settings panel:
+ * metrics, doctor, mesh, usage and settings text, sized to Discord's limits.
  *
  * Discord-specific quirks vs the Telegram helpers:
  *  - settings panel uses Components (Buttons + Select Menus), not inline keyboard.

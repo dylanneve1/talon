@@ -93,7 +93,7 @@ export function effectiveStrength(
   );
 }
 
-export interface FsrsReinforceOpts {
+export interface FsrsReinforceOptions {
   readonly now: number;
   readonly cfg: SoulConfig;
   readonly amount: number;
@@ -111,7 +111,7 @@ export interface FsrsReinforceOpts {
  */
 export function reinforceFsrs(
   state: ActivationState,
-  opts: FsrsReinforceOpts,
+  opts: FsrsReinforceOptions,
 ): ActivationState {
   if (!Number.isFinite(halfLifeForKind(opts.cfg, opts.kind))) {
     state.salience += opts.amount;

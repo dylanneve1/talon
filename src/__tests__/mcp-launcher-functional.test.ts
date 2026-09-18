@@ -103,7 +103,7 @@ async function readMarker(
   });
 }
 
-type IdlerOpts = {
+type IdlerOptions = {
   name?: string;
   /** If false, the idler keeps running even after its stdin closes. */
   exitOnStdinClose?: boolean;
@@ -113,7 +113,7 @@ type IdlerOpts = {
   selfExitAfterMs?: number;
 };
 
-function writeIdler(dir: string, opts: IdlerOpts = {}): string {
+function writeIdler(dir: string, opts: IdlerOptions = {}): string {
   const path = join(dir, opts.name ?? "idler.mjs");
   const exitOnStdin = opts.exitOnStdinClose !== false;
   const ignoreTerm = opts.ignoreSigterm === true;

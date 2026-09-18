@@ -46,7 +46,7 @@ const {
   _internals,
 } = await import("../core/background/triggers/index.js");
 
-import type { Trigger } from "../storage/trigger-store.js";
+import type { Trigger } from "../storage/triggers.js";
 const {
   addTrigger,
   RESTART_KILL_ERROR,
@@ -63,7 +63,7 @@ const {
   validateLanguage,
   sanitizeChatId,
   languageExtension,
-} = await import("../storage/trigger-store.js");
+} = await import("../storage/triggers.js");
 
 let tmpRoot: string;
 let executeSpy: ReturnType<typeof vi.fn>;
@@ -455,7 +455,7 @@ describe("trigger-store — readTriggerLogTail", () => {
     const dirPath = mkdtempSync(join(tmpdir(), "trigger-log-err-"));
     try {
       const { tail, truncated } = readTriggerLogTail(dirPath, 20);
-      // Covers the catch block at line 329 of trigger-store.ts
+      // Covers the catch block at line 329 of triggers.ts
       expect(tail).toMatch(/Failed to read log/);
       expect(truncated).toBe(false);
     } finally {

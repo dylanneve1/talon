@@ -11,7 +11,7 @@ import {
   RESTART_KILL_ERROR,
   SHUTDOWN_KILL_ERROR,
   type Trigger,
-} from "../../../storage/trigger-store.js";
+} from "../../../storage/triggers.js";
 import { log, logError } from "../../../util/log.js";
 import { depsHolder } from "./state.js";
 import { fireWake } from "./output.js";

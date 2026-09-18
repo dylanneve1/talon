@@ -1,7 +1,7 @@
 /**
  * Scripts repository — executes the statements in sql/scripts.sql
  * against the `scripts` table; no SQL text lives here. The public
- * store (storage/script-store.ts) holds the domain API, validation,
+ * store (storage/scripts.ts) holds the domain API, validation,
  * and the on-disk script files; this module owns statement execution
  * and the row↔domain mapping.
  */

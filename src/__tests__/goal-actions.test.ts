@@ -26,7 +26,7 @@ import {
   getGoal,
   getGoalsForChat,
   type Goal,
-} from "../storage/goal-store.js";
+} from "../storage/goals.js";
 import type { ActionResult } from "../core/types.js";
 
 let chatSeq = 9_000_000;

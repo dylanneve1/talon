@@ -669,7 +669,7 @@ describe("teams actions — non-Error throw coverage", () => {
     vi.doMock("../core/plugin/index.js", () => ({
       handlePluginAction: vi.fn(async () => null),
     }));
-    vi.doMock("../storage/cron-store.js", () => ({
+    vi.doMock("../storage/cron.js", () => ({
       addCronJob: vi.fn(),
       getCronJob: vi.fn(),
       getCronJobsForChat: vi.fn(() => []),

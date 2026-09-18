@@ -3,7 +3,7 @@
  * persistence write throws. In the SQLite era every write commits
  * transactionally, so there is no flush-to-disk failure to catch. The
  * remaining swallow-and-record paths are:
- *   - cron-store.recordCronRun — runs inside the scheduler tick, so a DB
+ *   - storage/cron recordCronRun — runs inside the scheduler tick, so a DB
  *     failure must be logged + recorded, never thrown (CRUD, by contrast,
  *     lets DB errors propagate).
  *   - sessions.persist / chat-settings.persist — catch repo errors and
@@ -17,9 +17,9 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// ── cron-store recordCronRun swallows a repository failure ────────────────
+// ── cron store recordCronRun swallows a repository failure ────────────────
 
-describe("cron-store — recordCronRun swallows a repository error", () => {
+describe("cron store — recordCronRun swallows a repository error", () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -57,7 +57,7 @@ describe("cron-store — recordCronRun swallows a repository error", () => {
       removeAll: vi.fn(),
     }));
 
-    const { recordCronRun } = await import("../storage/cron-store.js");
+    const { recordCronRun } = await import("../storage/cron.js");
 
     // recordCronRun wraps the read+write in a transaction; the write throws,
     // the transaction rolls back, and recordCronRun swallows + records it.

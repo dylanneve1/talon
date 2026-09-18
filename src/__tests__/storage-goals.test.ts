@@ -25,7 +25,7 @@ import {
   MAX_PROGRESS_NOTE_LENGTH,
   MAX_TITLE_LENGTH,
   type Goal,
-} from "../storage/goal-store.js";
+} from "../storage/goals.js";
 
 let chatSeq = 0;
 /** Unique chat id per test — the worker-shared DB persists across tests. */

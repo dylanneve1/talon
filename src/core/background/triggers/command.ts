@@ -5,7 +5,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import type { Trigger } from "../../../storage/trigger-store.js";
+import type { Trigger } from "../../../storage/triggers.js";
 import { selfInvocation } from "../../../util/mcp-launcher.js";
 import { LUA_RUN_SUBCOMMAND } from "../../scripting/lua-runner.js";
 

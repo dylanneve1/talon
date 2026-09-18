@@ -49,7 +49,7 @@ const mockDescribeSchedule = vi.fn((job: any) =>
 );
 const mockNextRunAt = vi.fn(() => Date.parse("2026-04-01T09:00:00.000Z"));
 
-vi.mock("../storage/cron-store.js", () => ({
+vi.mock("../storage/cron.js", () => ({
   addCronJob: mockAddCronJob,
   getCronJob: mockGetCronJob,
   getCronJobsForChat: mockGetCronJobsForChat,

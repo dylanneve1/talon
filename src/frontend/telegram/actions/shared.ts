@@ -39,7 +39,7 @@ export function replyParamsFor(
 }
 
 /** Delivery modifiers shared by every outbound send. */
-export type ExtraSendOpts = {
+export type ExtraSendOptions = {
   message_thread_id?: number;
   disable_notification?: boolean;
   protect_content?: boolean;
@@ -54,7 +54,7 @@ export type ExtraSendOpts = {
 export function sendOpts(
   body: Record<string, unknown>,
   chatId: number,
-): ExtraSendOpts {
+): ExtraSendOptions {
   return {
     message_thread_id: resolveThreadId(body, chatId),
     disable_notification: body.silent === true || undefined,
@@ -126,7 +126,7 @@ export async function sendText(
   replyMarkup?: NonNullable<
     Parameters<Bot["api"]["sendRichMessage"]>[2]
   >["reply_markup"],
-  extra?: ExtraSendOpts,
+  extra?: ExtraSendOptions,
 ): Promise<number> {
   if (text.length > TELEGRAM_MAX_TEXT) {
     throw new Error(
@@ -137,7 +137,7 @@ export async function sendText(
   // Default to the chat's ambient forum topic so every text path — commands,
   // menus, scheduled replays — stays in the topic the conversation is in.
   // An explicit `extra` (from sendOpts) already resolved this.
-  const opts: ExtraSendOpts = extra ?? {
+  const opts: ExtraSendOptions = extra ?? {
     message_thread_id: ambientThreadId(chatId),
   };
 

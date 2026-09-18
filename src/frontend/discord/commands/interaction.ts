@@ -1,5 +1,6 @@
 /**
- * Helpers shared by the Discord slash-command handlers + router.
+ * Interaction accessors for the Discord slash-command handlers + router:
+ * chat-id derivation, chunked reply, client.
  */
 
 import { type ChatInputCommandInteraction, MessageFlags } from "discord.js";

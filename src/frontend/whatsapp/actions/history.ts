@@ -19,7 +19,7 @@ import {
 } from "../../../storage/history.js";
 import { saveInboundMedia } from "../media-store.js";
 import { lookupMessage, resolveKey } from "../message-store.js";
-import { tryAction } from "./shared.js";
+import { tryAction } from "./try-action.js";
 import type { WhatsAppActionHandlers } from "./types.js";
 
 function toMsgId(raw: unknown): number {

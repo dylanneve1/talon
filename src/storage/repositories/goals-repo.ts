@@ -1,7 +1,7 @@
 /**
  * Goals repository — executes the statements in sql/goals.sql against
  * the `goals` table; no SQL text lives here. The public store
- * (storage/goal-store.ts) holds the domain API and validation; this
+ * (storage/goals.ts) holds the domain API and validation; this
  * module owns statement execution and the row↔domain mapping.
  */
 

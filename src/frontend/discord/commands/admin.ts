@@ -18,7 +18,7 @@ import {
   formatDuration,
   renderMetricsMessages,
   renderDoctorMessages,
-} from "../helpers.js";
+} from "../render.js";
 import { collectDoctorReport } from "../../../core/doctor.js";
 import { getSoul } from "../../../core/soul/service.js";
 import { getMetrics, getTodayMetrics } from "../../../storage/metrics.js";
@@ -34,7 +34,7 @@ import {
   getRepoRoot,
   runSelfUpdate,
 } from "../../../core/update/self-update.js";
-import { reply } from "./shared.js";
+import { reply } from "./interaction.js";
 
 export async function handleRestart(
   i: ChatInputCommandInteraction,

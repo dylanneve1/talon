@@ -13,13 +13,8 @@ import { log } from "../../../util/log.js";
 import { toWhatsAppText } from "../formatting.js";
 import { lookupMessage, resolveKey } from "../message-store.js";
 import { recordPin, listPins, forgetPin } from "../pins.js";
-import {
-  resolveQuoted,
-  sendContent,
-  sendText,
-  tryAction,
-  boundedSend,
-} from "./shared.js";
+import { tryAction } from "./try-action.js";
+import { resolveQuoted, sendContent, sendText, boundedSend } from "./send.js";
 import type { WhatsAppActionHandlers } from "./types.js";
 
 /** WhatsApp keeps a pin for 24h, 7d, or 30d — no indefinite option. */

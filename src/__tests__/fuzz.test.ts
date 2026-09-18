@@ -32,7 +32,7 @@ vi.mock("../storage/media-index.js", () => ({
   formatMediaIndex: vi.fn(() => ""),
 }));
 
-vi.mock("../storage/cron-store.js", () => ({
+vi.mock("../storage/cron.js", () => ({
   addCronJob: vi.fn(),
   getCronJob: vi.fn(),
   getCronJobsForChat: vi.fn(() => []),
@@ -46,7 +46,7 @@ vi.mock("../storage/cron-store.js", () => ({
 // ── Imports (after mocks) ────────────────────────────────────────────────────
 
 const { classify, TalonError } = await import("../core/errors.js");
-await import("../storage/cron-store.js");
+await import("../storage/cron.js");
 const { handleSharedAction } =
   await import("../core/engine/gateway-actions/index.js");
 const { resolveModelId: resolveModelName } =

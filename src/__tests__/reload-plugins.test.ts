@@ -83,7 +83,7 @@ vi.mock("../storage/history.js", () => ({
 vi.mock("../storage/media-index.js", () => ({
   formatMediaIndex: vi.fn(() => ""),
 }));
-vi.mock("../storage/cron-store.js", () => ({
+vi.mock("../storage/cron.js", () => ({
   addCronJob: vi.fn(),
   getCronJob: vi.fn(),
   getCronJobsForChat: vi.fn(() => []),

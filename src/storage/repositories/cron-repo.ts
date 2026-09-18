@@ -1,7 +1,7 @@
 /**
  * Cron repository — executes the statements in sql/cron.sql against
  * the `cron_jobs` table; no SQL text lives here. The public store
- * (storage/cron-store.ts) holds the domain API and validation; this
+ * (storage/cron.ts) holds the domain API and validation; this
  * module owns statement execution and the row↔domain mapping.
  */
 

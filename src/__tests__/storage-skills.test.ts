@@ -52,7 +52,7 @@ import {
   validateSkillBody,
   validateSkillDescription,
   validateSkillName,
-} from "../storage/skill-store.js";
+} from "../storage/skills.js";
 
 beforeAll(() => {
   workspaceDir = mkdtempSync(join(tmpdir(), "talon-skills-"));
