@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.6.1](https://github.com/dylanneve1/talon/compare/v4.6.0...v4.6.1) (2026-09-18)
+
+
+### Miscellaneous Chores
+
+* **lint:** zero warnings, and fail the gate on any new one ([#944](https://github.com/dylanneve1/talon/issues/944)) ([937dd64](https://github.com/dylanneve1/talon/commit/937dd6403c7d6210e30450ba326ad85169c8f21d))
+* **ratchets:** function-size tooth 2 — 150 lines / complexity 25 ([#946](https://github.com/dylanneve1/talon/issues/946)) ([91659d0](https://github.com/dylanneve1/talon/commit/91659d07e90fc9dcd2711cb31b9a805333553920))
+
 ## [4.6.0](https://github.com/dylanneve1/talon/compare/v4.5.0...v4.6.0) (2026-09-18)
 
 
