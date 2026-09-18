@@ -262,7 +262,7 @@ session-frozen tier; this is the per-turn one, and the two together are plan
 - Tests: relevance; trust filtering; **fail-closed on any db error**; budget cap;
   prompt byte-identical when nothing is retrieved.
 
-**Landed** as #TBD, still default-off. `core/memory/turn-retrieval.ts` exports
+**Landed** as #952, still default-off. `core/memory/turn-retrieval.ts` exports
 `retrieveForTurn({ chatId, text, isGroup })` and `TURN_MEMORY_MAX_CHARS`
 (3 000 chars). The Weaver resolves it once per turn in `executeInner`, before
 `runChatTurn`, and passes the rendered block as `retrievedMemory`.
