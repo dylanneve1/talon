@@ -50,6 +50,9 @@ export function registerInfoCommands(bot: Bot): void {
         "  /metrics -- aggregate performance metrics (admin)",
         "  /doctor -- environment and native-module health (admin)",
         "  /dream -- force memory consolidation now",
+        // Entity-escaped: this whole message is sent with parse_mode HTML,
+        // so a literal <id> would be read as a tag and 400 the reply.
+        "  /memory -- what Talon remembers; /memory why &lt;id&gt; for provenance",
         "  /ping -- health check with latency",
         "  /mesh -- ping and list companion mesh devices",
         "  /reset -- clear session and start fresh",
