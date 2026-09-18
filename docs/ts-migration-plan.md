@@ -172,6 +172,45 @@ readings far enough apart to tell warm-up from creep.
 - Annual review of remaining sidecars: agent-host (tracks whether a
   non-JS agent runtime appears), userbot (gotd/grammers maturity).
 
+## Position, 2026-09-18 — boundaries before rewrites
+
+Re-read after the cleanup and memory work, with Dylan asking whether
+TypeScript is the right language for every part. The answer the tree
+gives:
+
+**The language question is a per-component question, and the repo
+already answers it that way.** Four languages run behind three
+fixture-verified boundaries today (`protocol/`: TS daemon, Dart
+Companion, Go node; `native/`: Rust warden and fusefs, Zig and Rust
+wasm cores, Gleam scheduler core; Lua scripts in wasm). Nothing about
+that is accidental — it is the shape to push further.
+
+| Component | Today | Verdict |
+| --- | --- | --- |
+| Agent host (Claude Agent SDK) | TS, in-process | **Must stay JS** (the SDK is JS). Becomes the `talon-agent-host` sidecar (Phase 2) — crash isolation and a stable `AgentEvent` protocol, whatever the core is written in later. |
+| Chat frontends (grammY, discord.js, Baileys, GramJS) | TS, in-process | **Stay TS.** Their JS SDKs are best-in-class with no non-JS peer (Baileys especially). The lever is not their language but their *boundary*: the Companion is already an out-of-process driver over the bridge protocol; the same shape lets any future frontend be any language. |
+| Core (weaver, dispatcher, storage, cron, bridge server) | TS | The only thing worth porting, and only once it is small and tree-shaped (docs/structure.md) and Phase 0 says the control plane costs something. Porting a tangle ports the tangle. Go remains the default target for the in-tree precedent. |
+| Security / fs (warden, fusefs) | Rust | Right. Anything that must be correct under adversarial input or must touch the kernel lives here. |
+| CPU cores (textops, blake3, sqlguard, htmlents) | Zig / Rust wasm | Right. |
+| Scheduler core | Gleam → JS | Works, but it is a one-file language island with a build step of its own. Candidate to fold back into TS or into the Go core when the core moves; not before. |
+| Mesh node | Go | Right (single static binary per platform). |
+| Companion | Dart / Flutter | Right (the only real cross-platform mobile+desktop UI stack). |
+
+**Rule going forward:** a component changes language only when it
+crosses a *process* boundary with a fixture-verified protocol (`protocol/`),
+and only for one of three reasons — the ecosystem lives there (SDKs),
+correctness under hostile input (Rust), or a measured hot path
+(Phase 0). "Newer" or "faster in general" is not a reason: Talon is
+I/O-bound and its felt slowness has always been architectural.
+
+**Order:** (1) finish the tree contract — a small, tree-shaped core is
+the precondition for any port; (2) Phase 0's missing numbers (boot ms,
+idle RSS, per-turn CPU) next to the cache metrics that now exist;
+(3) Phase 2's agent-host sidecar — the single highest-leverage
+structural move, valuable even if the core never leaves TypeScript;
+(4) close the Bun checklist (Docker, soak); (5) revisit the Go/Rust
+decision with the numbers, not before.
+
 ## Risks
 
 | Risk                                           | Mitigation                                                                                             |
