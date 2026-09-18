@@ -13,6 +13,8 @@ describe("ALL_TOOLS registry", () => {
     expect(tags).toContain("stickers");
     expect(tags).toContain("scheduling");
     expect(tags).toContain("triggers");
+    expect(tags).toContain("goals");
+    expect(tags).toContain("memory");
     expect(tags).toContain("web");
   });
 

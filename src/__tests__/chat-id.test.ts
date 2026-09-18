@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  chatScope,
   deriveNumericChatId,
   generateTerminalChatId,
   isTerminalChatId,
@@ -107,5 +108,32 @@ describe("numericChatIdFor", () => {
     ]) {
       expect(numericChatIdFor(id)).toBe(deriveNumericChatId(id));
     }
+  });
+});
+
+describe("chatScope", () => {
+  it("reads group and DM straight off the explicit prefixes", () => {
+    expect(chatScope("discord_guild_123_456")).toBe("group");
+    expect(chatScope("discord_dm_123")).toBe("dm");
+    expect(chatScope("wa_group_120363000@g.us")).toBe("group");
+    expect(chatScope("wa_dm_353863715529")).toBe("dm");
+  });
+
+  it("reads a Telegram id by sign — negative is a group/supergroup/channel", () => {
+    expect(chatScope("-1001426819337")).toBe("group");
+    expect(chatScope("-123456789")).toBe("group");
+    expect(chatScope("352042062")).toBe("dm");
+  });
+
+  it("treats the local single-operator surfaces as DMs", () => {
+    expect(chatScope("t_1711360000000")).toBe("dm");
+    expect(chatScope("1")).toBe("dm");
+    expect(chatScope("d_1789500775292_df4e0n")).toBe("dm");
+  });
+
+  it("says unknown when the grammar cannot tell", () => {
+    // A Teams chat id covers 1:1 and group chats alike.
+    expect(chatScope("teams_chat_19:abc@thread.v2")).toBe("unknown");
+    expect(chatScope("some_future_frontend_42")).toBe("unknown");
   });
 });

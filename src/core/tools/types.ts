@@ -22,6 +22,7 @@ export type ToolTag =
   | "scheduling"
   | "triggers"
   | "goals"
+  | "memory"
   | "scripts"
   | "skills"
   | "web"

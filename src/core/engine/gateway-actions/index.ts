@@ -12,6 +12,7 @@
  *   - `cron`      — scheduled-job CRUD
  *   - `triggers`  — long-running watcher-script CRUD
  *   - `goals`     — persistent multi-turn objectives
+ *   - `memory`    — remember / recall / forget over the typed memory store
  *   - `scripts`   — reusable agent-authored scripts
  *   - `skills`    — markdown workflows
  *   - `plugins`   — plugin hot-reload
@@ -28,6 +29,7 @@ import { fetchUrlHandlers } from "./fetch-url.js";
 import { cronHandlers } from "./cron.js";
 import { triggerHandlers } from "./triggers.js";
 import { goalHandlers } from "./goals.js";
+import { memoryHandlers } from "./memory.js";
 import { scriptHandlers } from "./scripts.js";
 import { skillHandlers } from "./skills.js";
 import { pluginHandlers } from "./plugins.js";
@@ -52,6 +54,7 @@ const handlers: SharedActionHandlers = Object.assign(Object.create(null), {
   ...cronHandlers,
   ...triggerHandlers,
   ...goalHandlers,
+  ...memoryHandlers,
   ...scriptHandlers,
   ...skillHandlers,
   ...pluginHandlers,

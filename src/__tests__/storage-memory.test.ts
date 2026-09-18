@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   assertMemory,
   dropMemory,
+  findSimilarMemories,
   formatMemory,
   getMemory,
   listMemories,
@@ -193,6 +194,55 @@ describe("memory search", () => {
       input({ subject, text: "shared wording here" }),
     );
     expect(similar).toEqual([]);
+  });
+
+  // ── findSimilarMemories: the same probe, without writing ───────────────
+
+  it("findSimilarMemories runs the probe without inserting anything", () => {
+    const { id } = assertMemory(
+      input({ subject, text: "the release ships on Friday" }),
+    );
+    const similar = findSimilarMemories(
+      "fact",
+      subject,
+      "the release ships on Friday afternoon",
+    );
+    expect(similar.map((r) => r.id)).toEqual([id]);
+    // The probe is a read: only the original row exists.
+    expect(listMemories({ subject })).toHaveLength(1);
+  });
+
+  it("findSimilarMemories scopes to the same kind and subject", () => {
+    const other = freshSubject();
+    assertMemory(input({ subject, text: "distinctive wording here" }));
+    expect(
+      findSimilarMemories("fact", other, "distinctive wording here"),
+    ).toEqual([]);
+    expect(
+      findSimilarMemories("episode", subject, "distinctive wording here"),
+    ).toEqual([]);
+  });
+
+  it("findSimilarMemories skips superseded and dropped rows", () => {
+    const { id } = assertMemory(input({ subject, text: "moved to Lisbon" }));
+    expect(
+      findSimilarMemories("fact", subject, "moved to Lisbon"),
+    ).toHaveLength(1);
+    dropMemory(id, "wrong");
+    expect(findSimilarMemories("fact", subject, "moved to Lisbon")).toEqual([]);
+  });
+
+  it("findSimilarMemories returns nothing for text with no usable terms", () => {
+    assertMemory(input({ subject, text: "some real words" }));
+    expect(findSimilarMemories("fact", subject, "?? !! ??")).toEqual([]);
+  });
+
+  it("findSimilarMemories honours its limit", () => {
+    for (let i = 0; i < 4; i++)
+      assertMemory(input({ subject, text: `recurring phrase variant ${i}` }));
+    expect(
+      findSimilarMemories("fact", subject, "recurring phrase", 2),
+    ).toHaveLength(2);
   });
 });
 

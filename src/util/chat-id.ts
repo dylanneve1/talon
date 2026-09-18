@@ -67,3 +67,33 @@ export function isWhatsAppChatId(chatId: string): boolean {
 export function isDiscordChatId(chatId: string): boolean {
   return chatId.startsWith("discord_");
 }
+
+/**
+ * Classify a canonical chat ID as a one-to-one chat, a multi-party one,
+ * or something this grammar cannot tell apart.
+ *
+ * The ID is the only signal engine-side code has: a frontend's own
+ * `isGroup` flag rides on the inbound message, while stores, jobs and
+ * gateway actions are keyed by the string ID alone. Per frontend:
+ *
+ *   - `discord_guild_…` / `discord_dm_…` and `wa_group_…` / `wa_dm_…`
+ *     say which they are outright;
+ *   - a Telegram ID is bare digits — negative for a group, supergroup or
+ *     channel, positive for the user's own ID (a DM);
+ *   - terminal (`t_…`, `"1"`) and native (`d_…`) chats are local,
+ *     single-operator surfaces, so they are DMs;
+ *   - `teams_chat_…` covers 1:1 *and* group Teams chats alike, so it is
+ *     `"unknown"` — as is anything a future frontend invents.
+ *
+ * Callers decide what `"unknown"` means for them; anything trust- or
+ * privacy-sensitive should treat it as a group and fail closed.
+ */
+export function chatScope(chatId: string): "dm" | "group" | "unknown" {
+  if (chatId.startsWith("discord_guild_")) return "group";
+  if (chatId.startsWith("discord_dm_")) return "dm";
+  if (chatId.startsWith("wa_group_")) return "group";
+  if (chatId.startsWith("wa_dm_")) return "dm";
+  if (isTelegramChatId(chatId)) return chatId.startsWith("-") ? "group" : "dm";
+  if (isTerminalChatId(chatId) || isNativeChatId(chatId)) return "dm";
+  return "unknown";
+}

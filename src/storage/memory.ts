@@ -207,6 +207,25 @@ function similarityQuery(text: string): string {
 }
 
 /**
+ * The near-duplicate probe, in one place: live rows of the same
+ * kind + subject whose text best matches `text` (bm25 order), with
+ * `excludeId` left out. `assertMemory` excludes the row it just wrote;
+ * a caller probing *before* writing has nothing to exclude and passes
+ * `0`, which is not a valid rowid.
+ */
+function similarRows(
+  kind: MemoryKind,
+  subject: string,
+  text: string,
+  excludeId: number,
+  limit: number,
+): MemoryRow[] {
+  const match = similarityQuery(text);
+  if (!match) return [];
+  return repo.similar(match, kind, subject, excludeId, limit);
+}
+
+/**
  * Load a row that a mutation is about to change, or explain why it
  * can't. Only a live row is mutable: a dropped one is in the graveyard
  * and a superseded one has a successor, so editing it would fork the
@@ -280,10 +299,13 @@ export function assertMemory(input: MemoryInput): {
   const row = normalize(input);
   return inTransaction(() => {
     const id = insertWithHistory(row, "assert");
-    const match = similarityQuery(row.text);
-    const similar = match
-      ? repo.similar(match, row.kind, row.subject, id, SIMILAR_LIMIT)
-      : [];
+    const similar = similarRows(
+      row.kind,
+      row.subject,
+      row.text,
+      id,
+      SIMILAR_LIMIT,
+    );
     return { id, similar };
   });
 }
@@ -486,6 +508,25 @@ export function searchMemories(
   const match = ftsQuote(query);
   if (!match) return [];
   return repo.searchFts(match, opts.kind, opts.limit ?? DEFAULT_SEARCH_LIMIT);
+}
+
+/**
+ * The near-duplicate candidates a claim *would* report if it were
+ * asserted now — the same FTS probe `assertMemory` runs, without
+ * writing anything.
+ *
+ * This is what lets the write path offer supersede-instead-of-append
+ * before a second row exists (plan §3.2): `remember` probes first, and
+ * only inserts once the caller has either picked a row to supersede or
+ * said the claim really is separate.
+ */
+export function findSimilarMemories(
+  kind: MemoryKind,
+  subject: string,
+  text: string,
+  limit: number = SIMILAR_LIMIT,
+): MemoryRow[] {
+  return similarRows(kind, subject, text, 0, limit);
 }
 
 /** The audit trail for one row, oldest entry first. */

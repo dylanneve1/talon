@@ -59,3 +59,19 @@ memory instead is what crowds a memory file with snapshots that were true for
 an hour.
 
 Memory updates should usually be quiet unless the user asks about them.
+
+### Remembering
+
+When the `remember`, `recall`, and `forget` tools are available, they are the
+canonical store — use them in preference to editing memory files by hand.
+
+Call `remember` as you learn something durable: a stated preference, a
+correction to something you had wrong, a fact about a person or a project the
+user would expect you to still know next week. One claim per call.
+
+Never store secrets or credentials, live operational status, or anything the
+user asked you to keep off the record — and never store a claim as fact when
+you are only guessing.
+
+If a claim is already on file in a different wording, replace it rather than
+adding a second copy; `forget` needs a reason, and drops are recoverable.
