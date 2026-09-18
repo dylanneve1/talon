@@ -208,6 +208,19 @@ describe("setModel", () => {
     ]);
   });
 
+  it("falls back to the global backend when the pool is not ready", () => {
+    // The three readers beside it all guard this lookup; unguarded, an
+    // early-boot pick 400s the route and is lost instead of persisted.
+    const { runtime } = harness;
+    const entry = runtime.chats.create();
+    vi.mocked(getBackendIdForChat).mockImplementation(() => {
+      throw new Error("pool not ready");
+    });
+
+    expect(() => setModel(runtime, entry.id, "sonnet")).not.toThrow();
+    expect(getChatModelForBackend(entry.id, "claude")).toBe("sonnet");
+  });
+
   it("clears the pick when the model is blank", () => {
     const { runtime } = harness;
     const entry = runtime.chats.create();

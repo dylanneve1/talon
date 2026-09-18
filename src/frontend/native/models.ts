@@ -104,8 +104,15 @@ export function setModel(
   // Persisted setting first — see toClientChat. Writing the pick under the
   // live binding's key would attach it to the wrong backend whenever the
   // boot-time rebind to the persisted backend is still pending.
-  const backendId =
-    getChatSettings(chatId).backend ?? getBackendIdForChat(chatId);
+  let backendId: string;
+  try {
+    backendId = getChatSettings(chatId).backend ?? getBackendIdForChat(chatId);
+  } catch {
+    // Pool not ready — the same fallback listModels uses in this state, so
+    // the pick lands under the backend whose catalog the client was shown.
+    // Letting this throw would 400 the route and drop the pick entirely.
+    backendId = runtime.config.backend;
+  }
   setChatModelForBackend(chatId, backendId, model.trim() || undefined);
   broadcastChatUpdated(runtime, entry);
 }

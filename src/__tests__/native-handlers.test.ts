@@ -37,13 +37,15 @@ vi.mock("../core/engine/backend-controller/index.js", () => ({
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getBackendIdForChat } from "../core/engine/backend-controller/index.js";
 import { execute } from "../core/engine/dispatcher.js";
 import { buildBridgeHandlers } from "../frontend/native/handlers.js";
 import { BRIDGE_PROTOCOL_VERSION } from "../frontend/native/protocol.js";
 import { registerMedia } from "../frontend/native/media.js";
 import type { BridgeServerHandlers } from "../frontend/native/server.js";
-import { getChatSettings } from "../storage/chat-settings.js";
+import {
+  getChatModelForBackend,
+  getChatSettings,
+} from "../storage/chat-settings.js";
 import { files } from "../util/paths.js";
 import { logWarn } from "../util/log.js";
 import { makeNativeHarness, settle } from "./helpers/native-bridge.js";
@@ -316,15 +318,19 @@ describe("bridge pickers, config and media", () => {
     });
   });
 
-  it("persists a model and an effort pick for the chat", () => {
-    // `setModel` reads the chat's live binding when nothing is persisted, so
-    // this one needs the pool bound — the state every real daemon is in by
-    // the time the bridge is listening.
-    vi.mocked(getBackendIdForChat).mockReturnValue("claude");
+  it("persists an effort pick for the chat", () => {
     const chat = handlers.createChat();
-    handlers.setModel(chat.id, "sonnet");
     handlers.setEffort(chat.id, "high");
     expect(getChatSettings(chat.id).effort).toBe("high");
+  });
+
+  it("persists a model pick against the config backend when the pool is unbound", () => {
+    // The stub throws from `getBackendIdForChat`, as the controller does
+    // before the pool binds. The pick has to land somewhere sensible rather
+    // than 400ing the route and being dropped.
+    const chat = handlers.createChat();
+    handlers.setModel(chat.id, "sonnet");
+    expect(getChatModelForBackend(chat.id, "claude")).toBe("sonnet");
   });
 
   it("answers the effort levels even when the backend cannot be asked", async () => {
