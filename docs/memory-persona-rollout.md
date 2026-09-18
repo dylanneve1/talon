@@ -149,6 +149,9 @@ separate. 36 tests.
   ranker as the production path.
 - CLI: `talon memory import` / `talon memory render`.
 - `/memory` (telegram + native): top rows, search, `/memory why <id>` for provenance.
+  **Landed** as #941 — read-only on both surfaces (`/memory`, `/memory <query>`,
+  `/memory why <id>`, `/memory kind <kind>`; `GET /memory` + `GET /memory/why` on the
+  bridge). The write path stays with PR 6.
 - With the flag on, the store is authoritative and `memory.md` is rendered output.
   Hand-edits to the file are folded back as an inbox on next import.
 
