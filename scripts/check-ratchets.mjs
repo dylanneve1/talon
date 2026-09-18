@@ -23,7 +23,9 @@ const RATCHETS = [
     name: "naked-throw-in-core",
     dir: "src/core",
     needle: "throw new Error(",
-    baseline: 37,
+    // 37 + the three config-validation guards that moved in with
+    // util/config.ts → core/config/index.ts (#936); none are new throws.
+    baseline: 40,
     why:
       "core/ should throw classified errors (core/errors.ts) so retry and " +
       "interrupt behaviour stays well-defined at the engine boundary. " +
