@@ -20,7 +20,10 @@ import {
   performSessionReset,
   collectSessionStatus,
 } from "../../shared/session-status.js";
-import { formatCacheTempLine } from "../../shared/status-context.js";
+import {
+  formatCacheTempLine,
+  formatDaemonLine,
+} from "../../shared/status-context.js";
 import { stopCurrentTurn } from "../../../core/engine/dispatcher.js";
 import type { RegisterDeps } from "./state.js";
 
@@ -93,6 +96,7 @@ export function registerSessionCommands(
       `<b>Session</b>   ${s.sessionName ? `"${escapeHtml(s.sessionName)}" ` : ""}${s.sessionId ? "<code>" + escapeHtml(s.sessionId.slice(0, 8)) + "...</code>" : "<i>(new)</i>"} · ${s.sessionAge} old`,
       `<b>Uptime</b>    ${s.uptime} · ${s.activeSessionCount} active session${s.activeSessionCount === 1 ? "" : "s"}`,
       `<b>Runtime</b>   ${escapeHtml(s.runtime)} · ${formatBytes(s.rssBytes)} RSS`,
+      escapeHtml(formatDaemonLine(s.daemon)),
     ];
     await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
   });

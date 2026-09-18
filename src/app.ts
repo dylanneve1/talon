@@ -51,6 +51,11 @@ import {
   writePidRecord,
   removePidRecordIfOwnedBy,
 } from "./core/daemon/pidfile.js";
+import {
+  recordBootMetrics,
+  startResourceSampler,
+  stopResourceSampler,
+} from "./core/daemon/resource-sampler.js";
 
 const { config } = await bootPhase("bootstrap", () => bootstrap());
 
@@ -202,6 +207,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   });
   await shutdownStep("triggers", shutdownTriggers);
   await shutdownStep("watchdog", stopWatchdog);
+  await shutdownStep("resource sampler", stopResourceSampler);
   await shutdownStep("upload cleanup", stopUploadCleanup);
   await shutdownStep("mcp hub", async () => {
     const { shutdownHub } = await import("./core/mcp-hub/index.js");
@@ -311,7 +317,13 @@ async function main(): Promise<void> {
   await bootPhase("frontends start", () =>
     Promise.all(blockingFrontends.map((frontend) => frontend.start())),
   );
-  log("bot", `Ready in ${bootReport()}`);
+  // Phase 0 accounting (docs/ts-migration-plan.md): the boot is over the
+  // moment the frontends are listening, so the totals are folded into the
+  // metrics store here, from the same uptime figure the log line prints.
+  const bootMs = Math.round(process.uptime() * 1000);
+  recordBootMetrics(bootMs);
+  startResourceSampler();
+  log("bot", `Ready in ${bootReport(bootMs)}`);
   for (const frontend of stdinFrontends) {
     void frontend
       .start()

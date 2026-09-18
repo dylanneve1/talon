@@ -32,6 +32,7 @@ import { TalonError } from "../errors.js";
 import { Loom } from "./loom.js";
 import { carryTurnEvents, startShuttleTiming } from "./shuttle.js";
 import type { Thread, ThreadSnapshot } from "./thread.js";
+import { startTurnCpu } from "./turn-cpu.js";
 import { startTypingLoop } from "./typing-loop.js";
 import { resolveWarp } from "./warp-resolver.js";
 
@@ -258,9 +259,14 @@ export class Weaver {
         retrievedMemory: memory?.text,
       });
       const timing = startShuttleTiming();
+      // CPU and wall clock over the same bracket, so `turn.cpu_ms` can be
+      // divided by `turn.stream_ms` (see turn-cpu.ts). Recorded on the
+      // same path `phases.stream` is, so both cover one population.
+      const stopCpu = startTurnCpu();
       const streamStartedAt = Date.now();
       const agentResult = await carryTurnEvents(stream, params.onEvent, timing);
       phases.stream = Date.now() - streamStartedAt;
+      stopCpu();
       phases.delivery = timing.deliveryMs;
       if (timing.firstEventAt !== undefined) {
         phases.firstToken = timing.firstEventAt - streamStartedAt;

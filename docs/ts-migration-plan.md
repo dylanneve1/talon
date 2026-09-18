@@ -85,14 +85,47 @@ pattern. Revisit with Phase 0 data in hand.
 
 ### Phase 0 — Measure (entry gate for everything else)
 
-- Add boot-time and per-turn CPU/RSS accounting to the existing metrics
-  (`storage/metrics.ts`); one `node --cpu-prof` capture of a real turn.
-- Publish the baseline in this doc. Define the targets that would
-  justify later phases (e.g. boot < 1s, idle RSS < X MB, p95 turn
-  overhead < Y ms — filled in from the baseline).
+- [x] Add boot-time and per-turn CPU/RSS accounting to the existing
+      metrics (`storage/metrics.ts`). Landed as measurement only — no
+      prompt byte and no turn behaviour changed.
+- [ ] One `node --cpu-prof` capture of a real turn.
+- [ ] **Publish the baseline** below. Define the targets that would
+      justify later phases (e.g. boot < 1s, idle RSS < X MB, p95 turn
+      overhead < Y ms — filled in from the baseline).
 - **Exit:** numbers in hand. **Kill criterion:** if the TS control plane
   is <5% of turn latency and RSS is acceptable, later phases are
   optional perf work, not a migration.
+
+**The baseline**
+
+Every figure below comes off a running daemon: `/metrics` → **All time**
+(Telegram `/metrics`, Discord `/metrics all`). The idle-memory and
+per-turn rows need a daemon that has been up for a while and served
+turns — a freshly booted process has the boot row and nothing else.
+Nothing here is estimated or back-filled; the cells stay empty until
+Dylan pastes a reading in.
+
+| Metric | Question it answers | Reading | Notes |
+| --- | --- | --- | --- |
+| `boot.total_ms` | Process start → frontends listening | | Target: < 1s |
+| `boot.<phase>_ms` | Which startup phase owns the boot | | One per awaited phase: `bootstrap`, `frontends_create`, `backend_dispatcher`, `plugins`, `builtin_plugins`, `stores`, `chat_bindings`, `frontends_start` |
+| `boot.rss_mb` | What the process costs the moment it serves | | The floor another runtime/language has to beat |
+| `boot.heap_mb` | How much of that is JS heap | | |
+| `rss.mb` | Idle resident memory, sampled every 60s | | Also answers "does it creep?" — compare `min`/`max` |
+| `heap_used.mb` | JS heap share of idle RSS | | |
+| `external.mb` | Off-heap (buffers, native, wasm) | | |
+| `handles.count` | Active handles — fd/timer leak detector | | `process.getActiveResourcesInfo().length` |
+| `turn.cpu_ms` | **The daemon's own CPU for one turn** | | The kill criterion's numerator |
+| `turn.stream_ms` | Wall clock over the identical bracket | | Pre-existing; the honest denominator |
+| `response_latency_ms` | End-to-end turn latency | | Pre-existing; no `turn.wall_ms` was added, this is it |
+
+**Control-plane share** = `turn.cpu_ms` / `response_latency_ms`. Below 5%
+the kill criterion fires and Phases 3–5 become optional perf work.
+
+`/status` carries the same numbers per chat, one line:
+`Daemon: rss <n> MB · heap <n> MB · cpu/turn avg <n> ms (n=<turns>)`.
+The metrics store's histograms expose count/avg/min/max only, so the line
+shows an average and names it — there is no percentile to read yet.
 
 ### Phase 1 — Bun as the runtime (decided 2026-08-22)
 

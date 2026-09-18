@@ -4,7 +4,9 @@
  * has an answer in the log instead of a profiler session.
  */
 
-const phases: { label: string; ms: number }[] = [];
+export type BootPhaseSample = { label: string; ms: number };
+
+const phases: BootPhaseSample[] = [];
 
 /** Run one startup phase and remember how long it took. */
 export async function bootPhase<T>(
@@ -23,6 +25,18 @@ export async function bootPhase<T>(
 export function bootReport(now = Math.round(process.uptime() * 1000)): string {
   const parts = phases.map((phase) => `${phase.label} ${phase.ms}ms`);
   return parts.length ? `${now}ms (${parts.join(", ")})` : `${now}ms`;
+}
+
+/**
+ * The recorded phases, in the order they completed.
+ *
+ * `util/` is a leaf (.dependency-cruiser.cjs: util-is-a-leaf), so this
+ * module cannot write to the metrics store itself. It hands the samples
+ * out instead and `core/daemon/resource-sampler.ts` turns them into
+ * `boot.<phase>_ms` histograms.
+ */
+export function bootPhases(): readonly BootPhaseSample[] {
+  return phases;
 }
 
 /** Test seam. */

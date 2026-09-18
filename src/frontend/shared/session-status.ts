@@ -28,13 +28,15 @@ import {
   buildCacheDisplay,
   buildCacheTempDisplay,
   buildContextDisplay,
+  buildDaemonDisplay,
   buildPlanDisplay,
   type CacheDisplay,
   type CacheTempDisplay,
   type ContextDisplay,
+  type DaemonDisplay,
   type PlanDisplay,
 } from "./status-context.js";
-import { getCacheVerdict } from "../../storage/metrics.js";
+import { getCacheVerdict, getMetrics } from "../../storage/metrics.js";
 import { formatDuration } from "./format.js";
 
 /**
@@ -107,6 +109,11 @@ export interface SessionStatusData {
   runtime: string;
   /** Daemon resident set size, in bytes. */
   rssBytes: number;
+  /**
+   * What the daemon itself costs: resident memory now, plus the CPU a turn
+   * spends inside Talon (docs/ts-migration-plan.md, Phase 0).
+   */
+  daemon: DaemonDisplay;
 }
 
 /** Mean turn duration, or 0 before any turn has been timed. */
@@ -196,6 +203,8 @@ export async function collectSessionStatus(
     await planSource?.usage?.getPlanUsage?.().catch(() => undefined),
   );
 
+  const memory = process.memoryUsage();
+
   return {
     activeModel,
     backendLabel: backend?.label ?? "",
@@ -228,6 +237,11 @@ export async function collectSessionStatus(
     runtime: process.versions.bun
       ? `Bun ${process.versions.bun}`
       : `Node ${process.versions.node}`,
-    rssBytes: process.memoryUsage().rss,
+    rssBytes: memory.rss,
+    daemon: buildDaemonDisplay({
+      rssBytes: memory.rss,
+      heapBytes: memory.heapUsed,
+      cpuPerTurn: getMetrics().histograms["turn.cpu_ms"],
+    }),
   };
 }

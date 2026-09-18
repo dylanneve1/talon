@@ -29,7 +29,10 @@ import {
   performSessionReset,
   type SessionStatusData,
 } from "../shared/session-status.js";
-import { formatCacheTempLine } from "../shared/status-context.js";
+import {
+  formatCacheTempLine,
+  formatDaemonLine,
+} from "../shared/status-context.js";
 import {
   describeChatEffort,
   describeChatModels,
@@ -218,6 +221,7 @@ function renderStatus(s: SessionStatusData): string {
     `**Session** ${s.sessionName ? `"${s.sessionName}" ` : ""}${s.sessionId ? `\`${s.sessionId.slice(0, 8)}…\`` : "(new)"} · ${s.sessionAge} old`,
     `**Uptime** ${s.uptime} · ${s.activeSessionCount} active session${s.activeSessionCount === 1 ? "" : "s"}`,
     `**Runtime** ${s.runtime} · ${formatBytes(s.rssBytes)} RSS`,
+    formatDaemonLine(s.daemon),
   );
   return lines.join("\n");
 }

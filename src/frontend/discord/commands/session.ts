@@ -23,7 +23,10 @@ import {
   performSessionReset,
   collectSessionStatus,
 } from "../../shared/session-status.js";
-import { formatCacheTempLine } from "../../shared/status-context.js";
+import {
+  formatCacheTempLine,
+  formatDaemonLine,
+} from "../../shared/status-context.js";
 import { stopCurrentTurn } from "../../../core/engine/dispatcher.js";
 import { reply } from "./interaction.js";
 
@@ -111,6 +114,7 @@ export async function handleStatus(
     `**Session**   ${s.sessionName ? `"${s.sessionName}" ` : ""}${s.sessionId ? "`" + s.sessionId.slice(0, 8) + "...`" : "_(new)_"} · ${s.sessionAge} old`,
     `**Uptime**    ${s.uptime} · ${s.activeSessionCount} active session${s.activeSessionCount === 1 ? "" : "s"}`,
     `**Runtime**   ${s.runtime} · ${formatBytes(s.rssBytes)} RSS`,
+    formatDaemonLine(s.daemon),
   ];
   await i.editReply(lines.join("\n"));
 }

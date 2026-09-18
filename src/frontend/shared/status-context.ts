@@ -337,6 +337,55 @@ export function formatCacheTempLine(temp: CacheTempDisplay): string {
   return `Cache: ${temp.verdict} last turn · idle ${temp.idle}`;
 }
 
+// ── Daemon resources ────────────────────────────────────────────────────────
+
+export interface DaemonDisplay {
+  rssMb: number;
+  heapMb: number;
+  /**
+   * Mean daemon CPU per turn, in ms, or undefined before any turn has been
+   * measured. The metrics store's histograms expose count/avg/min/max only
+   * (`storage/metrics.ts`) — there is no percentile to read, so the line
+   * says "avg" rather than implying a p50 it cannot compute.
+   */
+  cpuPerTurnMs: number | undefined;
+  /** How many turns the average is over. */
+  cpuSamples: number;
+}
+
+/**
+ * Resolve the "what does the daemon itself cost?" line — resident memory
+ * now, and the CPU a turn spends inside Talon rather than waiting on a
+ * model (docs/ts-migration-plan.md, Phase 0). Pure: the caller reads
+ * `process.memoryUsage()` and the `turn.cpu_ms` histogram.
+ */
+export function buildDaemonDisplay(input: {
+  rssBytes: number;
+  heapBytes: number;
+  cpuPerTurn?: { count: number; avg: number };
+}): DaemonDisplay {
+  const toMb = (bytes: number): number =>
+    Number.isFinite(bytes) && bytes > 0 ? Math.round(bytes / (1024 * 1024)) : 0;
+  const cpu = input.cpuPerTurn;
+  const measured =
+    cpu !== undefined && cpu.count > 0 && Number.isFinite(cpu.avg);
+  return {
+    rssMb: toMb(input.rssBytes),
+    heapMb: toMb(input.heapBytes),
+    cpuPerTurnMs: measured ? Math.round(cpu.avg) : undefined,
+    cpuSamples: measured ? cpu.count : 0,
+  };
+}
+
+/** The one-line rendering every frontend's /status shares. */
+export function formatDaemonLine(daemon: DaemonDisplay): string {
+  const cpu =
+    daemon.cpuPerTurnMs === undefined
+      ? "cpu/turn —"
+      : `cpu/turn avg ${daemon.cpuPerTurnMs} ms (n=${daemon.cpuSamples})`;
+  return `Daemon: rss ${daemon.rssMb} MB · heap ${daemon.heapMb} MB · ${cpu}`;
+}
+
 // ── Plan limits ─────────────────────────────────────────────────────────────
 
 /** Figures older than this are labelled with their age in /status. */
