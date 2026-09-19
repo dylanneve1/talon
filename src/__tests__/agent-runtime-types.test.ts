@@ -98,8 +98,9 @@ describe("agent-runtime/events", () => {
 // ── model-ref ───────────────────────────────────────────────────────────────
 
 describe("agent-runtime/model-ref", () => {
-  it("BACKEND_IDS pins the five current backends", () => {
+  it("BACKEND_IDS pins the six current backends", () => {
     expect([...BACKEND_IDS].sort()).toEqual([
+      "agy",
       "claude",
       "codex",
       "kilo",
@@ -109,6 +110,10 @@ describe("agent-runtime/model-ref", () => {
   });
 
   it("isBackendId narrows valid ids", () => {
+    // The Antigravity backend's id is `agy`, not `antigravity` — the
+    // rejection of the latter is asserted below and is load-bearing:
+    // config files and chat overrides are validated through this guard.
+    expect(isBackendId("agy")).toBe(true);
     expect(isBackendId("claude")).toBe(true);
     expect(isBackendId("codex")).toBe(true);
     expect(isBackendId("openai-agents")).toBe(true);
