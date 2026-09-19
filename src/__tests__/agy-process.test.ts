@@ -88,12 +88,12 @@ const {
   killAllChildren,
   childChatIds,
   AgyTurnAborted,
-} = await import("../backend/agy/process.js");
+} = await import("../backend/agy/process/child.js");
 const { resetChat, warmSession, refreshTools } =
   await import("../backend/agy/sessions.js");
 const { initAgyAgent } = await import("../backend/agy/init.js");
 const { resetState, getState } = await import("../backend/agy/state.js");
-const { resetOwnership } = await import("../backend/agy/mcp-register.js");
+const { resetOwnership } = await import("../backend/agy/mcp/register.js");
 const { resetModelCache } = await import("../backend/agy/models.js");
 const sessions = await import("../storage/sessions.js");
 

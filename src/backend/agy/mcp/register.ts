@@ -10,9 +10,9 @@
  * entries from a dead daemon's leftovers.
  */
 
-import { log, logWarn } from "../../util/log.js";
-import { nonTerminalFrontends } from "../runtime/frontends.js";
-import { getState, bridgeUrl } from "./state.js";
+import { log, logWarn } from "../../../util/log.js";
+import { nonTerminalFrontends } from "../../runtime/frontends.js";
+import { getState, bridgeUrl } from "../state.js";
 import {
   agyScopeSlug,
   buildAgyMcpServers,
@@ -20,7 +20,7 @@ import {
   removeAgyMcpServers,
   writeAgyMcpServers,
   type AgyMcpWriteOptions,
-} from "./mcp-config.js";
+} from "./config.js";
 
 /** Config keys this process wrote, by scope. */
 const ownedKeys = new Map<string, string[]>();

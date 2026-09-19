@@ -13,7 +13,7 @@ import type { FrontendName } from "../../core/agent-runtime/backend-registry.js"
 import { log, logWarn } from "../../util/log.js";
 import { getState } from "./state.js";
 import { detectAgyAuth } from "./auth.js";
-import { pruneForeignTalonEntries } from "./mcp-register.js";
+import { pruneForeignTalonEntries } from "./mcp/register.js";
 import { refreshModels, resetModelCache } from "./models.js";
 
 /** Initialise the backend. Safe to call again on a config reload. */

@@ -11,9 +11,9 @@
  */
 
 import { readdir, readFile } from "node:fs/promises";
-import { log } from "../../util/log.js";
-import { AGY_KILL_GRACE_MS } from "./constants.js";
-import { childChatIds, getChild } from "./process.js";
+import { log } from "../../../util/log.js";
+import { AGY_KILL_GRACE_MS } from "../constants.js";
+import { childChatIds, getChild } from "./child.js";
 
 /**
  * Kill stray `agy` processes belonging to `contextLabel`.

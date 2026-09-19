@@ -27,19 +27,19 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { log, logWarn } from "../../util/log.js";
+import { log, logWarn } from "../../../util/log.js";
 import {
   parseAgyLine,
   type AgyEvent,
   type AgyResult,
   type AgyStepUpdate,
-} from "./events.js";
-import type { AgyEffort } from "./effort.js";
+} from "../events.js";
+import type { AgyEffort } from "../effort.js";
 import {
   AGY_BASE_ARGS,
   AGY_IDLE_REAP_MS,
   AGY_KILL_GRACE_MS,
-} from "./constants.js";
+} from "../constants.js";
 
 /** How much stderr to retain for diagnostics. */
 const STDERR_TAIL_CHARS = 4000;

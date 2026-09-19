@@ -31,11 +31,11 @@ import { initAgyAgent } from "./init.js";
 import { agyDoctorChecks } from "./doctor.js";
 import { handleMessage } from "./handler/index.js";
 import { runOneShotAgent } from "./one-shot.js";
-import { evictOrphanSubprocesses } from "./orphans.js";
+import { evictOrphanSubprocesses } from "./process/orphans.js";
 import { getState, resetState } from "./state.js";
 import { resetChat, warmSession, refreshTools } from "./sessions.js";
-import { killAllChildren } from "./process.js";
-import { unregisterAllMcp } from "./mcp-register.js";
+import { killAllChildren } from "./process/child.js";
+import { unregisterAllMcp } from "./mcp/register.js";
 import {
   resolveModel,
   getDefaultModelId,

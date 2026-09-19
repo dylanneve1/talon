@@ -13,8 +13,8 @@ import { dirs } from "../../util/paths.js";
 import { getSession } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { getState, agyBinary } from "./state.js";
-import { registerMcpForChat, unregisterMcpForChat } from "./mcp-register.js";
-import { ensureChild, killChild } from "./process.js";
+import { registerMcpForChat, unregisterMcpForChat } from "./mcp/register.js";
+import { ensureChild, killChild } from "./process/child.js";
 import { toAgyEffort } from "./effort.js";
 import { getDefaultModelId } from "./models.js";
 

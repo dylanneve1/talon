@@ -55,7 +55,7 @@ import {
 
 import { agySystemPromptSuffix } from "../constants.js";
 import { getState, agyBinary, type AgySessionUsage } from "../state.js";
-import { registerMcpForChat } from "../mcp-register.js";
+import { registerMcpForChat } from "../mcp/register.js";
 import {
   applyAgyStep,
   createAgyEventContext,
@@ -77,7 +77,7 @@ import {
   AgyTurnAborted,
   type AgyChild,
   type AgySpawnSpec,
-} from "../process.js";
+} from "../process/child.js";
 import { agyAuthError, isAgyAuthFailure } from "../auth.js";
 
 const errMsg = (e: unknown): string =>

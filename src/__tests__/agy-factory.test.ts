@@ -26,7 +26,7 @@ const { BACKEND_IDS, isBackendId } =
   await import("../core/agent-runtime/model-ref.js");
 const { resetState, getState } = await import("../backend/agy/state.js");
 const { resetModelCache } = await import("../backend/agy/models.js");
-const { resetOwnership } = await import("../backend/agy/mcp-register.js");
+const { resetOwnership } = await import("../backend/agy/mcp/register.js");
 
 await import("../backend/agy/factory.js");
 

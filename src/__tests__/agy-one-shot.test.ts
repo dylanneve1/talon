@@ -70,7 +70,7 @@ const { runOneShotAgent, oneShotScope, buildOneShotArgs } =
   await import("../backend/agy/one-shot.js");
 const { initAgyAgent } = await import("../backend/agy/init.js");
 const { resetState } = await import("../backend/agy/state.js");
-const { resetOwnership } = await import("../backend/agy/mcp-register.js");
+const { resetOwnership } = await import("../backend/agy/mcp/register.js");
 const { resetModelCache } = await import("../backend/agy/models.js");
 
 let home: string;

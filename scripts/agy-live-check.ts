@@ -43,8 +43,8 @@ const talonKeys = (p: string) =>
   keysOf(p).filter((k) => k.startsWith("__talon__"));
 
 async function main() {
-  const mcp = await import("../src/backend/agy/mcp-config.js");
-  const proc = await import("../src/backend/agy/process.js");
+  const mcp = await import("../src/backend/agy/mcp/config.js");
+  const proc = await import("../src/backend/agy/process/child.js");
   const events = await import("../src/backend/agy/events.js");
 
   // ── Phase 1: dry run against a copy ─────────────────────────────────────

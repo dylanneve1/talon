@@ -43,7 +43,7 @@ const {
   removeAgyMcpServers,
   pruneStaleTalonEntries,
   removeSnapshotDirs,
-} = await import("../backend/agy/mcp-config.js");
+} = await import("../backend/agy/mcp/config.js");
 
 let dir: string;
 let configPath: string;

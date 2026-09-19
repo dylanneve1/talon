@@ -42,10 +42,10 @@ import {
   talonHubUrl,
   pluginHubUrl,
   hubPluginServerNames,
-} from "../../core/mcp-hub/index.js";
-import { frontendsForChat } from "../runtime/frontends.js";
-import { logWarn } from "../../util/log.js";
-import { AGY_MCP_PREFIX } from "./constants.js";
+} from "../../../core/mcp-hub/index.js";
+import { frontendsForChat } from "../../runtime/frontends.js";
+import { logWarn } from "../../../util/log.js";
+import { AGY_MCP_PREFIX } from "../constants.js";
 
 // ── Paths ───────────────────────────────────────────────────────────────────
 
