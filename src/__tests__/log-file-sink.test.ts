@@ -8,28 +8,35 @@
  * so pino never touches it: failures pause file logging, lines written
  * while paused are dropped and counted, and a backed-off timer reopens
  * the file when the disk comes back.
+ *
+ * The same day's second failure made the writes synchronous: a buffered
+ * stream loses whatever is queued when `process.exit()` runs, which is
+ * every line that explains why a daemon is exiting. See
+ * ./log-exit-flush.test.ts for the end-to-end proof.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import {
-  createWriteStream,
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Writable } from "node:stream";
 
 // Keep log.ts's module-level initialization away from the real ~/.talon
 // (it creates the dir and rotates an oversized log file at import time).
 const fakePaths = vi.hoisted(() => {
   const root = `${process.env.TMPDIR ?? "/tmp"}/talon-log-sink-test-${process.pid}`;
-  return { root, log: `${root}/talon.log`, config: `${root}/config.json` };
+  return {
+    root,
+    log: `${root}/talon.log`,
+    config: `${root}/config.json`,
+    respawnLog: `${root}/respawn.log`,
+  };
 });
 vi.mock("../util/paths.js", () => ({
   dirs: { root: fakePaths.root },
-  files: { log: fakePaths.log, config: fakePaths.config },
+  files: {
+    log: fakePaths.log,
+    config: fakePaths.config,
+    respawnLog: fakePaths.respawnLog,
+  },
 }));
 const pinoSpies = vi.hoisted(() => ({
   info: vi.fn(),
@@ -46,20 +53,20 @@ vi.mock("pino-pretty", () => ({
   default: () => ({ write: vi.fn(), on: vi.fn() }),
 }));
 
-const { ResilientFileSink, log, logError, logWarn, logDebug } =
+const { ResilientFileSink, openSyncLogFile, log, logError, logWarn, logDebug } =
   await import("../util/log.js");
+type SyncLogTarget = ReturnType<typeof openSyncLogFile>;
 
-/** A stream that fails every write the way a full disk does. */
-function enospcStream(): Writable {
-  return new Writable({
-    write(_chunk, _enc, cb) {
-      cb(
-        Object.assign(new Error("ENOSPC: no space left on device, write"), {
-          code: "ENOSPC",
-        }),
-      );
+/** A target that fails every write the way a full disk does. */
+function enospcTarget(): SyncLogTarget {
+  return {
+    write() {
+      throw Object.assign(new Error("ENOSPC: no space left on device, write"), {
+        code: "ENOSPC",
+      });
     },
-  });
+    close() {},
+  };
 }
 
 describe("ResilientFileSink", () => {
@@ -84,9 +91,7 @@ describe("ResilientFileSink", () => {
     const open = vi.fn((path: string) => {
       opens++;
       // First open: the disk is full. Second: it has been freed.
-      return opens === 1
-        ? enospcStream()
-        : createWriteStream(path, { flags: "a", mode: 0o600 });
+      return opens === 1 ? enospcTarget() : openSyncLogFile(path);
     });
 
     const sink = new ResilientFileSink(logPath, {
@@ -94,23 +99,22 @@ describe("ResilientFileSink", () => {
       retryMs: 30_000,
       notify: (level, message) => notices.push(`${level}: ${message}`),
     });
-    // Nothing may ever reach pino as an error — that is the whole point.
-    const sinkErrors = vi.fn();
-    sink.on("error", sinkErrors);
-
-    sink.write("before the disk filled\n");
+    // Nothing a sink does may reach pino — that is the whole point.
+    expect(() => sink.write("before the disk filled\n")).not.toThrow();
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(sinkErrors).not.toHaveBeenCalled();
     expect(sink.isDown).toBe(true);
     expect(notices[0]).toContain("Log file sink failed (ENOSPC)");
     expect(notices[0]).toContain("file logging paused");
     expect(notices[0]).toContain("retrying in 30s");
 
-    // Paused: lines are dropped, never buffered, and the file is not touched.
-    expect(sink.write("dropped one\n")).toBe(true);
-    expect(sink.write("dropped two\n")).toBe(true);
-    expect(sink.dropped).toBe(2);
+    // Paused: lines are dropped, never buffered, and the file is not
+    // touched. The line that tripped the failure counts as dropped too —
+    // with a synchronous write we know it never landed, where the old
+    // stream reported success and learned otherwise a tick later.
+    sink.write("dropped one\n");
+    sink.write("dropped two\n");
+    expect(sink.dropped).toBe(3);
     expect(existsSync(logPath)).toBe(false);
 
     // The retry timer reopens the file.
@@ -119,21 +123,20 @@ describe("ResilientFileSink", () => {
 
     vi.useRealTimers();
     sink.write("after the disk came back\n");
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
+    // Synchronous by contract: the line is on the fd, not in a queue.
     expect(readFileSync(logPath, "utf-8")).toContain(
       "after the disk came back",
     );
+    await Promise.resolve();
     expect(sink.isDown).toBe(false);
     expect(sink.dropped).toBe(0);
     expect(notices.at(-1)).toContain("file logging resumed");
-    expect(notices.at(-1)).toContain("2 line(s) dropped");
-    expect(sinkErrors).not.toHaveBeenCalled();
+    expect(notices.at(-1)).toContain("3 line(s) dropped");
   });
 
   it("backs off and warns only once while the disk stays full", async () => {
     vi.useFakeTimers();
-    const open = vi.fn(() => enospcStream());
+    const open = vi.fn(() => enospcTarget());
     const sink = new ResilientFileSink(join(dir, "talon.log"), {
       open,
       retryMs: 30_000,

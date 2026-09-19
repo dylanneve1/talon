@@ -102,6 +102,11 @@ export const files = {
   config: resolve(TALON_ROOT, "config.json"),
   /** Structured log: ~/.talon/talon.log */
   log: resolve(TALON_ROOT, "talon.log"),
+  /**
+   * Successor stdout+stderr during a `/restart` or `/update` handoff:
+   * ~/.talon/respawn.log. See core/daemon/respawn.ts.
+   */
+  respawnLog: resolve(TALON_ROOT, "respawn.log"),
   /** Legacy JSON session store (imported into talon.db on first boot) */
   sessions: resolve(TALON_ROOT, "data", "sessions.json"),
   /** SQLite database (history, sessions, chat settings, media index): ~/.talon/data/talon.db */

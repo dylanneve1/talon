@@ -8,6 +8,17 @@
  * source tree on disk, so {@link getRepoRoot} returns `null` and the
  * `/update` command is never registered.
  *
+ * The install is verified before anyone hands off to it. `npm install`
+ * rewrites node_modules underneath the still-running process, so a bad
+ * dependency resolution does not surface until the *successor* imports
+ * the tree — detached, with its output going nowhere, at the one moment
+ * the daemon has no one left to report to. On 2026-09-18 that cost a
+ * 45-minute outage. The last step of an update therefore runs the new
+ * tree in a child with {@link BOOT_SMOKE_FLAG}: it resolves the daemon's
+ * entire import graph and exits without booting. If it fails, the update
+ * fails — the caller reports it to the chat and the current process, the
+ * one that still works, keeps running.
+ *
  * The update force-syncs the checkout to the remote branch with
  * `git reset --hard` (plus `git clean -fd`), discarding any local edits
  * or diverged commits. A bot host is meant to mirror the remote exactly,
@@ -22,6 +33,11 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  BOOT_SMOKE_FLAG,
+  BOOT_SMOKE_OK,
+  successorCommand,
+} from "../daemon/respawn.js";
 
 /** Tuning knobs for {@link runSelfUpdate}. */
 export interface UpdateOptions {
@@ -36,6 +52,11 @@ export interface UpdateOptions {
   setup?: readonly string[];
   /** Override the repo root (tests). Defaults to {@link getRepoRoot}. */
   repoRoot?: string;
+  /**
+   * The command that re-runs this process, used for the post-install
+   * import check. Defaults to our own argv (tests override it).
+   */
+  entry?: { cmd: string; args: readonly string[] };
   /** Injectable command runner (tests). */
   runner?: CommandRunner;
 }
@@ -70,6 +91,8 @@ export type CommandRunner = (
 ) => Promise<{ ok: boolean; output: string }>;
 
 const GIT_TIMEOUT_MS = 60_000;
+/** A cold import of the whole daemon graph, on a busy host. */
+const VERIFY_TIMEOUT_MS = 180_000;
 const INSTALL_TIMEOUT_MS = 300_000;
 const SETUP_TIMEOUT_MS = 300_000;
 const MAX_OUTPUT_BUFFER = 16 * 1024 * 1024;
@@ -263,6 +286,27 @@ export async function runSelfUpdate(
         error: `setup command failed (${trimmed}): ${setup.output}`,
       };
     }
+  }
+
+  const entry = opts.entry ?? successorCommand();
+  const verify = await record(
+    "verify import",
+    entry.cmd,
+    [...entry.args, BOOT_SMOKE_FLAG],
+    VERIFY_TIMEOUT_MS,
+  );
+  if (!verify.ok || !verify.output.includes(BOOT_SMOKE_OK)) {
+    return {
+      ok: false,
+      repoRoot,
+      steps,
+      before,
+      after,
+      changed,
+      error:
+        `the updated tree does not import — not restarting into it. ` +
+        `Still running ${before}; the checkout is at ${after}.`,
+    };
   }
 
   return { ok: true, repoRoot, steps, before, after, changed: true };

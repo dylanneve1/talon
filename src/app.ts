@@ -29,7 +29,11 @@ import { shutdownTriggers } from "./core/background/triggers/index.js";
 import { shutdownAgents } from "./core/agents/index.js";
 import { pruneSettledTriggers } from "./storage/triggers.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
-import { spawnSuccessor } from "./core/daemon/respawn.js";
+import {
+  BOOT_SMOKE_FLAG,
+  BOOT_SMOKE_OK,
+  spawnSuccessor,
+} from "./core/daemon/respawn.js";
 import {
   crashCleanup,
   crashStep,
@@ -66,6 +70,17 @@ import {
   startResourceSampler,
   stopResourceSampler,
 } from "./core/daemon/resource-sampler.js";
+
+// `/update` runs the freshly installed tree with --boot-smoke before it
+// hands off. Every static import above has just been resolved against
+// the new node_modules — reaching this line is the proof that the tree
+// the successor will run is importable at all. Nothing has booted yet,
+// so this is both the strongest and the last harmless place to say so.
+// See core/update/self-update.ts for what a failure does instead.
+if (process.argv.includes(BOOT_SMOKE_FLAG)) {
+  console.log(BOOT_SMOKE_OK);
+  process.exit(0);
+}
 
 const { config } = await bootPhase("bootstrap", () => bootstrap());
 
