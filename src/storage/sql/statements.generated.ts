@@ -366,7 +366,60 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_msg ON whatsapp_messages(msg_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_wa_id ON whatsapp_messages(wa_id);
-CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_time ON whatsapp_messages(timestamp);`;
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_time ON whatsapp_messages(timestamp);
+
+-- Snapshot index: the listing/status view over ~/.talon/backups/. The
+-- manifest.json next to the parts on disk stays the source of truth for
+-- a restore (a database that needs restoring cannot also be the record
+-- of how), so these rows are a cache — dropped rows are re-derived from
+-- the directories on the next boot, and a row whose directory is gone is
+-- kept because the snapshot may still exist on a remote target.
+CREATE TABLE IF NOT EXISTS backups (
+  id            TEXT PRIMARY KEY,
+  kind          TEXT    NOT NULL,
+  label         TEXT,
+  pinned        INTEGER NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL,
+  size_bytes    INTEGER NOT NULL DEFAULT 0,
+  manifest_json TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_backups_created ON backups(created_at DESC);
+
+-- Per-target upload state for one snapshot. Separate from the manifest
+-- copy so retention can ask "what is on Drive?" without opening a file
+-- per snapshot, and so a failed upload's error survives a restart.
+CREATE TABLE IF NOT EXISTS backup_remotes (
+  backup_id   TEXT    NOT NULL,
+  target_id   TEXT    NOT NULL,
+  status      TEXT    NOT NULL,
+  remote_id   TEXT,
+  uploaded_at INTEGER,
+  error       TEXT,
+  PRIMARY KEY (backup_id, target_id)
+);`;
+
+export const backupsSql = {
+  upsert: `INSERT OR REPLACE INTO backups
+  (id, kind, label, pinned, created_at, size_bytes, manifest_json)
+VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  get: `SELECT id, kind, label, pinned, created_at, size_bytes, manifest_json
+FROM backups WHERE id = ?`,
+  all: `SELECT id, kind, label, pinned, created_at, size_bytes, manifest_json
+FROM backups ORDER BY created_at DESC`,
+  ids: `SELECT id FROM backups`,
+  setPinned: `UPDATE backups SET pinned = ? WHERE id = ?`,
+  setManifest: `UPDATE backups SET manifest_json = ?, pinned = ?, size_bytes = ? WHERE id = ?`,
+  remove: `DELETE FROM backups WHERE id = ?`,
+  upsertRemote: `INSERT OR REPLACE INTO backup_remotes
+  (backup_id, target_id, status, remote_id, uploaded_at, error)
+VALUES (?, ?, ?, ?, ?, ?)`,
+  remotesAll: `SELECT backup_id, target_id, status, remote_id, uploaded_at, error
+FROM backup_remotes`,
+  remotesFor: `SELECT backup_id, target_id, status, remote_id, uploaded_at, error
+FROM backup_remotes WHERE backup_id = ?`,
+  removeRemotes: `DELETE FROM backup_remotes WHERE backup_id = ?`,
+  removeRemote: `DELETE FROM backup_remotes WHERE backup_id = ? AND target_id = ?`,
+} as const;
 
 export const chatSettingsSql = {
   upsert: `INSERT OR REPLACE INTO chat_settings (chat_id, settings) VALUES (?, ?)`,
@@ -421,6 +474,12 @@ ALTER TABLE history_messages ADD COLUMN attachments TEXT`,
   addSessionsLastTurnEndedAtColumn: `-- Column reconciliation for databases that shipped before the cache-age
 -- signal existed. Fresh databases get the column via schema.sql.
 ALTER TABLE sessions ADD COLUMN last_turn_ended_at INTEGER`,
+  vacuumInto: `-- Transactionally consistent copy of the whole database into a new file,
+-- produced by SQLite itself (storage/db.ts snapshotDatabase). A backup
+-- must never copy a live .db byte-wise: the WAL holds committed pages the
+-- main file does not, so the copy would be a corrupt database or an old
+-- one. Verified to accept a bound path on node:sqlite and bun:sqlite.
+VACUUM INTO ?`,
 } as const;
 
 export const goalsSql = {

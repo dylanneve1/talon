@@ -362,3 +362,33 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_msg ON whatsapp_messages(msg_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_wa_id ON whatsapp_messages(wa_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_time ON whatsapp_messages(timestamp);
+
+-- Snapshot index: the listing/status view over ~/.talon/backups/. The
+-- manifest.json next to the parts on disk stays the source of truth for
+-- a restore (a database that needs restoring cannot also be the record
+-- of how), so these rows are a cache — dropped rows are re-derived from
+-- the directories on the next boot, and a row whose directory is gone is
+-- kept because the snapshot may still exist on a remote target.
+CREATE TABLE IF NOT EXISTS backups (
+  id            TEXT PRIMARY KEY,
+  kind          TEXT    NOT NULL,
+  label         TEXT,
+  pinned        INTEGER NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL,
+  size_bytes    INTEGER NOT NULL DEFAULT 0,
+  manifest_json TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_backups_created ON backups(created_at DESC);
+
+-- Per-target upload state for one snapshot. Separate from the manifest
+-- copy so retention can ask "what is on Drive?" without opening a file
+-- per snapshot, and so a failed upload's error survives a restart.
+CREATE TABLE IF NOT EXISTS backup_remotes (
+  backup_id   TEXT    NOT NULL,
+  target_id   TEXT    NOT NULL,
+  status      TEXT    NOT NULL,
+  remote_id   TEXT,
+  uploaded_at INTEGER,
+  error       TEXT,
+  PRIMARY KEY (backup_id, target_id)
+);

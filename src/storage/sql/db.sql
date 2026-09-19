@@ -30,3 +30,11 @@ ALTER TABLE history_messages ADD COLUMN attachments TEXT
 -- Column reconciliation for databases that shipped before the cache-age
 -- signal existed. Fresh databases get the column via schema.sql.
 ALTER TABLE sessions ADD COLUMN last_turn_ended_at INTEGER
+
+-- name: vacuumInto
+-- Transactionally consistent copy of the whole database into a new file,
+-- produced by SQLite itself (storage/db.ts snapshotDatabase). A backup
+-- must never copy a live .db byte-wise: the WAL holds committed pages the
+-- main file does not, so the copy would be a corrupt database or an old
+-- one. Verified to accept a bound path on node:sqlite and bun:sqlite.
+VACUUM INTO ?

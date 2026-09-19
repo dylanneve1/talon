@@ -67,6 +67,7 @@ export type LogComponent =
   | "playwright"
   | "memory"
   | "stickers"
+  | "backup"
   | "backend-controller";
 
 const LOG_FILE = files.log;

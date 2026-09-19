@@ -216,6 +216,26 @@ export function flushDatabase(): void {
   }
 }
 
+/**
+ * Write a transactionally consistent copy of the database to `destPath`.
+ *
+ * The backup subsystem's only way in: a snapshot may not copy
+ * `data/talon.db` from disk, because in WAL mode the committed pages
+ * live partly in the sidecar and a byte-wise copy of the main file is a
+ * corrupt (or silently stale) database. `VACUUM INTO` asks SQLite for
+ * the copy instead — one file, no WAL, checkpointed and compacted,
+ * consistent as of the moment it runs, with concurrent readers and
+ * writers untouched.
+ *
+ * `destPath` must not exist (SQLite refuses to overwrite); its parent
+ * directory is created if needed.
+ */
+export function snapshotDatabase(destPath: string): void {
+  const database = getDatabase();
+  mkdirSync(dirname(destPath), { recursive: true });
+  database.prepare(dbSql.vacuumInto).run(destPath);
+}
+
 export function closeDatabase(): void {
   if (!db) return;
   try {
