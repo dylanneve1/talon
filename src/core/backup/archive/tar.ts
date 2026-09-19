@@ -25,7 +25,7 @@
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, symlink, utimes } from "node:fs/promises";
 import { once } from "node:events";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { Writable } from "node:stream";
 import { TalonError } from "../../errors.js";
 
@@ -36,7 +36,7 @@ const MAX_USTAR_SIZE = 0o77777777777;
 /** Longest name/linkname ustar's fixed fields can hold. */
 const MAX_USTAR_NAME = 100;
 
-export type TarEntryType = "file" | "dir" | "symlink";
+type TarEntryType = "file" | "dir" | "symlink";
 
 /** One member of an archive, as both writer and reader see it. */
 export type TarEntry = {
@@ -564,17 +564,4 @@ export async function extractTar(
     written.push(entry);
   }
   return written;
-}
-
-/** Join an archive path from POSIX segments (the writer's canonical form). */
-export function archivePath(...segments: string[]): string {
-  return segments
-    .flatMap((segment) => segment.split(/[\\/]+/))
-    .filter((segment) => segment && segment !== ".")
-    .join("/");
-}
-
-/** The on-disk path a member maps to, for callers that only need the name. */
-export function memberDestination(destDir: string, memberPath: string): string {
-  return join(destDir, ...memberPath.split("/"));
 }

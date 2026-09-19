@@ -28,6 +28,7 @@ import { crossSendTools } from "./chat/cross-send.js";
 import { whatsappTools } from "./chat/whatsapp.js";
 import { moderationTools } from "./chat/moderation.js";
 import { nativeTools } from "./ops/native.js";
+import { backupTools } from "./ops/backup.js";
 
 /** All built-in tool definitions. */
 export const ALL_TOOLS: readonly ToolDefinition[] = [
@@ -54,6 +55,7 @@ export const ALL_TOOLS: readonly ToolDefinition[] = [
   // prefix, so a new family goes on the end or every live chat re-bills its
   // system prompt (see compose-tools.test.ts).
   ...agentTools,
+  ...backupTools,
 ];
 
 /**

@@ -26,6 +26,7 @@ import { registerSettingsCommands } from "./settings.js";
 import { registerAdminCommands } from "./admin.js";
 import { registerWhatsAppPairingCommand } from "./whatsapp-pairing.js";
 import { registerAuthCommand } from "./auth.js";
+import { registerBackupCommand } from "./backup.js";
 
 export { telegramCommandMenu } from "./definitions.js";
 export { setAdminUserId } from "./state.js";
@@ -42,6 +43,7 @@ export function registerCommands(
   registerSettingsCommands(bot, deps);
   registerWhatsAppPairingCommand(bot);
   registerAuthCommand(bot);
+  registerBackupCommand(bot);
   // admin LAST: it owns the unknown-command catch-all, which must only
   // be reached after every real command has had its chance to match.
   // Registering anything after it makes that command look unknown

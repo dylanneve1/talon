@@ -54,6 +54,7 @@ export const _backupDeps = {
   build: buildSnapshot,
   discover: discoverTargets,
   upload: uploadSnapshot,
+  pruneLocal,
   pruneRemote,
 };
 
@@ -64,6 +65,20 @@ type SchedulerState = {
   timer: ReturnType<typeof setTimeout> | null;
   queue: Promise<unknown>;
   running: boolean;
+  /**
+   * Set by `stopBackupScheduler`. A tick that is mid-run when shutdown
+   * starts still reaches its `schedule()` call afterwards — without this
+   * flag it would re-arm the timer the shutdown just cleared, and the
+   * daemon would keep a live handle it believes it released.
+   */
+  stopped: boolean;
+  /**
+   * Bumped by every init and stop. A timer armed by an earlier
+   * configuration (or an earlier test) fires into a scheduler that has
+   * since been reconfigured; comparing generations makes that tick a
+   * no-op instead of a run nobody asked for.
+   */
+  generation: number;
   lastRunAt: number;
   lastSnapshotId: string | undefined;
   lastError: string | undefined;
@@ -77,6 +92,8 @@ const state: SchedulerState = {
   timer: null,
   queue: Promise.resolve(),
   running: false,
+  stopped: false,
+  generation: 0,
   lastRunAt: 0,
   lastSnapshotId: undefined,
   lastError: undefined,
@@ -134,7 +151,7 @@ async function executeRun(request: RunRequest): Promise<Manifest> {
       parts: manifest.parts.length,
       durationMs: Date.now() - started,
     });
-    await pruneLocal(settings.keepLocal, state.home);
+    await _backupDeps.pruneLocal(settings.keepLocal, state.home);
     if (!request.localOnly) {
       const targets = selectTargets(
         await _backupDeps.discover(),
@@ -190,21 +207,24 @@ export function runBackup(request: RunRequest): Promise<Manifest> {
 
 // ── The timer ───────────────────────────────────────────────────────────────
 
-function schedule(delayMs: number): void {
+function schedule(delayMs: number, generation = state.generation): void {
+  if (state.stopped || generation !== state.generation) return;
   if (state.timer) clearTimeout(state.timer);
   state.nextRunAt = Date.now() + delayMs;
-  state.timer = setTimeout(() => void tick(), delayMs);
+  state.timer = setTimeout(() => void tick(generation), delayMs);
   state.timer.unref?.();
 }
 
-async function tick(): Promise<void> {
+async function tick(generation: number): Promise<void> {
   const settings = state.settings;
-  if (!settings?.enabled) return;
+  if (state.stopped || generation !== state.generation || !settings?.enabled) {
+    return;
+  }
   const intervalMs = settings.intervalHours * HOUR_MS;
   // Recomputed every tick: a suspended machine or a stepped clock lands
   // here late, and the answer is "run now", not "run N missed times".
   if (backoff.active()) {
-    schedule(Math.min(intervalMs, BOOT_DELAY_MS));
+    schedule(Math.min(intervalMs, BOOT_DELAY_MS), generation);
     return;
   }
   try {
@@ -212,7 +232,7 @@ async function tick(): Promise<void> {
   } catch {
     /* executeRun logged, notified and armed the backoff */
   }
-  schedule(intervalMs);
+  schedule(intervalMs, generation);
 }
 
 /**
@@ -226,6 +246,9 @@ export async function initBackup(options: {
   notify?: (text: string) => Promise<unknown>;
 }): Promise<void> {
   state.settings = options.settings;
+  state.stopped = false;
+  state.generation += 1;
+  state.nextRunAt = undefined;
   state.home = options.home ?? dirs.root;
   state.notify = options.notify ?? notifyAdmin;
   await reconcileIndex(state.home);
@@ -254,6 +277,8 @@ export async function initBackup(options: {
 }
 
 export function stopBackupScheduler(): void {
+  state.stopped = true;
+  state.generation += 1;
   if (state.timer) clearTimeout(state.timer);
   state.timer = null;
   state.nextRunAt = undefined;

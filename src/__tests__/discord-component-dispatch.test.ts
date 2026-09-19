@@ -117,6 +117,7 @@ describe("COMPONENT_HANDLERS", () => {
     expect(Object.getPrototypeOf(COMPONENT_HANDLERS)).toBeNull();
     expect(Object.keys(COMPONENT_HANDLERS).sort()).toEqual([
       "ai:",
+      "backup:",
       "effort:",
       "metrics:",
       "model:",

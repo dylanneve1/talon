@@ -16,7 +16,7 @@ import { constants, createZstdCompress, createZstdDecompress } from "node:zlib";
 import type { Transform } from "node:stream";
 
 /** Archival compression level (1–22). */
-export const ZSTD_LEVEL = 19;
+const ZSTD_LEVEL = 19;
 
 /** A zstd compressor for one part. */
 export function createCompressor(level: number = ZSTD_LEVEL): Transform {

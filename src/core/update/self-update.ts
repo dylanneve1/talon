@@ -249,10 +249,6 @@ export async function runSelfUpdate(
     return { ok: true, repoRoot, steps, before, after, changed: false };
   }
 
-  // A pinned checkpoint before the tree moves, so a bad update is one
-  // `talon backup restore` away from undone. Only when something actually
-  // changed (above), never blocking: a failed checkpoint is logged inside
-  // and the update goes ahead.
   await checkpointBeforeUpdate(before, after);
 
   const install = await record(

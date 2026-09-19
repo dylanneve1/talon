@@ -17,6 +17,40 @@ import type { TalonConfig } from "../../../core/config/index.js";
 import { log, logError, logWarn } from "../../../util/log.js";
 import { getRepoRoot } from "../../../core/update/self-update.js";
 
+/**
+ * /backup — its own builder: the definitions list is one long literal and
+ * this is the only entry with two options and seven choices.
+ */
+function backupCommand(): unknown {
+  return new SlashCommandBuilder()
+    .setName("backup")
+    .setDescription("Snapshots and checkpoints (admin only)")
+    .addStringOption((o) =>
+      o
+        .setName("command")
+        .setDescription("What to do (default: status)")
+        .setRequired(false)
+        .addChoices(
+          { name: "status", value: "status" },
+          { name: "now", value: "now" },
+          { name: "checkpoint", value: "checkpoint" },
+          { name: "list", value: "list" },
+          { name: "pin", value: "pin" },
+          { name: "unpin", value: "unpin" },
+          { name: "restore", value: "restore" },
+        ),
+    )
+    .addStringOption((o) =>
+      o
+        .setName("arg")
+        .setDescription(
+          "Checkpoint label, or snapshot id for pin/unpin/restore",
+        )
+        .setRequired(false),
+    )
+    .toJSON();
+}
+
 function buildCommandDefinitions(devBuild = false): unknown[] {
   return [
     new SlashCommandBuilder()
@@ -125,6 +159,7 @@ function buildCommandDefinitions(devBuild = false): unknown[] {
             .toJSON(),
         ]
       : []),
+    backupCommand(),
     new SlashCommandBuilder()
       .setName("admin")
       .setDescription("Admin operations (admin only)")

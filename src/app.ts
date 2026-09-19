@@ -169,6 +169,36 @@ onBackendChange((holder, newBackend, info) => {
 
 // ── Graceful shutdown ────────────────────────────────────────────────────────
 
+/**
+ * Arm the backup scheduler. Here rather than in bootstrap because this is
+ * where the process lifecycle lives — `stopBackupScheduler` is two screens
+ * down in `gracefulShutdown`, and the two belong together. Failure
+ * notifications go to `backup.notifyChatId` when set, otherwise to the
+ * admin, over the same route as the plan alerts.
+ */
+async function startBackups(): Promise<void> {
+  const { initBackup } = await import("./core/backup/index.js");
+  const { resolveBackupSettings } = await import("./core/backup/plan.js");
+  const notifyChatId = config.backup?.notifyChatId;
+  await initBackup({
+    settings: resolveBackupSettings(config.backup),
+    notify: notifyChatId
+      ? async (text: string) => {
+          const { resolveFrontendIdAmong } =
+            await import("./core/frontend-runtime/routing.js");
+          const name = resolveFrontendIdAmong(
+            notifyChatId,
+            frontends.map((frontend) => frontend.name),
+          );
+          const target =
+            frontends.find((frontend) => frontend.name === name) ??
+            frontends[0];
+          if (target) await target.sendMessage(Number(notifyChatId), text);
+        }
+      : undefined,
+  });
+}
+
 let shuttingDown = false;
 let triggerPruneTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -337,6 +367,7 @@ async function main(): Promise<void> {
   await Promise.all(frontends.map((frontend) => frontend.init()));
   log("bot", "Starting Talon...");
 
+  await startBackups();
   if (config.pulse) startPulseTimer(config.pulseIntervalMs);
   if (config.heartbeat) startHeartbeatTimer(config.heartbeatIntervalMinutes);
   startWatchdog(config.workspace);

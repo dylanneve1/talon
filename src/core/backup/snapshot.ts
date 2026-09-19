@@ -112,7 +112,7 @@ async function addEntries(
  * taken off the compressed bytes, so verifying a part before extraction
  * costs one pass over the file and no decompression.
  */
-export async function writePart(
+async function writePart(
   destPath: string,
   fill: (writer: TarWriter) => Promise<void>,
 ): Promise<{ bytes: number; sha256: string }> {
@@ -139,7 +139,7 @@ export async function writePart(
 // ── What goes in ────────────────────────────────────────────────────────────
 
 /** Everything under ~/.talon plus the configured workspace subset and extras. */
-export async function collectStateEntries(
+async function collectStateEntries(
   home: string,
   settings: BackupSettings,
 ): Promise<{

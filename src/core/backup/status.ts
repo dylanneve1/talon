@@ -18,7 +18,7 @@ import {
 import { backupSettings, schedulerStatus } from "./scheduler.js";
 import type { SnapshotSummary } from "./types.js";
 
-export type TargetStatus = {
+type TargetStatus = {
   id: string;
   name: string;
   ready: boolean;
@@ -123,7 +123,7 @@ export async function collectBackupStatus(
 }
 
 /** One line per snapshot: `<id>  checkpoint  12.4 MB  pinned  "label"  → drive`. */
-export function formatSnapshotLine(snapshot: SnapshotSummary): string {
+function formatSnapshotLine(snapshot: SnapshotSummary): string {
   const remote = Object.entries(snapshot.remote)
     .map(([id, entry]) => `${id}:${entry.status}`)
     .join(" ");

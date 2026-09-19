@@ -50,8 +50,8 @@
   {
     "file": "src/cli/index.ts",
     "name": "runCli",
-    "lines": 134,
-    "cx": 30
+    "lines": 74,
+    "cx": 26
   },
   {
     "file": "src/core/background/dream/index.ts",

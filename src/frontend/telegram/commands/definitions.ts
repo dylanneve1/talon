@@ -48,6 +48,10 @@ export const TELEGRAM_COMMANDS: ReadonlyArray<{
     command: "memory",
     description: "What Talon remembers — list, search, why <id>",
   },
+  {
+    command: "backup",
+    description: "Snapshots and checkpoints; /backup restore <id> (admin)",
+  },
   { command: "plugins", description: "List loaded plugins" },
   { command: "help", description: "All commands and features" },
 ];

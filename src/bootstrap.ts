@@ -34,8 +34,6 @@ import {
   resumeAfterRestart as resumeTriggersAfterRestart,
 } from "./core/background/triggers/index.js";
 import { initAgents } from "./core/agents/index.js";
-import { initBackup } from "./core/backup/index.js";
-import { resolveBackupSettings } from "./core/backup/plan.js";
 import { initDream, maybeStartDream } from "./core/background/dream/index.js";
 import { initHeartbeat } from "./core/background/heartbeat/index.js";
 import { log, logWarn, logDebug } from "./util/log.js";
@@ -483,26 +481,6 @@ export async function initBackendAndDispatcher(
     chatId:
       config.planAlertChatId ??
       (config.adminUserId ? String(config.adminUserId) : undefined),
-  });
-
-  // Backups. Not agent work and not a task — a timer, a mutex and a
-  // backoff window (core/backup/scheduler.ts). Started here, next to the
-  // other background subsystems, so the first snapshot is five minutes
-  // into the boot rather than during it. Failures go to `notifyChatId`
-  // when set, otherwise to the admin, over the same route as the plan
-  // alerts above.
-  const backupSettings = resolveBackupSettings(config.backup);
-  const backupChatId = config.backup?.notifyChatId;
-  await initBackup({
-    settings: backupSettings,
-    notify: backupChatId
-      ? async (text: string) =>
-          resolveFrontendByNumericId(
-            Number(backupChatId),
-            backupChatId,
-            frontends,
-          ).sendMessage(Number(backupChatId), text)
-      : undefined,
   });
 
   // Admin notification seam (core/notify.ts) — how a subsystem reaches

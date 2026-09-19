@@ -31,10 +31,10 @@ import type { Manifest, SnapshotPart } from "./types.js";
 const SYSTEM_CHAT = "system";
 
 /** A part as the upload call describes it: metadata plus where to read it. */
-export type UploadPart = SnapshotPart & { path: string };
+type UploadPart = SnapshotPart & { path: string };
 
 /** One snapshot as a target reports it. */
-export type RemoteSnapshot = {
+type RemoteSnapshot = {
   snapshotId: string;
   manifest: Manifest;
   parts: Array<{ name: string; remoteId?: string; bytes: number }>;
@@ -66,7 +66,7 @@ export interface BackupTarget {
 }
 
 /** Sends one protocol body to one plugin. Replaced wholesale in tests. */
-export type TargetDispatch = (
+type TargetDispatch = (
   plugin: string,
   body: Record<string, unknown>,
 ) => Promise<ActionResult | null>;

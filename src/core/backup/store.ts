@@ -48,10 +48,10 @@ import type {
 
 /** `20260918T233400Z-a1b2c3` — chronological and filesystem-safe. */
 const SNAPSHOT_ID_RE = /^\d{8}T\d{6}Z-[0-9a-f]{6}$/;
-export const MANIFEST_NAME = "manifest.json";
+const MANIFEST_NAME = "manifest.json";
 export const STATE_PART = "state.tar.zst";
 
-export function backupsRoot(home: string = dirs.root): string {
+function backupsRoot(home: string = dirs.root): string {
   return join(home, "backups");
 }
 
@@ -267,7 +267,7 @@ export function selectPrunable<
 }
 
 /** Delete a snapshot directory and its index rows. */
-export async function removeSnapshot(
+async function removeSnapshot(
   id: string,
   home: string = dirs.root,
 ): Promise<void> {

@@ -14,6 +14,8 @@
  *   - `chat`        — terminal chat mode
  *   - `daemon`      — start/stop/restart outcome rendering
  *   - `menu`        — interactive main menu (no-subcommand default)
+ *   - `commands/`   — one module per command; new commands land here
+ *                     (docs/structure.md worklist item 8)
  */
 
 import pc from "picocolors";
@@ -36,6 +38,7 @@ import { runPluginCommand } from "./plugin.js";
 import { runSkillCommand } from "./skill.js";
 import { runMemoryCommand } from "./memory.js";
 import { mainMenu } from "./menu.js";
+import { runBackupCommand } from "./commands/backup.js";
 
 export * from "./context.js";
 export * from "./config.js";
@@ -58,7 +61,62 @@ const CLI_COMMANDS = [
   "plugin",
   "skill",
   "memory",
+  "backup",
 ];
+
+/** `talon events [-f] [--history [N]]` → the tail options. */
+function eventsOptions(args: string[]): {
+  follow: boolean;
+  history?: number;
+} {
+  const historyAt = args.findIndex((a) => a === "--history");
+  const next = historyAt >= 0 ? Number(args[historyAt + 1]) : NaN;
+  return {
+    follow: args.includes("-f") || args.includes("--follow"),
+    ...(historyAt >= 0
+      ? { history: Number.isInteger(next) && next > 0 ? next : 100 }
+      : {}),
+  };
+}
+
+/** The `talon --help` sheet. Its own function: `runCli` is a router. */
+function printHelp(): void {
+  printBanner();
+  console.log("  Usage: talon [command]\n");
+  console.log("  Commands:");
+  console.log(`    ${pc.cyan("setup")}      Guided setup wizard`);
+  console.log(`    ${pc.cyan("start")}      Start as background daemon`);
+  console.log(`    ${pc.cyan("stop")}       Stop the daemon`);
+  console.log(`    ${pc.cyan("restart")}    Restart the daemon`);
+  console.log(`    ${pc.cyan("run")}        Run in foreground (attached)`);
+  console.log(`    ${pc.cyan("chat")}       Terminal chat mode`);
+  console.log(`    ${pc.cyan("status")}     Show bot health`);
+  console.log(
+    `    ${pc.cyan("ps")}         List agent tasks (--all includes journal history)`,
+  );
+  console.log(`    ${pc.cyan("kill")}       Abort a killable task by id`);
+  console.log(
+    `    ${pc.cyan("events")}     Tail the event bus (-f follows, --history [N] reads the journal)`,
+  );
+  console.log(
+    `    ${pc.cyan("plugin")}     Manage plugins (install/enable/disable)`,
+  );
+  console.log(
+    `    ${pc.cyan("skill")}      Manage skills (install/enable/disable)`,
+  );
+  console.log(
+    `    ${pc.cyan("memory")}     Read/edit the memory store (list/search/import/render)`,
+  );
+  console.log(
+    `    ${pc.cyan("backup")}     Snapshots and checkpoints (now/list/show/pin/restore)`,
+  );
+  console.log(`    ${pc.cyan("config")}     View/edit configuration`);
+  console.log(`    ${pc.cyan("logs")}       Tail log file`);
+  console.log(`    ${pc.cyan("doctor")}     Validate environment`);
+  console.log(`    ${pc.cyan("--version")}  Print the package version`);
+  console.log();
+  console.log(`  Run ${pc.cyan("talon")} with no args for interactive menu.\n`);
+}
 
 /** Route a `talon <command>` invocation. Called by the entry point. */
 export async function runCli(): Promise<void> {
@@ -105,18 +163,12 @@ export async function runCli(): Promise<void> {
     case "kill":
       await killTask(process.argv[3]);
       break;
-    case "events": {
-      const args = process.argv.slice(3);
-      const historyAt = args.findIndex((a) => a === "--history");
-      const next = historyAt >= 0 ? Number(args[historyAt + 1]) : NaN;
-      await showEvents({
-        follow: args.includes("-f") || args.includes("--follow"),
-        ...(historyAt >= 0
-          ? { history: Number.isInteger(next) && next > 0 ? next : 100 }
-          : {}),
-      });
+    case "events":
+      await showEvents(eventsOptions(process.argv.slice(3)));
       break;
-    }
+    case "backup":
+      await runBackupCommand(process.argv.slice(3));
+      break;
     case "plugin":
       await runPluginCommand(process.argv.slice(3));
       break;
@@ -133,40 +185,7 @@ export async function runCli(): Promise<void> {
     }
     case "--help":
     case "-h":
-      printBanner();
-      console.log("  Usage: talon [command]\n");
-      console.log("  Commands:");
-      console.log(`    ${pc.cyan("setup")}      Guided setup wizard`);
-      console.log(`    ${pc.cyan("start")}      Start as background daemon`);
-      console.log(`    ${pc.cyan("stop")}       Stop the daemon`);
-      console.log(`    ${pc.cyan("restart")}    Restart the daemon`);
-      console.log(`    ${pc.cyan("run")}        Run in foreground (attached)`);
-      console.log(`    ${pc.cyan("chat")}       Terminal chat mode`);
-      console.log(`    ${pc.cyan("status")}     Show bot health`);
-      console.log(
-        `    ${pc.cyan("ps")}         List agent tasks (--all includes journal history)`,
-      );
-      console.log(`    ${pc.cyan("kill")}       Abort a killable task by id`);
-      console.log(
-        `    ${pc.cyan("events")}     Tail the event bus (-f follows, --history [N] reads the journal)`,
-      );
-      console.log(
-        `    ${pc.cyan("plugin")}     Manage plugins (install/enable/disable)`,
-      );
-      console.log(
-        `    ${pc.cyan("skill")}      Manage skills (install/enable/disable)`,
-      );
-      console.log(
-        `    ${pc.cyan("memory")}     Read/edit the memory store (list/search/import/render)`,
-      );
-      console.log(`    ${pc.cyan("config")}     View/edit configuration`);
-      console.log(`    ${pc.cyan("logs")}       Tail log file`);
-      console.log(`    ${pc.cyan("doctor")}     Validate environment`);
-      console.log(`    ${pc.cyan("--version")}  Print the package version`);
-      console.log();
-      console.log(
-        `  Run ${pc.cyan("talon")} with no args for interactive menu.\n`,
-      );
+      printHelp();
       break;
     case undefined:
       mainMenu();

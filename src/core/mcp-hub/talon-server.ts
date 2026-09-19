@@ -16,7 +16,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { composeTools } from "../tools/index.js";
-import { createBridge, textResult } from "../tools/ops/bridge.js";
+import { createBridge, textResult } from "../tools/bridge.js";
 import type { ToolFrontend, ToolTag } from "../tools/types.js";
 
 export const VALID_TOOL_FRONTENDS: ReadonlySet<string> = new Set([

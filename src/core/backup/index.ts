@@ -8,48 +8,40 @@
  * retention; checkpoints are labelled, optionally pinned, and taken
  * before anything risky (a self-update, a restore).
  *
- * Read the modules in this order: `plan` (what goes in), `archive/`
- * (how it is written), `snapshot` (the build), `store` (the local store
- * and its index), `targets` + `upload` (getting it off the machine),
- * `scheduler` (when), `restore` (getting it back), `status` (what every
- * surface renders). See docs/backups.md for the operator's view and the
- * plugin protocol.
+ * This barrel is what the surfaces above use — the CLI, the `/backup`
+ * commands, the gateway actions, bootstrap and app. Inside the
+ * subsystem the modules import each other directly.
+ *
+ * Read them in this order: `plan` (what goes in), `archive/` (how it is
+ * written), `snapshot` (the build), `store` (the local store and its
+ * index), `targets` + `upload` (getting it off the machine), `scheduler`
+ * (when), `restore` (getting it back), `status` (what every surface
+ * renders). docs/backups.md has the operator's view and the plugin
+ * protocol.
  */
 
 export {
   initBackup,
   runBackup,
   stopBackupScheduler,
-  schedulerStatus,
-  backupSettings,
   checkpointBeforeUpdate,
-  firstRunDelayMs,
-  type RunRequest,
 } from "./scheduler.js";
 
 export {
   isSnapshotId,
   listSnapshots,
   readManifest,
-  removeSnapshot,
   setSnapshotPinned,
-  snapshotDir,
 } from "./store.js";
 
 export {
   applyPendingRestore,
-  clearRestorePending,
   readRestorePending,
   restoreSnapshot,
   writeRestorePending,
-  type RestoreReport,
 } from "./restore.js";
 
-export {
-  discoverTargets,
-  selectTargets,
-  type BackupTarget,
-} from "./targets.js";
+export { discoverTargets, type BackupTarget } from "./targets.js";
 
 export {
   collectBackupStatus,
@@ -57,12 +49,6 @@ export {
   formatBytes,
   formatRelative,
   formatSnapshotList,
-  type BackupStatus,
 } from "./status.js";
 
-export type {
-  BackupSettings,
-  Manifest,
-  SnapshotKind,
-  SnapshotSummary,
-} from "./types.js";
+export type { SnapshotSummary } from "./types.js";

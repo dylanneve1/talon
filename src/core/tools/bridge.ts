@@ -3,11 +3,16 @@
  *
  * Extracted from the old per-backend tools.ts files so there's
  * exactly one copy of callBridge / textResult.
+ *
+ * At the tools root, not in `ops/`: the group directories hold tool
+ * DOMAINS (one file per family of tool definitions), and this is the
+ * transport they all answer over — the same kind of module as
+ * `types.ts` and `schemas.ts` beside it.
  */
 
 import { Agent, fetch as undiciFetch } from "undici";
-import { isBunRuntime } from "../../../util/runtime.js";
-import type { BridgeFunction } from "../types.js";
+import { isBunRuntime } from "../../util/runtime.js";
+import type { BridgeFunction } from "./types.js";
 
 /** Default wall-clock budget for a bridge action. */
 const DEFAULT_TIMEOUT_MS = 120_000;

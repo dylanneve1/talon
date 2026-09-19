@@ -37,7 +37,7 @@
  *   - SDK-specific event types — those live in each backend.
  *   - Session storage — that's `src/storage/sessions.ts`.
  *   - MCP server registration — backend-specific transport details
- *     (the spawn/env contract they share is `core/tools/ops/mcp-env.ts`).
+ *     (the spawn/env contract they share is `core/tools/mcp-env.ts`).
  */
 
 export { captureDeliveredText } from "./turn/delivered-text.js";

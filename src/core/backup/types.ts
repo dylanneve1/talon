@@ -40,7 +40,7 @@ export type RemoteState = {
 };
 
 /** Where an `extra/<n>/…` subtree came from, so restore can put it back. */
-export type ExtraMapping = { n: number; source: string };
+type ExtraMapping = { n: number; source: string };
 
 export type Manifest = {
   schema: 1;

@@ -18,6 +18,7 @@
  *   model:nav:*                 (pager)
  *   model:backend-select        (select menu)
  *   metrics:today | metrics:all
+ *   backup:restore:<id> | backup:cancel  (restore confirmation, admin only)
  *   ai:<id>                     (AI-generated buttons — forwarded to agent)
  */
 
@@ -36,6 +37,7 @@ import { handleMetricsComponent } from "./metrics.js";
 import { handleModelComponent } from "./model.js";
 import { handlePulseComponent } from "./pulse.js";
 import { handleSettingsComponent } from "./settings.js";
+import { handleBackupComponent } from "../../commands/backup.js";
 import type { ComponentHandlers, ComponentInteraction } from "./types.js";
 
 // Null-prototype so a custom id of "toString:" / "constructor:" / etc.
@@ -48,6 +50,7 @@ export const COMPONENT_HANDLERS: ComponentHandlers = Object.assign(
     "effort:": handleEffortComponent,
     "model:": handleModelComponent,
     "metrics:": handleMetricsComponent,
+    "backup:": handleBackupComponent,
     "ai:": forwardToAgent,
   } satisfies ComponentHandlers,
 );

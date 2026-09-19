@@ -11,6 +11,7 @@
  *   - `model`    — `model:*` (menu / backend / browse controller)
  *   - `auth`     — `auth:*` (backend sign-in panel, admin only)
  *   - `whatsapp` — `whatsapp:*` (WhatsApp link panel, admin only)
+ *   - `backup`   — `backup:*` (restore confirmation, admin only)
  *
  * `registerCallbacks` installs one `callback_query:data` listener that
  * dispatches on the data prefix, preserving the original order and the
@@ -29,6 +30,7 @@ import { handleMetricsCallback } from "./metrics.js";
 import { handleModelCallback } from "./model.js";
 import { handleAuthCallback } from "./auth.js";
 import { handleWhatsAppCallback } from "./whatsapp.js";
+import { handleBackupCallback } from "./backup.js";
 
 export { answerCallbackQuerySafe } from "./query.js";
 
@@ -47,6 +49,12 @@ export function registerCallbacks(
     // is intentionally NOT here — that lives entirely under /model now.
     if (data.startsWith("settings:")) {
       await handleSettingsCallback(ctx, data, cid, deps);
+      return;
+    }
+
+    // Restore confirmation — destructive, so it is behind its own tap.
+    if (data.startsWith("backup:")) {
+      await handleBackupCallback(ctx, data);
       return;
     }
 

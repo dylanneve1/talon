@@ -114,6 +114,11 @@ const ALL_TOOLS_ORDER = [
   "report_result",
   "message_parent",
   "check_inbox",
+  // Appended for the backup subsystem — at the END, so the prompt-cache
+  // prefix of every live chat survives the addition.
+  "create_checkpoint",
+  "list_checkpoints",
+  "backup_status",
 ];
 
 describe("ALL_TOOLS registry", () => {

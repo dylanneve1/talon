@@ -10,7 +10,7 @@ import {
   parseEnvList,
   ENV_DISABLED_TOOLS,
   ENV_DISABLED_TOOL_TAGS,
-} from "../core/tools/ops/mcp-env.js";
+} from "../core/tools/mcp-env.js";
 import { composeTools } from "../core/tools/index.js";
 
 describe("buildTalonMcpEnv", () => {

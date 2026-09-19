@@ -29,7 +29,7 @@ import {
   pluginHubUrl,
   hubPluginServerNames,
 } from "../../core/mcp-hub/index.js";
-import type { ToolExclusionConfig } from "../../core/tools/ops/mcp-env.js";
+import type { ToolExclusionConfig } from "../../core/tools/mcp-env.js";
 import { frontendsForChat } from "../runtime/frontends.js";
 
 /**

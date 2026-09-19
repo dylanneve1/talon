@@ -37,6 +37,7 @@ import {
   handlePulse,
   handleSettings,
 } from "./settings.js";
+import { handleBackup } from "./backup.js";
 import {
   handleRestart,
   handleMetrics,
@@ -160,6 +161,8 @@ async function routeSlashCommand(
       return handleMesh(interaction);
     case "update":
       return handleUpdate(interaction, config);
+    case "backup":
+      return handleBackup(interaction);
     case "admin":
       return handleAdmin(interaction, config, gateway);
     default:

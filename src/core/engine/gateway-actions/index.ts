@@ -21,6 +21,7 @@
  *   - `models`    — model / backend discovery
  *   - `mesh`      — companion device mesh (presence + location)
  *   - `cross-send` — explicit-target sends through any enabled frontend
+ *   - `backup`    — snapshots and checkpoints (chat-free; no restore)
  */
 
 import type { ActionResult } from "../../types.js";
@@ -47,6 +48,7 @@ import {
   whatsappAccountChatFreeActions,
 } from "./whatsapp-account.js";
 import { nativeHandlers } from "./native/index.js";
+import { backupChatFreeActions, backupHandlers } from "./backup/index.js";
 
 // Null-prototype so a request `action` of "toString" / "constructor" / etc.
 // can't resolve an inherited Object.prototype method — `handlers[action]` only
@@ -67,6 +69,7 @@ const handlers: SharedActionHandlers = Object.assign(Object.create(null), {
   ...crossSendHandlers,
   ...whatsappAccountHandlers,
   ...nativeHandlers,
+  ...backupHandlers,
 });
 
 /**
@@ -77,6 +80,7 @@ const chatFreeActions: ReadonlySet<string> = new Set([
   ...meshChatFreeActions,
   ...crossSendChatFreeActions,
   ...whatsappAccountChatFreeActions,
+  ...backupChatFreeActions,
 ]);
 
 /**
