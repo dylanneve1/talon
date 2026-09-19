@@ -279,6 +279,12 @@ to it. Cache reads are reported, cache writes are not — hence
 `cacheMetrics: "read"`. There is no plan-usage endpoint, so
 `getPlanUsage` returns `undefined`.
 
+**Live check.** `npx tsx scripts/agy-live-check.ts` runs the whole
+stack against the real binary and a running daemon: it writes one hub
+server into the real `mcp_config.json`, spawns the process layer, asks
+the model to call `check_time` over MCP, asserts the tool surfaced
+unwrapped, and puts the config back exactly as it found it.
+
 **Auth.** Consumer Google OAuth, cached at
 `~/.gemini/antigravity-cli/antigravity-oauth-token` by a one-time
 interactive `agy` run. No API key exists; that subscription-backed
