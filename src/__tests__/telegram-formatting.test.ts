@@ -187,3 +187,37 @@ describe("escapeHtml", () => {
     expect(escapeHtml("hello world")).toBe("hello world");
   });
 });
+
+describe("markdownToTelegramHtml — block formatting", () => {
+  it("renders an ATX heading as a bold line, since Telegram has none", () => {
+    expect(markdownToTelegramHtml("### Summary of Work:\nbody")).toBe(
+      "<b>Summary of Work:</b>\nbody",
+    );
+    expect(markdownToTelegramHtml("## Title ##")).toBe("<b>Title</b>");
+  });
+
+  it("leaves a #-prefixed reference alone — #993 is a PR, not a heading", () => {
+    expect(markdownToTelegramHtml("#993 round 2: one failure")).toBe(
+      "#993 round 2: one failure",
+    );
+    expect(markdownToTelegramHtml("#hashtag")).toBe("#hashtag");
+  });
+
+  it("does not read a # inside a fenced block as a heading", () => {
+    const out = markdownToTelegramHtml("```sh\n# comment\nls\n```");
+    expect(out).toContain("# comment");
+    expect(out).not.toContain("<b>");
+  });
+
+  it("folds a run of > lines into one blockquote", () => {
+    expect(markdownToTelegramHtml("> one\n> two\nafter")).toBe(
+      "<blockquote>one\ntwo</blockquote>\nafter",
+    );
+  });
+
+  it("still formats inline markup inside a heading", () => {
+    expect(markdownToTelegramHtml("# The **big** one")).toBe(
+      "<b>The <b>big</b> one</b>",
+    );
+  });
+});
