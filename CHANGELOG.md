@@ -1,5 +1,18 @@
 # Changelog
 
+## [5.2.2](https://github.com/dylanneve1/talon/compare/v5.2.1...v5.2.2) (2026-09-19)
+
+
+### Bug Fixes
+
+* **daemon:** a failed restart handoff is visible, verified, and recovered ([#994](https://github.com/dylanneve1/talon/issues/994)) ([91a78d6](https://github.com/dylanneve1/talon/commit/91a78d6e96b6b281609d1cddb859703567678dcb))
+* **playwright:** re-pin @playwright/mcp to 0.0.56 and stop dependabot bumping it ([#991](https://github.com/dylanneve1/talon/issues/991)) ([729e0c3](https://github.com/dylanneve1/talon/commit/729e0c3be8fd755ee1e6ac69e9e282b20d3fa1dc))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump the dev-dependencies group with 2 updates ([#992](https://github.com/dylanneve1/talon/issues/992)) ([727988c](https://github.com/dylanneve1/talon/commit/727988ce23386802fbf34b674c4d74a0cda0c0e5))
+
 ## [5.2.1](https://github.com/dylanneve1/talon/compare/v5.2.0...v5.2.1) (2026-09-18)
 
 
