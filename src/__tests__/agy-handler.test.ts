@@ -484,6 +484,21 @@ describe("agy handler — usage", () => {
       cacheWrite: 0,
     });
   });
+
+  it("files the /status snapshot under the conversation id, not just the chat", async () => {
+    turnScript = [[text("one", "DONE"), result()]];
+    await run();
+    const { getState } = await import("../backend/agy/state.js");
+    // `/status` looks this up by the STORED session id — which for agy
+    // is the CLI's conversation id, not the chat id.
+    expect(sessions.getSession(CHAT).sessionId).toBe(CONV);
+    expect(getState().lastUsage.get(CONV)).toMatchObject({
+      inputTokens: 100,
+      cacheRead: 40,
+      contextModelId: "gemini-3.8-flash-high",
+    });
+    expect(getState().lastUsage.get(CHAT)).toBeDefined();
+  });
 });
 
 describe("agy handler — failures", () => {

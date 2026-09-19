@@ -25,9 +25,12 @@ import { getDefaultModelId } from "./models.js";
  * `storage/sessions.ts: resetSession` call.
  */
 export function resetChat(chatId: string): void {
+  const conversationId = getSession(chatId).sessionId;
   killChild(chatId, "reset");
   unregisterMcpForChat(chatId);
+  // The snapshot is filed under both ids (see `settleUsage`).
   getState().lastUsage.delete(chatId);
+  if (conversationId) getState().lastUsage.delete(conversationId);
   log("agent", `[${chatId}] agy session reset`);
 }
 

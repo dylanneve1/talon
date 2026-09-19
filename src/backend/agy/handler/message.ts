@@ -166,7 +166,11 @@ function settleUsage(
   const turn = agyUsageDelta(previous, cumulative);
   recordTokens(state, turn);
   const snapshot: AgySessionUsage = { ...cumulative, contextModelId: model };
+  // Keyed under BOTH ids on purpose: `/status` looks the snapshot up by
+  // the stored session id (agy's conversation id), while `resetChat`
+  // and the tests reach for it by chat id.
   store.set(chatId, snapshot);
+  if (result.conversation_id) store.set(result.conversation_id, snapshot);
   // `input_tokens` on the terminal result is the conversation's
   // accumulated prompt, which is the best context-fill estimate agy
   // gives us — there is no rollout file to read a real one from.
