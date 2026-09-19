@@ -31,5 +31,6 @@ export async function loadBuiltinBackends(): Promise<void> {
       registerBackend(createRemoteBackendFactory(profile));
   }
   await import("./codex/factory.js");
+  await import("./agy/factory.js");
   await import("./openai-agents/factory.js");
 }

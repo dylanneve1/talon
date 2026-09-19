@@ -28,6 +28,7 @@ import type { ReasoningEffortLevel } from "../types.js";
  * lockstep.
  */
 export const BACKEND_IDS = [
+  "agy",
   "claude",
   "codex",
   "kilo",

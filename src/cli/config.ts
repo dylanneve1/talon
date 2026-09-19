@@ -27,10 +27,12 @@ export function printBanner(): void {
  */
 export type Config = {
   frontend: string | string[];
-  /** Active backend (`claude` / `kilo` / `opencode` / `codex` / `openai-agents`). */
-  backend?: "claude" | "kilo" | "opencode" | "codex" | "openai-agents";
+  /** Active backend (`claude` / `kilo` / `opencode` / `codex` / `agy` / `openai-agents`). */
+  backend?: "claude" | "kilo" | "opencode" | "codex" | "agy" | "openai-agents";
   botToken?: string;
   claudeBinary?: string;
+  /** Path to the Antigravity `agy` executable. */
+  agyBinary?: string;
   /** Codex-specific OpenAI API key. */
   codexApiKey?: string;
   /** OpenAI API key — used by OpenAI Agents and legacy Codex config. */

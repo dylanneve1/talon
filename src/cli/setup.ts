@@ -6,6 +6,8 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { printBanner, loadConfig, saveConfig, type Config } from "./config.js";
+import { binaryOnPath } from "../util/binary-on-path.js";
+import { detectAgyAuth } from "../backend/agy/auth.js";
 
 /** Strip spaces, "+", brackets and dashes from a phone number. */
 const bareDigits = (raw: string) => raw.replace(/[\s+()-]/g, "");
@@ -394,6 +396,10 @@ async function askBackend(config: Config): Promise<Config["backend"]> {
           label: `Codex     ${pc.dim("— OpenAI Codex CLI (@openai/codex)")}`,
         },
         {
+          value: "agy",
+          label: `Antigravity ${pc.dim("— Google Antigravity CLI (agy, subscription OAuth)")}`,
+        },
+        {
           value: "openai-agents",
           label: `OpenAI Agents ${pc.dim("— @openai/agents (OpenAI or any OpenAI-compatible endpoint)")}`,
         },
@@ -405,6 +411,7 @@ async function askBackend(config: Config): Promise<Config["backend"]> {
 type BackendAnswers = Pick<
   SetupAnswers,
   | "claudeBinary"
+  | "agyBinary"
   | "codexApiKey"
   | "openaiApiKey"
   | "openaiBaseUrl"
@@ -432,6 +439,44 @@ async function askCodexBackend(config: Config): Promise<BackendAnswers> {
     }),
   );
   return { codexApiKey: trimmedOrUndefined(codexApiKey) };
+}
+
+/**
+ * Antigravity has no API key to collect — it authenticates through a
+ * consumer Google OAuth flow run once interactively, cached under
+ * `~/.gemini/antigravity-cli/`. All the wizard can usefully do is
+ * point at the binary and say where the login happens.
+ */
+async function askAgyBackend(config: Config): Promise<BackendAnswers> {
+  const binary = await askOrExit(
+    p.text({
+      message: "Antigravity CLI binary path",
+      placeholder: "leave empty for default (agy on PATH)",
+      initialValue: config.agyBinary || "",
+    }),
+  );
+  const resolved = trimmedOrUndefined(binary);
+  const probe = resolved || "agy";
+  const installed = binaryOnPath(probe);
+  if (!installed) {
+    p.log.warn(
+      `${pc.yellow("!")} \`${probe}\` not found — install the Antigravity CLI ` +
+        `and make sure it is on PATH before starting Talon.`,
+    );
+  }
+  const auth = detectAgyAuth();
+  if (!auth.present) {
+    p.log.warn(
+      `${pc.yellow("!")} No cached Antigravity credentials. Run ${pc.cyan("agy")} ` +
+        `once on this host and complete the Google sign-in; headless runs ` +
+        `then reuse the cache. There is no API key for this backend.`,
+    );
+  } else {
+    p.log.success(
+      `Antigravity credentials found (${auth.method ?? "oauth"}) at ${auth.path}`,
+    );
+  }
+  return { agyBinary: resolved };
 }
 
 async function askOpenAiAgentsBackend(config: Config): Promise<BackendAnswers> {
@@ -494,6 +539,8 @@ async function askBackendCredentials(
       return askClaudeBackend(config);
     case "codex":
       return askCodexBackend(config);
+    case "agy":
+      return askAgyBackend(config);
     case "openai-agents":
       return askOpenAiAgentsBackend(config);
     default:
@@ -553,6 +600,7 @@ export type SetupAnswers = {
   backend: Config["backend"];
   botToken?: string;
   claudeBinary?: string;
+  agyBinary?: string;
   codexApiKey?: string;
   openaiApiKey?: string;
   openaiBaseUrl?: string;
@@ -612,6 +660,7 @@ export function buildSetupConfig(
     codexApiKey: ownsCredential("codex")
       ? answers.codexApiKey
       : existing.codexApiKey,
+    agyBinary: ownsCredential("agy") ? answers.agyBinary : existing.agyBinary,
     openaiApiKey: ownsCredential("openai-agents")
       ? answers.openaiApiKey
       : existing.openaiApiKey,

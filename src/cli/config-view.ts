@@ -54,6 +54,7 @@ export async function viewConfig(): Promise<void> {
     kilo: "Kilo (@kilocode/sdk)",
     opencode: "OpenCode (@opencode-ai/sdk)",
     codex: "OpenAI Codex CLI",
+    agy: "Google Antigravity CLI",
     "openai-agents": "OpenAI Agents (@openai/agents)",
   };
   console.log(
@@ -62,6 +63,10 @@ export async function viewConfig(): Promise<void> {
   if (config.claudeBinary)
     console.log(
       `  ${pc.dim("Claude binary")}    ${pc.green(config.claudeBinary)}`,
+    );
+  if (config.agyBinary)
+    console.log(
+      `  ${pc.dim("Antigravity bin")}  ${pc.green(config.agyBinary)}`,
     );
   if (config.codexApiKey)
     console.log(

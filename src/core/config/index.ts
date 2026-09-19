@@ -360,6 +360,7 @@ const configSchema = z.object({
    * unset, the codex-sdk resolves `codex` from its package / PATH.
    */
   codexBinary: z.string().optional(),
+  agyBinary: z.string().optional(),
   model: z.string().default("default"),
   /**
    * Per-backend default model overrides. Keyed by backend id
