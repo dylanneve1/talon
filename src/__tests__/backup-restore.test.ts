@@ -113,18 +113,20 @@ describe("the staged restore request", () => {
 
 describe("destinationFor", () => {
   it("maps archive paths back onto this machine", () => {
-    const extras = [{ n: 0, source: "/home/someone/notes" }];
+    // Archive paths are always `/`-separated; destinations are native
+    // paths, so the expectations go through `join` and hold on Windows too.
+    const extras = [{ n: 0, source: join("/home", "someone", "notes") }];
     expect(destinationFor("config.json", "/talon", extras)).toBe(
-      "/talon/config.json",
+      join("/talon", "config.json"),
     );
     expect(destinationFor("workspace/memory/memory.md", "/talon", extras)).toBe(
-      "/talon/workspace/memory/memory.md",
+      join("/talon", "workspace", "memory", "memory.md"),
     );
     expect(destinationFor("db/talon.db", "/talon", extras)).toBe(
-      "/talon/data/talon.db",
+      join("/talon", "data", "talon.db"),
     );
     expect(destinationFor("extra/0/CLAUDE.md", "/talon", extras)).toBe(
-      "/home/someone/notes/CLAUDE.md",
+      join("/home", "someone", "notes", "CLAUDE.md"),
     );
     // An extra this machine has no mapping for is skipped, not guessed.
     expect(destinationFor("extra/7/x", "/talon", extras)).toBeNull();
