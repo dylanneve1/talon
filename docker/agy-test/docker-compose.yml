@@ -1,0 +1,36 @@
+# Antigravity-backend Docker harness. See ./README.md for full usage,
+# including why this harness cannot run unattended in CI.
+#
+# Designed to coexist with a production Talon process on the same host:
+# distinct workspace mount, distinct Telegram bot, distinct gateway
+# port, distinct container name.
+
+services:
+  talon-agy-test:
+    container_name: talon-agy-test
+    build:
+      context: ../..
+      dockerfile: docker/agy-test/Dockerfile
+    restart: unless-stopped
+    volumes:
+      # Persistent workspace on the host. Survives `docker compose down`.
+      - ${HOME}/.talon-agy-test:/home/node/.talon
+      # The Antigravity CLI binary from the host. There is no npm
+      # package to install it from, so it has to come in this way.
+      - ${AGY_BINARY_HOST:-/usr/local/bin/agy}:/usr/local/bin/agy:ro
+      # The OAuth cache AND the shared MCP config both live here. The
+      # mount is READ-WRITE on purpose: Talon rewrites
+      # ~/.gemini/config/mcp_config.json per chat, and agy refreshes
+      # the cached access token in place.
+      - ${HOME}/.gemini:/home/node/.gemini
+    environment:
+      - NODE_ENV=production
+      # Test bot token. Sourced from a gitignored file outside the repo:
+      #   set -a && source ~/.config/talon-tests/secrets.env && set +a
+      - TALON_TEST_BOT_TOKEN=${TALON_TEST_BOT_TOKEN:?TALON_TEST_BOT_TOKEN required (see README)}
+      - AGY_BINARY=/usr/local/bin/agy
+      # Container-internal gateway port. Not published — does not
+      # collide with a host-side prod Talon on the default 19876.
+      - TALON_BRIDGE_PORT=19880
+    mem_limit: 2g
+    cpus: "2.0"

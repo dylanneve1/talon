@@ -85,7 +85,6 @@ const {
   buildAgyArgs,
   ensureChild,
   getChild,
-  killChild,
   killAllChildren,
   childChatIds,
   AgyTurnAborted,

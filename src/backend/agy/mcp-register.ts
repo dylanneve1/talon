@@ -26,7 +26,7 @@ import {
 const ownedKeys = new Map<string, string[]>();
 
 /** Every key Talon currently owns, across all scopes. */
-export function ownedTalonKeys(): string[] {
+function ownedTalonKeys(): string[] {
   return [...ownedKeys.values()].flat();
 }
 

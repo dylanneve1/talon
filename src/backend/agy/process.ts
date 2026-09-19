@@ -79,7 +79,7 @@ export class AgyTurnAborted extends Error {
 }
 
 /** The child died — with whatever stderr said about why. */
-export class AgyProcessExited extends Error {
+class AgyProcessExited extends Error {
   constructor(
     message: string,
     readonly code: number | null,

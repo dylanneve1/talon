@@ -8,11 +8,11 @@
 [![Bun](https://img.shields.io/badge/bun-1.3%2B-000000?logo=bun&logoColor=white)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Frontends](https://img.shields.io/badge/frontends-Telegram_%7C_WhatsApp_%7C_Discord_%7C_Teams_%7C_Terminal_%7C_App-25D366)](#frontends)
-[![Backends](https://img.shields.io/badge/backends-Claude_%7C_Kilo_%7C_OpenCode_%7C_Codex_%7C_OpenAI_Agents-D97706)](#backends)
+[![Backends](https://img.shields.io/badge/backends-Claude_%7C_Kilo_%7C_OpenCode_%7C_Codex_%7C_Antigravity_%7C_OpenAI_Agents-D97706)](#backends)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/dylanneve1/talon/actions/workflows/ci.yml/badge.svg)](https://github.com/dylanneve1/talon/actions/workflows/ci.yml)
 
-Multi-platform agentic AI harness. Runs on **Telegram**, **WhatsApp**, **Discord**, **Microsoft Teams**, the **Terminal**, and a **cross-platform Desktop/Mobile companion app** (Flutter), with a pluggable backend (**Claude Agent SDK**, **Kilo**, **OpenCode**, **Codex**, or **OpenAI Agents**) and full tool access through MCP.
+Multi-platform agentic AI harness. Runs on **Telegram**, **WhatsApp**, **Discord**, **Microsoft Teams**, the **Terminal**, and a **cross-platform Desktop/Mobile companion app** (Flutter), with a pluggable backend (**Claude Agent SDK**, **Kilo**, **OpenCode**, **Codex**, **Antigravity**, or **OpenAI Agents**) and full tool access through MCP.
 
 ---
 
@@ -21,7 +21,7 @@ Multi-platform agentic AI harness. Runs on **Telegram**, **WhatsApp**, **Discord
 |                       |                                                                                                                                              |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Multi-frontend**    | Telegram (grammY + GramJS userbot), WhatsApp (Baileys multi-device), Discord (discord.js), Microsoft Teams (Bot Framework), Terminal with live tool visibility, and a **Desktop/Mobile app** (Flutter) over a local/remote bridge — one or several at once, see [Frontends](#frontends) |
-| **Pluggable backend** | Claude Agent SDK, Kilo, OpenCode, Codex, OpenAI Agents — selectable per-process via `backend` config. Streaming, model fallback, context-overflow recovery. |
+| **Pluggable backend** | Claude Agent SDK, Kilo, OpenCode, Codex, Antigravity, OpenAI Agents — selectable per-process via `backend` config. Streaming, model fallback, context-overflow recovery. |
 | **MCP tools**         | Messaging, media, history, search, web fetch, cron jobs, triggers, goals, stickers, file system, admin controls                              |
 | **Plugins**           | Hot-reloadable plugin system with `talon plugin install/enable/disable` (npm, git, or local sources). Built-in: GitHub, MemPalace, Playwright, Brave Search |
 | **Background agents** | Heartbeat (hourly by default — advances goals, proactively messages when something matters) and Dream (memory consolidation + diary)         |
@@ -63,6 +63,7 @@ npx talon chat        # terminal chat mode
   - `kilo` backend: nothing extra — `@kilocode/sdk` spawns a local server. Free models are accessible without auth; routed models use Kilo's own credentials.
   - `opencode` backend: nothing extra — `@opencode-ai/sdk` spawns a local server.
   - `codex` backend: install the `codex` CLI (`npm i -g @openai/codex`) and authenticate with `codex login`, `CODEX_API_KEY`, `TALON_CODEX_KEY`, or `codexApiKey`. `OPENAI_API_KEY` is used only as a fallback when no Codex login exists.
+  - `agy` backend: install Google's Antigravity CLI so `agy` is on `PATH` (or set `agyBinary` / `AGY_BINARY`), then run `agy` **once interactively** on the host and complete the Google sign-in. There is no API key — headless runs reuse the cached OAuth credentials under `~/.gemini/antigravity-cli/`.
 
 ### Standalone binary
 
@@ -137,6 +138,7 @@ index.ts                    Composition root
   |   +-- kilo/             Kilo HTTP server backend (streaming via SSE)
   |   +-- opencode/         OpenCode HTTP server backend
   |   +-- codex/            Codex CLI backend (`@openai/codex-sdk`)
+  |   +-- agy/              Antigravity CLI backend (headless stream-json)
   |   +-- openai-agents/    OpenAI Agents SDK backend (Responses API)
   |
   +-- frontend/
@@ -157,7 +159,7 @@ index.ts                    Composition root
   +-- util/                 Config, logging, workspace, paths, time, runtime
 ```
 
-**Dependency rule:** `core/` imports nothing from `frontend/` or `backend/`. Frontends and backends depend on core types, never on each other. All five backends (Claude SDK, Kilo, OpenCode, Codex, OpenAI Agents) implement the same `Backend` capability interface from `core/agent-runtime/capabilities.ts`. Frontends mirror this: each implements the `Frontend` contract from `core/frontend-runtime/capabilities.ts` and self-registers in the frontend registry (identity + chat-id routing in a descriptor, lazy `create` in a per-frontend `factory.ts`) — see [docs/frontends.md](docs/frontends.md). Kilo and OpenCode additionally share the `remote-server/` infrastructure because they wrap forks of the same upstream HTTP agent server.
+**Dependency rule:** `core/` imports nothing from `frontend/` or `backend/`. Frontends and backends depend on core types, never on each other. All six backends (Claude SDK, Kilo, OpenCode, Codex, Antigravity, OpenAI Agents) implement the same `Backend` capability interface from `core/agent-runtime/capabilities.ts`. Frontends mirror this: each implements the `Frontend` contract from `core/frontend-runtime/capabilities.ts` and self-registers in the frontend registry (identity + chat-id routing in a descriptor, lazy `create` in a per-frontend `factory.ts`) — see [docs/frontends.md](docs/frontends.md). Kilo and OpenCode additionally share the `remote-server/` infrastructure because they wrap forks of the same upstream HTTP agent server.
 
 **Prompts:** everything the model reads at session start is assembled by `core/prompt/` from the files in `prompts/` — see [prompts/README.md](prompts/README.md) for the assembly order, file ownership (user-editable vs package-owned templates), and the per-backend delivery contracts.
 
@@ -221,9 +223,10 @@ Select via the `backend` field in `~/.talon/config.json`. All backends implement
 | Kilo       | `"kilo"`        | Local HTTP server via `@kilocode/sdk`           | SSE-streamed turns. Routes to many model providers via Kilo's auth.                                                                                                                                              |
 | OpenCode   | `"opencode"`    | Local HTTP server via `@opencode-ai/sdk`        | SSE-streamed turns; same MCP and session shape as Kilo (upstream fork).                                                                                                                                          |
 | Codex      | `"codex"`       | Per-turn subprocess via `@openai/codex-sdk`     | Requires the `codex` CLI from `@openai/codex` and Codex auth (`codex login`, `CODEX_API_KEY`, `TALON_CODEX_KEY`, or `codexApiKey`). MCP servers configured via TOML overrides at thread start. |
+| Antigravity | `"agy"` | Long-lived per-chat subprocess (the `agy` CLI, headless stream-json) | Requires the Antigravity CLI on `PATH` (or `agyBinary` / `AGY_BINARY`) and a one-time interactive `agy` sign-in — subscription OAuth, no API key. MCP servers written into `~/.gemini/config/mcp_config.json` before the child spawns. |
 | OpenAI Agents | `"openai-agents"` | In-process via `@openai/agents` | Responses API (or any OpenAI-compatible endpoint via `TALON_AGENTS_URL` / `openaiBaseUrl`). Persistent per-chat MCP bundles. |
 
-The Kilo and OpenCode backends share infrastructure (`backend/remote-server/`) since the upstream HTTP API is the same; each backend supplies its own SDK client, port, and delivery suffix. Codex is its own integration on top of the Codex CLI's JSONL event stream.
+The Kilo and OpenCode backends share infrastructure (`backend/remote-server/`) since the upstream HTTP API is the same; each backend supplies its own SDK client, port, and delivery suffix. Codex is its own integration on top of the Codex CLI's JSONL event stream, and Antigravity is its own on top of `agy`'s headless NDJSON protocol.
 
 ---
 
@@ -465,9 +468,10 @@ Config file: `~/.talon/config.json`
 | Field                      | Default      | Description                                                                                                             |
 | -------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
 | `frontend`                 | `"telegram"` | `"telegram"`, `"whatsapp"`, `"discord"`, `"teams"`, `"terminal"`, `"native"`, or an array ([Frontends](#frontends))      |
-| `backend`                  | `"claude"`   | `"claude"`, `"kilo"`, `"opencode"`, `"codex"`, or `"openai-agents"`                                                     |
+| `backend`                  | `"claude"`   | `"claude"`, `"kilo"`, `"opencode"`, `"codex"`, `"agy"`, or `"openai-agents"`                                            |
 | `botToken`                 | ---          | Telegram bot token                                                                                                      |
 | `model`                    | `"default"`  | Default model. Interpretation depends on the active backend.                                                            |
+| `agyBinary`                | ---          | Path to the Antigravity `agy` executable. `AGY_BINARY` overrides it. |
 | `codexApiKey`              | ---          | Codex-only OpenAI API key. Prefer this over `openaiApiKey` for Codex API-key auth. `codex login` takes precedence over shared `openaiApiKey`. |
 | `concurrency`              | `1`          | Max concurrent AI queries (1--20)                                                                                       |
 | `pulse`                    | `true`       | Periodic group engagement                                                                                               |

@@ -42,15 +42,15 @@ export interface AgyUsage {
 }
 
 /** `tool_info` on a tool step: the call, and its result once it lands. */
-export interface AgyToolInfo {
+interface AgyToolInfo {
   name?: string;
   parameters?: Record<string, unknown>;
   output?: string;
   error?: { type?: string; message?: string };
 }
 
-export type AgyStepState = "ACTIVE" | "DONE" | "ERROR";
-export type AgyStepType =
+type AgyStepState = "ACTIVE" | "DONE" | "ERROR";
+type AgyStepType =
   "user_input" | "agent_response" | "tool" | "checkpoint" | (string & {});
 
 export interface AgyStepUpdate {
@@ -65,7 +65,7 @@ export interface AgyStepUpdate {
   tool_info?: AgyToolInfo;
 }
 
-export interface AgyInit {
+interface AgyInit {
   cwd?: string;
   tools?: string[];
   permission_mode?: string;
@@ -74,7 +74,7 @@ export interface AgyInit {
 }
 
 /** Terminal states the CLI reports on `result.status`. */
-export type AgyResultStatus =
+type AgyResultStatus =
   | "SUCCESS"
   | "ERROR"
   | "CANCELED"

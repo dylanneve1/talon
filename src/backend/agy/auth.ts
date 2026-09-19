@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { readFileSync } from "node:fs";
 
 /** Where the CLI caches its OAuth token. Env override for tests. */
-export function agyTokenPath(override?: string): string {
+function agyTokenPath(override?: string): string {
   return (
     override ||
     process.env.TALON_AGY_TOKEN_FILE ||

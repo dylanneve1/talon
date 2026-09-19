@@ -15,6 +15,7 @@ etc. work identically against any backend.
 | `"kilo"`           | Kilo          | `@kilocode/sdk`                  | Local HTTP server (one process, SSE-streamed) |
 | `"opencode"`       | OpenCode      | `@opencode-ai/sdk`               | Local HTTP server (one process, SSE-streamed) |
 | `"codex"`          | Codex         | `@openai/codex-sdk`              | Per-turn subprocess (the `codex` CLI)         |
+| `"agy"`            | Antigravity   | none — the `agy` CLI direct      | Long-lived per-chat subprocess (headless NDJSON) |
 | `"openai-agents"`  | OpenAI Agents | `@openai/agents`                 | In-process (Responses API or any OpenAI-compatible endpoint) |
 
 ## Shared infrastructure
@@ -214,6 +215,75 @@ ChatGPT OAuth via `codex login`, or API-key billing via
 `OPENAI_API_KEY` / `openaiApiKey` values are last-resort fallbacks only;
 they do not override a `codex login` auth file, so other backends can
 keep OpenAI-compatible endpoint credentials without hijacking Codex.
+
+### Antigravity (agy)
+
+Google's Antigravity CLI, driven in
+[headless mode](https://antigravity.google/docs/cli/headless). There is
+no SDK: Talon speaks the CLI's stdin/stdout protocol directly.
+
+**Transport.** One long-lived child per chat, spawned lazily:
+
+```
+agy --input-format stream-json --output-format stream-json \
+    --dangerously-skip-permissions --print-timeout 0s \
+    --model <id> [--effort low|medium|high] \
+    [--conversation <id>] --add-dir <workspace>
+```
+
+Each turn writes one `{"event":"user","message":{"content":"…"}}` line
+to stdin and reads events off stdout until that turn's `result`. The
+process stays warm between turns (the CLI's docs call this
+"significantly faster than repeated `--continue` commands"), is
+idle-reaped after 10 minutes, and is killed on `/reset`, tool refresh
+and shutdown. Diagnostics — including the `authentication required`
+error — go to **stderr**, never stdout.
+
+**Turn termination.** A turn in a stream-json process cannot be
+cancelled in-flight, so when a delivery tool fires the terminator
+Talon kills the child; the next turn respawns it with
+`--conversation <id>` and the conversation continues. The kill is
+routed through the same clean-close path a Codex abort takes, so it
+settles as a completion rather than an error.
+
+**MCP.** agy reads its servers once at startup from the single shared
+file `~/.gemini/config/mcp_config.json` — which also holds the user's
+own entries. Talon therefore writes only keys prefixed
+`__talon__<scope>__`, through an atomic read-modify-write that
+preserves every foreign key byte-for-byte, and deletes the tool-schema
+snapshot directories (`~/.gemini/antigravity-cli/mcp/<name>/`) the CLI
+leaves behind on removal. Stale `__talon__*` entries from a previous
+boot are pruned at init. Both paths are injectable via
+`TALON_AGY_MCP_CONFIG` / `TALON_AGY_MCP_SNAPSHOT_DIR`.
+
+Every MCP tool reaches the model through ONE generic native tool,
+`call_mcp_tool`, with parameters `{ServerName, ToolName, Arguments}`.
+Talon unwraps it, so metrics, the terminator logic and the frontends
+all see `end_turn` / `send` / `check_time` like any other backend.
+
+**Models.** `agy models` prints `id<TAB>label`; the catalog is parsed
+at init and behind a 10-minute TTL. Effort is baked into most ids
+(`gemini-3.8-flash-high|medium|low`), so a requested level first
+re-points the model at the sibling slug carrying that suffix and is
+then also passed as `--effort` — see `backend/agy/effort.ts` for the
+precedence. Default model: `gemini-3.8-flash-high`.
+
+**System prompt.** No flag exists. The assembled prompt is prepended
+as a fenced block on the FIRST turn of a conversation only; resumed
+conversations inherit it (the same thing codex does).
+
+**Usage.** `result.usage` is cumulative over the session in
+stream-json mode, so a turn's cost is the delta against the previous
+result. `thinking_tokens` is a subset of `output_tokens`, never added
+to it. Cache reads are reported, cache writes are not — hence
+`cacheMetrics: "read"`. There is no plan-usage endpoint, so
+`getPlanUsage` returns `undefined`.
+
+**Auth.** Consumer Google OAuth, cached at
+`~/.gemini/antigravity-cli/antigravity-oauth-token` by a one-time
+interactive `agy` run. No API key exists; that subscription-backed
+path is the point of the backend. `docker/agy-test/` documents why
+this makes an unattended CI harness impossible.
 
 ## Adding a new backend
 

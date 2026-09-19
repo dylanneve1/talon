@@ -50,7 +50,7 @@ import { AGY_MCP_PREFIX } from "./constants.js";
 // ── Paths ───────────────────────────────────────────────────────────────────
 
 /** Where agy reads its MCP servers from. Env override for tests. */
-export function agyMcpConfigPath(override?: string): string {
+function agyMcpConfigPath(override?: string): string {
   return (
     override ||
     process.env.TALON_AGY_MCP_CONFIG ||
@@ -59,7 +59,7 @@ export function agyMcpConfigPath(override?: string): string {
 }
 
 /** Where agy snapshots each registered server's tool schemas. */
-export function agyMcpSnapshotDir(override?: string): string {
+function agyMcpSnapshotDir(override?: string): string {
   return (
     override ||
     process.env.TALON_AGY_MCP_SNAPSHOT_DIR ||
