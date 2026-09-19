@@ -46,6 +46,14 @@ async function pack(build: (w: TarWriter) => Promise<void>): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+/**
+ * Windows has no symlink privilege for an unelevated process, so symlink
+ * members are written and asserted only where they can exist. Archive
+ * paths themselves are always POSIX — that is the format, not the
+ * platform — so those assertions run everywhere.
+ */
+const POSIX = process.platform !== "win32";
+
 const LONG_NAME =
   "deeply/" + "n".repeat(90) + "/" + "m".repeat(90) + "/file.txt";
 
@@ -76,14 +84,16 @@ describe("tar round-trip", () => {
         big.length,
       );
       await w.addFile("empty", join(src, "empty"), 0o644, 1700000000, 0);
-      await w.addSymlink("link", "sub/a.txt", 0o777, 1700000000);
+      if (POSIX) await w.addSymlink("link", "sub/a.txt", 0o777, 1700000000);
       await w.addBuffer(LONG_NAME, Buffer.from("long path payload"));
-      await w.addSymlink(
-        "longlink",
-        "sub/" + "z".repeat(120),
-        0o777,
-        1700000000,
-      );
+      if (POSIX) {
+        await w.addSymlink(
+          "longlink",
+          "sub/" + "z".repeat(120),
+          0o777,
+          1700000000,
+        );
+      }
     });
 
     const dest = tmp("tar-dest");
@@ -96,10 +106,14 @@ describe("tar round-trip", () => {
     expect(readFileSync(join(dest, LONG_NAME), "utf8")).toBe(
       "long path payload",
     );
-    expect(lstatSync(join(dest, "link")).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(join(dest, "link"))).toBe("sub/a.txt");
-    expect(readlinkSync(join(dest, "longlink"))).toBe("sub/" + "z".repeat(120));
-    expect(lstatSync(join(dest, "sub", "a.txt")).mode & 0o777).toBe(0o600);
+    if (POSIX) {
+      expect(lstatSync(join(dest, "link")).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(join(dest, "link"))).toBe("sub/a.txt");
+      expect(readlinkSync(join(dest, "longlink"))).toBe(
+        "sub/" + "z".repeat(120),
+      );
+      expect(lstatSync(join(dest, "sub", "a.txt")).mode & 0o777).toBe(0o600);
+    }
   });
 
   it("writes an archive GNU tar can list", async () => {

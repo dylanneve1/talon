@@ -16,6 +16,14 @@
 import { inTransaction } from "../db.js";
 import * as repo from "./repo.js";
 
+/**
+ * Re-exported so the backup subsystem can ask SQLite for a consistent
+ * copy of itself without importing the connection module: the database
+ * handle stays inside storage/ (`db-handle-stays-in-storage`), and a
+ * snapshot of the database is a storage concern with a storage API.
+ */
+export { snapshotDatabase } from "../db.js";
+
 export type { BackupRecord, BackupRemoteRecord } from "./repo.js";
 import type { BackupRecord, BackupRemoteRecord } from "./repo.js";
 

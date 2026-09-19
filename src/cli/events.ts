@@ -44,6 +44,20 @@ function describe(event: TalonEvent): string {
       return `${event.agentId} "${event.label}" → ${event.state} (${event.durationMs}ms)`;
     case "agent.message":
       return `${event.from} → ${event.to} (${event.kind})`;
+    case "backup.started":
+      return `${event.kind} (${event.trigger})`;
+    case "backup.completed":
+      return (
+        `${event.snapshotId} ${event.kind} ${event.parts} part(s) ` +
+        `${(event.sizeBytes / 1024 / 1024).toFixed(1)}MB (${event.durationMs}ms)`
+      );
+    case "backup.failed":
+      return `${event.trigger} failed (streak ${event.consecutiveFailures}): ${event.error}`;
+    case "backup.uploaded":
+      return (
+        `${event.snapshotId} → ${event.targetId} ` +
+        `${(event.bytes / 1024 / 1024).toFixed(1)}MB${event.deduplicated ? " (deduplicated)" : ""}`
+      );
   }
 }
 

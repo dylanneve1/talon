@@ -15,6 +15,9 @@
  *     `agent.spawned` when an isolated sub-agent run starts, `agent.settled`
  *     when it reaches a terminal state, `agent.message` when a note or a
  *     report crosses between an agent and its parent.
+ *   - `backup.*` — the snapshot lifecycle, published by `core/backup`:
+ *     `backup.started` / `backup.completed` / `backup.failed` per run, and
+ *     `backup.uploaded` once per target a snapshot reaches.
  *   - `turn.*` — the chat-domain moments inside a turn that other
  *     subsystems key off: `turn.started` fires once the warp is bound and
  *     the backend is about to run (never for a no-model refusal);
@@ -91,6 +94,43 @@ interface AgentMessageEvent {
   readonly kind: "message" | "result";
 }
 
+/** A snapshot run began. `trigger` is what asked for it, never content. */
+interface BackupStartedEvent {
+  readonly type: "backup.started";
+  readonly kind: "backup" | "checkpoint";
+  /** "schedule", "manual", "pre-update", "pre-restore", … */
+  readonly trigger: string;
+}
+
+/** A snapshot was written and indexed. */
+interface BackupCompletedEvent {
+  readonly type: "backup.completed";
+  /** Not `id`: the bus stamps every published event with its own numeric id. */
+  readonly snapshotId: string;
+  readonly kind: "backup" | "checkpoint";
+  readonly sizeBytes: number;
+  readonly parts: number;
+  readonly durationMs: number;
+}
+
+/** A snapshot run failed. `error` is the reason, never a path's contents. */
+interface BackupFailedEvent {
+  readonly type: "backup.failed";
+  readonly trigger: string;
+  readonly error: string;
+  readonly consecutiveFailures: number;
+}
+
+/** One snapshot reached one remote target. */
+interface BackupUploadedEvent {
+  readonly type: "backup.uploaded";
+  readonly snapshotId: string;
+  readonly targetId: string;
+  readonly bytes: number;
+  /** True when the target already held every part (content-addressed reuse). */
+  readonly deduplicated: boolean;
+}
+
 export type TalonEvent =
   | TaskStartedEvent
   | TaskSettledEvent
@@ -98,7 +138,11 @@ export type TalonEvent =
   | TurnCompletedEvent
   | AgentSpawnedEvent
   | AgentSettledEvent
-  | AgentMessageEvent;
+  | AgentMessageEvent
+  | BackupStartedEvent
+  | BackupCompletedEvent
+  | BackupFailedEvent
+  | BackupUploadedEvent;
 
 export type TalonEventType = TalonEvent["type"];
 

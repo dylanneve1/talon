@@ -22,6 +22,7 @@
 import { lstat, readdir, readlink } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
+import type { BackupSettings } from "./types.js";
 
 /**
  * The workspace is mostly machine-generated bulk (uploads, media, build
@@ -39,6 +40,29 @@ export const DEFAULT_WORKSPACE_INCLUDE: readonly string[] = [
   "secrets/**",
   "stickers/**",
 ];
+
+/**
+ * The policy defaults — the single source of truth the zod schema in
+ * core/config defers to, so `config.backup` and an absent `config.backup`
+ * mean exactly the same thing.
+ */
+export const DEFAULT_BACKUP_SETTINGS = {
+  enabled: true,
+  intervalHours: 6,
+  keepLocal: 12,
+  keepRemote: 30,
+  includePalace: true,
+  workspaceInclude: DEFAULT_WORKSPACE_INCLUDE,
+  extraPaths: [] as readonly string[],
+  checkpointBeforeUpdate: true,
+} as const;
+
+/** Fill in whatever `config.backup` left out (or was entirely absent). */
+export function resolveBackupSettings(
+  partial?: Partial<BackupSettings>,
+): BackupSettings {
+  return { ...DEFAULT_BACKUP_SETTINGS, ...partial };
+}
 
 /** Roots under ~/.talon that a snapshot always carries, in archive order. */
 export const HOME_INCLUDES: readonly string[] = [

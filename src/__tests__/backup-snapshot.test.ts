@@ -182,9 +182,15 @@ describe("buildSnapshot", () => {
     expect(reused?.contentAddressed).toBe(true);
     expect(reused?.sha256).toBe(palacePart!.sha256);
     // Hard-linked, not recompressed: same inode, one copy of the bytes.
-    const a = statSync(join(snapshotDir(first.id, home), palacePart!.name));
-    const b = statSync(join(snapshotDir(second.id, home), reused!.name));
-    expect(b.ino).toBe(a.ino);
+    // Windows reports a file index rather than an inode and the link may
+    // fall back to a copy, so the identity check is POSIX-only — the reuse
+    // itself (same name, same digest, contentAddressed) is asserted above
+    // on every platform.
+    if (process.platform !== "win32") {
+      const a = statSync(join(snapshotDir(first.id, home), palacePart!.name));
+      const b = statSync(join(snapshotDir(second.id, home), reused!.name));
+      expect(b.ino).toBe(a.ino);
+    }
 
     // A changed palace gets a new fingerprint and a new part.
     writeFileSync(join(home, "workspace", "palace", "node-2.json"), "more");

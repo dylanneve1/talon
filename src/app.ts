@@ -27,6 +27,7 @@ import {
 } from "./core/background/cron/scheduler.js";
 import { shutdownTriggers } from "./core/background/triggers/index.js";
 import { shutdownAgents } from "./core/agents/index.js";
+import { stopBackupScheduler } from "./core/backup/index.js";
 import { pruneSettledTriggers } from "./storage/triggers.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import {
@@ -77,10 +78,47 @@ import {
 // the successor will run is importable at all. Nothing has booted yet,
 // so this is both the strongest and the last harmless place to say so.
 // See core/update/self-update.ts for what a failure does instead.
+//
+// This stays ahead of the staged restore below: the smoke run must not
+// touch state, and a restore is the single most destructive thing this
+// file does.
 if (process.argv.includes(BOOT_SMOKE_FLAG)) {
   console.log(BOOT_SMOKE_OK);
   process.exit(0);
 }
+
+/**
+ * A `/backup restore <id>` from chat writes ~/.talon/restore-pending.json
+ * and restarts. It is applied HERE, before anything else: every store
+ * below opens the database, and the database is one of the files this is
+ * about to replace. The pre-restore checkpoint inside needs the current
+ * database, so the handle is closed between the two — which is why the
+ * composition root, and not core/backup, owns that call.
+ *
+ * Never throws: a failed restore still boots the daemon (with the reason
+ * in the log and the request deleted, so the next boot is normal).
+ */
+async function applyStagedRestore(): Promise<string | null> {
+  const { applyPendingRestore, readRestorePending } =
+    await import("./core/backup/index.js");
+  if (!(await readRestorePending())) return null;
+  const { loadConfig } = await import("./core/config/index.js");
+  const { resolveBackupSettings } = await import("./core/backup/plan.js");
+  const { closeDatabase } = await import("./storage/db.js");
+  const report = await applyPendingRestore({
+    settings: resolveBackupSettings(loadConfig().backup),
+    beforeApply: closeDatabase,
+  });
+  if (!report) return null;
+  return (
+    `♻️ Restored snapshot ${report.id}` +
+    (report.checkpointId
+      ? ` (previous state saved as checkpoint ${report.checkpointId})`
+      : "")
+  );
+}
+
+const restoreReport = await bootPhase("staged restore", applyStagedRestore);
 
 const { config } = await bootPhase("bootstrap", () => bootstrap());
 
@@ -230,6 +268,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
     });
   }
   await shutdownStep("fuse layer", unmountNamespaceFs);
+  await shutdownStep("backup scheduler", stopBackupScheduler);
   await shutdownStep("pulse timer", stopPulseTimer);
   await shutdownStep("heartbeat", async () => {
     stopHeartbeatTimer();
@@ -345,6 +384,14 @@ async function main(): Promise<void> {
   // Phase 0 accounting (docs/ts-migration-plan.md): the boot is over the
   // moment the frontends are listening, so the totals are folded into the
   // metrics store here, from the same uptime figure the log line prints.
+  // A restore applied at boot happened before any frontend existed, so the
+  // operator hears about it here, on the first channel that can carry it.
+  if (restoreReport) {
+    const { notifyAdmin } =
+      await import("./core/frontend-runtime/admin-notify.js");
+    await notifyAdmin(restoreReport);
+  }
+
   const bootMs = Math.round(process.uptime() * 1000);
   recordBootMetrics(bootMs);
   startResourceSampler();

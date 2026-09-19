@@ -6,6 +6,7 @@ import { hardenTalonPermissions } from "./harden.js";
 import { setTimezone } from "../../util/time.js";
 import { BACKEND_IDS } from "../agent-runtime/model-ref.js";
 import { REASONING_LEVEL_ORDER } from "../models/reasoning-levels.js";
+import { DEFAULT_BACKUP_SETTINGS } from "../backup/plan.js";
 import {
   assembleSystemPrompt,
   joinSystemPromptParts,
@@ -457,6 +458,57 @@ const configSchema = z.object({
         .max(3_600_000)
         .default(15 * 60 * 1000),
     })
+    .optional(),
+  /**
+   * Backups & checkpoints (docs/backups.md). Talon's only safety net, so
+   * it is on by default: every `intervalHours` it writes a snapshot of
+   * the identity, state, database and memory under ~/.talon/backups/,
+   * keeps `keepLocal` of them, and uploads to whatever remote targets
+   * are registered (`targets: []` keeps everything local).
+   *
+   *   - `workspaceInclude` — the workspace is mostly bulk that can be
+   *     refetched; this is the subset that IS the agent.
+   *   - `extraPaths` — absolute or `~/…` paths outside ~/.talon worth
+   *     carrying along (a Claude Code memory directory, say).
+   *   - `checkpointBeforeUpdate` — pinned checkpoint before `/update`,
+   *     so a bad update is one restore away from undone.
+   *   - `notifyChatId` — where failures are reported; falls back to the
+   *     admin chat.
+   */
+  backup: z
+    .object({
+      enabled: z.boolean().default(DEFAULT_BACKUP_SETTINGS.enabled),
+      intervalHours: z
+        .number()
+        .int()
+        .min(1)
+        .max(168)
+        .default(DEFAULT_BACKUP_SETTINGS.intervalHours),
+      keepLocal: z
+        .number()
+        .int()
+        .min(1)
+        .max(1000)
+        .default(DEFAULT_BACKUP_SETTINGS.keepLocal),
+      keepRemote: z
+        .number()
+        .int()
+        .min(1)
+        .max(1000)
+        .default(DEFAULT_BACKUP_SETTINGS.keepRemote),
+      includePalace: z.boolean().default(DEFAULT_BACKUP_SETTINGS.includePalace),
+      workspaceInclude: z
+        .array(z.string().min(1))
+        .default([...DEFAULT_BACKUP_SETTINGS.workspaceInclude]),
+      extraPaths: z.array(z.string().min(1)).default([]),
+      /** Unset = every registered target; `[]` = local only. */
+      targets: z.array(z.string().min(1)).optional(),
+      checkpointBeforeUpdate: z
+        .boolean()
+        .default(DEFAULT_BACKUP_SETTINGS.checkpointBeforeUpdate),
+      notifyChatId: z.string().optional(),
+    })
+    .strict()
     .optional(),
   braveApiKey: z.string().optional(),
   /**

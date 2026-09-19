@@ -1,0 +1,410 @@
+/**
+ * Restore — turning a snapshot back into a running Talon.
+ *
+ * The rules that make this safe to run on a live home directory:
+ *
+ *   1. Verify before you touch anything. Every part's sha256 is checked
+ *      against the manifest first; a part that fails is a stopped
+ *      restore, not a half-applied one.
+ *   2. Stage, then swap. The archive is extracted into a staging
+ *      directory beside the snapshot (same filesystem, so the swap is
+ *      renames), and only then do the live paths change.
+ *   3. Take a checkpoint first. A pinned `pre-restore <id>` checkpoint
+ *      of the current state is made before anything is replaced, so
+ *      "restore the wrong snapshot" is itself undoable.
+ *   4. Replace only what the snapshot covers. Each include root is
+ *      brought to exactly the snapshot's state — files the rules would
+ *      have captured are removed, files the rules deliberately skip
+ *      (traces, the live WAL, uploads) are left alone.
+ *
+ * The daemon must not be running: the CLI refuses while it is, and the
+ * chat path stages a request that the next boot applies BEFORE the
+ * database opens (see `applyPendingRestore`).
+ */
+
+import { createReadStream } from "node:fs";
+import {
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  rmdir,
+  stat,
+  unlink,
+  copyFile,
+} from "node:fs/promises";
+import { dirname, join } from "node:path";
+import writeFileAtomic from "write-file-atomic";
+import { dirs } from "../../util/paths.js";
+import { log, logWarn } from "../../util/log.js";
+import { TalonError } from "../errors.js";
+import { sha256File } from "./archive/digest.js";
+import { extractTar } from "./archive/tar.js";
+import { createDecompressor } from "./archive/zstd.js";
+import { collectTree } from "./plan.js";
+import { buildSnapshot } from "./snapshot.js";
+import { isSnapshotId, partPath, readManifest, snapshotDir } from "./store.js";
+import type { BackupTarget } from "./targets.js";
+import type { BackupSettings, Manifest } from "./types.js";
+
+/** A staged request older than this is stale and ignored. */
+export const RESTORE_PENDING_MAX_AGE_MS = 10 * 60_000;
+const DB_MEMBER = "db/talon.db";
+
+export type RestorePending = {
+  id: string;
+  targetId?: string;
+  /** Epoch ms. */
+  requestedAt: number;
+  /** Chat key that asked, so the boot can report back. */
+  requestedBy?: string;
+};
+
+export type RestoreReport = {
+  id: string;
+  checkpointId?: string;
+  /** Include root → files written. */
+  written: Record<string, number>;
+  removed: number;
+  databaseReplaced: boolean;
+};
+
+export function restorePendingPath(home: string = dirs.root): string {
+  return join(home, "restore-pending.json");
+}
+
+// ── The staged request ──────────────────────────────────────────────────────
+
+export async function writeRestorePending(
+  request: RestorePending,
+  home: string = dirs.root,
+): Promise<void> {
+  await mkdir(home, { recursive: true });
+  await writeFileAtomic(
+    restorePendingPath(home),
+    JSON.stringify(request) + "\n",
+  );
+}
+
+export async function clearRestorePending(
+  home: string = dirs.root,
+): Promise<void> {
+  await rm(restorePendingPath(home), { force: true });
+}
+
+/**
+ * Read the staged request, if there is a usable one. A malformed file, a
+ * bad id or a request older than ten minutes is deleted and ignored — a
+ * restore that fires days later because a file was left behind would be
+ * the most destructive bug this subsystem could have.
+ */
+export async function readRestorePending(
+  home: string = dirs.root,
+  now: number = Date.now(),
+): Promise<RestorePending | null> {
+  let parsed: RestorePending;
+  try {
+    parsed = JSON.parse(
+      await readFile(restorePendingPath(home), "utf8"),
+    ) as RestorePending;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      logWarn(
+        "backup",
+        `Unreadable restore-pending.json, ignoring: ${String(err)}`,
+      );
+      await clearRestorePending(home);
+    }
+    return null;
+  }
+  const age = now - (parsed.requestedAt ?? 0);
+  if (!isSnapshotId(parsed.id ?? "")) {
+    logWarn(
+      "backup",
+      "restore-pending.json names no valid snapshot — discarded",
+    );
+    await clearRestorePending(home);
+    return null;
+  }
+  if (
+    !Number.isFinite(parsed.requestedAt) ||
+    age > RESTORE_PENDING_MAX_AGE_MS ||
+    age < 0
+  ) {
+    logWarn(
+      "backup",
+      `restore-pending.json is stale (${Math.round(age / 1000)}s old) — discarded`,
+    );
+    await clearRestorePending(home);
+    return null;
+  }
+  return parsed;
+}
+
+// ── Parts ───────────────────────────────────────────────────────────────────
+
+/** Fetch any part that is not on local disk from the given target. */
+async function ensureParts(
+  manifest: Manifest,
+  home: string,
+  target?: BackupTarget,
+): Promise<void> {
+  for (const part of manifest.parts) {
+    const path = partPath(manifest.id, part.name, home);
+    try {
+      await stat(path);
+      continue;
+    } catch {
+      /* not here — fall through to the download */
+    }
+    if (!target) {
+      throw new TalonError(
+        `Part ${part.name} of ${manifest.id} is missing locally and no --from target was given`,
+        { reason: "bad_request" },
+      );
+    }
+    log("backup", `Downloading ${part.name} from ${target.id}…`);
+    await mkdir(dirname(path), { recursive: true });
+    await target.download(manifest.id, part.name, path);
+  }
+}
+
+/** Check every part against the manifest. Throws on the first mismatch. */
+export async function verifyParts(
+  manifest: Manifest,
+  home: string,
+): Promise<void> {
+  for (const part of manifest.parts) {
+    const path = partPath(manifest.id, part.name, home);
+    const actual = await sha256File(path);
+    if (actual !== part.sha256) {
+      throw new TalonError(
+        `Part ${part.name} of ${manifest.id} is corrupt (sha256 mismatch) — restore aborted`,
+        { reason: "bad_request" },
+      );
+    }
+  }
+}
+
+/** Unpack every part into one staging tree. */
+async function extractParts(
+  manifest: Manifest,
+  home: string,
+  staging: string,
+): Promise<void> {
+  await rm(staging, { recursive: true, force: true });
+  await mkdir(staging, { recursive: true });
+  for (const part of manifest.parts) {
+    const source = createReadStream(partPath(manifest.id, part.name, home));
+    await extractTar(source.pipe(createDecompressor()), staging);
+  }
+}
+
+// ── Applying ────────────────────────────────────────────────────────────────
+
+/** Where an archive path lands on this machine. */
+export function destinationFor(
+  archivePath: string,
+  home: string,
+  extras: readonly { n: number; source: string }[],
+): string | null {
+  const segments = archivePath.split("/");
+  if (segments[0] === "extra") {
+    const extra = extras.find((entry) => String(entry.n) === segments[1]);
+    if (!extra) return null; // an extra path this machine has no mapping for
+    return join(extra.source, ...segments.slice(2));
+  }
+  if (archivePath === DB_MEMBER) return join(home, "data", "talon.db");
+  return join(home, ...segments);
+}
+
+/**
+ * Bring one include root to exactly the snapshot's state: remove what the
+ * snapshot rules would have captured, keep what they deliberately skip.
+ * Returns how many live files were removed.
+ */
+async function clearCovered(
+  destRoot: string,
+  archiveRoot: string,
+): Promise<number> {
+  const existing = await collectTree(destRoot, archiveRoot);
+  let removed = 0;
+  for (const entry of [...existing].reverse()) {
+    try {
+      if (entry.type === "dir") await rmdir(entry.source).catch(() => {});
+      else {
+        await unlink(entry.source);
+        removed += 1;
+      }
+    } catch (err) {
+      logWarn("backup", `Could not remove ${entry.source}: ${String(err)}`);
+    }
+  }
+  return removed;
+}
+
+/** Move one staged file into place, falling back to a copy across devices. */
+async function placeFile(from: string, to: string): Promise<void> {
+  await mkdir(dirname(to), { recursive: true });
+  try {
+    await rename(from, to);
+  } catch {
+    await copyFile(from, to);
+  }
+}
+
+/**
+ * Swap the staged tree in. Include roots are handled one at a time so a
+ * report can say what changed, and the database is written last: it is
+ * the one file whose sidecars must go with it.
+ */
+async function applyStaged(
+  manifest: Manifest,
+  staging: string,
+  home: string,
+): Promise<RestoreReport> {
+  const extras = manifest.extras ?? [];
+  const report: RestoreReport = {
+    id: manifest.id,
+    written: {},
+    removed: 0,
+    databaseReplaced: false,
+  };
+  for (const root of manifest.includes) {
+    if (root === DB_MEMBER) continue;
+    const stagedRoot = join(staging, ...root.split("/"));
+    const staged = await collectTree(stagedRoot, root);
+    if (staged.length === 0) continue;
+    const destRoot = destinationFor(root, home, extras);
+    if (!destRoot) {
+      logWarn("backup", `No destination for ${root} on this machine — skipped`);
+      continue;
+    }
+    report.removed += await clearCovered(destRoot, root);
+    let written = 0;
+    for (const entry of staged) {
+      const dest = destinationFor(entry.archivePath, home, extras);
+      if (!dest) continue;
+      if (entry.type === "dir")
+        await mkdir(dest, { recursive: true, mode: entry.mode });
+      else {
+        await placeFile(entry.source, dest);
+        written += 1;
+      }
+    }
+    report.written[root] = written;
+  }
+
+  const stagedDb = join(staging, "db", "talon.db");
+  try {
+    await stat(stagedDb);
+    const dbPath = join(home, "data", "talon.db");
+    // The sidecars describe the OLD database; leaving them beside the new
+    // file is how a restored database comes up as the one we replaced.
+    await rm(`${dbPath}-wal`, { force: true });
+    await rm(`${dbPath}-shm`, { force: true });
+    await placeFile(stagedDb, dbPath);
+    report.databaseReplaced = true;
+  } catch {
+    logWarn(
+      "backup",
+      "Snapshot carries no database copy — leaving the live one in place",
+    );
+  }
+  return report;
+}
+
+// ── The operation ───────────────────────────────────────────────────────────
+
+export type RestoreOptions = {
+  id: string;
+  settings: BackupSettings;
+  home?: string;
+  /** Where to fetch parts this machine does not have. */
+  target?: BackupTarget;
+  /**
+   * Called after the pre-restore checkpoint and before anything is
+   * replaced. The composition root passes `closeDatabase` here: the
+   * handle must be shut before its file is swapped underneath it.
+   */
+  beforeApply?: () => void | Promise<void>;
+  /** Skip the automatic pre-restore checkpoint (it has already been taken). */
+  skipCheckpoint?: boolean;
+};
+
+/**
+ * Restore a snapshot over this home directory. The daemon must already be
+ * stopped — this does not check, because the two callers check in their
+ * own way (the CLI refuses, the boot path runs before anything starts).
+ */
+export async function restoreSnapshot(
+  options: RestoreOptions,
+): Promise<RestoreReport> {
+  const home = options.home ?? dirs.root;
+  const manifest = await readManifest(options.id, home);
+  if (!manifest) {
+    throw new TalonError(`No snapshot ${options.id} on this machine`, {
+      reason: "bad_request",
+    });
+  }
+  await ensureParts(manifest, home, options.target);
+  await verifyParts(manifest, home);
+
+  let checkpointId: string | undefined;
+  if (!options.skipCheckpoint) {
+    const checkpoint = await buildSnapshot({
+      kind: "checkpoint",
+      label: `pre-restore ${manifest.id}`,
+      pinned: true,
+      settings: options.settings,
+      home,
+    });
+    checkpointId = checkpoint.id;
+    log("backup", `Pre-restore checkpoint ${checkpointId} taken`);
+  }
+
+  const staging = join(snapshotDir(manifest.id, home), "restore-staging");
+  await extractParts(manifest, home, staging);
+  await options.beforeApply?.();
+  const report = await applyStaged(manifest, staging, home);
+  report.checkpointId = checkpointId;
+  await rm(staging, { recursive: true, force: true });
+  log(
+    "backup",
+    `Restored ${manifest.id}: ${Object.values(report.written).reduce((a, b) => a + b, 0)} ` +
+      `file(s) written, ${report.removed} removed` +
+      (report.databaseReplaced ? ", database replaced" : ""),
+  );
+  return report;
+}
+
+/**
+ * The boot hook: apply a restore staged from chat, before the database is
+ * opened. Returns the report when one ran, null otherwise. Never throws —
+ * a failed restore must still let the daemon boot, with the failure loud
+ * in the log and the request deleted so the next boot is normal.
+ */
+export async function applyPendingRestore(options: {
+  settings: BackupSettings;
+  home?: string;
+  beforeApply?: () => void | Promise<void>;
+}): Promise<(RestoreReport & { requestedBy?: string }) | null> {
+  const home = options.home ?? dirs.root;
+  const pending = await readRestorePending(home);
+  if (!pending) return null;
+  log("backup", `Applying staged restore of ${pending.id} requested at boot`);
+  try {
+    const report = await restoreSnapshot({
+      id: pending.id,
+      settings: options.settings,
+      home,
+      beforeApply: options.beforeApply,
+    });
+    await clearRestorePending(home);
+    return { ...report, requestedBy: pending.requestedBy };
+  } catch (err) {
+    logWarn("backup", `Staged restore of ${pending.id} failed: ${String(err)}`);
+    await clearRestorePending(home);
+    return null;
+  }
+}

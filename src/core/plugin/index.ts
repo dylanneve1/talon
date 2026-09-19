@@ -23,5 +23,9 @@ export {
   getPluginPromptAdditions,
 } from "./loader.js";
 export { loadBuiltinPlugins, reloadPlugins } from "./builtins.js";
-export { handlePluginAction } from "./actions.js";
+export {
+  handlePluginAction,
+  handlePluginActionIn,
+  pluginsWithActions,
+} from "./actions.js";
 export { getPluginMcpServers } from "./mcp.js";

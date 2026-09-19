@@ -27,7 +27,7 @@ import { pipeline } from "node:stream/promises";
 import { dirs } from "../../util/paths.js";
 import { log, logWarn } from "../../util/log.js";
 import { talonVersion } from "../../util/version.js";
-import { snapshotDatabase } from "../../storage/db.js";
+import { snapshotDatabase } from "../../storage/backup/index.js";
 import { TalonError } from "../errors.js";
 import {
   Sha256Tap,
