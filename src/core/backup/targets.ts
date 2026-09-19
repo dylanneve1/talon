@@ -77,8 +77,17 @@ export type TargetDeps = {
   dispatch: TargetDispatch;
 };
 
+/**
+ * Both members are wrapped rather than referenced directly, so the plugin
+ * module's exports are read when a target is actually used and not while
+ * this module is being evaluated. Backup reaches a lot of the tree — via
+ * the scheduler, the gateway imports it transitively — so a module-scope
+ * read here means every test that partially mocks `core/plugin` has to
+ * know to include these two exports or fail at import time, nowhere near
+ * anything it was testing.
+ */
 const defaultDeps: TargetDeps = {
-  plugins: pluginsWithActions,
+  plugins: () => pluginsWithActions(),
   dispatch: (plugin, body) => handlePluginActionIn(plugin, body, SYSTEM_CHAT),
 };
 
