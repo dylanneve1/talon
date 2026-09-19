@@ -14,7 +14,10 @@
  * starts this watcher detached, sharing the successor's respawn.log fd.
  * It polls identity-verified discovery (./discovery.ts — `app: "talon"`,
  * `mode: "daemon"`, matching pid) until the successor answers /health or
- * the window closes, and if it never does, it starts the daemon exactly
+ * the window closes. Only a /health answer counts: discovery will also
+ * report a daemon whose pid is merely alive, and "the process exists" is
+ * exactly the claim that was false for 20 seconds on 2026-09-18. If the
+ * successor never serves, the watcher starts the daemon exactly
  * the way `talon start` does (./control.ts — same spawn, same boot
  * verification) and says why in the log. The watcher is tiny on purpose:
  * `src/index.ts` dispatches its subcommand before the app graph loads,
@@ -64,8 +67,13 @@ function defaultSleep(ms: number): Promise<void> {
 /** Why the wait ended without a live daemon. */
 type WaitFailure = "successor-exited" | "window-expired";
 
+/** Discovery found a process; only a /health answer proves it serves. */
+function isServing(instance: RunningInstance | null): boolean {
+  return instance?.health !== undefined;
+}
+
 /**
- * Poll until an identity-verified daemon answers, the successor process
+ * Poll until a serving daemon answers, the successor process
  * disappears, or the window closes. A daemon that isn't our child still
  * counts: the goal is a live Talon, not a particular pid.
  */
@@ -80,7 +88,7 @@ async function awaitDaemon(
 
   while (Date.now() < deadline) {
     const instance = await find(opts.pidfilePath);
-    if (instance) return instance;
+    if (instance && isServing(instance)) return instance;
     if (!alive(opts.childPid)) return "successor-exited";
     await sleep(pollMs);
   }
@@ -107,6 +115,16 @@ function toOutcome(started: StartOutcome, why: string): HandoffOutcome {
   }
   if (started.reason === "already-running") {
     const inst = started.instance;
+    // `talon start` refuses while a pid is alive — right, since a second
+    // daemon would fight the first for Telegram's getUpdates. But an
+    // alive pid that has never served /health is the failure, not the
+    // recovery, so it is reported as one.
+    if (!isServing(inst)) {
+      return {
+        ok: false,
+        reason: `${why}; pid ${inst.pid} is alive but not serving — kill it and run \`talon start\``,
+      };
+    }
     return { ok: true, via: "restart", pid: inst.pid, port: inst.port };
   }
   return { ok: false, reason: `${why}; restart ${describeStart(started)}` };

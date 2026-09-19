@@ -146,6 +146,37 @@ describe("watchHandoff", () => {
     expect(outcome).toMatchObject({ ok: true, via: "restart", pid: 888 });
   });
 
+  it("does not mistake an alive pid for a daemon that serves", async () => {
+    // Discovery reports a live pid that never answered /health — the
+    // 2026-09-18 shape. `talon start` rightly refuses to spawn a second
+    // daemon next to it, and that refusal is the failure, not a recovery.
+    const outcome = await watchHandoff({
+      childPid: 5150,
+      pkgRoot: "/repo",
+      windowMs: 30,
+      pollMs: 10,
+      find: async () => ({
+        pid: 5150,
+        source: "pidfile-unverified",
+        pidfileStale: false,
+      }),
+      alive: () => true,
+      start: async () => ({
+        ok: false,
+        reason: "already-running",
+        instance: {
+          pid: 5150,
+          source: "pidfile-unverified",
+          pidfileStale: false,
+        },
+      }),
+    });
+    expect(outcome.ok).toBe(false);
+    expect((outcome as { reason: string }).reason).toContain(
+      "alive but not serving",
+    );
+  });
+
   it("treats an already-running daemon as a successful handoff", async () => {
     const outcome = await watchHandoff({
       childPid: 5150,
@@ -160,6 +191,7 @@ describe("watchHandoff", () => {
         instance: {
           pid: 4242,
           port: 19876,
+          health: { app: "talon", mode: "daemon", pid: 4242 },
           source: "pidfile",
           pidfileStale: false,
         },
