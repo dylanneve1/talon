@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.3.0](https://github.com/dylanneve1/talon/compare/v5.2.2...v5.3.0) (2026-09-19)
+
+
+### Features
+
+* **backup:** backups, checkpoints and remote targets ([#993](https://github.com/dylanneve1/talon/issues/993)) ([dbc5b0b](https://github.com/dylanneve1/talon/commit/dbc5b0b05de658a78f2c0431168272a00ae8bbdb))
+
 ## [5.2.2](https://github.com/dylanneve1/talon/compare/v5.2.1...v5.2.2) (2026-09-19)
 
 
