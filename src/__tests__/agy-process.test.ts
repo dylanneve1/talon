@@ -109,6 +109,14 @@ const spec = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/**
+ * Sink the MCP-config env points at between tests, so nothing can ever
+ * fall back to the real `~/.gemini/config/mcp_config.json`.
+ */
+const SINK = mkdtempSync(join(tmpdir(), "agy-sink-"));
+process.env.TALON_AGY_MCP_CONFIG = join(SINK, "mcp_config.json");
+process.env.TALON_AGY_MCP_SNAPSHOT_DIR = join(SINK, "snapshots");
+
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "agy-proc-"));
   mkdirSync(join(home, "config"), { recursive: true });
@@ -138,9 +146,13 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Never unset the injection env: a late async write (a retry ladder
+  // resolving after the test returned) would otherwise land in the
+  // developer's REAL ~/.gemini/config/mcp_config.json. Point it at a
+  // per-file sink instead.
+  process.env.TALON_AGY_MCP_CONFIG = join(SINK, "mcp_config.json");
+  process.env.TALON_AGY_MCP_SNAPSHOT_DIR = join(SINK, "snapshots");
   killAllChildren("test");
-  delete process.env.TALON_AGY_MCP_CONFIG;
-  delete process.env.TALON_AGY_MCP_SNAPSHOT_DIR;
   rmSync(home, { recursive: true, force: true });
 });
 
