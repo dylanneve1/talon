@@ -84,6 +84,9 @@ vi.mock("../core/engine/backend-controller/index.js", () => ({
   getBackendForChat: mockGetBackendForChat,
   getBackendIdForChat: mockGetBackendIdForChat,
   getAvailableBackends: mockGetAvailableBackends,
+  // The router's usage snapshot reads the pool through these two.
+  listAvailableBackends: mockGetAvailableBackends,
+  getPoolConfig: () => null,
   getPooledBackend: mockGetPooledBackend,
   acquireBackendInstance: mockAcquireBackendInstance,
   isModelValidForBackend: mockIsModelValidForBackend,
@@ -2351,13 +2354,27 @@ describe("per-job model override + discovery actions", () => {
         { id: "codex", label: "Codex" },
       ]);
       mockGetBackendIdForChat.mockReturnValue("codex");
+      mockGetPooledBackend.mockReturnValue({ background: {} });
       const result = await handleSharedAction({ action: "list_backends" }, 42);
       expect(result?.ok).toBe(true);
       expect(result?.backends).toEqual([
-        { id: "claude", label: "Claude", current: false },
-        { id: "codex", label: "Codex", current: true },
+        {
+          id: "claude",
+          label: "Claude",
+          current: false,
+          headroom: 1,
+          headroomSource: "none",
+        },
+        {
+          id: "codex",
+          label: "Codex",
+          current: true,
+          headroom: 1,
+          headroomSource: "none",
+        },
       ]);
       expect(result?.text).toContain("current");
+      expect(result?.text).toContain("free");
     });
   });
 

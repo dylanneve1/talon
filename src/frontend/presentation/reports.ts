@@ -443,10 +443,14 @@ export function renderUsageMessage(
 
   for (const entry of entries) {
     const name = fmt.escape(entry.label || entry.id);
+    // Headroom is the one figure every backend can answer, so it goes on
+    // every block — including the ones with no plan windows to draw.
+    const headroom = `  ${fmt.bold("Headroom:")} ${fmt.escape(entry.headroomLabel)}`;
     if (!entry.plan) {
       lines.push(
         "",
         `${fmt.bold(name)} — ${fmt.italic(fmt.escape(entry.note ?? ""))}`,
+        headroom,
       );
       continue;
     }
@@ -454,7 +458,7 @@ export function renderUsageMessage(
       ? ` ${fmt.emphasis(`(${entry.plan.ageLabel})`)}`
       : "";
     const plan = entry.plan.plan ? ` · ${fmt.escape(entry.plan.plan)}` : "";
-    lines.push("", `${fmt.bold(name)}${plan}${age}`);
+    lines.push("", `${fmt.bold(name)}${plan}${age}`, headroom);
     if (entry.plan.resetsAvailable) {
       const n = entry.plan.resetsAvailable;
       const resets = `usage limit reset${n === 1 ? "" : "s"} available`;

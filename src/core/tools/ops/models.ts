@@ -31,7 +31,7 @@ export const modelTools: ToolDefinition[] = [
   {
     name: "plan_usage",
     description:
-      "Read your own subscription usage: how much of the 5-hour, weekly, and per-model rate-limit windows is spent, and when each resets. Use it before starting long or expensive work, or when deciding whether to defer something. Only answers on a subscription-backed Anthropic backend; other providers report no plan limits.",
+      "Read usage and headroom for EVERY configured backend, not just this chat's: how much of each subscription's rate-limit windows is spent, when they reset, and one comparable headroom figure per backend. A backend with no usage API reports headroom from Talon's own local token ledger against its configured budget (marked 'local budget'), and one with neither says so. Use it before starting long or expensive work, when deciding whether to defer something, or to see which backend background work will be routed to.",
     schema: {},
     execute: (_params, bridge) => bridge("plan_usage", {}),
     tag: "models",
@@ -40,7 +40,7 @@ export const modelTools: ToolDefinition[] = [
   {
     name: "list_backends",
     description:
-      "List the available backends (providers) and which one this chat is currently using. Useful for understanding the model/provider landscape. Note: a per-job `model` override must stay on this chat's current backend, so use list_models (no argument) to pick a model for a trigger or cron job.",
+      "List the available backends (providers), which one this chat is currently using, and how much plan headroom each has left. Useful for understanding the model/provider landscape and for seeing where unpinned background work (sub-agents, cron query jobs, the heartbeat) will be routed. Note: a per-job `model` override must stay on this chat's current backend, so use list_models (no argument) to pick a model for a trigger or cron job.",
     schema: {},
     execute: (_params, bridge) => bridge("list_backends", {}),
     tag: "models",

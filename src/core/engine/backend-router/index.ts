@@ -35,6 +35,11 @@ export {
   type LimitingWindow,
 } from "./headroom.js";
 export {
+  collectBackendUsage,
+  leadWith,
+  type BackendUsageSnapshot,
+} from "./usage.js";
+export {
   chooseBackend,
   resolveRoutedModel,
   taskClassForEffort,

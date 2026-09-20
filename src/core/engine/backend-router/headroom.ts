@@ -60,6 +60,12 @@ export interface BackendHeadroom {
   readonly fetchedAt: number;
   /** True when the last refresh failed and this is the previous value. */
   readonly stale?: boolean;
+  /**
+   * The raw plan reading this came from, when `source` is `"plan"`. Carried
+   * so `/usage` and the `plan_usage` tool render the real windows off the
+   * same (cached) fetch the router ranked on, instead of asking twice.
+   */
+  readonly plan?: PlanUsage;
 }
 
 interface CacheEntry {
@@ -115,6 +121,7 @@ export function headroomFromPlan(
     limiting,
     source: "plan",
     fetchedAt: usage.fetchedAt,
+    plan: usage,
   };
 }
 
@@ -188,8 +195,10 @@ function unknownHeadroom(
   return { id, label, headroom: 1, source: "none", fetchedAt: now };
 }
 
-/** Ask a pooled backend for its plan windows; never throws. */
-async function readPlanUsage(id: string): Promise<PlanUsage | undefined> {
+/** Ask a pooled backend for its plan windows. Rejects like the backend does. */
+export async function readPlanUsage(
+  id: string,
+): Promise<PlanUsage | undefined> {
   const backend = getPooledBackend(id);
   const read = backend?.usage?.getPlanUsage;
   if (!read || !backend?.usage) return undefined;
