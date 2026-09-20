@@ -45,6 +45,23 @@ import {
 import { taskTable } from "../core/tasks/index.js";
 import { bus } from "../core/bus/index.js";
 
+// The plan-aware router, stubbed. These tests assert what the runner ASKS
+// it and what it does with the answer; how it decides is
+// backend-router.test.ts's job.
+const chooseBackend = vi.hoisted(() =>
+  vi.fn(async (request: { chatBackendId: string }) => ({
+    backendId: request.chatBackendId,
+    reason: "no candidates",
+    routed: false,
+  })),
+);
+vi.mock("../core/engine/backend-router/index.js", () => ({
+  chooseBackend,
+  recordBackendRunUsage: vi.fn(),
+  taskClassForEffort: (effort?: string) =>
+    effort === "high" || effort === "xhigh" ? "reasoning" : undefined,
+}));
+
 const CHAT: AgentParent = { kind: "chat", chatId: "42", numericChatId: 42 };
 const STUB_CONFIG = { backend: "claude" } as unknown as TalonConfig;
 const STUB_CTX = { getBridgePort: () => 0, frontendName: "terminal" as const };
@@ -142,6 +159,14 @@ beforeEach(async () => {
   clearBackends();
   agentRegistry.resetForTest();
   execute.mockClear();
+  chooseBackend.mockClear();
+  chooseBackend.mockImplementation(
+    async (request: { chatBackendId: string }) => ({
+      backendId: request.chatBackendId,
+      reason: "no candidates",
+      routed: false,
+    }),
+  );
   initAgents({ execute });
 });
 
@@ -150,6 +175,79 @@ afterEach(async () => {
   resetBackendPoolForTest();
   clearBackends();
   agentRegistry.resetForTest();
+});
+
+describe("spawnAgent routing", () => {
+  it("never asks the router when the caller pinned a backend", async () => {
+    await withBackend(vi.fn<OneShot>(async () => {}));
+    const outcome = await spawn();
+    expect(outcome).toMatchObject({ ok: true, backendId: "codex" });
+    expect(chooseBackend).not.toHaveBeenCalled();
+    if (outcome.ok) expect(outcome.routing).toBeUndefined();
+  });
+
+  it("routes an unpinned spawn from the parent's backend", async () => {
+    const run = vi.fn<OneShot>(async () => {});
+    await withBackend(run);
+    chooseBackend.mockResolvedValue({
+      backendId: "codex",
+      reason: "most headroom 92%",
+      routed: true,
+    });
+
+    const outcome = await spawn({ backendId: undefined });
+    expect(chooseBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        purpose: "subagent",
+        // The chat role's backend — what the agent would have inherited.
+        chatBackendId: "claude",
+      }),
+    );
+    expect(outcome).toMatchObject({ ok: true, backendId: "codex" });
+    if (!outcome.ok) return;
+    expect(outcome.routing).toBe("most headroom 92%");
+    await settled(outcome.agentId);
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it("derives the task class from effort alone", async () => {
+    await withBackend(vi.fn<OneShot>(async () => {}));
+    chooseBackend.mockResolvedValue({
+      backendId: "codex",
+      reason: "most headroom 50%",
+      routed: true,
+    });
+
+    const outcome = await spawn({
+      backendId: undefined,
+      reasoningEffort: "xhigh",
+    });
+    expect(chooseBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hints: { taskClass: "reasoning", effort: "xhigh" },
+      }),
+    );
+    if (outcome.ok) await settled(outcome.agentId);
+  });
+
+  it("passes a model through as a pin rather than a preference", async () => {
+    await withBackend(vi.fn<OneShot>(async () => {}));
+    chooseBackend.mockResolvedValue({
+      backendId: "codex",
+      reason: "pinned",
+      routed: false,
+    });
+
+    const outcome = await spawn({ backendId: undefined, model: "sonnet" });
+    expect(chooseBackend).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedModel: "sonnet" }),
+    );
+    // reason "pinned" is not a routing decision, so nothing is surfaced.
+    if (outcome.ok) {
+      expect(outcome.routing).toBeUndefined();
+      await settled(outcome.agentId);
+    }
+  });
 });
 
 describe("spawnAgent resolution", () => {
