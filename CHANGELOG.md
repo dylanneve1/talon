@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.4.0](https://github.com/dylanneve1/talon/compare/v5.3.0...v5.4.0) (2026-09-20)
+
+
+### Features
+
+* **agy:** Antigravity CLI backend at parity with the Claude SDK backend ([#998](https://github.com/dylanneve1/talon/issues/998)) ([5b0cf07](https://github.com/dylanneve1/talon/commit/5b0cf074856b45feb8c33468907d6da009decb16))
+
 ## [5.3.0](https://github.com/dylanneve1/talon/compare/v5.2.2...v5.3.0) (2026-09-19)
 
 
