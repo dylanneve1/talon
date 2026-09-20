@@ -153,6 +153,17 @@ export function getAvailableBackends(): { id: string; label: string }[] {
 }
 
 /**
+ * The config the pool was initialised with, or `null` before init.
+ *
+ * For runtime readers that need more of the config than the backend list —
+ * the plan-aware router reads `router` and `backendBudgets` from here rather
+ * than having config threaded through every background call site.
+ */
+export function getPoolConfig(): TalonConfig | null {
+  return ctx.poolConfig;
+}
+
+/**
  * The live pooled `Backend` instance for an id, or `null` if it isn't currently
  * pooled. Unlike `getBackendForRole`/`getBackendForChat` this never initialises
  * on demand — it only returns backends already spun up (role backends + chat

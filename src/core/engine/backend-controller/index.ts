@@ -38,6 +38,7 @@ export {
   listAvailableBackends,
   isBackendAvailable,
   getAvailableBackends,
+  getPoolConfig,
   getPooledBackend,
   acquireBackendInstance,
   isModelValidForBackend,
