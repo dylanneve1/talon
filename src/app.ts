@@ -33,6 +33,7 @@ import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import {
   BOOT_SMOKE_FLAG,
   BOOT_SMOKE_OK,
+  setRespawnShutdown,
   spawnSuccessor,
 } from "./core/daemon/respawn.js";
 import {
@@ -342,6 +343,9 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+// /restart and /update come in here directly rather than through a
+// self-sent SIGTERM — see core/daemon/respawn.ts.
+setRespawnShutdown((reason) => void gracefulShutdown(`respawn (${reason})`));
 
 // Cleanup runs before the crash is reported (and the EPIPE suppression
 // is unchanged) — see core/daemon/crash.ts for why the order matters.

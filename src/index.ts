@@ -10,6 +10,7 @@
  * backends/frontends/plugins.
  */
 
+import { installSignalListenerGuard } from "./core/daemon/signals.js";
 import {
   MCP_LAUNCH_SUBCOMMAND,
   runSupervisor,
@@ -19,6 +20,12 @@ import {
   HANDOFF_WATCH_SUBCOMMAND,
   runHandoffWatch,
 } from "./core/daemon/handoff.js";
+
+// Before anything can remove a signal listener: under Bun that would
+// silently disarm SIGTERM/SIGINT for the whole process (core/daemon/
+// signals.ts). Every Talon process passes through here, so every one
+// is covered.
+installSignalListenerGuard();
 
 if (process.argv[2] === MCP_LAUNCH_SUBCOMMAND) {
   await runSupervisor(process.argv.slice(3));
