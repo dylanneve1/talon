@@ -44,7 +44,7 @@
   {
     "file": "src/bootstrap.ts",
     "name": "initBackendAndDispatcher",
-    "lines": 301,
+    "lines": 286,
     "cx": 13
   },
   {

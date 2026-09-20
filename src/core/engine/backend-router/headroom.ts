@@ -29,11 +29,7 @@ import {
   getPooledBackend,
   listAvailableBackends,
 } from "../backend-controller/index.js";
-import {
-  LEDGER_RETENTION_MS,
-  LEDGER_SHORT_WINDOW_MS,
-  ledgerUsage,
-} from "./ledger.js";
+import { ledgerUsage } from "./ledger.js";
 
 /** How long a headroom reading is reused before the source is asked again. */
 export const HEADROOM_CACHE_MS = 60_000;
@@ -196,9 +192,7 @@ function unknownHeadroom(
 }
 
 /** Ask a pooled backend for its plan windows. Rejects like the backend does. */
-export async function readPlanUsage(
-  id: string,
-): Promise<PlanUsage | undefined> {
+async function readPlanUsage(id: string): Promise<PlanUsage | undefined> {
   const backend = getPooledBackend(id);
   const read = backend?.usage?.getPlanUsage;
   if (!read || !backend?.usage) return undefined;
@@ -271,9 +265,3 @@ export function formatHeadroom(entry: BackendHeadroom): string {
 export function resetHeadroomCacheForTest(): void {
   cache.clear();
 }
-
-/** Window widths the ledger measures, re-exported for renderers. */
-export const HEADROOM_WINDOWS = {
-  shortMs: LEDGER_SHORT_WINDOW_MS,
-  dayMs: LEDGER_RETENTION_MS,
-} as const;
