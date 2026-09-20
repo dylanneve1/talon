@@ -284,6 +284,7 @@ export async function initBackendAndDispatcher(
   const {
     initBackendPool,
     getBackendForRole,
+    getBackendIdForRole,
     getBackendForChat,
     getBackendIdForChat,
     rebindChat,
@@ -434,6 +435,11 @@ export async function initBackendAndDispatcher(
   bus.subscribeAll((event) => appendToJournal(event));
 
   initPulse();
+  // Warm the plan-aware router's token ledger from disk so the first
+  // routing decision after a restart sees what the last run spent.
+  void import("./core/engine/backend-router/index.js").then(
+    ({ loadBackendLedger }) => loadBackendLedger(),
+  );
   initCron({
     sendMessage: async (chatId: number, text: string, stringId?: string) =>
       resolveFrontendByNumericId(chatId, stringId, frontends).sendMessage(
@@ -539,6 +545,12 @@ export async function initBackendAndDispatcher(
     heartbeatEffort: config.heartbeatEffort,
     workspace: config.workspace,
     getBackend: () => getBackendForRole("heartbeat"),
+    getBackendId: () => getBackendIdForRole("heartbeat"),
+    // A pin the plan-aware router must not override. Unset on both means
+    // the hourly run goes wherever the subscriptions have room.
+    ...(config.heartbeatBackend
+      ? { pinnedBackendId: config.heartbeatBackend }
+      : {}),
     frontends: frontendNames,
     mempalace: Boolean(mempalaceCfg),
   });

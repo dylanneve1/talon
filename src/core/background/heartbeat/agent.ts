@@ -15,6 +15,12 @@ import { formatGoal, getOpenGoals } from "../../../storage/goals.js";
 import { taskTable, type TaskHandle } from "../../tasks/index.js";
 import type { Backend } from "../../agent-runtime/capabilities.js";
 import type { OneShotAgentParams } from "../../types.js";
+import { acquireBackendInstance } from "../../engine/backend-controller/index.js";
+import {
+  chooseBackend,
+  recordBackendRunUsage,
+  resolveRoutedModel,
+} from "../../engine/backend-router/index.js";
 import { resolveBackgroundEffort } from "../effort.js";
 import { hb } from "./state.js";
 
@@ -304,6 +310,81 @@ async function evictAfterIgnoredAbort(
   }
 }
 
+/** The backend + model one heartbeat run uses, and how to let it go after. */
+interface HeartbeatTarget {
+  readonly backendId: string;
+  readonly backend: Backend;
+  readonly model: string;
+  readonly release: (() => Promise<void>) | null;
+}
+
+/**
+ * Pick the backend for this run.
+ *
+ * The heartbeat is the most movable background work Talon has: an isolated
+ * one-shot, hourly, on no session. So when the operator pinned neither
+ * `heartbeatBackend` nor `heartbeatModel`, it goes wherever the plan has
+ * room — and takes that backend's default model, since a model id means
+ * nothing on another provider. Anything pinned is honoured as written, and
+ * the chat's own backend is never moved by this.
+ *
+ * A routed run holds a transient pool reference, so the caller must always
+ * call `release`.
+ */
+async function resolveHeartbeatTarget(
+  config: NonNullable<typeof hb.config>,
+  roleBackend: Backend,
+  roleModel: string,
+): Promise<HeartbeatTarget> {
+  const roleId = config.getBackendId?.() ?? config.pinnedBackendId ?? "";
+  const stay: HeartbeatTarget = {
+    backendId: roleId,
+    backend: roleBackend,
+    model: roleModel,
+    release: null,
+  };
+  if (!roleId) return stay;
+
+  const decision = await chooseBackend({
+    purpose: "heartbeat",
+    chatBackendId: roleId,
+    ...(config.pinnedBackendId
+      ? { requestedBackendId: config.pinnedBackendId }
+      : {}),
+    ...(config.heartbeatModel ? { requestedModel: config.heartbeatModel } : {}),
+  });
+  if (!decision.routed || decision.backendId === roleId) return stay;
+
+  const model = await resolveRoutedModel(decision.backendId);
+  if (!model) {
+    logWarn(
+      "heartbeat",
+      `routed to ${decision.backendId} but it names no default model — ` +
+        `staying on ${roleId}`,
+    );
+    return stay;
+  }
+  try {
+    const acquired = await acquireBackendInstance(decision.backendId);
+    if (!acquired.backend.background) {
+      await acquired.release();
+      return stay;
+    }
+    return {
+      backendId: decision.backendId,
+      backend: acquired.backend,
+      model,
+      release: acquired.release,
+    };
+  } catch (err) {
+    logWarn(
+      "heartbeat",
+      `could not acquire routed backend ${decision.backendId}: ${err instanceof Error ? err.message : err} — staying on ${roleId}`,
+    );
+    return stay;
+  }
+}
+
 export async function runHeartbeatAgent(
   lastRunTimestamp: number,
   runCount: number,
@@ -327,14 +408,16 @@ export async function runHeartbeatAgent(
     dailyMemoryFile: resolve(dirs.dailyMemory, `${toYMD(new Date())}.md`),
   });
 
-  const model = config.heartbeatModel ?? config.model ?? getDefaultModel();
-  const backend = config.getBackend?.() ?? null;
-  const background = backend?.background;
-  if (!background) {
+  const roleModel = config.heartbeatModel ?? config.model ?? getDefaultModel();
+  const roleBackend = config.getBackend?.() ?? null;
+  if (!roleBackend?.background) {
     throw new Error(
       "Heartbeat requires a backend that implements the background capability",
     );
   }
+  const target = await resolveHeartbeatTarget(config, roleBackend, roleModel);
+  const { model, backend } = target;
+  const background = backend.background as NonNullable<Backend["background"]>;
 
   // Effort is resolved against the heartbeat backend's catalog, not just
   // copied from config — a level the model doesn't offer is dropped with a
@@ -368,23 +451,37 @@ export async function runHeartbeatAgent(
   });
   task.bind({ model });
 
-  const usage = await runOneShotWithTimeout(
-    background,
-    {
-      prompt,
-      systemPrompt: buildHeartbeatSystemPrompt(),
-      workspace,
-      model,
-      ...(effort.effort ? { reasoningEffort: effort.effort } : {}),
-      contextLabel: "heartbeat",
+  let usage: Awaited<ReturnType<typeof runOneShotWithTimeout>>;
+  try {
+    usage = await runOneShotWithTimeout(
+      background,
+      {
+        prompt,
+        systemPrompt: buildHeartbeatSystemPrompt(),
+        workspace,
+        model,
+        ...(effort.effort ? { reasoningEffort: effort.effort } : {}),
+        contextLabel: "heartbeat",
+        abortController,
+        appendLog: (text) => appendHeartbeatLog(heartbeatLogFile, text),
+      },
       abortController,
-      appendLog: (text) => appendHeartbeatLog(heartbeatLogFile, text),
-    },
-    abortController,
-    task,
-    runCount,
-    heartbeatLogFile,
-  );
+      task,
+      runCount,
+      heartbeatLogFile,
+    );
+  } finally {
+    // A routed run borrowed the instance from the pool; hand it back on
+    // every path or the provider stays warm until the daemon restarts.
+    if (target.release) {
+      await target
+        .release()
+        .catch((err: unknown) =>
+          logError("heartbeat", "failed to release routed backend", err),
+        );
+    }
+  }
+  recordBackendRunUsage(target.backendId, usage ?? undefined);
   task.succeed(usage ?? undefined);
   return heartbeatLogFile;
 }

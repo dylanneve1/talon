@@ -208,7 +208,8 @@ export const agentControlHandlers: SharedActionHandlers = {
       ok: true,
       text:
         `Spawned agent "${parsed.label}" (id: ${outcome.agentId})\n` +
-        `Backend: ${outcome.backendId}/${outcome.model}\n` +
+        `Backend: ${outcome.backendId}/${outcome.model}` +
+        `${outcome.routing ? ` (routed: ${outcome.routing})` : ""}\n` +
         `Timeout: ${timeoutS}s\n` +
         `It runs in the background. You will be woken with its report — ` +
         `carry on with what you were doing.`,

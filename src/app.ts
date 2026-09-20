@@ -282,6 +282,14 @@ async function gracefulShutdown(signal: string): Promise<void> {
   await shutdownStep("frontends", () =>
     Promise.allSettled(frontends.map((frontend) => frontend.stop())),
   );
+  // Land the router's token ledger before the process goes: writes are
+  // debounced, so a clean exit would otherwise drop the last few seconds
+  // of spend and start the next boot reading a backend as fresher than it is.
+  await shutdownStep("backend ledger", async () => {
+    const { flushBackendLedger } =
+      await import("./core/engine/backend-router/index.js");
+    await flushBackendLedger();
+  });
   // Tear down every instantiated backend, including per-chat overrides.
   // Checking only config.backend orphaned an OpenCode child whenever the
   // process default was Claude but one chat had switched to OpenCode.

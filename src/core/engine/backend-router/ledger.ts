@@ -184,6 +184,33 @@ export function recordBackendUsage(
   scheduleFlush();
 }
 
+/**
+ * Fold a completed run's usage into the ledger. The same four fields every
+ * background path reports (`OneShotUsage`, `TaskUsage`), summed — cache
+ * reads included, because they still count against a subscription window.
+ */
+export function recordBackendRunUsage(
+  backendId: string,
+  usage:
+    | {
+        inputTokens?: number;
+        outputTokens?: number;
+        cacheRead?: number;
+        cacheWrite?: number;
+      }
+    | undefined
+    | null,
+  at = Date.now(),
+): void {
+  if (!usage) return;
+  const total =
+    (usage.inputTokens ?? 0) +
+    (usage.outputTokens ?? 0) +
+    (usage.cacheRead ?? 0) +
+    (usage.cacheWrite ?? 0);
+  recordBackendUsage(backendId, total, at);
+}
+
 /** Tokens a backend spent inside a window ending now. */
 export function tokensInWindow(
   backendId: string,

@@ -13,6 +13,7 @@ export {
   flushBackendLedger,
   ledgerUsage,
   loadBackendLedger,
+  recordBackendRunUsage,
   recordBackendUsage,
   resetBackendLedgerForTest,
   tokensInWindow,
@@ -35,6 +36,7 @@ export {
 } from "./headroom.js";
 export {
   chooseBackend,
+  resolveRoutedModel,
   taskClassForEffort,
   DEFAULT_CEILING_PERCENT,
   type RouteDecision,

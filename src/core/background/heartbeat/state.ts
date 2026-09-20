@@ -43,6 +43,17 @@ export type HeartbeatConfig = {
    */
   getBackend?: () => Backend | null;
   /**
+   * Id of the backend `getBackend` returns — the routing baseline, and what
+   * the run falls back to. Same late-bound accessor shape as `getBackend`.
+   */
+  getBackendId?: () => string;
+  /**
+   * `config.heartbeatBackend` / `config.heartbeatModel`, verbatim. Either
+   * one set is a pin: the plan-aware router only picks a backend for the
+   * heartbeat when the operator named neither.
+   */
+  pinnedBackendId?: string;
+  /**
    * Non-terminal frontends present at startup. Used to render the outbound
    * messaging section of the heartbeat system prompt. Empty for terminal-only
    * deployments.

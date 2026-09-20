@@ -110,6 +110,11 @@ export type AgentSpawnOutcome =
       readonly agentId: string;
       readonly backendId: string;
       readonly model: string;
+      /**
+       * Why the router chose this backend, when it did. Absent when the
+       * caller pinned one — there was no decision to explain.
+       */
+      readonly routing?: string;
     }
   | { readonly ok: false; readonly error: string };
 

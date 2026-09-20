@@ -33,6 +33,11 @@ import {
   getBackendIdForChat,
   isModelValidForBackend,
 } from "../engine/backend-controller/index.js";
+import {
+  chooseBackend,
+  recordBackendRunUsage,
+  taskClassForEffort,
+} from "../engine/backend-router/index.js";
 import type {
   Backend,
   BackgroundRunner,
@@ -112,6 +117,41 @@ export function clampTimeout(requestedMs: number | undefined): number {
 function inheritedBackendId(parent: AgentParent): string | null {
   if (parent.kind === "chat") return getBackendIdForChat(parent.chatId);
   return agentRegistry.get(parent.agentId)?.backendId ?? null;
+}
+
+/**
+ * Which backend this agent runs on, and why.
+ *
+ * An explicit backend (or model — a model id is backend-specific, so naming
+ * one pins its backend) is honoured as written. With neither, the run is a
+ * routing decision: sub-agents are isolated one-shots with no session to
+ * keep warm, so they are the cheapest work to move onto whichever
+ * subscription has room.
+ */
+async function resolveSpawnBackend(
+  spec: AgentSpawnSpec,
+): Promise<{ backendId: string | null; routing?: string }> {
+  if (spec.backendId) return { backendId: spec.backendId };
+  const inherited = inheritedBackendId(spec.parent);
+  if (!inherited) return { backendId: null };
+  const taskClass = taskClassForEffort(spec.reasoningEffort);
+  const decision = await chooseBackend({
+    purpose: "subagent",
+    chatBackendId: inherited,
+    ...(spec.model ? { requestedModel: spec.model } : {}),
+    ...(taskClass || spec.reasoningEffort
+      ? {
+          hints: {
+            ...(taskClass ? { taskClass } : {}),
+            ...(spec.reasoningEffort ? { effort: spec.reasoningEffort } : {}),
+          },
+        }
+      : {}),
+  });
+  return {
+    backendId: decision.backendId,
+    ...(decision.routed ? { routing: decision.reason } : {}),
+  };
 }
 
 /** The chat a run's task belongs to, for `talon ps`. */
@@ -195,7 +235,8 @@ async function resolveRun(
 export async function spawnAgent(
   spec: AgentSpawnSpec,
 ): Promise<AgentSpawnOutcome> {
-  const backendId = spec.backendId ?? inheritedBackendId(spec.parent);
+  const routed = await resolveSpawnBackend(spec);
+  const backendId = routed.backendId;
   if (!backendId) {
     return {
       ok: false,
@@ -243,7 +284,13 @@ export async function spawnAgent(
   // The run owns the instance from here: `runAgent` releases it on every
   // path, including the ones that throw.
   void runAgent(record, spec, resolved, acquired);
-  return { ok: true, agentId: record.id, backendId, model: resolved.model };
+  return {
+    ok: true,
+    agentId: record.id,
+    backendId,
+    model: resolved.model,
+    ...(routed.routing ? { routing: routed.routing } : {}),
+  };
 }
 
 /** Build the one-shot params for a run, wired to its log and text capture. */
@@ -389,6 +436,7 @@ async function runAgent(
         // other context's subprocesses share the tag.
         evictLabel: agentContextLabel(id),
       });
+      recordBackendRunUsage(record.backendId, usage ?? undefined);
       settled = settleSuccess(id, task, capture.last, usage ?? undefined);
     }
   } catch (err) {

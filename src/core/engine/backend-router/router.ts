@@ -28,6 +28,7 @@ import type { TalonConfig } from "../../config/index.js";
 import type { ReasoningEffortLevel } from "../../types.js";
 import { log } from "../../../util/log.js";
 import {
+  acquireBackendInstance,
   getPoolConfig,
   getPooledBackend,
   listAvailableBackends,
@@ -288,4 +289,34 @@ export async function chooseBackend(
   const decision = decisionFor(winner, allOverCeiling);
   logDecision(request, decision, measured);
   return decision;
+}
+
+/**
+ * The default model for a backend the router just picked.
+ *
+ * A routed run cannot carry the caller's model across — a model id is
+ * backend-specific. Config's `backendDefaults` wins (it is the operator's
+ * answer to "what should this provider run"), then the backend's own
+ * canonical default. Resolves `null` when neither exists, which the call
+ * sites read as "stay where you were".
+ */
+export async function resolveRoutedModel(
+  backendId: string,
+  config?: TalonConfig,
+): Promise<string | null> {
+  const settings = config ?? getPoolConfig() ?? undefined;
+  const configured = settings?.backendDefaults?.[backendId];
+  if (configured) return configured;
+  try {
+    const pooled = getPooledBackend(backendId);
+    if (pooled) return (await pooled.models?.getDefaultModelId()) ?? null;
+    const acquired = await acquireBackendInstance(backendId);
+    try {
+      return (await acquired.backend.models?.getDefaultModelId()) ?? null;
+    } finally {
+      await acquired.release();
+    }
+  } catch {
+    return null;
+  }
 }

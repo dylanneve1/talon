@@ -26,6 +26,7 @@ import {
 } from "../../../storage/sessions.js";
 import { log } from "../../../util/log.js";
 import { extractSessionName } from "../../../core/weaver/session-name.js";
+import { recordBackendRunUsage } from "../../../core/engine/backend-router/index.js";
 import { traceMessage } from "../../../util/trace.js";
 import {
   FLOW_VIOLATION_MAX_RETRIES,
@@ -115,6 +116,10 @@ export function accountTurn(inputs: AccountTurnInputs): void {
     usage,
   });
   persistSessionId(chatId, inputs.sessionId);
+  // The plan-aware router's local ledger: every backend accumulates one, so
+  // a provider with no account API still has a headroom signal. Backends
+  // that DO report a plan simply outrank their own ledger.
+  recordBackendRunUsage(inputs.backend, usage);
   recordUsage(chatId, {
     ...usage,
     durationMs,

@@ -35,6 +35,10 @@ import {
 import { appendDailyLog } from "../../../storage/daily-log.js";
 import { log, logError, logWarn } from "../../../util/log.js";
 import { numericChatIdFor } from "../../frontend-runtime/chat-id.js";
+import {
+  chooseBackend,
+  resolveRoutedModel,
+} from "../../engine/backend-router/index.js";
 import { runJobOneShot } from "./job-oneshot.js";
 import {
   jobAllowsRun,
@@ -460,6 +464,44 @@ export const _cronInternals = {
   MAX_TICK_LOOKBACK_MS,
 };
 
+/**
+ * Where an unpinned `query` job runs.
+ *
+ * A job that named no provider used to inherit the chat's ambient backend.
+ * It is an isolated one-shot with no session to keep warm, so it is free to
+ * run wherever there is plan headroom instead — but only when the job named
+ * no model either: a model id is backend-specific, so naming one pins the
+ * backend that understands it.
+ *
+ * A routed job cannot carry the chat's model across, so it takes the target
+ * backend's default. If that backend can't name one, the job stays where it
+ * was rather than being sent somewhere it has no model to run.
+ */
+async function routeQueryJob(
+  job: CronJob,
+  chat: { model: string | null; backendId: string },
+): Promise<{ backendId: string; model: string | null }> {
+  const decision = await chooseBackend({
+    purpose: "cron",
+    chatBackendId: chat.backendId,
+    ...(job.model ? { requestedModel: job.model } : {}),
+  });
+  if (job.model) return { backendId: decision.backendId, model: job.model };
+  if (!decision.routed || decision.backendId === chat.backendId) {
+    return { backendId: chat.backendId, model: chat.model };
+  }
+  const model = await resolveRoutedModel(decision.backendId);
+  if (!model) {
+    logWarn(
+      "cron",
+      `job "${job.name}": routed to ${decision.backendId} but it names no ` +
+        `default model — staying on ${chat.backendId}`,
+    );
+    return { backendId: chat.backendId, model: chat.model };
+  }
+  return { backendId: decision.backendId, model };
+}
+
 const CRON_JOB_TIMEOUT_MS = 10 * 60_000; // 10-minute max per job
 
 export async function executeJob(job: CronJob): Promise<ExecuteJobResult> {
@@ -487,8 +529,9 @@ export async function executeJob(job: CronJob): Promise<ExecuteJobResult> {
     model = job.model ?? null;
   } else {
     const chat = await deps.resolveChatModel(job.chatId);
-    backendId = chat.backendId;
-    model = job.model ?? chat.model;
+    const routed = await routeQueryJob(job, chat);
+    backendId = routed.backendId;
+    model = routed.model;
     const candidate = deps.resolveJobFallback?.();
     if (candidate?.model) {
       fallback = { backendId: candidate.backendId, model: candidate.model };
