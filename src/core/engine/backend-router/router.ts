@@ -174,7 +174,10 @@ function rank(
   return a.id.localeCompare(b.id);
 }
 
-/** Apply a task class's hard requirement, when any candidate satisfies it. */
+/**
+ * Apply a task class's hard requirement, when a candidate still satisfies it.
+ * Runs on the post-ceiling set, so a spent required backend is already gone.
+ */
 function applyVeto(
   entries: BackendHeadroom[],
   required: readonly string[] | undefined,
@@ -266,12 +269,15 @@ export async function chooseBackend(
   const rules = request.hints?.taskClass
     ? TASK_CLASS_RULES[request.hints.taskClass]
     : undefined;
-  const eligible = applyVeto(measured, rules?.require);
+  // Ceiling first, THEN the veto: a hard task-class requirement must not be
+  // able to send work to a backend that is out of plan. A lesser model that
+  // runs beats the right one that rate-limits.
   const { kept, allOverCeiling } = applyCeiling(
-    eligible,
+    measured,
     settings.ceilingPercent,
   );
-  const ordered = [...kept].sort((a, b) =>
+  const eligible = applyVeto(kept, rules?.require);
+  const ordered = [...eligible].sort((a, b) =>
     rank(a, b, chatBackendId, rules?.prefer ?? []),
   );
   const winner = ordered[0];
