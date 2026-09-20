@@ -18,6 +18,11 @@ vi.mock("../util/log.js", () => ({
 vi.mock("../util/trace.js", () => ({ traceMessage: vi.fn() }));
 
 import { log } from "../util/log.js";
+import {
+  resetBackendLedgerForTest,
+  tokensInWindow,
+  LEDGER_SHORT_WINDOW_MS,
+} from "../core/engine/backend-router/ledger.js";
 import { traceMessage } from "../util/trace.js";
 import {
   getSession,
@@ -53,6 +58,7 @@ const logLines = (): string[] =>
 beforeEach(() => {
   resetSession(CHAT);
   resetMetrics();
+  resetBackendLedgerForTest("/tmp/talon-turn-phases-ledger.json");
   vi.clearAllMocks();
 });
 
@@ -74,6 +80,31 @@ describe("shared / turnUsageSnapshot", () => {
 });
 
 describe("shared / accountTurn", () => {
+  it("folds the turn's tokens into the router's per-backend ledger", () => {
+    // The plan-aware router's fallback signal for backends with no usage
+    // API. Every turn on every backend feeds it, so removing this call is
+    // what makes an unmeasurable backend look permanently empty.
+    const state = makeState({
+      sdkInputTokens: 100,
+      sdkOutputTokens: 50,
+      sdkCacheRead: 25,
+      sdkCacheWrite: 5,
+    });
+    expect(tokensInWindow("agy", LEDGER_SHORT_WINDOW_MS)).toBe(0);
+
+    accountTurn({
+      chatId: CHAT,
+      backend: "agy",
+      state,
+      durationMs: 10,
+      model: "gemini-flash",
+    });
+
+    expect(tokensInWindow("agy", LEDGER_SHORT_WINDOW_MS)).toBe(180);
+    // Scoped to the backend that ran it, not shared across the fleet.
+    expect(tokensInWindow("claude", LEDGER_SHORT_WINDOW_MS)).toBe(0);
+  });
+
   it("folds usage, session id and per-turn metrics into the session", () => {
     const state = makeState({
       sdkInputTokens: 100,
