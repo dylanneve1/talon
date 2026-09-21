@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.4.1](https://github.com/dylanneve1/talon/compare/v5.4.0...v5.4.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **daemon:** /restart and /update survive Bun dropping the SIGTERM handler ([#1002](https://github.com/dylanneve1/talon/issues/1002)) ([08ae6e4](https://github.com/dylanneve1/talon/commit/08ae6e45d82c5b964b1a48e0adbafa2179730293))
+
 ## [5.4.0](https://github.com/dylanneve1/talon/compare/v5.3.0...v5.4.0) (2026-09-20)
 
 
