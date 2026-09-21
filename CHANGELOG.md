@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.5.0](https://github.com/dylanneve1/talon/compare/v5.4.1...v5.5.0) (2026-09-21)
+
+
+### Features
+
+* **router:** plan-aware backend routing for sub-agents, cron and the heartbeat ([#1001](https://github.com/dylanneve1/talon/issues/1001)) ([51bb7ba](https://github.com/dylanneve1/talon/commit/51bb7babddbbb7e7521371354fb2e33369ddd655))
+
+
+### Bug Fixes
+
+* **telegram:** render markdown headings as bold and &gt; runs as blockquotes ([#996](https://github.com/dylanneve1/talon/issues/996)) ([fc5563f](https://github.com/dylanneve1/talon/commit/fc5563fed119ea9297ab8d76bd1f0b5ab169ffa9))
+
+
+### Documentation
+
+* **identity:** the reasoning behind the living-world default ([#999](https://github.com/dylanneve1/talon/issues/999)) ([c5fb1f0](https://github.com/dylanneve1/talon/commit/c5fb1f07b849e9d44fd4d4d3adae82622c361c55))
+
 ## [5.4.1](https://github.com/dylanneve1/talon/compare/v5.4.0...v5.4.1) (2026-09-21)
 
 
