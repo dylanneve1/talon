@@ -609,6 +609,22 @@ const configSchema = z.object({
   disabledToolTags: z.array(z.string()).optional(),
 
   /**
+   * Conversation-only tool surface for DMs from anyone who isn't an
+   * operator. The admin's Telegram DM and any `operatorChats` keep
+   * everything; other DMs (Telegram user ids, `wa_dm_*`) get reply/react/
+   * history/stickers plus the `guestPlugins` servers — no shell, files,
+   * mail, devices, cron, memory, agents or cross-chat sends. Groups are
+   * unaffected. Off by default. See core/mcp-hub/guest-scope.ts.
+   */
+  guestDmScope: z
+    .object({
+      enabled: z.boolean().default(false),
+      operatorChats: z.array(z.string()).default([]),
+      guestPlugins: z.array(z.string()).optional(),
+    })
+    .optional(),
+
+  /**
    * Developer build flag. Gates dev-only affordances such as the
    * `/update` self-update command. Off by default so packaged /
    * end-user deployments never expose them.

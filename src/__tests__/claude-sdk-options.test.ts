@@ -830,3 +830,48 @@ describe("buildMcpServers (heartbeat-tier paths)", () => {
     expect(Object.keys(buildMcpServers("heartbeat"))).toEqual(["brave-search"]);
   });
 });
+
+describe("buildSdkOptions — guest DM scope", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    mockGetSession.mockReturnValue({ sessionId: null });
+    mockGetChatSettings.mockReturnValue({});
+    mockGetPluginMcpServers.mockReturnValue({
+      "email-tools": { command: "x" },
+      "extras-tools": { command: "x" },
+      "ssh-tools": { command: "x" },
+    });
+    mockGetConfig.mockReturnValue({
+      model: "claude-sonnet-4-6",
+      frontend: "telegram",
+      systemPrompt: "test prompt",
+      workspace: "/tmp/workspace",
+      nativeTools: true,
+    });
+    mockGetBridgePort.mockReturnValue(19876);
+  });
+
+  it("drops SDK built-ins and non-guest plugins for a guest DM", async () => {
+    const { initGuestDmScope } = await import("../core/mcp-hub/guest-scope.js");
+    initGuestDmScope({ enabled: true }, 111);
+    const { buildSdkOptions } =
+      await import("../backend/claude-sdk/options.js");
+    const { options } = buildSdkOptions("999");
+    expect(options.tools).toEqual([]);
+    const servers = Object.keys(options.mcpServers ?? {});
+    expect(servers).toContain("extras-tools");
+    expect(servers).not.toContain("email-tools");
+    expect(servers).not.toContain("ssh-tools");
+  });
+
+  it("keeps everything for the admin's DM", async () => {
+    const { initGuestDmScope } = await import("../core/mcp-hub/guest-scope.js");
+    initGuestDmScope({ enabled: true }, 111);
+    const { buildSdkOptions } =
+      await import("../backend/claude-sdk/options.js");
+    const { options } = buildSdkOptions("111");
+    expect((options.tools as string[]).length).toBeGreaterThan(0);
+    expect(Object.keys(options.mcpServers ?? {})).toContain("email-tools");
+  });
+});

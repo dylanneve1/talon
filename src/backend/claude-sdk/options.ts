@@ -34,6 +34,16 @@ import { reportToolFingerprint } from "../runtime/cache/cache-metrics.js";
 import { log, logError } from "../../util/log.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { ALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
+import {
+  isGuestChat,
+  isGuestPluginAllowed,
+} from "../../core/mcp-hub/guest-scope.js";
+import { VALID_TOOL_FRONTENDS } from "../../core/mcp-hub/talon-server.js";
+
+/** `telegram-tools`, `whatsapp-tools`, ... — the hub's own frontend servers. */
+function isFrontendToolServerName(name: string): boolean {
+  return name.endsWith("-tools") && VALID_TOOL_FRONTENDS.has(name.slice(0, -6));
+}
 
 /**
  * Built-in SDK tools that Talon's native tool set replaces when
@@ -383,14 +393,28 @@ export function buildSdkOptions(
   const { postToolUseFailureHook, postToolBatchHook } =
     buildTurnTerminatorHooks();
 
-  const builtinTools = config.nativeTools
-    ? ALLOWED_TOOLS_CHAT.filter((t) => !NATIVE_REPLACED_BUILTINS.has(t))
-    : [...ALLOWED_TOOLS_CHAT];
+  // Guest DMs (non-operator) get no SDK built-ins at all — Bash/Read/
+  // Write/Skill live outside the hub, so the hub's guest scope can't hide
+  // them — and only the plugin servers the guest scope allows.
+  const guest = isGuestChat(chatId);
+  const builtinTools = guest
+    ? []
+    : config.nativeTools
+      ? ALLOWED_TOOLS_CHAT.filter((t) => !NATIVE_REPLACED_BUILTINS.has(t))
+      : [...ALLOWED_TOOLS_CHAT];
 
-  const mcpServers = {
+  const allServers = {
     ...buildMcpServers(chatId),
     ...buildPluginMcpServers(chatId),
   };
+  const mcpServers = guest
+    ? Object.fromEntries(
+        Object.entries(allServers).filter(
+          ([name]) =>
+            isFrontendToolServerName(name) || isGuestPluginAllowed(name),
+        ),
+      )
+    : allServers;
 
   // Tool definitions render BEFORE the system prompt, so a set that shifts
   // mid-session invalidates the system prompt and every cached message after

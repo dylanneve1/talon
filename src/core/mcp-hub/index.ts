@@ -53,6 +53,12 @@ import {
   type ChildSpec,
 } from "./children.js";
 import type { ToolFrontend } from "../tools/types.js";
+import {
+  initGuestDmScope,
+  isGuestChat,
+  isGuestPluginAllowed,
+  type GuestDmScopeConfig,
+} from "./guest-scope.js";
 
 export const HUB_PATH_PREFIX = "/mcp/";
 
@@ -64,6 +70,10 @@ export type HubConfig = {
   braveApiKey?: string;
   /** Surface the native tool set (bash/read/write/… + teleport). */
   nativeTools?: boolean;
+  /** Conversation-only tool surface for non-operator DMs. */
+  guestDmScope?: GuestDmScopeConfig;
+  /** Operator's Telegram id — their DM always keeps the full surface. */
+  adminUserId?: number;
 };
 
 let hubConfig: HubConfig = {};
@@ -71,6 +81,7 @@ let hubConfig: HubConfig = {};
 /** Set at bootstrap; safe to call again on config reload. */
 export function initHub(config: HubConfig): void {
   hubConfig = config;
+  initGuestDmScope(config.guestDmScope, config.adminUserId);
   startChildReaper();
 }
 
@@ -215,6 +226,7 @@ function buildServerFor(target: HubTarget, bridgeUrl: string) {
       disabledTools: hubConfig.disabledTools,
       disabledToolTags: hubConfig.disabledToolTags,
       includeNativeTools: hubConfig.nativeTools,
+      guest: isGuestChat(target.chatId),
     });
   }
   return buildProxyServer(target.serverName, () =>
@@ -324,6 +336,15 @@ export async function handleHubRequest(
     const target = parseHubPath(req.url ?? "");
     if (!target) {
       jsonRpcError(res, 404, "Unknown hub endpoint");
+      return;
+    }
+
+    if (
+      target.kind === "plugin" &&
+      isGuestChat(target.chatId) &&
+      !isGuestPluginAllowed(target.serverName)
+    ) {
+      jsonRpcError(res, 403, "Not available in this chat");
       return;
     }
 

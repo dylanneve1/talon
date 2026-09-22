@@ -144,6 +144,8 @@ export async function bootstrap(
     disabledToolTags: config.disabledToolTags,
     braveApiKey: config.braveApiKey,
     nativeTools: config.nativeTools,
+    guestDmScope: config.guestDmScope,
+    adminUserId: config.adminUserId,
   });
 
   initWorkspace(config.workspace);
