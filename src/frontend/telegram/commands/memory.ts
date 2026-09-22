@@ -53,11 +53,11 @@ export function registerMemoryCommand(bot: Bot): void {
 }
 
 /**
- * Who may read memory here: the admin, in a private chat. Exported for
- * tests. Order matters — a non-admin in a group gets "not authorized", not
+ * Who may read memory here: the admin, in a private chat.
+ * Order matters — a non-admin in a group gets "not authorized", not
  * a hint that a DM would work.
  */
-export function memoryAccess(ctx: Context): "ok" | "not-admin" | "not-private" {
+function memoryAccess(ctx: Context): "ok" | "not-admin" | "not-private" {
   if (!isAuthorizedAdmin(ctx)) return "not-admin";
   if (ctx.chat?.type !== "private") return "not-private";
   return "ok";
