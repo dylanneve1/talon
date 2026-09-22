@@ -33,7 +33,7 @@ export type GuestDmScopeConfig = {
   guestPlugins?: readonly string[];
 };
 
-export const DEFAULT_GUEST_PLUGINS: readonly string[] = [
+const DEFAULT_GUEST_PLUGINS: readonly string[] = [
   "brave-search",
   "extras-tools",
 ];
