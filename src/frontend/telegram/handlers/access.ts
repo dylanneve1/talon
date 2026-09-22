@@ -152,6 +152,47 @@ export async function isAccessAllowed(
 }
 
 /**
+ * True when the update is a /command or an inline-button press.
+ *
+ * Both are handled by `bot.command` / `bot.callbackQuery` handlers that
+ * run before — and independently of — the message handlers, so the
+ * message-path access check never sees them.
+ */
+export function isCommandOrCallback(ctx: Context): boolean {
+  if (ctx.callbackQuery) return true;
+  const msg = ctx.message ?? ctx.editedMessage;
+  if (!msg) return false;
+  const entities = msg.entities ?? msg.caption_entities ?? [];
+  return entities.some((e) => e.type === "bot_command" && e.offset === 0);
+}
+
+/**
+ * Gate every /command and button press behind the same access check as
+ * ordinary messages (denylist, DM whitelist, group admin membership).
+ *
+ * Without this, a sender outside `allowedUsers` who DMs the bot is refused
+ * for plain text but can still run /model, /settings, /status, /mesh,
+ * /plugins, /memory and press any inline button, because those handlers
+ * are registered with grammy directly and never pass through
+ * `isAccessAllowed`. Must be installed BEFORE registerCommands and
+ * registerCallbacks so it sees the update first.
+ */
+export function registerCommandAccessGate(bot: Bot): void {
+  bot.use(async (ctx, next) => {
+    if (!isCommandOrCallback(ctx)) return next();
+    if (await isAccessAllowed(ctx, bot)) return next();
+    if (ctx.callbackQuery) {
+      try {
+        await ctx.answerCallbackQuery();
+      } catch {
+        /* stale query — ignore */
+      }
+    }
+    // Dropped: not passed to any command or callback handler.
+  });
+}
+
+/**
  * Maximum length of an unauthorized message body to retain in logs.
  * Keeps abusive payloads (large pastes, attachment captions etc.) bounded
  * while still preserving enough context to understand what was sent.

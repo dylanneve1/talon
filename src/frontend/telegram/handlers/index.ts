@@ -17,6 +17,7 @@ export {
   setAccessControl,
   shouldHandleInGroup,
   extractUnauthorizedPreview,
+  registerCommandAccessGate,
 } from "./access.js";
 export {
   getSenderName,
