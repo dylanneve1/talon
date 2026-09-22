@@ -33,4 +33,5 @@ export async function loadBuiltinBackends(): Promise<void> {
   await import("./codex/factory.js");
   await import("./agy/factory.js");
   await import("./openai-agents/factory.js");
+  await import("./kimi/factory.js");
 }

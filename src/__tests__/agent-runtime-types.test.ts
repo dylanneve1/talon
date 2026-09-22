@@ -98,12 +98,13 @@ describe("agent-runtime/events", () => {
 // ── model-ref ───────────────────────────────────────────────────────────────
 
 describe("agent-runtime/model-ref", () => {
-  it("BACKEND_IDS pins the six current backends", () => {
+  it("BACKEND_IDS pins the seven current backends", () => {
     expect([...BACKEND_IDS].sort()).toEqual([
       "agy",
       "claude",
       "codex",
       "kilo",
+      "kimi",
       "openai-agents",
       "opencode",
     ]);
@@ -116,6 +117,7 @@ describe("agent-runtime/model-ref", () => {
     expect(isBackendId("agy")).toBe(true);
     expect(isBackendId("claude")).toBe(true);
     expect(isBackendId("codex")).toBe(true);
+    expect(isBackendId("kimi")).toBe(true);
     expect(isBackendId("openai-agents")).toBe(true);
     expect(isBackendId("kilo")).toBe(true);
     expect(isBackendId("opencode")).toBe(true);
