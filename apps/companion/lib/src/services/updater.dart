@@ -9,6 +9,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'log.dart';
 import 'prefs.dart';
+import 'sandbox.dart';
 import 'update_installer.dart';
 
 /// Where releases come from: Talon's own GitHub releases. `/releases/latest`
@@ -242,12 +243,14 @@ class UpdateService extends ChangeNotifier {
     String? platform,
     String feedUrl = kUpdateFeedUrl,
     DateTime Function()? clock,
+    bool? flatpak,
   })  : _client = client ?? http.Client(),
         _installer = installer ?? PlatformUpdateInstaller(),
         _versionProvider = versionProvider ?? _packageVersion,
         platform = platform ?? UpdateInstaller.currentPlatform,
         _feedUrl = feedUrl,
-        _now = clock ?? DateTime.now;
+        _now = clock ?? DateTime.now,
+        managedByFlatpak = flatpak ?? isFlatpak;
 
   /// How stale a check may get before the next launch/tick refreshes it.
   static const Duration checkInterval = Duration(hours: 6);
@@ -264,6 +267,11 @@ class UpdateService extends ChangeNotifier {
   final String platform;
   final String _feedUrl;
   final DateTime Function() _now;
+
+  /// Installed from Flathub: the app dir is read-only and `flatpak update`
+  /// owns upgrades, so the self-updater stays completely idle — no checks,
+  /// no downloads — and the card says who manages updates instead.
+  final bool managedByFlatpak;
 
   Timer? _timer;
   bool _disposed = false;
@@ -305,7 +313,8 @@ class UpdateService extends ChangeNotifier {
   /// Whether this build can update itself at all. Everything else in the card
   /// stays visible either way — an unsupported platform still gets the version
   /// readout and the link to the releases page.
-  bool get supported => UpdateRelease.assetNameFor(platform) != null;
+  bool get supported =>
+      !managedByFlatpak && UpdateRelease.assetNameFor(platform) != null;
 
   bool get busy =>
       _phase == UpdatePhase.checking ||
@@ -328,6 +337,7 @@ class UpdateService extends ChangeNotifier {
   /// opening Settings never starts a timer or a request of its own.
   Future<void> start() async {
     await loadVersion();
+    if (!supported) return;
     _timer?.cancel();
     _timer = Timer.periodic(checkInterval, (_) {
       if (autoCheck) unawaited(check());
@@ -417,7 +427,7 @@ class UpdateService extends ChangeNotifier {
   /// Download the offered asset, verify it, and hand it to the installer.
   Future<void> downloadAndInstall() async {
     final rel = _release;
-    if (rel == null || busy) return;
+    if (rel == null || busy || !supported) return;
     _cancelRequested = false;
     _error = null;
     _message = null;

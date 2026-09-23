@@ -14,6 +14,7 @@ import 'bridge_client.dart';
 import 'device_exec.dart';
 import 'log.dart';
 import 'prefs.dart';
+import 'sandbox.dart';
 
 class MeshBattery {
   final int? percent;
@@ -71,13 +72,27 @@ class MeshService {
     'download_file',
   ];
 
+  /// Whether device control (exec/fs + streamed transfers) is live: the
+  /// user's switch, AND not a Flatpak build. Inside the sandbox those commands
+  /// would only ever reach the sandbox itself — never the host the daemon
+  /// thinks it is teleporting into — so the Flatpak build is client-only and
+  /// never advertises or answers them. [sandboxed] overrides detection in
+  /// tests.
+  static bool deviceControlAllowed(Prefs prefs, {bool? sandboxed}) =>
+      prefs.meshDeviceControl && !(sandboxed ?? isFlatpak);
+
   /// Advertised capabilities for the current prefs — adds the exec/fs surface
-  /// (DeviceExec) and streamed transfers when device control is enabled.
-  static List<String> capabilitiesFor(Prefs prefs) => [
+  /// (DeviceExec) and streamed transfers when device control is enabled (see
+  /// [deviceControlAllowed]).
+  static List<String> capabilitiesFor(Prefs prefs, {bool? sandboxed}) => [
     ...capabilities,
-    if (prefs.meshDeviceControl) ...DeviceExec.capabilities,
-    if (prefs.meshDeviceControl) ...transferCapabilities,
+    if (deviceControlAllowed(prefs, sandboxed: sandboxed)) ...[
+      ...DeviceExec.capabilities,
+      ...transferCapabilities,
+    ],
   ];
+
+  bool get _deviceControl => deviceControlAllowed(prefs);
 
   final Prefs prefs;
   final BridgeClient client;
@@ -142,7 +157,7 @@ class MeshService {
     // ignition) the root grant would otherwise be acquired mid-command, with
     // the root manager's dialog appearing while someone is driving and the
     // command blocked behind it. Fire-and-forget: nothing here gates the mesh.
-    if (prefs.meshDeviceControl) {
+    if (_deviceControl) {
       unawaited(
         _exec.ensureRootReady().catchError(
           (Object e) {
@@ -273,7 +288,7 @@ class MeshService {
           ok = true;
           break;
         case 'upload_file': // streamed pull: device → daemon, one HTTP POST
-          if (!prefs.meshDeviceControl) {
+          if (!_deviceControl) {
             message = 'Device control is disabled on this device.';
             break;
           }
@@ -297,7 +312,7 @@ class MeshService {
           data = {'bytes': sent};
           break;
         case 'download_file': // streamed push: daemon → device, one HTTP GET
-          if (!prefs.meshDeviceControl) {
+          if (!_deviceControl) {
             message = 'Device control is disabled on this device.';
             break;
           }
@@ -334,7 +349,7 @@ class MeshService {
         default:
           // Exec/filesystem commands (the teleport substrate) — only when the
           // user has device control enabled.
-          if (prefs.meshDeviceControl) {
+          if (_deviceControl) {
             final outcome = await _exec.handle(name, params);
             if (outcome != null) {
               ok = outcome.ok;
@@ -343,7 +358,7 @@ class MeshService {
               break;
             }
           }
-          message = prefs.meshDeviceControl
+          message = _deviceControl
               ? 'This app version does not support "$name".'
               : 'Device control is disabled on this device.';
       }
