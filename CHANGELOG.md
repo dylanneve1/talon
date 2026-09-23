@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.7.0](https://github.com/dylanneve1/talon/compare/v5.6.0...v5.7.0) (2026-09-23)
+
+
+### Features
+
+* companion mTLS via reverse proxy, agy in Docker, TrueNAS support ([#1018](https://github.com/dylanneve1/talon/issues/1018)) ([af75e59](https://github.com/dylanneve1/talon/commit/af75e59e9120c9c4a5db20baa03f5284e71f17db))
+
 ## [5.6.0](https://github.com/dylanneve1/talon/compare/v5.5.1...v5.6.0) (2026-09-23)
 
 
