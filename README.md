@@ -78,6 +78,9 @@ brew install dylanneve1/talon/talon
 # Debian / Ubuntu — download the .deb for your arch from the release, then:
 sudo apt install ./talon_<version>_amd64.deb     # or _arm64.deb
 
+# Fedora / RHEL — download the .rpm for your arch from the release, then:
+sudo dnf install ./talon-<version>-1.x86_64.rpm  # or .aarch64.rpm
+
 # Direct download — grab talon-<os>-<arch> from the release, verify, run:
 chmod +x talon-linux-x64 && ./talon-linux-x64 --version
 # macOS, if Gatekeeper blocks an unsigned binary:
@@ -86,6 +89,10 @@ xattr -d com.apple.quarantine ./talon-darwin-arm64
 
 Verify a direct download against the release `SHA256SUMS`:
 `sha256sum -c SHA256SUMS --ignore-missing`.
+
+**Server only, no Telegram?** Run the daemon with just the client bridge,
+reached by the companion app and talon-node: see
+[docs/server-install.md](docs/server-install.md).
 
 > The binary runs the full interactive/agent CLI (`setup`, `start`, `chat`,
 > `doctor`, …) and supervises MCP children like any other install shape. The one
