@@ -276,8 +276,19 @@ conversations inherit it (the same thing codex does).
 stream-json mode, so a turn's cost is the delta against the previous
 result. `thinking_tokens` is a subset of `output_tokens`, never added
 to it. Cache reads are reported, cache writes are not — hence
-`cacheMetrics: "read"`. There is no plan-usage endpoint, so
-`getPlanUsage` returns `undefined`.
+`cacheMetrics: "read"`.
+
+**Plan usage.** There is no account API, but the `/usage` slash command
+runs headlessly: `agy -p /usage --output-format text` prints one
+tab-separated line per quota window — model group, window, percent
+*remaining*, reset time — and exits without a model call.
+`getPlanUsage` spawns that (same binary resolution and env as the chat
+children, 20s timeout), flips remaining into used, and labels the
+windows `Gemini · 5h`, `Gemini · 7d`, `Claude/GPT · 5h`,
+`Claude/GPT · 7d`. The result is cached for 60s with concurrent callers
+sharing one spawn, and a failed read backs off 15s and serves the last
+good value — or `undefined`, so headroom falls back to the
+`backendBudgets` ledger.
 
 **Live check.** `npx tsx scripts/agy-live-check.ts` runs the whole
 stack against the real binary and a running daemon: it writes one hub
@@ -299,9 +310,9 @@ using. On an install with more than one subscription that is a good way
 to burn one plan to its ceiling while another sits idle, so when nothing
 is pinned Talon now picks the backend with the most **headroom**.
 Headroom is `1 - (tightest rate-limit window)` where a backend reports
-its own plan (Claude, Codex), and `1 - used/budget` against a local
-rolling token ledger where it does not (`agy`, `openai-agents`) — see
-`config.backendBudgets`. A backend with neither reports "no usage
+its own plan (Claude, Codex, `agy`), and `1 - used/budget` against a
+local rolling token ledger where it does not (`openai-agents`, or `agy`
+when its `/usage` read fails) — see `config.backendBudgets`. A backend with neither reports "no usage
 signal" and ranks below any measured backend it ties with. Every
 decision is logged under the `router` component with all the candidates
 it saw, and `/usage`, `/status`, `plan_usage` and `list_backends` all
