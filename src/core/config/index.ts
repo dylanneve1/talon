@@ -464,15 +464,18 @@ const configSchema = z.object({
     })
     .optional(),
   /**
-   * Soft token budgets for backends with no account usage API (agy,
-   * openai-agents). Talon keeps a local rolling ledger of every turn and
+   * Soft token budgets for backends with no account usage API
+   * (openai-agents). Talon keeps a local rolling ledger of every turn and
    * one-shot it runs on a backend and derives headroom from it, so a
    * provider that cannot report a plan still has a load-balancing signal.
-   * Keyed by backend id; a backend with no entry contributes no signal
-   * (headroom 1, ranked below any backend with real telemetry on a tie).
+   * A backend's own plan windows always win; for agy (which reads its
+   * quota from `agy -p /usage`) a budget is only the fallback for when
+   * that read fails. Keyed by backend id; a backend with no entry
+   * contributes no signal (headroom 1, ranked below any backend with real
+   * telemetry on a tie).
    *
    * Example:
-   *   "backendBudgets": { "agy": { "tokensPer5h": 2000000, "tokensPerDay": 8000000 } }
+   *   "backendBudgets": { "openai-agents": { "tokensPer5h": 2000000, "tokensPerDay": 8000000 } }
    */
   backendBudgets: z
     .record(
