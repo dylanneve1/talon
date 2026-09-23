@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.9.0](https://github.com/dylanneve1/talon/compare/v5.8.0...v5.9.0) (2026-09-23)
+
+
+### Features
+
+* **prompts:** nuance the Freedom section — respect and listen, own corrections, provenance ([#1003](https://github.com/dylanneve1/talon/issues/1003)) ([d891e6f](https://github.com/dylanneve1/talon/commit/d891e6fbebef21d704918803e4927099d4fd4825))
+
 ## [5.8.0](https://github.com/dylanneve1/talon/compare/v5.7.0...v5.8.0) (2026-09-23)
 
 
