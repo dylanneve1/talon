@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.6.0](https://github.com/dylanneve1/talon/compare/v5.5.1...v5.6.0) (2026-09-23)
+
+
+### Features
+
+* **hub:** conversation-only tool scope for non-operator DMs ([#1015](https://github.com/dylanneve1/talon/issues/1015)) ([681c9f7](https://github.com/dylanneve1/talon/commit/681c9f78f62dbff9c69bfea63bef0fae675c88bd))
+
+
+### Bug Fixes
+
+* **telegram:** /memory is admin-only and DM-only ([#1016](https://github.com/dylanneve1/talon/issues/1016)) ([2dc4b48](https://github.com/dylanneve1/talon/commit/2dc4b48ce871eb0979dbf4d2a66f153ec7057a89))
+
 ## [5.5.1](https://github.com/dylanneve1/talon/compare/v5.5.0...v5.5.1) (2026-09-22)
 
 
