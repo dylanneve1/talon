@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.8.0](https://github.com/dylanneve1/talon/compare/v5.7.0...v5.8.0) (2026-09-23)
+
+
+### Features
+
+* **release:** Fedora .rpm packages and a server-only install guide ([#1020](https://github.com/dylanneve1/talon/issues/1020)) ([1a3053e](https://github.com/dylanneve1/talon/commit/1a3053efbbfe793d0c6225183cb29644c35f51d0))
+
 ## [5.7.0](https://github.com/dylanneve1/talon/compare/v5.6.0...v5.7.0) (2026-09-23)
 
 
