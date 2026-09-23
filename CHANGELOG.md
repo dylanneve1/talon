@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.10.0](https://github.com/dylanneve1/talon/compare/v5.9.0...v5.10.0) (2026-09-23)
+
+
+### Features
+
+* **agy:** real plan usage from `agy /usage` ([#1024](https://github.com/dylanneve1/talon/issues/1024)) ([96622af](https://github.com/dylanneve1/talon/commit/96622af485e6312ca84eed1c427311e64a86d524))
+
 ## [5.9.0](https://github.com/dylanneve1/talon/compare/v5.8.0...v5.9.0) (2026-09-23)
 
 
