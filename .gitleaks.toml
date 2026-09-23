@@ -24,5 +24,6 @@ lives in ~/.talon/keys/."""
 # --log-opts=--all history).
 paths = [
   '''apps/companion/test/fixtures/.*\.pem''',
+  '''apps/companion/test/fixtures/.*\.p12''',
   '''src/__tests__/secret-scan\.test\.ts''',
 ]

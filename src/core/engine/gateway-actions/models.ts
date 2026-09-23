@@ -10,10 +10,32 @@ import {
   getBackendForChat,
   getBackendIdForChat,
   getAvailableBackends,
+  getPoolConfig,
   getPooledBackend,
   acquireBackendInstance,
 } from "../backend-controller/index.js";
+import {
+  collectBackendUsage,
+  formatHeadroom,
+  leadWith,
+  type BackendUsageSnapshot,
+} from "../backend-router/index.js";
 import type { SharedActionHandlers } from "./types.js";
+
+/** One `plan_usage` block: the headroom line, then any plan windows. */
+function usageLines(entry: BackendUsageSnapshot): string[] {
+  const head = `- ${entry.label || entry.id}: ${formatHeadroom(entry.headroom)}`;
+  if (!entry.plan) {
+    return [`${head}${entry.note ? ` (${entry.note})` : ""}`];
+  }
+  return [
+    `${head}${entry.plan.plan ? ` · ${entry.plan.plan}` : ""}`,
+    ...entry.plan.windows.map(
+      (w) =>
+        `    ${w.label}: ${w.percent}% used${w.resetsAt ? `, resets ${w.resetsAt}` : ""}`,
+    ),
+  ];
+}
 
 export const modelHandlers: SharedActionHandlers = {
   list_models: async (body, chatId, _backend, chatKey) => {
@@ -98,52 +120,67 @@ export const modelHandlers: SharedActionHandlers = {
     }
   },
 
-  // Account-level, so it falls back to the pooled Claude backend when
-  // another provider is serving this chat.
+  // Account-level and fleet-wide: every exposed backend, with the headroom
+  // figure the plan-aware router ranks on — a backend with no usage API
+  // still answers, from its local budget ledger. The chat's own backend
+  // leads so a caller reading only the first entry sees what it used to.
   plan_usage: async (_body, chatId, _backend, chatKey) => {
-    const current = getPooledBackend(getBackendIdForChat(chatKey));
-    const source = current?.usage?.getPlanUsage
-      ? current
-      : getPooledBackend("claude");
-    if (!source?.usage?.getPlanUsage)
-      return {
-        ok: false,
-        error: "No configured backend reports subscription rate limits.",
-      };
-
-    const usage = await source.usage.getPlanUsage();
-    if (!usage)
-      return {
-        ok: false,
-        error:
-          "Plan usage is unavailable — no subscription credentials, or this session authenticates with an API key.",
-      };
-
-    const lines = usage.windows.map(
-      (w) =>
-        `- ${w.label}: ${w.percent}% used${w.resetsAt ? `, resets ${w.resetsAt}` : ""}`,
+    const currentId = getBackendIdForChat(chatKey);
+    const entries = leadWith(
+      await collectBackendUsage(getPoolConfig() ?? undefined, { force: true }),
+      currentId,
     );
+    if (entries.length === 0)
+      return { ok: false, error: "No backends are available." };
+
+    const lead = entries[0] as BackendUsageSnapshot;
     return {
       ok: true,
-      plan: usage.plan ?? null,
-      windows: usage.windows,
-      text: `Plan usage${usage.plan ? ` (${usage.plan})` : ""}:\n${lines.join("\n")}`,
+      // Kept for callers written against the single-backend shape.
+      plan: lead.plan?.plan ?? null,
+      windows: lead.plan?.windows ?? [],
+      backends: entries.map((entry) => ({
+        id: entry.id,
+        label: entry.label,
+        current: entry.id === currentId,
+        headroom: Math.round(entry.headroom.headroom * 100) / 100,
+        source: entry.headroom.source,
+        limiting: entry.headroom.limiting ?? null,
+        stale: entry.headroom.stale ?? false,
+        plan: entry.plan?.plan ?? null,
+        windows: entry.plan?.windows ?? [],
+        ...(entry.note ? { note: entry.note } : {}),
+      })),
+      text: `Plan usage and headroom by backend:\n${entries.flatMap(usageLines).join("\n")}`,
     };
   },
 
-  list_backends: (body, chatId, _backend, chatKey) => {
+  list_backends: async (body, chatId, _backend, chatKey) => {
     const currentId = getBackendIdForChat(chatKey);
-    const backends = getAvailableBackends().map((b) => ({
-      id: b.id,
-      label: b.label,
-      current: b.id === currentId,
-    }));
-    if (backends.length === 0)
+    const available = getAvailableBackends();
+    if (available.length === 0)
       return { ok: true, backends: [], text: "No backends are available." };
-    const lines = backends.map(
-      (b) =>
-        `- ${b.id}${b.label && b.label !== b.id ? ` (${b.label})` : ""}${b.current ? " — current" : ""}`,
-    );
+    // Headroom comes off the router's 60s cache, so listing backends is
+    // cheap even though it now answers "which one has room?" as well.
+    const usage = await collectBackendUsage(getPoolConfig() ?? undefined);
+    const byId = new Map(usage.map((entry) => [entry.id, entry]));
+    const backends = available.map((b) => {
+      const entry = byId.get(b.id);
+      return {
+        id: b.id,
+        label: b.label,
+        current: b.id === currentId,
+        headroom: entry
+          ? Math.round(entry.headroom.headroom * 100) / 100
+          : null,
+        headroomSource: entry?.headroom.source ?? null,
+      };
+    });
+    const lines = backends.map((b) => {
+      const entry = byId.get(b.id);
+      const room = entry ? ` — ${formatHeadroom(entry.headroom)} free` : "";
+      return `- ${b.id}${b.label && b.label !== b.id ? ` (${b.label})` : ""}${b.current ? " — current" : ""}${room}`;
+    });
     return {
       ok: true,
       backends,

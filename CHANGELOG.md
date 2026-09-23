@@ -1,5 +1,71 @@
 # Changelog
 
+## [5.8.0](https://github.com/dylanneve1/talon/compare/v5.7.0...v5.8.0) (2026-09-23)
+
+
+### Features
+
+* **release:** Fedora .rpm packages and a server-only install guide ([#1020](https://github.com/dylanneve1/talon/issues/1020)) ([1a3053e](https://github.com/dylanneve1/talon/commit/1a3053efbbfe793d0c6225183cb29644c35f51d0))
+
+## [5.7.0](https://github.com/dylanneve1/talon/compare/v5.6.0...v5.7.0) (2026-09-23)
+
+
+### Features
+
+* companion mTLS via reverse proxy, agy in Docker, TrueNAS support ([#1018](https://github.com/dylanneve1/talon/issues/1018)) ([af75e59](https://github.com/dylanneve1/talon/commit/af75e59e9120c9c4a5db20baa03f5284e71f17db))
+
+## [5.6.0](https://github.com/dylanneve1/talon/compare/v5.5.1...v5.6.0) (2026-09-23)
+
+
+### Features
+
+* **hub:** conversation-only tool scope for non-operator DMs ([#1015](https://github.com/dylanneve1/talon/issues/1015)) ([681c9f7](https://github.com/dylanneve1/talon/commit/681c9f78f62dbff9c69bfea63bef0fae675c88bd))
+
+
+### Bug Fixes
+
+* **telegram:** /memory is admin-only and DM-only ([#1016](https://github.com/dylanneve1/talon/issues/1016)) ([2dc4b48](https://github.com/dylanneve1/talon/commit/2dc4b48ce871eb0979dbf4d2a66f153ec7057a89))
+
+## [5.5.1](https://github.com/dylanneve1/talon/compare/v5.5.0...v5.5.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **telegram:** gate /commands and button presses behind the DM whitelist ([#1013](https://github.com/dylanneve1/talon/issues/1013)) ([ba82511](https://github.com/dylanneve1/talon/commit/ba8251104f2d73b116538c815181ef75bd4a91e6))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump @types/node in the dev-dependencies group ([#1010](https://github.com/dylanneve1/talon/issues/1010)) ([2ddb07d](https://github.com/dylanneve1/talon/commit/2ddb07dfb11ae6db6fb8785ee1ec6c23115a9f86))
+* **deps-dev:** Bump the dev-dependencies group with 2 updates ([#1006](https://github.com/dylanneve1/talon/issues/1006)) ([445f624](https://github.com/dylanneve1/talon/commit/445f624110811b450e096ae108a0592dabe61237))
+* **deps:** Bump github/codeql-action from 4.38.0 to 4.38.1 ([#1008](https://github.com/dylanneve1/talon/issues/1008)) ([957c4bb](https://github.com/dylanneve1/talon/commit/957c4bb6d030715585630bf0dd673baa52cedd9c))
+* **deps:** Bump the production-dependencies group with 3 updates ([#1011](https://github.com/dylanneve1/talon/issues/1011)) ([114342a](https://github.com/dylanneve1/talon/commit/114342ab450bf97e5bb124b3263effb15c3a222f))
+* **deps:** Bump the production-dependencies group with 6 updates ([#1007](https://github.com/dylanneve1/talon/issues/1007)) ([d7aa5ee](https://github.com/dylanneve1/talon/commit/d7aa5ee49f20eb6cd2bbc7ecd2ffa2a914a35c61))
+
+## [5.5.0](https://github.com/dylanneve1/talon/compare/v5.4.1...v5.5.0) (2026-09-21)
+
+
+### Features
+
+* **router:** plan-aware backend routing for sub-agents, cron and the heartbeat ([#1001](https://github.com/dylanneve1/talon/issues/1001)) ([51bb7ba](https://github.com/dylanneve1/talon/commit/51bb7babddbbb7e7521371354fb2e33369ddd655))
+
+
+### Bug Fixes
+
+* **telegram:** render markdown headings as bold and &gt; runs as blockquotes ([#996](https://github.com/dylanneve1/talon/issues/996)) ([fc5563f](https://github.com/dylanneve1/talon/commit/fc5563fed119ea9297ab8d76bd1f0b5ab169ffa9))
+
+
+### Documentation
+
+* **identity:** the reasoning behind the living-world default ([#999](https://github.com/dylanneve1/talon/issues/999)) ([c5fb1f0](https://github.com/dylanneve1/talon/commit/c5fb1f07b849e9d44fd4d4d3adae82622c361c55))
+
+## [5.4.1](https://github.com/dylanneve1/talon/compare/v5.4.0...v5.4.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **daemon:** /restart and /update survive Bun dropping the SIGTERM handler ([#1002](https://github.com/dylanneve1/talon/issues/1002)) ([08ae6e4](https://github.com/dylanneve1/talon/commit/08ae6e45d82c5b964b1a48e0adbafa2179730293))
+
 ## [5.4.0](https://github.com/dylanneve1/talon/compare/v5.3.0...v5.4.0) (2026-09-20)
 
 

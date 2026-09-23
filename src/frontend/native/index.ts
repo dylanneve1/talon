@@ -185,6 +185,9 @@ export function createNativeFrontend(
         port: server.getPort(),
         ...(listen.token ? { token: listen.token } : {}),
         ...(fingerprint ? { fingerprint } : {}),
+        ...(config.native?.publicUrl
+          ? { publicUrl: config.native.publicUrl }
+          : {}),
       });
       await writeBridgeDiscovery({
         port: server.getPort(),

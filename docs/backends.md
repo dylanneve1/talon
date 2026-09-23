@@ -291,6 +291,33 @@ interactive `agy` run. No API key exists; that subscription-backed
 path is the point of the backend. `docker/agy-test/` documents why
 this makes an unattended CI harness impossible.
 
+## Plan-aware routing
+
+Background work — `spawn_agent` sub-agents, cron `query` jobs, the
+heartbeat — used to run on whichever backend the chat happened to be
+using. On an install with more than one subscription that is a good way
+to burn one plan to its ceiling while another sits idle, so when nothing
+is pinned Talon now picks the backend with the most **headroom**.
+Headroom is `1 - (tightest rate-limit window)` where a backend reports
+its own plan (Claude, Codex), and `1 - used/budget` against a local
+rolling token ledger where it does not (`agy`, `openai-agents`) — see
+`config.backendBudgets`. A backend with neither reports "no usage
+signal" and ranks below any measured backend it ties with. Every
+decision is logged under the `router` component with all the candidates
+it saw, and `/usage`, `/status`, `plan_usage` and `list_backends` all
+show the same figures.
+
+A pin always wins: an explicit `backend` on a spawn, a `provider` on a
+cron job, `heartbeatBackend` — and an explicit **model**, since a model
+id is backend-specific and naming one pins the backend that understands
+it. Routing is what happens in the absence of a choice, never over one,
+and `"router": { "enabled": false }` turns it off entirely. Two rules
+are worth knowing: the ceiling (`ceilingPercent`, 85) is applied before
+any task-class preference, so "reasoning runs on Claude" cannot send
+work to a spent plan; and routing never boots a cold provider to measure
+it, so a backend joins the rotation once it is running (bound to a role
+or serving a chat) or once you give it a `backendBudgets` entry.
+
 ## Adding a new backend
 
 1. Create `src/backend/<name>/` with at minimum:

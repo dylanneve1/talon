@@ -119,6 +119,38 @@ function makeMockBackend(): Backend {
   });
 }
 
+// The plan-aware router + the pool handle it borrows a routed backend from.
+// These tests assert what the heartbeat ASKS for and that it hands the
+// instance back; the ranking itself is backend-router.test.ts's job.
+const { chooseBackendMock, resolveRoutedModelMock, acquireMock, releaseMock } =
+  vi.hoisted(() => ({
+    chooseBackendMock: vi.fn(async (request: { chatBackendId: string }) => ({
+      backendId: request.chatBackendId,
+      reason: "no candidates",
+      routed: false,
+    })),
+    resolveRoutedModelMock: vi.fn(async () => "routed-model"),
+    acquireMock: vi.fn(),
+    releaseMock: vi.fn(async () => {}),
+  }));
+
+vi.mock("../core/engine/backend-router/index.js", () => ({
+  chooseBackend: chooseBackendMock,
+  resolveRoutedModel: resolveRoutedModelMock,
+  recordBackendRunUsage: vi.fn(),
+}));
+
+vi.mock(
+  "../core/engine/backend-controller/index.js",
+  async (importOriginal) => {
+    const real =
+      await importOriginal<
+        typeof import("../core/engine/backend-controller/index.js")
+      >();
+    return { ...real, acquireBackendInstance: acquireMock };
+  },
+);
+
 vi.mock("../util/paths.js", () => ({
   files: {
     heartbeatState: "/fake/.talon/workspace/memory/heartbeat_state.json",
@@ -888,5 +920,109 @@ describe("heartbeat failure backoff (behavioral)", () => {
     expect(runOneShotAgentMock).toHaveBeenCalledTimes(2);
     expect(hb.failureBackoff.failures).toBe(0);
     expect(hb.failureBackoff.active()).toBe(false);
+  });
+});
+
+// ── plan-aware routing ──────────────────────────────────────────────────────
+
+describe("heartbeat backend routing", () => {
+  /** A second backend the router can send the run to. */
+  const routedRun = vi.fn(
+    async (_params: OneShotAgentParams): Promise<void> => {},
+  );
+
+  beforeEach(() => {
+    existsSyncMock.mockReturnValue(false);
+    readFileSyncMock.mockReset();
+    readFileSyncMock.mockImplementation(((filePath: string) =>
+      String(filePath).replace(/\\/g, "/").endsWith("/heartbeat.md")
+        ? "heartbeat prompt"
+        : "null") as never);
+    clearState();
+    runOneShotAgentMock.mockReset();
+    runOneShotAgentMock.mockImplementation(async () => {});
+    routedRun.mockClear();
+    chooseBackendMock.mockClear();
+    resolveRoutedModelMock.mockClear();
+    resolveRoutedModelMock.mockResolvedValue("routed-model");
+    releaseMock.mockClear();
+    acquireMock.mockReset();
+    acquireMock.mockResolvedValue({
+      backend: stubBackend({ runOneShotAgent: routedRun }),
+      release: releaseMock,
+    });
+  });
+
+  it("routes an unpinned heartbeat and releases the borrowed instance", async () => {
+    initHeartbeat({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+      getBackendId: () => "claude",
+    });
+    chooseBackendMock.mockResolvedValue({
+      backendId: "agy",
+      reason: "most headroom 92%",
+      routed: true,
+    });
+
+    await forceHeartbeat();
+
+    expect(chooseBackendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        purpose: "heartbeat",
+        chatBackendId: "claude",
+      }),
+    );
+    expect(routedRun).toHaveBeenCalledTimes(1);
+    expect(runOneShotAgentMock).not.toHaveBeenCalled();
+    // The routed run takes the target backend's own default model.
+    expect(routedRun.mock.calls[0]?.[0]?.model).toBe("routed-model");
+    expect(releaseMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes heartbeatBackend and heartbeatModel through as pins", async () => {
+    initHeartbeat({
+      model: "claude-sonnet-4-6",
+      heartbeatModel: "claude-haiku-4-5",
+      getBackend: () => makeMockBackend(),
+      getBackendId: () => "claude",
+      pinnedBackendId: "codex",
+    });
+    chooseBackendMock.mockResolvedValue({
+      backendId: "codex",
+      reason: "pinned",
+      routed: false,
+    });
+
+    await forceHeartbeat();
+
+    expect(chooseBackendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestedBackendId: "codex",
+        requestedModel: "claude-haiku-4-5",
+      }),
+    );
+    // Not routed → the role backend runs it, exactly as before.
+    expect(runOneShotAgentMock).toHaveBeenCalledTimes(1);
+    expect(acquireMock).not.toHaveBeenCalled();
+  });
+
+  it("stays on the role backend when the routed one names no model", async () => {
+    initHeartbeat({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+      getBackendId: () => "claude",
+    });
+    chooseBackendMock.mockResolvedValue({
+      backendId: "agy",
+      reason: "most headroom 92%",
+      routed: true,
+    });
+    resolveRoutedModelMock.mockResolvedValue(null as never);
+
+    await forceHeartbeat();
+
+    expect(acquireMock).not.toHaveBeenCalled();
+    expect(runOneShotAgentMock).toHaveBeenCalledTimes(1);
   });
 });

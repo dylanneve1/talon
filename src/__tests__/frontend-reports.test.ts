@@ -137,6 +137,23 @@ const MESH: MeshPingResult[] = [
   },
 ];
 
+/** A headroom reading, as every `/usage` entry now carries one. */
+function headroom(
+  id: string,
+  label: string,
+  percent: number,
+  source: "plan" | "ledger" | "none" = "plan",
+): BackendUsageEntry["headroom"] {
+  return {
+    id,
+    label,
+    headroom: 1 - percent / 100,
+    source,
+    fetchedAt: NOW,
+    ...(source === "none" ? {} : { limiting: { label: "5h & up", percent } }),
+  };
+}
+
 const USAGE: BackendUsageEntry[] = [
   {
     id: "claude",
@@ -160,6 +177,8 @@ const USAGE: BackendUsageEntry[] = [
         },
       ],
     },
+    headroom: headroom("claude", "Claude <SDK> & co", 42),
+    headroomLabel: "58% — 5h 42% used",
   },
   {
     id: "codex",
@@ -170,14 +189,24 @@ const USAGE: BackendUsageEntry[] = [
       resetsAvailable: 1,
       windows: [],
     },
+    headroom: headroom("codex", "Codex", 0),
+    headroomLabel: "100% — 5h 0% used",
   },
   {
     id: "kilo",
     label: "Kilo",
     plan: null,
     note: "no plan limits <here> & now",
+    headroom: headroom("kilo", "Kilo", 0, "none"),
+    headroomLabel: "100% — no usage signal",
   },
-  { id: "bare", label: "", plan: null },
+  {
+    id: "bare",
+    label: "",
+    plan: null,
+    headroom: headroom("bare", "", 25, "ledger"),
+    headroomLabel: "75% — 5h (local budget) 25% used (local budget)",
+  },
 ];
 
 const SETTINGS_DETAILS = [
@@ -553,16 +582,20 @@ describe("usage report", () => {
         "**📊 Plan usage**",
         "",
         "**Claude <SDK> & co** · Max <20x> *(12m ago)*",
+        "  **Headroom:** 58% — 5h 42% used",
         "  • You have **2** usage limit resets available",
         "  `5h    ████████░░░░░░░░░░░░  42%` reset 21:00",
         "  `week  █░░░░░░░░░░░░░░░░░░░   7%`",
         "",
         "**Codex**",
+        "  **Headroom:** 100% — 5h 0% used",
         "  • You have **1** usage limit reset available",
         "",
         "**Kilo** — _no plan limits <here> & now_",
+        "  **Headroom:** 100% — no usage signal",
         "",
         "**bare** — __",
+        "  **Headroom:** 75% — 5h (local budget) 25% used (local budget)",
       ].join("\n"),
     );
   });
@@ -573,16 +606,20 @@ describe("usage report", () => {
         "<b>📊 Plan usage</b>",
         "",
         "<b>Claude &lt;SDK&gt; &amp; co</b> · Max &lt;20x&gt; <i>(12m ago)</i>",
+        "  <b>Headroom:</b> 58% — 5h 42% used",
         "  • You have <b>2</b> usage limit resets available",
         "  <code>5h    ████████░░░░░░░░░░░░  42%</code> reset 21:00",
         "  <code>week  █░░░░░░░░░░░░░░░░░░░   7%</code>",
         "",
         "<b>Codex</b>",
+        "  <b>Headroom:</b> 100% — 5h 0% used",
         "  • You have <b>1</b> usage limit reset available",
         "",
         "<b>Kilo</b> — <i>no plan limits &lt;here&gt; &amp; now</i>",
+        "  <b>Headroom:</b> 100% — no usage signal",
         "",
         "<b>bare</b> — <i></i>",
+        "  <b>Headroom:</b> 75% — 5h (local budget) 25% used (local budget)",
       ].join("\n"),
     );
   });

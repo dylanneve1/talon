@@ -235,7 +235,9 @@ void main() {
           findsOneWidget);
       await settle(tester);
       expect(uploadedNames, ['archive.zip', 's.png']);
-      expect(streamedBytes, [64, 32]);
+      // Both uploads run at once, so the smaller file can finish streaming
+      // first; what matters is that each one streamed all of its bytes.
+      expect(streamedBytes, unorderedEquals([64, 32]));
 
       await tester.enterText(find.byType(TextField), 'have a look');
       await tester.pump();

@@ -43,8 +43,25 @@ class BridgeClient {
         milliseconds: 30 * 1000 + (bytes / (32 * 1024) * 1000).round(),
       );
 
-  ConnectionConfig config;
-  late final http.Client _http = _newClient();
+  ConnectionConfig _config;
+  http.Client? _httpClient;
+
+  /// The profile this client talks to. Swapping it (the background isolate
+  /// hops between the LAN and the external address) rebuilds the REST
+  /// client when the TLS setup it was built for no longer matches.
+  ConnectionConfig get config => _config;
+  set config(ConnectionConfig next) {
+    final prev = _config;
+    _config = next;
+    if (next.tls != prev.tls ||
+        next.clientP12 != prev.clientP12 ||
+        next.clientP12Password != prev.clientP12Password) {
+      _httpClient?.close();
+      _httpClient = null;
+    }
+  }
+
+  http.Client get _http => _httpClient ??= _newClient();
 
   final _events = StreamController<Map<String, dynamic>>.broadcast();
   StreamSubscription<String>? _sseSub;
@@ -61,7 +78,7 @@ class BridgeClient {
   /// makes this a plain UI connection.
   String? meshDeviceId;
 
-  BridgeClient(this.config);
+  BridgeClient(ConnectionConfig config) : _config = config;
 
   /// Fingerprint of the certificate seen on the most recent TLS handshake —
   /// the pin candidate the caller persists after a successful first connect.
@@ -69,7 +86,10 @@ class BridgeClient {
 
   http.Client _newClient() {
     if (!config.tls) return http.Client();
-    final inner = HttpClient()
+    // A reverse proxy in front of the bridge may demand a client
+    // certificate; present the imported one whenever it's asked for. Server
+    // trust is still the pin below.
+    final inner = HttpClient(context: config.clientSecurityContext())
       ..badCertificateCallback = (cert, host, port) => _evaluate(cert);
     return IOClient(inner);
   }
@@ -92,7 +112,33 @@ class BridgeClient {
       _pinRejected = false;
       throw BridgeException.certificateChanged();
     }
+    if (isClientCertificateAlert(error)) {
+      throw BridgeException.clientCertificateRequired(
+        rejected: config.hasClientCert,
+      );
+    }
     throw BridgeException('$fallback: $error');
+  }
+
+  /// TLS alerts a reverse proxy sends when the handshake lacked an
+  /// acceptable client certificate (Caddy, Traefik, HAProxy…).
+  static bool isClientCertificateAlert(Object error) {
+    final text = error.toString().toUpperCase();
+    return text.contains('CERTIFICATE_REQUIRED') ||
+        text.contains('ALERT_BAD_CERTIFICATE') ||
+        text.contains('ALERT_UNKNOWN_CA') ||
+        text.contains('ALERT_CERTIFICATE_UNKNOWN');
+  }
+
+  /// HTTP-level refusals by a proxy that wanted a client certificate:
+  /// nginx answers 400 "No required SSL certificate was sent", Cloudflare's
+  /// mTLS rule a 403 page (marked by cf-ray).
+  static bool _proxyRefusedCertificate(http.Response res) {
+    if (res.statusCode == 403 && res.headers.containsKey('cf-ray')) {
+      return true;
+    }
+    return res.statusCode == 400 &&
+        RegExp(r'SSL certificate', caseSensitive: false).hasMatch(res.body);
   }
 
   /// Decoded SSE payloads (`{kind: ...}` objects).
@@ -111,14 +157,26 @@ class BridgeClient {
           .get(_u('/health'))
           .timeout(timeout ?? const Duration(seconds: 4));
       AppLog.debug('bridge', 'health result ${res.statusCode}');
+      if (_proxyRefusedCertificate(res)) {
+        throw BridgeException.clientCertificateRequired(
+          rejected: config.hasClientCert,
+        );
+      }
       if (res.statusCode != 200) return null;
       final body = _decodeObject(res.body);
       return body['app'] == 'talon-bridge' ? body : null;
+    } on BridgeException {
+      rethrow; // already a diagnosis (client certificate required)
     } catch (e) {
       AppLog.warn('bridge', 'health probe failed', e);
       if (_pinRejected) {
         _pinRejected = false;
         throw BridgeException.certificateChanged();
+      }
+      if (isClientCertificateAlert(e)) {
+        throw BridgeException.clientCertificateRequired(
+          rejected: config.hasClientCert,
+        );
       }
       return null;
     }
@@ -672,7 +730,7 @@ class BridgeClient {
     AppLog.info('bridge', 'disconnect');
     _sseSub?.cancel();
     _sseClient?.close();
-    _http.close();
+    _httpClient?.close();
     _events.close();
   }
 }
@@ -681,19 +739,36 @@ class BridgeException implements Exception {
   final String message;
   final bool unauthorized;
   final bool certificateChanged;
+
+  /// A reverse proxy refused the connection for want of a (valid) client
+  /// certificate. Never heals by retrying — the user has to import one.
+  final bool clientCertificateRequired;
+
   BridgeException(this.message)
       : unauthorized = false,
-        certificateChanged = false;
+        certificateChanged = false,
+        clientCertificateRequired = false;
   BridgeException.unauthorized()
       : message = 'Unauthorized — check your token',
         unauthorized = true,
-        certificateChanged = false;
+        certificateChanged = false,
+        clientCertificateRequired = false;
   BridgeException.certificateChanged()
       : message = "The bridge's certificate no longer matches the pinned "
             'fingerprint. If Talon was reinstalled, clear the pinned '
             'fingerprint in connection settings and reconnect.',
         unauthorized = false,
-        certificateChanged = true;
+        certificateChanged = true,
+        clientCertificateRequired = false;
+  BridgeException.clientCertificateRequired({bool rejected = false})
+      : message = rejected
+            ? "The server didn't accept this device's client certificate. "
+                'Import a valid one in connection settings.'
+            : 'This server requires a client certificate. Import one in '
+                'connection settings (Import certificate).',
+        unauthorized = false,
+        certificateChanged = false,
+        clientCertificateRequired = true;
   @override
   String toString() => message;
 }

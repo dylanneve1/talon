@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart'
     show
         ChangeNotifier,
@@ -12,6 +13,7 @@ import '../models/connection.dart';
 import '../services/bridge_client.dart';
 import '../services/bridge_trust.dart';
 import '../services/daemon_supervisor.dart';
+import '../services/endpoint.dart';
 import '../services/local_discovery.dart';
 import '../services/log.dart';
 import '../services/menu_bar.dart';
@@ -102,6 +104,11 @@ class AppState extends ChangeNotifier {
   Timer? _reconnect;
   int _backoffMs = 800;
   bool _disposed = false;
+
+  /// Network changes, watched while the profile has a local address so the
+  /// app hops between it and the main address as the phone moves.
+  StreamSubscription<List<ConnectivityResult>>? _networkWatch;
+  Timer? _networkDebounce;
 
   /// Per-chat grace timers that promote a delivered-but-not-ended turn into the
   /// "still working" state. Keyed by chatId; cancelled on `turn_end`, fresh
@@ -252,11 +259,62 @@ class AppState extends ChangeNotifier {
       await _openStream(null, epoch);
     } else {
       daemon = const DaemonState(DaemonPhase.unknown);
-      await _openStream(null, epoch);
+      _watchNetwork();
+      // The local address when it answers, the main one otherwise.
+      final endpoint = await resolveEndpoint(config);
+      if (epoch != _epoch) return;
+      if (identical(endpoint, config)) {
+        await _openStream(null, epoch);
+      } else {
+        // The pin belongs to the LAN bridge: persist it only from there.
+        await _openStream(
+          endpoint,
+          epoch,
+          persistPin: config.localEndpoint()?.baseUrl == endpoint.baseUrl,
+        );
+      }
     }
   }
 
-  Future<void> _openStream(ConnectionConfig? effectiveConfig, int epoch) async {
+  /// Re-pick the address whenever the network changes (Wi-Fi ↔ cellular,
+  /// arriving home…), reconnecting only if the answer changed.
+  void _watchNetwork() {
+    if (config.localUrl == null) {
+      _networkWatch?.cancel();
+      _networkWatch = null;
+      return;
+    }
+    if (_networkWatch != null) return;
+    try {
+      _networkWatch = Connectivity().onConnectivityChanged.listen(
+        (results) {
+          if (results.every((r) => r == ConnectivityResult.none)) return;
+          _networkDebounce?.cancel();
+          _networkDebounce = Timer(const Duration(seconds: 2), () async {
+            if (_disposed || config.localUrl == null) return;
+            final next = await resolveEndpoint(config);
+            if (_disposed) return;
+            if (next.baseUrl != _activeConfig?.baseUrl) {
+              AppLog.info('app_state', 'network changed → ${next.baseUrl}');
+              unawaited(start());
+            }
+          });
+        },
+        onError: (Object e) =>
+            AppLog.debug('app_state', 'network watch unavailable', e),
+      );
+    } catch (e) {
+      // No connectivity plugin (tests, unsupported platform): the address
+      // is still re-picked on every reconnect, just not proactively.
+      AppLog.debug('app_state', 'network watch unavailable', e);
+    }
+  }
+
+  Future<void> _openStream(
+    ConnectionConfig? effectiveConfig,
+    int epoch, {
+    bool? persistPin,
+  }) async {
     await _sub?.cancel();
     if (epoch != _epoch) return;
     _client?.dispose();
@@ -264,6 +322,7 @@ class AppState extends ChangeNotifier {
     // Keep the process-wide pin (Image.network et al.) in step with the
     // profile this attempt uses; TOFU below adopts one when none is set.
     BridgeTrust.pin(cfg.tls ? cfg.fingerprint : null);
+    BridgeTrust.useClientContext(cfg.tls ? cfg.clientSecurityContext() : null);
     final client = BridgeClient(cfg);
     // Claim our mesh identity on this stream (when one has been minted) so
     // device commands are addressed to us rather than shouted at every
@@ -289,6 +348,10 @@ class AppState extends ChangeNotifier {
         _onEvent,
         onError: (Object e) {
           if (!identical(_client, client)) return; // stale stream
+          if (e is BridgeException && e.clientCertificateRequired) {
+            _stopFatal(e.message);
+            return;
+          }
           if (_isUnauthorized(e)) {
             _stopUnauthorized();
             return;
@@ -304,7 +367,11 @@ class AppState extends ChangeNotifier {
       }
 
       AppLog.info('app_state', 'connected');
-      await _adoptFingerprint(cfg, client, persist: effectiveConfig == null);
+      await _adoptFingerprint(
+        cfg,
+        client,
+        persist: persistPin ?? effectiveConfig == null,
+      );
       _setConn(ConnState.connected, null);
       _backoffMs = 800;
       await _startMesh(client);
@@ -314,6 +381,11 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       if (epoch != _epoch) {
         _disposeStale(client);
+        return;
+      }
+      if (e is BridgeException && e.clientCertificateRequired) {
+        // Retrying can't produce a certificate — only importing one can.
+        _stopFatal(e.message);
         return;
       }
       if (_isUnauthorized(e)) {
@@ -373,6 +445,13 @@ class AppState extends ChangeNotifier {
     AppLog.warn('app_state', 'auth-fatal stop');
     _reconnect?.cancel();
     _setConn(ConnState.error, 'Unauthorized — check your token');
+  }
+
+  /// Stop reconnecting on an error only the user can fix.
+  void _stopFatal(String message) {
+    AppLog.warn('app_state', 'fatal stop: $message');
+    _reconnect?.cancel();
+    _setConn(ConnState.error, message);
   }
 
   static bool _isUnauthorized(Object e) =>
@@ -1602,6 +1681,8 @@ class AppState extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _reconnect?.cancel();
+    _networkDebounce?.cancel();
+    _networkWatch?.cancel();
     _snapshotTimer?.cancel();
     for (final t in _continuingTimers.values) {
       t.cancel();

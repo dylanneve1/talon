@@ -192,6 +192,16 @@ const nativeConfigSchema = z
      * working zero-config).
      */
     tls: z.boolean().optional(),
+    /**
+     * The URL other devices should dial, when it isn't the bind address —
+     * a container (Docker, TrueNAS) or anything behind NAT or a proxy,
+     * where the bridge only sees its internal IP. Used for pairing links,
+     * node installers and `/mesh`. e.g. "https://truenas.lan:19880".
+     */
+    publicUrl: z
+      .string()
+      .regex(/^https?:\/\/\S+$/, "native.publicUrl must be an http(s) URL")
+      .optional(),
   })
   .strict();
 
@@ -436,6 +446,44 @@ const configSchema = z.object({
    */
   heartbeatEffort: z.enum(REASONING_EFFORT_ENUM).optional(),
   /**
+   * Plan-aware backend routing for background work (docs/backends.md,
+   * "Plan-aware routing"). When nothing is pinned, `spawn_agent`, cron
+   * `query` jobs and the heartbeat pick the backend with the most plan
+   * headroom instead of always inheriting the chat's.
+   *
+   *   - `enabled` — off returns byte-identical behaviour to pre-router
+   *     Talon (the caller's own backend, every time).
+   *   - `ceilingPercent` — a backend whose tightest window is at or above
+   *     this is skipped, unless every candidate is (then the least-bad one
+   *     runs rather than nothing running).
+   */
+  router: z
+    .object({
+      enabled: z.boolean().default(true),
+      ceilingPercent: z.number().int().min(1).max(100).default(85),
+    })
+    .optional(),
+  /**
+   * Soft token budgets for backends with no account usage API (agy,
+   * openai-agents). Talon keeps a local rolling ledger of every turn and
+   * one-shot it runs on a backend and derives headroom from it, so a
+   * provider that cannot report a plan still has a load-balancing signal.
+   * Keyed by backend id; a backend with no entry contributes no signal
+   * (headroom 1, ranked below any backend with real telemetry on a tie).
+   *
+   * Example:
+   *   "backendBudgets": { "agy": { "tokensPer5h": 2000000, "tokensPerDay": 8000000 } }
+   */
+  backendBudgets: z
+    .record(
+      z.string(),
+      z.object({
+        tokensPer5h: z.number().int().min(1).optional(),
+        tokensPerDay: z.number().int().min(1).optional(),
+      }),
+    )
+    .optional(),
+  /**
    * Sub-agents — the caps on Talon's own delegation mechanism (see
    * `docs/agents.md`). There is no on/off switch: the tools are always
    * present, and a deployment that doesn't want fan-out sets
@@ -569,6 +617,22 @@ const configSchema = z.object({
    */
   disabledTools: z.array(z.string()).optional(),
   disabledToolTags: z.array(z.string()).optional(),
+
+  /**
+   * Conversation-only tool surface for DMs from anyone who isn't an
+   * operator. The admin's Telegram DM and any `operatorChats` keep
+   * everything; other DMs (Telegram user ids, `wa_dm_*`) get reply/react/
+   * history/stickers plus the `guestPlugins` servers — no shell, files,
+   * mail, devices, cron, memory, agents or cross-chat sends. Groups are
+   * unaffected. Off by default. See core/mcp-hub/guest-scope.ts.
+   */
+  guestDmScope: z
+    .object({
+      enabled: z.boolean().default(false),
+      operatorChats: z.array(z.string()).default([]),
+      guestPlugins: z.array(z.string()).optional(),
+    })
+    .optional(),
 
   /**
    * Developer build flag. Gates dev-only affordances such as the

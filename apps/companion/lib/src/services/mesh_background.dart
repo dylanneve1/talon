@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import 'bridge_client.dart';
+import 'endpoint.dart';
 import 'log.dart';
 import 'mesh_service.dart';
 import 'message_notifications.dart';
@@ -223,6 +224,10 @@ class MeshBackgroundRunner {
     if (prefs == null || client == null || !prefs.meshSharing) return;
     _connecting = true;
     try {
+      // The local address when it answers, the main one otherwise — picked
+      // afresh on every (re)connect, so a phone leaving home re-routes on
+      // its next retry.
+      client.config = await resolveEndpoint(prefs.connection);
       await client.connect();
       _connected = true;
       _backoffMs = _initialBackoffMs;

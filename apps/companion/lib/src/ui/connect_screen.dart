@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -28,7 +29,13 @@ class _ConnectScreenState extends State<ConnectScreen> {
   late final TextEditingController _host;
   late final TextEditingController _port;
   late final TextEditingController _token;
+  late final TextEditingController _localUrl;
   bool _tls = false;
+
+  /// Imported client certificate (.p12/.pfx as base64) and its password,
+  /// for servers behind a reverse proxy that demands one.
+  String? _clientP12;
+  String? _clientP12Password;
 
   /// Inline validation messages for the remote fields. Set only by [_connect];
   /// cleared as soon as the offending field is edited, so the error never
@@ -50,9 +57,12 @@ class _ConnectScreenState extends State<ConnectScreen> {
     final c = widget.state.config;
     _remote = !c.isLoopback || !_isDesktop;
     _tls = c.tls;
+    _clientP12 = c.clientP12;
+    _clientP12Password = c.clientP12Password;
     _host = TextEditingController(text: c.isLoopback ? '' : c.host);
     _port = TextEditingController(text: c.port.toString());
     _token = TextEditingController(text: c.token ?? '');
+    _localUrl = TextEditingController(text: c.localUrl ?? '');
   }
 
   @override
@@ -60,6 +70,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
     _host.dispose();
     _port.dispose();
     _token.dispose();
+    _localUrl.dispose();
     super.dispose();
   }
 
@@ -129,11 +140,16 @@ class _ConnectScreenState extends State<ConnectScreen> {
       port = 19880;
     }
 
+    final keepCert = _remote && tls && _clientP12 != null;
+    final localUrl = _localUrl.text.trim();
     final config = ConnectionConfig(
       host: host,
       port: port,
       token: _remote && token.isNotEmpty ? token : null,
       tls: tls,
+      clientP12: keepCert ? _clientP12 : null,
+      clientP12Password: keepCert ? _clientP12Password : null,
+      localUrl: _remote && localUrl.isNotEmpty ? localUrl : null,
       manageLocalDaemon: false,
       localAutoDiscover: !_remote && _isDesktop,
     );
@@ -353,6 +369,64 @@ class _ConnectScreenState extends State<ConnectScreen> {
     });
   }
 
+  /// Import a client certificate (.p12/.pfx) for a server behind a reverse
+  /// proxy that demands one — the same step Immich's app has.
+  Future<void> _importCertificate() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.any,
+      withData: true,
+    );
+    final files = result?.files ?? const <PlatformFile>[];
+    final file = files.isEmpty ? null : files.first;
+    final bytes = file?.bytes;
+    if (file == null || bytes == null || !mounted) return;
+    final password = await _askPassword(file.name);
+    if (password == null || !mounted) return;
+    try {
+      final p12 = ConnectionConfig.importP12(bytes, password);
+      setState(() {
+        _clientP12 = p12;
+        _clientP12Password = password;
+        // A client certificate only means anything over TLS.
+        _tls = true;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Certificate imported from ${file.name}.')),
+      );
+    } on FormatException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
+  }
+
+  Future<String?> _askPassword(String fileName) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Certificate password'),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          autofocus: true,
+          decoration: InputDecoration(hintText: 'Password for $fileName'),
+          onSubmitted: (v) => Navigator.of(context).pop(v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+  }
+
   List<Widget> _remoteFields() => [
         const _Hint(
           'Point at a Talon bridge running elsewhere — your desktop or a '
@@ -384,6 +458,37 @@ class _ConnectScreenState extends State<ConnectScreen> {
                 : (_) => setState(() => _portError = null)),
         const SizedBox(height: 12),
         _field(_token, 'Token', hint: 'shared secret', obscure: true),
+        const SizedBox(height: 12),
+        _field(_localUrl, 'Local network address (optional)',
+            hint: 'https://192.168.1.20:19880 — used whenever it answers'),
+        const SizedBox(height: 4),
+        if (_clientP12 != null)
+          Row(
+            children: [
+              const Expanded(
+                child: _Hint(
+                  'Client certificate installed — presented to servers '
+                  'behind a reverse proxy that requires one.',
+                ),
+              ),
+              TextButton(
+                onPressed: () => setState(() {
+                  _clientP12 = null;
+                  _clientP12Password = null;
+                }),
+                child: const Text('Remove'),
+              ),
+            ],
+          )
+        else
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _importCertificate,
+              icon: const Icon(Icons.verified_user_outlined, size: 16),
+              label: const Text('Import certificate (.p12 / .pfx)'),
+            ),
+          ),
         const SizedBox(height: 6),
         // Wrapped in a transparent Material: the nearest ancestor is Glass's
         // DecoratedBox, which would swallow the tile's ink splash (Flutter

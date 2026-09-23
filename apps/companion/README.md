@@ -129,6 +129,16 @@ screen resets the pin. Local zero-config discovery reads the fingerprint
 from `native-bridge.json` directly, so no first-use adoption is needed
 there.
 
+**Behind a reverse proxy with client certificates** (the Immich setup, see
+[docs/mtls.md](../../docs/mtls.md)):
+
+- **Import certificate** on the connect screen takes a `.p12`/`.pfx` and its
+  password, and the app presents the certificate on every connection. The
+  bridge token is still required as usual.
+- **Local network address** (optional) is used whenever it answers, and the
+  main address otherwise. The app re-checks when the network changes, and the
+  background mesh service re-checks on every reconnect.
+
 ## Protocol
 
 The wire contract lives on the daemon side in

@@ -13,9 +13,9 @@
  * systemd, foreman, pm2, or running under a debugger. Respawning from
  * our own `process.argv` works regardless of launch method.
  *
- * Ordering matters. `respawnSelf()` only *arms* the handoff and raises
- * SIGTERM; the successor is spawned by `spawnSuccessor()` at the tail of
- * graceful shutdown, once the frontends have stopped. Spawning up-front
+ * Ordering matters. `respawnSelf()` only *arms* the handoff and enters
+ * graceful shutdown; the successor is spawned by `spawnSuccessor()` at
+ * the tail of it, once the frontends have stopped. Spawning up-front
  * (the original behaviour) left the successor long-polling `getUpdates`
  * while the outgoing process was still draining in-flight queries — up
  * to DRAIN_TIMEOUT_MS of two live pollers. Telegram answers only one of
@@ -40,6 +40,16 @@
  *     within a bounded window, and starts the daemon the way `talon
  *     start` does if the successor never comes up. Nothing in the
  *     handoff depends on a process that is about to call process.exit().
+ *
+ * And one thing 2026-09-20 added: the shutdown is entered directly,
+ * through the function app.ts registers with `setRespawnShutdown()`,
+ * not by sending ourselves a SIGTERM. The signal round trip bought
+ * nothing, and under Bun it lost the whole restart: by the time
+ * `/restart` ran, the process had silently lost its OS-level SIGTERM
+ * handler (see ./signals.ts), so the signal terminated it on the spot —
+ * no shutdown, no successor, no pidfile cleanup, and nothing in any log
+ * after "Respawn requested". Only a process that never registered — an
+ * embedder, a test — still falls back to the signal.
  */
 
 import { spawn } from "node:child_process";
@@ -47,6 +57,18 @@ import { log, logError, openRespawnLog } from "../../util/log.js";
 import { HANDOFF_WATCH_SUBCOMMAND } from "./handoff.js";
 
 let pendingReason: string | null = null;
+let shutdown: ((reason: string) => void) | null = null;
+
+/**
+ * Register the graceful-shutdown entry a respawn should run. app.ts
+ * hands over `gracefulShutdown`; `respawnSelf()` then calls it in-process
+ * instead of round-tripping a SIGTERM through the OS. `null` clears it.
+ */
+export function setRespawnShutdown(
+  fn: ((reason: string) => void) | null,
+): void {
+  shutdown = fn;
+}
 
 /**
  * Argv flag that makes the daemon entry resolve its whole import graph
@@ -84,9 +106,8 @@ function selfInvocation(extra: string[]): { cmd: string; args: string[] } {
 }
 
 /**
- * Arm a respawn and raise SIGTERM on ourselves so the existing
- * graceful-shutdown path cleanly stops the frontends, flushes state,
- * and hands off via `spawnSuccessor()`.
+ * Arm a respawn and enter graceful shutdown, which stops the frontends,
+ * flushes state, and hands off via `spawnSuccessor()`.
  *
  * `reason` is logged for operator visibility (e.g. "telegram
  * /restart"). The function returns immediately; the successor starts
@@ -95,10 +116,13 @@ function selfInvocation(extra: string[]): { cmd: string; args: string[] } {
 export function respawnSelf(reason: string): void {
   log("shutdown", `Respawn requested (${reason})`);
   pendingReason = reason;
-  // SIGTERM triggers the graceful-shutdown handler in src/app.ts,
-  // which stops the frontends, flushes state, spawns the successor,
-  // and calls process.exit(0). Don't exit here directly — that would
-  // skip the flush and leave the PID file dangling.
+  // Don't exit here directly — that would skip the flush and leave the
+  // PID file dangling. The registered shutdown is the same path a
+  // SIGTERM takes, entered without the signal.
+  if (shutdown) {
+    shutdown(reason);
+    return;
+  }
   process.kill(process.pid, "SIGTERM");
 }
 

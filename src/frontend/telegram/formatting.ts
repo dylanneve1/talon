@@ -90,6 +90,36 @@ function applyInlineFormatting(input: string, urls: string[]): string {
 }
 
 /**
+ * Block-level passes over already-escaped text: ATX headings → bold lines,
+ * runs of `> ` lines → one `<blockquote>`. Placeholders for code are opaque
+ * `\x00…\x00` tokens, so a `#` inside a fenced block is never seen here.
+ */
+function applyBlockFormatting(input: string): string {
+  const lines = input.split("\n");
+  const out: string[] = [];
+  let quote: string[] | null = null;
+  const flushQuote = () => {
+    if (quote) out.push(`<blockquote>${quote.join("\n")}</blockquote>`);
+    quote = null;
+  };
+  for (const line of lines) {
+    const quoted = /^&gt;[ \t]?(.*)$/.exec(line);
+    if (quoted) {
+      (quote ??= []).push(quoted[1] ?? "");
+      continue;
+    }
+    flushQuote();
+    // `#` must be followed by whitespace to be a heading: `#993` is a
+    // reference, not a title. Trailing closing hashes (`## Title ##`) are
+    // markdown too and are dropped.
+    const heading = /^#{1,6}[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/.exec(line);
+    out.push(heading ? `<b>${heading[1]}</b>` : line);
+  }
+  flushQuote();
+  return out.join("\n");
+}
+
+/**
  * Convert Markdown output to Telegram-safe HTML.
  *
  * Handles: bold, italic, inline code, fenced code blocks, links.
@@ -144,6 +174,15 @@ export function markdownToTelegramHtml(text: string): string {
   // Escape HTML in plain text segments (skip placeholders marked with \x00)
   // oxlint-disable-next-line no-control-regex
   processed = processed.replace(/[^`\x00]+/g, (segment) => escapeHtml(segment));
+
+  // Step 3b: Block-level markdown. Telegram HTML has no headings, so an
+  // ATX heading becomes a bold line — the alternative is the `###` going
+  // out raw, and `# Title` alone turns `#Title` into a hashtag entity.
+  // Only `#` followed by whitespace is a heading: `#993` is a PR/hashtag
+  // reference and stays literal. Runs of `> ` lines become a blockquote,
+  // which Telegram does render. The text is already escaped here, so the
+  // quote marker is `&gt;`.
+  processed = applyBlockFormatting(processed);
 
   // Step 4: Apply inline formatting, but only keep it if the result is
   // actually parseable. `processed` at this point holds escaped text plus

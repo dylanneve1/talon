@@ -144,6 +144,8 @@ export async function bootstrap(
     disabledToolTags: config.disabledToolTags,
     braveApiKey: config.braveApiKey,
     nativeTools: config.nativeTools,
+    guestDmScope: config.guestDmScope,
+    adminUserId: config.adminUserId,
   });
 
   initWorkspace(config.workspace);
@@ -284,6 +286,7 @@ export async function initBackendAndDispatcher(
   const {
     initBackendPool,
     getBackendForRole,
+    getBackendIdForRole,
     getBackendForChat,
     getBackendIdForChat,
     rebindChat,
@@ -434,6 +437,11 @@ export async function initBackendAndDispatcher(
   bus.subscribeAll((event) => appendToJournal(event));
 
   initPulse();
+  // Warm the plan-aware router's token ledger from disk so the first
+  // routing decision after a restart sees what the last run spent.
+  void import("./core/engine/backend-router/index.js").then(
+    ({ loadBackendLedger }) => loadBackendLedger(),
+  );
   initCron({
     sendMessage: async (chatId: number, text: string, stringId?: string) =>
       resolveFrontendByNumericId(chatId, stringId, frontends).sendMessage(
@@ -517,30 +525,9 @@ export async function initBackendAndDispatcher(
     mempalace: mempalaceCfg,
   });
 
-  initDream({
-    model: config.model,
-    dreamModel: config.dreamModel,
-    dreamEffort: config.dreamEffort,
-    workspace: config.workspace,
-    enabled: config.dream,
-    getBackend: () => getBackendForRole("dream"),
-  });
-  // Heartbeat needs to know which non-terminal frontends are wired so it can
-  // tell the agent it has outbound `${frontend}-tools` MCP servers available.
-  // Terminal-only deployments get a stripped-down system prompt with no
-  // outbound section.
-  const frontendNames = frontends
-    .filter((f) => f.name !== "terminal")
-    .map((f) => f.name);
-
-  initHeartbeat({
-    model: config.model,
-    heartbeatModel: config.heartbeatModel,
-    heartbeatEffort: config.heartbeatEffort,
-    workspace: config.workspace,
-    getBackend: () => getBackendForRole("heartbeat"),
-    frontends: frontendNames,
-    mempalace: Boolean(mempalaceCfg),
+  initRecurringAgents(config, frontends, Boolean(mempalaceCfg), {
+    getBackendForRole,
+    getBackendIdForRole,
   });
 
   // Post-/update provisioning report — if the previous process armed one
@@ -566,6 +553,52 @@ export async function initBackendAndDispatcher(
   }
 
   return { backend };
+}
+
+/**
+ * Wire the dream and heartbeat agents — the two that run on their own
+ * cadence rather than in reply to anything.
+ *
+ * Both bind late (`getBackend` is an accessor, not an instance) so a
+ * `/model` rebind takes effect on the next run rather than needing a
+ * restart. The heartbeat also declares whether the operator pinned its
+ * backend, because the plan-aware router may only move an unpinned one.
+ */
+function initRecurringAgents(
+  config: TalonConfig,
+  frontends: { name: string }[],
+  mempalace: boolean,
+  roles: {
+    getBackendForRole: (role: "heartbeat" | "dream") => Backend;
+    getBackendIdForRole: (role: "heartbeat" | "dream") => string;
+  },
+): void {
+  initDream({
+    model: config.model,
+    dreamModel: config.dreamModel,
+    dreamEffort: config.dreamEffort,
+    workspace: config.workspace,
+    enabled: config.dream,
+    getBackend: () => roles.getBackendForRole("dream"),
+  });
+  // The heartbeat names the `${frontend}-tools` MCP servers it actually
+  // has, so it needs the non-terminal frontend list; a terminal-only
+  // deployment gets a prompt with no outbound section at all.
+  initHeartbeat({
+    model: config.model,
+    heartbeatModel: config.heartbeatModel,
+    heartbeatEffort: config.heartbeatEffort,
+    workspace: config.workspace,
+    getBackend: () => roles.getBackendForRole("heartbeat"),
+    getBackendId: () => roles.getBackendIdForRole("heartbeat"),
+    ...(config.heartbeatBackend
+      ? { pinnedBackendId: config.heartbeatBackend }
+      : {}),
+    frontends: frontends
+      .filter((f) => f.name !== "terminal")
+      .map((f) => f.name),
+    mempalace,
+  });
 }
 
 /**

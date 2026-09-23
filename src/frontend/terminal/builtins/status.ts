@@ -14,7 +14,14 @@ import {
 import { getChatSettings } from "../../../storage/chat-settings.js";
 import { getSessionInfo } from "../../../storage/sessions.js";
 import { getLoadedPlugins } from "../../../core/plugin/index.js";
-import { getPooledBackend } from "../../../core/engine/backend-controller/index.js";
+import {
+  getPoolConfig,
+  getPooledBackend,
+} from "../../../core/engine/backend-controller/index.js";
+import {
+  collectBackendUsage,
+  formatHeadroom,
+} from "../../../core/engine/backend-router/index.js";
 import type { Command, CommandContext } from "../command-registry.js";
 
 type BackendRef = CommandContext["backend"];
@@ -145,6 +152,27 @@ async function writePlan(ctx: CommandContext, be: BackendRef): Promise<void> {
         `  ${w.label.padEnd(6)}${pc.dim(w.bar)} ${String(w.percent).padStart(3)}%${w.resetLabel ? pc.dim(`  reset ${w.resetLabel}`) : ""}`,
       );
     }
+  }
+  await writeHeadroom(ctx);
+}
+
+/**
+ * What the plan-aware router sees: one comparable figure per backend, so
+ * "why did that sub-agent run on agy?" is answerable from `/status`.
+ * Ledger-derived rows say so — they are Talon's own count, not the
+ * provider's.
+ */
+async function writeHeadroom(ctx: CommandContext): Promise<void> {
+  const entries = await collectBackendUsage(getPoolConfig() ?? undefined).catch(
+    () => [],
+  );
+  if (entries.length === 0) return;
+  ctx.renderer.writeln();
+  ctx.renderer.writeln(`  ${pc.bold("Headroom")}`);
+  for (const entry of entries) {
+    ctx.renderer.writeln(
+      `  ${(entry.label || entry.id).padEnd(14)}${pc.dim(formatHeadroom(entry.headroom))}`,
+    );
   }
 }
 

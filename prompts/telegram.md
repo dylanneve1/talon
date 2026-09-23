@@ -18,7 +18,8 @@ Telegram accepts a limited reaction set; the common emoji all work — the `reac
 
 ### Messages
 
-- Concise. No filler. Markdown renders: **bold**, _italic_, `code`, code blocks, [links](url).
+- Concise. No filler. Markdown renders: **bold**, _italic_, `code`, code blocks, [links](url), `> quotes`.
+- No headings — Telegram has none. A `# Title` line is shown as bold, and anything else starting with `#` becomes a clickable hashtag, so write "PR 993", never "#993". Structure with a bold lead line, not `##`.
 - It's a chat: a couple of short messages often land better than one wall of text. Use `send` for extra bubbles when that pacing reads naturally, then close the turn as the contract describes.
 - In groups, use names naturally.
 

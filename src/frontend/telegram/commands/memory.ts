@@ -7,9 +7,10 @@
  * (rollout PR 6), so the operator can always ask what Talon remembers
  * without the answer being able to change it.
  *
- * Gated exactly like `/status` — not at all. The store holds the
- * operator's own memory, and a read of it is the least privileged thing
- * a chat can do.
+ * Admin only, and only in a private chat. The store holds the operator's
+ * private notes — people, places, health, relationships — so a read of it
+ * is not a low-privilege action: in a group every member would see the
+ * reply, and anyone else who can reach the bot must not see it at all.
  *
  * Every line is model- or user-authored text reaching an HTML-parsed
  * send, so it goes through `escapeHtml` before it is joined; the reply
@@ -20,6 +21,7 @@
 import type { Bot, Context } from "grammy";
 import { escapeHtml } from "../formatting.js";
 import { replyHtmlChunked } from "../admin/chunked-reply.js";
+import { isAuthorizedAdmin } from "./state.js";
 import {
   formatMemory,
   getMemory,
@@ -36,9 +38,29 @@ const LIST_LIMIT = 15;
 
 export function registerMemoryCommand(bot: Bot): void {
   bot.command("memory", async (ctx: Context) => {
+    const verdict = memoryAccess(ctx);
+    if (verdict !== "ok") {
+      await ctx.reply(
+        verdict === "not-private"
+          ? "Memory is private — ask me in a DM."
+          : "Not authorized.",
+      );
+      return;
+    }
     const arg = (ctx.match ?? "").toString().trim();
     await replyHtmlChunked(ctx, renderMemory(arg));
   });
+}
+
+/**
+ * Who may read memory here: the admin, in a private chat.
+ * Order matters — a non-admin in a group gets "not authorized", not
+ * a hint that a DM would work.
+ */
+function memoryAccess(ctx: Context): "ok" | "not-admin" | "not-private" {
+  if (!isAuthorizedAdmin(ctx)) return "not-admin";
+  if (ctx.chat?.type !== "private") return "not-private";
+  return "ok";
 }
 
 /** Route the argument to one of the four reads. Returns ready HTML. */

@@ -950,7 +950,7 @@ jobs:
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -961,8 +961,36 @@ jobs:
         with:
           context: .
           push: false
+          load: true
+          tags: talon:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # The appliance path (docs/truenas.md): run as TrueNAS's `apps` user
+      # with HOME on one bind-mounted dataset, and let the entrypoint seed
+      # config.json from TALON_* env on first boot. CMD is swapped for a
+      # no-op so this checks the entrypoint and image, not a live backend.
+      - name: Smoke-test entrypoint as an arbitrary UID
+        run: |
+          set -eux
+          data="$(mktemp -d)"
+          sudo chown 568:568 "$data"
+          docker run --rm --user 568:568 -e HOME=/data -v "$data:/data" \
+            -e TALON_BACKEND=agy talon:ci true
+          sudo test -f "$data/.talon/config.json"
+          sudo cat "$data/.talon/config.json"
+          sudo grep -q '"frontend": "native"' "$data/.talon/config.json"
+          sudo grep -q '"backend": "agy"' "$data/.talon/config.json"
+          sudo grep -q '"host": "0.0.0.0"' "$data/.talon/config.json"
+          test "$(sudo stat -c %u "$data/.talon/config.json")" = 568
+          test "$(sudo stat -c %a "$data/.talon/config.json")" = 600
+          # A second boot must leave the operator's config alone.
+          docker run --rm --user 568:568 -e HOME=/data -v "$data:/data" \
+            -e TALON_BACKEND=codex talon:ci true
+          sudo grep -q '"backend": "agy"' "$data/.talon/config.json"
+          # Tools the agy backend shells out to, and claude on PATH.
+          docker run --rm --user 568:568 talon:ci sh -c \
+            'git --version && rg --version && command -v claude && id -un'
 
   # ── Tarball / publish dry-run ─────────────────────────────────
   # `npm pack --dry-run` would just list files. Our custom checker

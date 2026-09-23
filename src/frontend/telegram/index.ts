@@ -21,7 +21,10 @@ import {
   setAdminUserId,
   telegramCommandMenu,
 } from "./commands/index.js";
-import { setAccessControl } from "./handlers/index.js";
+import {
+  setAccessControl,
+  registerCommandAccessGate,
+} from "./handlers/index.js";
 import { registerMiddleware } from "./middleware.js";
 import { confirmUpdates } from "./update-offset.js";
 import { registerCallbacks } from "./callbacks/index.js";
@@ -94,6 +97,9 @@ export function createTelegramFrontend(
         adminUserId: config.adminUserId,
       });
 
+      // Gate /commands and button presses behind the DM whitelist and
+      // group check BEFORE any command/callback handler is registered.
+      registerCommandAccessGate(bot);
       registerCommands(bot, config, gateway);
       registerMiddleware(bot, config);
       registerCallbacks(bot, config, gateway);

@@ -40,6 +40,11 @@ export type MeshBridgeInfo = {
   token?: string;
   /** TLS certificate SHA-256 (absent over plain HTTP). */
   fingerprint?: string;
+  /**
+   * The operator's `native.publicUrl`: what devices dial when the bind
+   * address isn't reachable as-is (containers, NAT, proxies).
+   */
+  publicUrl?: string;
 };
 
 export class BridgeLinks {
@@ -261,9 +266,10 @@ export class BridgeLinks {
   }
 
   /**
-   * The bridge base URL a NEW host should dial: an explicit override wins;
-   * otherwise derive from the bridge's bind. A wildcard bind maps to this
-   * host's first external IPv4; a loopback bind is unreachable from other
+   * The bridge base URL a NEW host should dial: an explicit override wins,
+   * then the configured `native.publicUrl`; otherwise derive from the
+   * bridge's bind. A wildcard bind maps to this host's first external IPv4;
+   * a loopback bind is unreachable from other
    * machines, so it's an error rather than a link that can't work.
    */
   private bridgeBaseUrl(
@@ -277,6 +283,10 @@ export class BridgeLinks {
       }
       return url;
     }
+    // Inside a container the "first external IPv4" is the container's own
+    // bridge-network address, which no phone can reach — the operator's
+    // public URL is the only right answer there.
+    if (info.publicUrl) return info.publicUrl.trim().replace(/\/+$/, "");
     let host = info.host;
     if (host === "0.0.0.0" || host === "::") {
       const external = firstExternalIPv4();

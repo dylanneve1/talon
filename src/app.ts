@@ -33,6 +33,7 @@ import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import {
   BOOT_SMOKE_FLAG,
   BOOT_SMOKE_OK,
+  setRespawnShutdown,
   spawnSuccessor,
 } from "./core/daemon/respawn.js";
 import {
@@ -282,6 +283,14 @@ async function gracefulShutdown(signal: string): Promise<void> {
   await shutdownStep("frontends", () =>
     Promise.allSettled(frontends.map((frontend) => frontend.stop())),
   );
+  // Land the router's token ledger before the process goes: writes are
+  // debounced, so a clean exit would otherwise drop the last few seconds
+  // of spend and start the next boot reading a backend as fresher than it is.
+  await shutdownStep("backend ledger", async () => {
+    const { flushBackendLedger } =
+      await import("./core/engine/backend-router/index.js");
+    await flushBackendLedger();
+  });
   // Tear down every instantiated backend, including per-chat overrides.
   // Checking only config.backend orphaned an OpenCode child whenever the
   // process default was Claude but one chat had switched to OpenCode.
@@ -342,6 +351,9 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+// /restart and /update come in here directly rather than through a
+// self-sent SIGTERM — see core/daemon/respawn.ts.
+setRespawnShutdown((reason) => void gracefulShutdown(`respawn (${reason})`));
 
 // Cleanup runs before the crash is reported (and the EPIPE suppression
 // is unchanged) — see core/daemon/crash.ts for why the order matters.

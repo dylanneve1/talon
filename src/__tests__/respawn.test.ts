@@ -19,6 +19,11 @@
  * file, on any process, and the bot down for 45 minutes. So the handoff
  * also has to (a) give the successor a file to die into and (b) leave
  * behind a witness that outlives the process doing the handing off.
+ *
+ * Incident 2026-09-20: arming used to raise SIGTERM on ourselves. Under
+ * Bun the process had silently lost its OS-level SIGTERM handler by then
+ * (core/daemon/signals.ts), so the signal terminated it with no shutdown
+ * at all. Arming now enters the registered shutdown directly.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
@@ -53,15 +58,30 @@ afterEach(() => {
 });
 
 describe("respawn handoff ordering", () => {
-  it("arms without spawning, and signals itself to shut down", async () => {
-    const { respawnSelf, respawnRequested } =
+  it("arms without spawning, and enters the registered shutdown directly", async () => {
+    const { respawnSelf, respawnRequested, setRespawnShutdown } =
       await import("../core/daemon/respawn.js");
+    const shutdown = vi.fn();
+    setRespawnShutdown(shutdown);
 
     expect(respawnRequested()).toBe(false);
     respawnSelf("telegram /restart");
 
     // The successor must NOT exist yet — the frontends are still up.
     expect(spawnMock).not.toHaveBeenCalled();
+    expect(respawnRequested()).toBe(true);
+    expect(shutdown).toHaveBeenCalledWith("telegram /restart");
+    // No OS round trip: a signal is exactly what the process may no
+    // longer be able to catch.
+    expect(killSpy).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a self-signal when no shutdown was registered", async () => {
+    const { respawnSelf, respawnRequested } =
+      await import("../core/daemon/respawn.js");
+
+    respawnSelf("telegram /restart");
+
     expect(respawnRequested()).toBe(true);
     expect(killSpy).toHaveBeenCalledWith(process.pid, "SIGTERM");
   });

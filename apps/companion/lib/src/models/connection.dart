@@ -1,4 +1,5 @@
-import 'dart:io' show Platform;
+import 'dart:convert' show base64;
+import 'dart:io' show Platform, SecurityContext;
 
 /// How the companion reaches a Talon daemon.
 ///
@@ -24,6 +25,19 @@ class ConnectionConfig {
   /// platform trust store accepts those before the pin is consulted).
   final String? fingerprint;
 
+  /// Client certificate for servers behind a reverse proxy that demands one
+  /// (mutual TLS, the way Immich's app does it): the imported `.p12`/`.pfx`
+  /// file as base64, and its password. Presented on every TLS handshake. It
+  /// only gets the app through the proxy; the bridge still authenticates
+  /// with the [token] as usual.
+  final String? clientP12;
+  final String? clientP12Password;
+
+  /// The bridge's address on the home network, used instead of the main
+  /// address whenever it answers (see `resolveEndpoint`). Typical with a
+  /// reverse proxy: the main address is the public website, this is the LAN.
+  final String? localUrl;
+
   /// Desktop only: try to spawn/attach a local daemon instead of assuming one.
   final bool manageLocalDaemon;
 
@@ -42,11 +56,75 @@ class ConnectionConfig {
     this.token,
     this.tls = false,
     this.fingerprint,
+    this.clientP12,
+    this.clientP12Password,
+    this.localUrl,
     this.manageLocalDaemon = true,
     this.localAutoDiscover = true,
     this.launchCommand = 'talon',
     this.launchArgs = const ['start'],
   });
+
+  bool get hasClientCert => clientP12?.isNotEmpty ?? false;
+
+  /// A TLS context presenting the imported client certificate, or null when
+  /// there is none (or it no longer loads — the proxy's refusal is then the
+  /// error the user sees, which says what to fix).
+  SecurityContext? clientSecurityContext() {
+    final p12 = clientP12;
+    if (p12 == null || p12.isEmpty) return null;
+    try {
+      final bytes = base64.decode(p12);
+      return SecurityContext(withTrustedRoots: true)
+        ..useCertificateChainBytes(bytes, password: clientP12Password)
+        ..usePrivateKeyBytes(bytes, password: clientP12Password);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Check an imported `.p12`/`.pfx` opens with [password] and return it as
+  /// stored ([clientP12]). Throws [FormatException] with a message for the
+  /// user when it doesn't.
+  static String importP12(List<int> bytes, String? password) {
+    final encoded = base64.encode(bytes);
+    final probe = ConnectionConfig(
+      clientP12: encoded,
+      clientP12Password: password,
+    );
+    if (probe.clientSecurityContext() == null) {
+      throw const FormatException(
+        "Couldn't open the certificate — check the password. If it was made "
+        'with OpenSSL 3, export it again with `openssl pkcs12 -export -legacy`.',
+      );
+    }
+    return encoded;
+  }
+
+  /// This profile pointed at its [localUrl], or null when it has none. The
+  /// pinned certificate belongs to the bridge itself — what the LAN address
+  /// reaches — so the pin comes along.
+  ConnectionConfig? localEndpoint() {
+    final raw = localUrl?.trim() ?? '';
+    if (raw.isEmpty) return null;
+    final parsed = parseHostInput(raw);
+    if (parsed.host.isEmpty) return null;
+    // Off-loopback the bridge serves TLS by default.
+    final tls = parsed.tls ?? true;
+    return copyWith(
+      host: parsed.host,
+      port: parsed.port ?? defaultPortFor(tls),
+      tls: tls,
+      clearLocalUrl: true,
+    );
+  }
+
+  /// This profile's main address. With a LAN address alongside, the pin is
+  /// the LAN bridge's, not the reverse proxy's, so it stays behind and the
+  /// proxy's certificate is checked the normal way.
+  ConnectionConfig remoteEndpoint() => localUrl == null
+      ? this
+      : copyWith(clearFingerprint: true, clearLocalUrl: true);
 
   /// Canonical fingerprint form: lowercase hex, no colons/spaces. Returns
   /// null for anything that isn't plausibly a SHA-256 hex digest.
@@ -123,6 +201,11 @@ class ConnectionConfig {
     bool? tls,
     String? fingerprint,
     bool clearFingerprint = false,
+    String? clientP12,
+    String? clientP12Password,
+    bool clearClientCert = false,
+    String? localUrl,
+    bool clearLocalUrl = false,
     bool? manageLocalDaemon,
     bool? localAutoDiscover,
     String? launchCommand,
@@ -135,6 +218,11 @@ class ConnectionConfig {
         tls: tls ?? this.tls,
         fingerprint:
             clearFingerprint ? null : (fingerprint ?? this.fingerprint),
+        clientP12: clearClientCert ? null : (clientP12 ?? this.clientP12),
+        clientP12Password: clearClientCert
+            ? null
+            : (clientP12Password ?? this.clientP12Password),
+        localUrl: clearLocalUrl ? null : (localUrl ?? this.localUrl),
         manageLocalDaemon: manageLocalDaemon ?? this.manageLocalDaemon,
         localAutoDiscover: localAutoDiscover ?? this.localAutoDiscover,
         launchCommand: launchCommand ?? this.launchCommand,
@@ -147,6 +235,9 @@ class ConnectionConfig {
         'token': token,
         'tls': tls,
         'fingerprint': fingerprint,
+        'clientP12': clientP12,
+        'clientP12Password': clientP12Password,
+        'localUrl': localUrl,
         'manageLocalDaemon': manageLocalDaemon,
         'localAutoDiscover': localAutoDiscover,
         'launchCommand': launchCommand,
@@ -159,6 +250,9 @@ class ConnectionConfig {
         token: j['token'] as String?,
         tls: (j['tls'] ?? false) as bool,
         fingerprint: normalizeFingerprint(j['fingerprint'] as String?),
+        clientP12: j['clientP12'] as String?,
+        clientP12Password: j['clientP12Password'] as String?,
+        localUrl: j['localUrl'] as String?,
         manageLocalDaemon: (j['manageLocalDaemon'] ?? true) as bool,
         localAutoDiscover: (j['localAutoDiscover'] ?? true) as bool,
         launchCommand: (j['launchCommand'] ?? 'talon') as String,

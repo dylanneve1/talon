@@ -28,6 +28,14 @@ const mocks = vi.hoisted(() => ({
   runJobOneShot: vi.fn(async (_params: Record<string, unknown>) => ({
     status: "ran" as const,
   })),
+  chooseBackend: vi.fn(async (_req: Record<string, unknown>) => ({
+    backendId: "chat-backend",
+    reason: "no candidates",
+    routed: false,
+  })),
+  resolveRoutedModel: vi.fn(
+    async (_id: string): Promise<string | null> => "routed-model",
+  ),
 }));
 
 vi.mock("../util/log.js", () => ({
@@ -68,6 +76,15 @@ vi.mock("../core/engine/dispatcher.js", () => ({
 
 vi.mock("../core/background/cron/job-oneshot.js", () => ({
   runJobOneShot: mocks.runJobOneShot,
+}));
+
+// The plan-aware router, stubbed: these tests assert what the scheduler
+// ASKS it (the purpose, and that a pinned job never reaches it) and what it
+// does with the answer, not how the router decides.
+vi.mock("../core/engine/backend-router/index.js", () => ({
+  chooseBackend: mocks.chooseBackend,
+  resolveRoutedModel: mocks.resolveRoutedModel,
+  recordBackendRunUsage: vi.fn(),
 }));
 
 const { executeJob, initCron, runJobNow, runStartupCatchup } =
@@ -113,6 +130,12 @@ beforeEach(() => {
     backendId: "chat-backend",
   });
   mocks.runJobOneShot.mockResolvedValue({ status: "ran" });
+  mocks.chooseBackend.mockResolvedValue({
+    backendId: "chat-backend",
+    reason: "no candidates",
+    routed: false,
+  });
+  mocks.resolveRoutedModel.mockResolvedValue("routed-model");
   mocks.resolveJobFallback.mockReturnValue({
     model: "hb-model",
     backendId: "hb-backend",
@@ -189,6 +212,71 @@ describe("executeJob — isolated query runtime", () => {
     expect(mocks.runJobOneShot.mock.calls[0]?.[0]).not.toHaveProperty(
       "fallback",
     );
+  });
+
+  it("asks the router where an unpinned query job should run", async () => {
+    mocks.chooseBackend.mockResolvedValue({
+      backendId: "spare-backend",
+      reason: "most headroom 92%",
+      routed: true,
+    });
+
+    await executeJob(makeJob({ type: "query", chatId: "42" }));
+
+    expect(mocks.chooseBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        purpose: "cron",
+        chatBackendId: "chat-backend",
+      }),
+    );
+    // A routed job cannot carry the chat's model across providers.
+    expect(mocks.runJobOneShot.mock.calls[0]?.[0]).toMatchObject({
+      backendId: "spare-backend",
+      model: "routed-model",
+    });
+  });
+
+  it("stays put when the routed backend names no default model", async () => {
+    mocks.chooseBackend.mockResolvedValue({
+      backendId: "spare-backend",
+      reason: "most headroom 92%",
+      routed: true,
+    });
+    mocks.resolveRoutedModel.mockResolvedValue(null);
+
+    await executeJob(makeJob({ type: "query", chatId: "42" }));
+
+    expect(mocks.runJobOneShot.mock.calls[0]?.[0]).toMatchObject({
+      backendId: "chat-backend",
+      model: "chat-model",
+    });
+  });
+
+  it("never asks the router about a job that pinned its own provider", async () => {
+    await executeJob(
+      makeJob({ type: "query", provider: "cheap-provider", model: "m" }),
+    );
+    expect(mocks.chooseBackend).not.toHaveBeenCalled();
+  });
+
+  it("pins the backend when the job named a model but no provider", async () => {
+    mocks.chooseBackend.mockResolvedValue({
+      backendId: "chat-backend",
+      reason: "pinned",
+      routed: false,
+    });
+
+    await executeJob(
+      makeJob({ type: "query", chatId: "42", model: "pinned-model" }),
+    );
+
+    expect(mocks.chooseBackend).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedModel: "pinned-model" }),
+    );
+    expect(mocks.runJobOneShot.mock.calls[0]?.[0]).toMatchObject({
+      backendId: "chat-backend",
+      model: "pinned-model",
+    });
   });
 
   it("includes interval schedules in the isolated payload description", async () => {

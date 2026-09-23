@@ -16,12 +16,22 @@ import 'package:crypto/crypto.dart';
 /// its fingerprint matches the pin. Certificates that already chain to a
 /// platform-trusted CA (reverse-proxy setups) never reach this code — the
 /// bad-certificate callback fires only when normal validation failed.
+///
+/// It also carries the profile's client certificate (reverse proxies that
+/// demand one): an avatar loaded by Image.network has to get through the
+/// proxy too, and [createHttpClient] is the only hook into that client.
 class BridgeTrust extends HttpOverrides {
   static String? _pinnedFingerprint;
+  static SecurityContext? _clientContext;
 
   /// Adopt [fingerprint] (lowercase hex, no separators) as the pin; null
   /// clears it, restoring default certificate validation everywhere.
   static void pin(String? fingerprint) => _pinnedFingerprint = fingerprint;
+
+  /// Present [context]'s client certificate on implicitly-created clients;
+  /// null stops presenting one.
+  static void useClientContext(SecurityContext? context) =>
+      _clientContext = context;
 
   static String? get pinned => _pinnedFingerprint;
 
@@ -40,6 +50,6 @@ class BridgeTrust extends HttpOverrides {
 
   @override
   HttpClient createHttpClient(SecurityContext? context) =>
-      super.createHttpClient(context)
+      super.createHttpClient(context ?? _clientContext)
         ..badCertificateCallback = (cert, host, port) => accepts(cert);
 }

@@ -29,6 +29,16 @@ services:
       - ${HOME}/.claude:/home/bun/.claude
     environment:
       - NODE_ENV=production
+      # First boot only: with no ~/.talon/config.json yet, the entrypoint
+      # writes one from these (docker/seed-config.mjs lists them all) and
+      # ignores them afterwards. With none set it starts the native bridge.
+      # - TALON_BOT_TOKEN=123456:ABC...
+      # - TALON_ADMIN_USER_ID=123456789
+      # - TALON_BACKEND=claude
+      # - TALON_BRIDGE_URL=https://my-host.lan:19880
+    # Publish the native bridge for the companion app / talon-node devices:
+    # ports:
+    #   - "19880:19880"
     # Optional: ANTHROPIC_API_KEY etc. as a fallback to OAuth-via-credentials.json.
     # Uncomment and create .env if you want to auth via API key instead of Claude Max.
     # env_file: .env

@@ -18,6 +18,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { composeTools } from "../tools/index.js";
 import { createBridge, textResult } from "../tools/bridge.js";
 import type { ToolFrontend, ToolTag } from "../tools/types.js";
+import { guestParamViolation, isGuestToolAllowed } from "./guest-scope.js";
 
 export const VALID_TOOL_FRONTENDS: ReadonlySet<string> = new Set([
   "telegram",
@@ -37,6 +38,11 @@ export type TalonServerOptions = {
   disabledToolTags?: readonly string[];
   /** Expose the native tool set (replaces the SDK built-ins). */
   includeNativeTools?: boolean;
+  /**
+   * Guest DM: expose only the conversation allowlist and refuse calls that
+   * name another chat or a local file. See guest-scope.ts.
+   */
+  guest?: boolean;
 };
 
 /** Build a Talon tool MCP server bound to one (frontend, chatId) pair. */
@@ -65,10 +71,21 @@ export function buildTalonToolServer(options: TalonServerOptions): McpServer {
     if (endTurn) tools.push(endTurn);
   }
 
-  for (const tool of tools) {
-    server.tool(tool.name, tool.description, tool.schema, async (params) =>
-      textResult(await tool.execute(params, bridge)),
-    );
+  const surface = options.guest
+    ? tools.filter((t) => isGuestToolAllowed(t.name))
+    : tools;
+
+  for (const tool of surface) {
+    server.tool(tool.name, tool.description, tool.schema, async (params) => {
+      if (options.guest) {
+        const why = guestParamViolation(
+          options.chatId,
+          params as Record<string, unknown>,
+        );
+        if (why) return textResult(`Not available in this chat: ${why}.`);
+      }
+      return textResult(await tool.execute(params, bridge));
+    });
   }
 
   return server;
