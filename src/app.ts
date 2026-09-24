@@ -6,7 +6,7 @@
  * are loaded dynamically — only the selected platform's dependencies are required.
  */
 
-import { getFrontends } from "./core/config/index.js";
+import { ConfigFileError, getFrontends } from "./core/config/index.js";
 import { startUploadCleanup, stopUploadCleanup } from "./core/vfs/workspace.js";
 import { flushDatabase } from "./storage/db.js";
 import { getActiveCount, stopAllTurns } from "./core/engine/dispatcher.js";
@@ -120,9 +120,31 @@ async function applyStagedRestore(): Promise<string | null> {
   );
 }
 
-const restoreReport = await bootPhase("staged restore", applyStagedRestore);
+/**
+ * A present-but-invalid config.json is fatal at startup: print the file
+ * path and every problem, then exit non-zero. Booting on defaults instead
+ * would put the daemon in a surprising state (wrong frontend, no plugins).
+ */
+async function withConfigGuard<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof ConfigFileError) {
+      logError("config", err.message);
+      console.error(`talon: ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+}
 
-const { config } = await bootPhase("bootstrap", () => bootstrap());
+const restoreReport = await withConfigGuard(() =>
+  bootPhase("staged restore", applyStagedRestore),
+);
+
+const { config } = await withConfigGuard(() =>
+  bootPhase("bootstrap", () => bootstrap()),
+);
 
 // Record this process as the daemon. The gateway port is appended once
 // the gateway binds (it may fall back from the default on EADDRINUSE).
