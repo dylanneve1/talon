@@ -1,5 +1,26 @@
 # Changelog
 
+## [5.11.0](https://github.com/dylanneve1/talon/compare/v5.10.0...v5.11.0) (2026-09-24)
+
+
+### Features
+
+* **config:** make per-chat trigger cap configurable, name config keys in cap errors ([#1032](https://github.com/dylanneve1/talon/issues/1032)) ([37e2b0c](https://github.com/dylanneve1/talon/commit/37e2b0c2f52675aac077c7a181b317a17066217a))
+* **usage:** show Claude banked limit resets in /usage ([#1028](https://github.com/dylanneve1/talon/issues/1028)) ([93af389](https://github.com/dylanneve1/talon/commit/93af38960e90a6a8f84288b15ee8173014634d28))
+
+
+### Bug Fixes
+
+* **config:** fail loudly on an invalid config.json instead of falling back to defaults ([#1031](https://github.com/dylanneve1/talon/issues/1031)) ([545d4bc](https://github.com/dylanneve1/talon/commit/545d4bc6a95c6389f4d98e23ccc9643b9a723114))
+* **daemon:** keep the stack when logging an unhandled rejection ([#1030](https://github.com/dylanneve1/talon/issues/1030)) ([a82e348](https://github.com/dylanneve1/talon/commit/a82e34811552168e9906a03aaf7589a3db1c5914))
+* **mcp-hub:** don't evict MCP children when the bridge is busy, only when it's gone ([#1029](https://github.com/dylanneve1/talon/issues/1029)) ([307b98f](https://github.com/dylanneve1/talon/commit/307b98f0eddca85dd08faf03e8324e524c5467f8))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** Bump the dev-dependencies group with 2 updates ([#1026](https://github.com/dylanneve1/talon/issues/1026)) ([2e1dded](https://github.com/dylanneve1/talon/commit/2e1dded47d2b8e95699a75777857ef12c342cc01))
+* **deps:** Bump tsx in the production-dependencies group ([#1027](https://github.com/dylanneve1/talon/issues/1027)) ([7f91e5f](https://github.com/dylanneve1/talon/commit/7f91e5f2e50af0de1f0273faff9211d5f4bf8712))
+
 ## [5.10.0](https://github.com/dylanneve1/talon/compare/v5.9.0...v5.10.0) (2026-09-23)
 
 
