@@ -63,6 +63,9 @@ void main() {
     final prefs = await Prefs.load();
     final bridge = await MockBridge.start();
     addTearDown(bridge.close);
+    // Device control is an explicit, per-bridge grant (off by default).
+    await prefs.setConnection(configFor(bridge));
+    await prefs.setMeshDeviceControl(true);
     final client = BridgeClient(configFor(bridge));
     addTearDown(client.dispose);
 

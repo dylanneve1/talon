@@ -131,7 +131,18 @@ class MeshService {
        _ringHandler = ringHandler ?? _defaultRing,
        _systemInfoProvider = systemInfoProvider ?? _defaultSystemInfo,
        _onRegistered = onRegistered,
-       _exec = deviceExec ?? DeviceExec();
+       _exec = deviceExec ?? DeviceExec() {
+    // Mesh commands climb to root/Shizuku only with the user's elevation
+    // grant for this bridge; without it they run as the app and nothing asks
+    // the root manager or Shizuku for anything.
+    _exec.allowElevation = () => elevationAllowed(prefs);
+  }
+
+  /// Whether mesh commands may use root or Shizuku: device control is live
+  /// ([deviceControlAllowed]) AND the user turned elevated access on for this
+  /// bridge. Off by default and after every new pairing.
+  static bool elevationAllowed(Prefs prefs, {bool? sandboxed}) =>
+      deviceControlAllowed(prefs, sandboxed: sandboxed) && prefs.meshElevated;
 
   bool get running => _running;
 
@@ -157,7 +168,9 @@ class MeshService {
     // ignition) the root grant would otherwise be acquired mid-command, with
     // the root manager's dialog appearing while someone is driving and the
     // command blocked behind it. Fire-and-forget: nothing here gates the mesh.
-    if (_deviceControl) {
+    // Only once the user has granted elevated access for this bridge — never
+    // as a side effect of merely connecting.
+    if (elevationAllowed(prefs)) {
       unawaited(
         _exec.ensureRootReady().catchError(
           (Object e) {

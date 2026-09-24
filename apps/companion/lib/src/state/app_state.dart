@@ -864,6 +864,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Let device control use root/Shizuku for the current bridge (Android).
+  Future<void> setMeshElevated(bool on) async {
+    await prefs.setMeshElevated(on);
+    notifyListeners();
+    await _meshPrefsChanged();
+    notifyListeners();
+  }
+
   /// Propagate a mesh pref change to whichever isolate owns the mesh loop:
   /// the Android foreground service (start/stop it to mirror the sharing
   /// toggle, poke a reconfigure when it's already up) or the in-process
