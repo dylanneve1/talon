@@ -1,5 +1,20 @@
 # Changelog
 
+## [5.18.0](https://github.com/thefalconry/talon/compare/v5.17.0...v5.18.0) (2026-09-24)
+
+
+### Features
+
+* **backup:** capture full state — backend sessions, traces, plugins; restore --clone ([#1043](https://github.com/thefalconry/talon/issues/1043)) ([cfb5efd](https://github.com/thefalconry/talon/commit/cfb5efd583e9e44f472a0f1f801d63c270502252))
+
+
+### Miscellaneous Chores
+
+* **deps:** Bump actions/checkout from 6.1.0 to 7.0.1 ([#1084](https://github.com/thefalconry/talon/issues/1084)) ([3cb4d59](https://github.com/thefalconry/talon/commit/3cb4d59483020415cf03988be6ea83c392981ffa))
+* **deps:** Bump docker/build-push-action from 6.19.2 to 7.4.0 ([#1083](https://github.com/thefalconry/talon/issues/1083)) ([8574f52](https://github.com/thefalconry/talon/commit/8574f528ce5af8de4ecb457602ff68e4a8cbccd0))
+* **deps:** Bump docker/metadata-action from 5.10.0 to 6.2.0 ([#1086](https://github.com/thefalconry/talon/issues/1086)) ([9e7ad03](https://github.com/thefalconry/talon/commit/9e7ad034c17b17a7d7c99d29e5cb37ac80a552c8))
+* **deps:** Bump docker/setup-buildx-action from 3.12.0 to 4.4.1 ([#1085](https://github.com/thefalconry/talon/issues/1085)) ([d3b1f42](https://github.com/thefalconry/talon/commit/d3b1f425b44aa8553cc61d5622079ecd298217bd))
+
 ## [5.17.0](https://github.com/thefalconry/talon/compare/v5.16.0...v5.17.0) (2026-09-24)
 
 
