@@ -20,6 +20,7 @@ import {
 } from "../core/backup/targets.js";
 import { pruneRemote, uploadSnapshot } from "../core/backup/upload.js";
 import { snapshotDir } from "../core/backup/store.js";
+import { ENCRYPTION_MAGIC } from "../core/backup/archive/crypt.js";
 import type { ActionResult } from "../core/types.js";
 import type { Manifest } from "../core/backup/types.js";
 
@@ -105,7 +106,11 @@ function fakeTarget(
 
 function manifestFor(home: string, id: string, pinned = false): Manifest {
   mkdirSync(snapshotDir(id, home), { recursive: true });
-  writeFileSync(join(snapshotDir(id, home), "state.tar.zst"), "part bytes");
+  // Uploads refuse plaintext parts; the signature is what they check.
+  writeFileSync(
+    join(snapshotDir(id, home), "state.tar.zst"),
+    Buffer.concat([ENCRYPTION_MAGIC, Buffer.from("part bytes")]),
+  );
   return {
     schema: 1,
     id,

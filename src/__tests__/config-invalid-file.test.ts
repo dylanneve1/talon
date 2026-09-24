@@ -136,6 +136,40 @@ describe("loadConfig with an invalid config.json", () => {
   });
 });
 
+describe("backup.encryption in config.json", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    delete process.env.TALON_FRONTEND_OVERRIDE;
+  });
+
+  it("accepts a passphrase file, or an empty block for the env var", async () => {
+    for (const encryption of [{ passphraseFile: "~/.talon/backup.key" }, {}]) {
+      mockConfigFile(
+        JSON.stringify({ frontend: "terminal", backup: { encryption } }),
+      );
+      const { loadConfig } = await import("../core/config/index.js");
+      expect(loadConfig().backup?.encryption).toEqual(encryption);
+      vi.resetModules();
+    }
+  });
+
+  it("rejects an inline passphrase and an empty file path", async () => {
+    for (const encryption of [
+      { passphrase: "hunter2hunter2" },
+      { passphraseFile: "  " },
+    ]) {
+      mockConfigFile(
+        JSON.stringify({ frontend: "terminal", backup: { encryption } }),
+      );
+      const { loadConfig, ConfigFileError } =
+        await import("../core/config/index.js");
+      expect(() => loadConfig()).toThrow(ConfigFileError);
+      expect(() => loadConfig()).toThrow(/backup\.encryption/);
+      vi.resetModules();
+    }
+  });
+});
+
 describe("reloadPlugins with an invalid config.json", () => {
   const destroyAndClear = vi.fn(async () => {});
   const reloadHubChildren = vi.fn();

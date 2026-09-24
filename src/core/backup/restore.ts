@@ -23,6 +23,8 @@
  */
 
 import { createReadStream } from "node:fs";
+import { pipeline } from "node:stream";
+import type { Readable } from "node:stream";
 import {
   mkdir,
   readFile,
@@ -38,9 +40,15 @@ import writeFileAtomic from "write-file-atomic";
 import { dirs } from "../../util/paths.js";
 import { log, logWarn } from "../../util/log.js";
 import { TalonError } from "../errors.js";
+import {
+  isEncryptedFile,
+  openDecrypted,
+  verifyDecryptable,
+} from "./archive/crypt.js";
 import { sha256File } from "./archive/digest.js";
 import { extractTar } from "./archive/tar.js";
 import { createDecompressor } from "./archive/zstd.js";
+import { requirePassphrase } from "./passphrase.js";
 import { collectTree } from "./plan.js";
 import { buildSnapshot } from "./snapshot.js";
 import { isSnapshotId, partPath, readManifest, snapshotDir } from "./store.js";
@@ -169,10 +177,20 @@ async function ensureParts(
   }
 }
 
-/** Check every part against the manifest. Throws on the first mismatch. */
+/** Who may read backups: only the settings' encryption block matters. */
+type KeySettings = Pick<BackupSettings, "encryption">;
+
+/**
+ * Check every part against the manifest. Throws on the first mismatch.
+ * An encrypted part is also decrypted end to end (and discarded), so a
+ * wrong passphrase or a tampered byte stops the restore before a single
+ * file is extracted — the manifest's digest alone cannot prove that, as
+ * the manifest travels with the parts.
+ */
 export async function verifyParts(
   manifest: Manifest,
   home: string,
+  settings: KeySettings = {},
 ): Promise<void> {
   for (const part of manifest.parts) {
     const path = partPath(manifest.id, part.name, home);
@@ -183,7 +201,29 @@ export async function verifyParts(
         { reason: "bad_request" },
       );
     }
+    if (!(await isEncryptedFile(path))) continue;
+    const passphrase = await requirePassphrase(
+      settings,
+      `Snapshot ${manifest.id}`,
+    );
+    try {
+      await verifyDecryptable(path, passphrase);
+    } catch (err) {
+      throw new TalonError(
+        `Part ${part.name} of ${manifest.id} cannot be decrypted — ${err instanceof Error ? err.message : String(err)}; restore aborted`,
+        { reason: "bad_request", cause: err },
+      );
+    }
   }
+}
+
+/** A part's archive bytes: decrypted when the file carries the header. */
+async function openPart(
+  path: string,
+  settings: KeySettings,
+): Promise<Readable> {
+  if (!(await isEncryptedFile(path))) return createReadStream(path);
+  return openDecrypted(path, await requirePassphrase(settings, path));
 }
 
 /** Unpack every part into one staging tree. */
@@ -191,12 +231,19 @@ async function extractParts(
   manifest: Manifest,
   home: string,
   staging: string,
+  settings: KeySettings,
 ): Promise<void> {
   await rm(staging, { recursive: true, force: true });
   await mkdir(staging, { recursive: true });
   for (const part of manifest.parts) {
-    const source = createReadStream(partPath(manifest.id, part.name, home));
-    await extractTar(source.pipe(createDecompressor()), staging);
+    const source = await openPart(
+      partPath(manifest.id, part.name, home),
+      settings,
+    );
+    const archive = pipeline(source, createDecompressor(), () => {
+      /* a failure surfaces through extractTar's read */
+    });
+    await extractTar(archive, staging);
   }
 }
 
@@ -348,7 +395,7 @@ export async function restoreSnapshot(
     });
   }
   await ensureParts(manifest, home, options.target);
-  await verifyParts(manifest, home);
+  await verifyParts(manifest, home, options.settings);
 
   let checkpointId: string | undefined;
   if (!options.skipCheckpoint) {
@@ -364,7 +411,7 @@ export async function restoreSnapshot(
   }
 
   const staging = join(snapshotDir(manifest.id, home), "restore-staging");
-  await extractParts(manifest, home, staging);
+  await extractParts(manifest, home, staging, options.settings);
   await options.beforeApply?.();
   const report = await applyStaged(manifest, staging, home);
   report.checkpointId = checkpointId;
