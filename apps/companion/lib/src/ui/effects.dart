@@ -1,3 +1,6 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/widgets.dart';
 
 /// Rendering-cost policy for the decorative layer: the drifting ambient
@@ -30,6 +33,31 @@ class TalonEffects {
   /// The user's "Reduce effects" setting. Seeded from prefs in main.dart.
   static final ValueNotifier<bool> reduce = ValueNotifier(false);
 
+  /// True when the process was told to render through a software GL
+  /// rasteriser (Mesa llvmpipe/softpipe — VMs, remote desktops, broken GPU
+  /// drivers). Every blur and every animated frame is CPU-rasterised there,
+  /// and repeated large offscreen blur layers are a known crash source on
+  /// some Mesa builds (#1062), so blur and ambient motion are forced off
+  /// regardless of the setting. Resolved once at startup.
+  static bool softwareRendering =
+      !kIsWeb && isSoftwareGl(Platform.environment);
+
+  /// Whether [env] selects a software GL rasteriser. Linux only: Mesa reads
+  /// `LIBGL_ALWAYS_SOFTWARE` and `GALLIUM_DRIVER`.
+  @visibleForTesting
+  static bool isSoftwareGl(Map<String, String> env) {
+    if (kIsWeb || !Platform.isLinux) return false;
+    final always = env['LIBGL_ALWAYS_SOFTWARE']?.trim().toLowerCase();
+    if (always != null &&
+        always.isNotEmpty &&
+        always != '0' &&
+        always != 'false') {
+      return true;
+    }
+    final driver = env['GALLIUM_DRIVER']?.trim().toLowerCase();
+    return driver == 'llvmpipe' || driver == 'softpipe' || driver == 'swr';
+  }
+
   /// True while the app is resumed (focused and visible). False when the
   /// window is unfocused, hidden, minimised, or the app is backgrounded.
   static final ValueNotifier<bool> focused = ValueNotifier(true);
@@ -50,10 +78,11 @@ class TalonEffects {
   static final Listenable changes = Listenable.merge([reduce, focused, idle]);
 
   /// Whether the ambient backdrop may animate right now.
-  static bool get ambientMotion => !reduce.value && focused.value && !idle.value;
+  static bool get ambientMotion =>
+      !reduce.value && !softwareRendering && focused.value && !idle.value;
 
   /// Whether glass panels may use a live `BackdropFilter`.
-  static bool get liveBlur => !reduce.value;
+  static bool get liveBlur => !reduce.value && !softwareRendering;
 
   /// Mirror the app lifecycle. Anything but `resumed` counts as unfocused;
   /// null (no lifecycle reported yet, e.g. in tests) counts as focused.
@@ -82,6 +111,7 @@ class TalonEffects {
   @visibleForTesting
   static void resetForTest() {
     clock = DateTime.now;
+    softwareRendering = false;
     reduce.value = false;
     focused.value = true;
     idle.value = false;

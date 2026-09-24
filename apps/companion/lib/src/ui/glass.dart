@@ -42,7 +42,7 @@ class Glass extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: TalonEffects.reduce,
-      builder: (context, reduce, _) => _panel(liveBlur: !reduce),
+      builder: (context, _, __) => _panel(liveBlur: TalonEffects.liveBlur),
     );
   }
 

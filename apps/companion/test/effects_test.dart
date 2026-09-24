@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart'
     show debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
@@ -23,6 +25,7 @@ Widget _host(Widget child) => MediaQuery(
 const _pastSweep = Duration(seconds: 20, milliseconds: 200);
 
 void main() {
+  setUp(TalonEffects.resetForTest);
   tearDown(TalonEffects.resetForTest);
 
   group('Glass', () {
@@ -141,6 +144,32 @@ void main() {
     TalonEffects.setLifecycle(AppLifecycleState.resumed);
     await tester.pump();
     expect(TickerMode.of(inner), isTrue);
+  });
+
+  testWidgets('software GL forces blur and ambient motion off',
+      (tester) async {
+    TalonEffects.softwareRendering = true;
+    await tester.pumpWidget(_host(const TalonBackdrop(
+      child: Glass(child: SizedBox(height: 40)),
+    )));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(_blurOn(tester), isFalse);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+  });
+
+  test('isSoftwareGl reads the Mesa overrides (Linux only)', () {
+    final linux = Platform.isLinux;
+    expect(TalonEffects.isSoftwareGl(const {}), isFalse);
+    expect(TalonEffects.isSoftwareGl(const {'LIBGL_ALWAYS_SOFTWARE': '1'}),
+        linux);
+    expect(TalonEffects.isSoftwareGl(const {'LIBGL_ALWAYS_SOFTWARE': 'true'}),
+        linux);
+    expect(
+        TalonEffects.isSoftwareGl(const {'LIBGL_ALWAYS_SOFTWARE': '0'}), isFalse);
+    expect(TalonEffects.isSoftwareGl(const {'GALLIUM_DRIVER': 'llvmpipe'}),
+        linux);
+    expect(
+        TalonEffects.isSoftwareGl(const {'GALLIUM_DRIVER': 'iris'}), isFalse);
   });
 
   group('Prefs.reduceEffects', () {
