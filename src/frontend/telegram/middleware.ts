@@ -15,7 +15,7 @@ import { allowChat, revokeChat } from "./userbot.js";
 import { registerChat } from "../../core/background/pulse/pulse.js";
 import { log } from "../../util/log.js";
 import { getSenderName } from "./handlers/index.js";
-import { noteUpdateId } from "./update-offset.js";
+import { noteUpdateId } from "./polling/update-offset.js";
 import { noteInboundThread } from "./topics.js";
 import { recordJoinRequest } from "./join-requests.js";
 import {
@@ -33,7 +33,7 @@ import {
 // ── Update-offset tracking (every update, before anything else) ──────────
 // Telegram redelivers any update whose id was never confirmed; the
 // shutdown path confirms this one so a process-ending command can't be
-// served twice. See update-offset.ts.
+// served twice. See polling/update-offset.ts.
 function trackUpdateOffset(ctx: Context, next: NextFunction): Promise<void> {
   noteUpdateId(ctx.update.update_id);
   return next();

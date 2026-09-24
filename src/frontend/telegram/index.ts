@@ -16,6 +16,7 @@ import {
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { runUntilStopped } from "../../core/frontend-runtime/run-loop.js";
+import { pollDeadline } from "./polling/poll-deadline.js";
 import { createTelegramActionHandler, sendText } from "./actions/index.js";
 import { ambientThreadId } from "./topics.js";
 import { initUserClient, disconnectUserClient } from "./userbot.js";
@@ -30,7 +31,7 @@ import {
 } from "./handlers/index.js";
 import { registerMiddleware } from "./middleware.js";
 import { setAllowedGroups } from "./handlers/group-access.js";
-import { confirmUpdates } from "./update-offset.js";
+import { confirmUpdates } from "./polling/update-offset.js";
 import { registerCallbacks } from "./callbacks/index.js";
 import { log, logError } from "../../util/log.js";
 
@@ -74,6 +75,9 @@ export function createTelegramFrontend(
   gateway: Gateway,
 ): TelegramFrontend {
   const bot = new Bot(config.botToken!);
+  // Installed first so it sits innermost: every retry autoRetry makes
+  // gets a fresh deadline rather than sharing one.
+  bot.api.config.use(pollDeadline());
   bot.api.config.use(apiThrottler());
   bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 60 }));
 

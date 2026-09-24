@@ -72,7 +72,7 @@ vi.mock("@grammyjs/transformer-throttler", () => ({
 }));
 
 const confirmUpdates = vi.fn(async () => {});
-vi.mock("../frontend/telegram/update-offset.js", () => ({
+vi.mock("../frontend/telegram/polling/update-offset.js", () => ({
   confirmUpdates: () => confirmUpdates(),
 }));
 
