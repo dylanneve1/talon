@@ -1574,7 +1574,9 @@ class AppState extends ChangeNotifier {
 
   void _setConn(ConnState s, String? err) {
     conn = s;
-    connError = err;
+    // Shown in the connection banner: never let a request URL's token ride
+    // along in exception text.
+    connError = err == null ? null : redactSecrets(err);
     _updateMenuBar();
     notifyListeners();
   }
