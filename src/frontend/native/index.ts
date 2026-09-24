@@ -18,6 +18,7 @@ import type { TalonConfig } from "../../core/config/index.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { log, logError } from "../../util/log.js";
+import { notifyAdmin } from "../../core/frontend-runtime/admin-notify.js";
 import { createNativeActionHandler } from "./turn/actions.js";
 import { loadOrCreateBridgeToken } from "./bridge/auth.js";
 import { warmContextCache } from "./turn/context.js";
@@ -116,6 +117,10 @@ export function createNativeFrontend(
       port: listen.port,
       token: listen.token,
       allowedOrigins: config.native?.allowedOrigins,
+      allowWeakToken: config.native?.allowWeakToken,
+      sseMaxLifetimeMs: config.native?.sseMaxLifetimeMs,
+      // Distributed token guessing should reach a human, not just the log.
+      onSecurityAlert: (message) => void notifyAdmin(message),
       startedAt: runtime.startedAt,
       ...(listen.tls ? { tls: () => loadOrCreateBridgeTlsIdentity() } : {}),
     },

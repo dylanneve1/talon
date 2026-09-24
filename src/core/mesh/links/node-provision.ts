@@ -166,7 +166,13 @@ echo "Done — this host is now on the mesh. Check with: $BIN status"
 `;
 }
 
-/** PowerShell installer (Windows PowerShell 5+ compatible). */
+/**
+ * PowerShell installer (Windows PowerShell 5+ compatible). The binary lands in
+ * the installing user's %LOCALAPPDATA% and `talon-node install` registers a
+ * boot task that runs as that same user (never SYSTEM — a SYSTEM task would
+ * run a binary the user can rewrite). Registering a boot task needs an
+ * elevated PowerShell.
+ */
 function powershellInstaller(grant: NodeProvisionGrant): string {
   const nameArg = grant.name ? `, "--name", "${grant.name}"` : "";
   const fpArg = grant.fingerprint
@@ -184,6 +190,7 @@ Invoke-WebRequest -UseBasicParsing "$bridge/node/binary?provision=${grant.token}
 $got = (Get-FileHash $bin -Algorithm SHA256).Hash.ToLower()
 if ($got -ne "${grant.sha256}") { Remove-Item $bin; throw "talon-node download failed its checksum - refusing to install" }
 Write-Host "Installed $bin"
+Write-Host "Registering the boot task to run as $env:USERDOMAIN\\$env:USERNAME (not SYSTEM)..."
 & $bin install --bridge $bridge --token "${grant.bearerToken}"${fpArg}${nameArg}
 Write-Host "Done - this host is now on the mesh. Check with: $bin status"
 `;

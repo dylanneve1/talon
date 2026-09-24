@@ -770,8 +770,11 @@ class BridgeException implements Exception {
   /// certificate. Never heals by retrying — the user has to import one.
   final bool clientCertificateRequired;
 
-  BridgeException(this.message)
-      : unauthorized = false,
+  /// [message] often embeds a lower-level error whose text quotes the full
+  /// request URL (token included); it is redacted before it is stored.
+  BridgeException(String message)
+      : message = redactSecrets(message),
+        unauthorized = false,
         certificateChanged = false,
         clientCertificateRequired = false;
   BridgeException.unauthorized()

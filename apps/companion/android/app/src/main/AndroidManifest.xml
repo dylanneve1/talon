@@ -48,7 +48,16 @@
     <!-- Custom Application: hooks the foreground-task engine's creation to
          register the talon/shizuku channel there too (see TalonApplication) —
          backgrounded/boot-restarted exec keeps Shizuku elevation. -->
+    <!-- Nothing the app stores is worth restoring — a restored or migrated
+         phone simply pairs again — while what it stores (the bridge token,
+         an imported client certificate and its password, recent chats) must
+         not end up in a cloud backup or on another device. allowBackup and
+         fullBackupContent cover Android 11 and older; dataExtractionRules
+         covers cloud backup and device-to-device transfer on Android 12+. -->
     <application android:usesCleartextTraffic="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:label="Talon"
         android:name=".TalonApplication"
         android:icon="@mipmap/ic_launcher"

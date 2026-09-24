@@ -29,6 +29,8 @@ import { recordSessionTurnPhases } from "../../storage/sessions.js";
 import type { TurnPhase } from "../../storage/session-record.js";
 import { retrieveForTurn, type TurnMemory } from "../memory/turn-retrieval.js";
 import { TalonError } from "../errors.js";
+import { backendEnforcesGuestScope } from "../agent-runtime/backend-registry.js";
+import { enterTurnScope, resolveTurnScope } from "../mcp-hub/guest-scope.js";
 import { Loom } from "./loom.js";
 import { carryTurnEvents, startShuttleTiming } from "./shuttle.js";
 import type { Thread, ThreadSnapshot } from "./thread.js";
@@ -184,21 +186,20 @@ export class Weaver {
     });
     phases.warpResolve = Date.now() - warpStartedAt;
     if (!warp.ok) {
-      // Refusals are delivered through the same event sink the backend
-      // would use for output (as an `assistant_message` event, so the
-      // frontend delivers it normally).
-      try {
-        await params.onEvent?.({
-          type: "assistant_message",
-          text: warp.message,
-        });
-      } catch (err) {
-        logWarn(
-          "dispatcher",
-          `onEvent(no-model) threw: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+      await deliverRefusal(params, warp.message, "no-model");
       return this.emptyResult(warp.message, params);
+    }
+
+    // Tool scope is decided per sender: a non-operator gets the guest
+    // surface, and a backend that can't enforce it doesn't get the turn.
+    const scope = resolveTurnScope(params);
+    if (scope === "guest" && !backendEnforcesGuestScope(backend.id)) {
+      logWarn(
+        "dispatcher",
+        `[${reqId}] guest-scoped turn refused chat=${params.chatId}: backend "${backend.id}" cannot enforce the guest tool scope`,
+      );
+      await deliverRefusal(params, GUEST_BACKEND_REFUSAL, "guest-scope");
+      return this.emptyResult(GUEST_BACKEND_REFUSAL, params);
     }
 
     // Bind the warp — record the model/backend actually resolved for this turn
@@ -235,6 +236,7 @@ export class Weaver {
       `[${reqId}] ${params.source} chat=${params.chatId} started (active=${this.activeCount})`,
     );
     context.acquire(params.numericChatId, params.chatId);
+    const releaseScope = enterTurnScope(params.chatId, scope);
     const stopTyping = startTypingLoop(
       this.deps.sendTyping,
       params.numericChatId,
@@ -293,6 +295,7 @@ export class Weaver {
       return this.toExecuteResult(agentResult, params);
     } finally {
       stopTyping();
+      releaseScope();
       context.release(params.numericChatId, params.chatId);
     }
   }
@@ -328,6 +331,31 @@ export class Weaver {
         params.chatId,
       ),
     };
+  }
+}
+
+const GUEST_BACKEND_REFUSAL =
+  "I can't answer this here: messages from anyone but the operator run with a " +
+  "limited tool set, and this chat's current model backend can't enforce it. " +
+  "The operator can switch this chat to a backend that does (Claude).";
+
+/**
+ * Refusals are delivered through the same event sink the backend would use
+ * for output (as an `assistant_message` event, so the frontend delivers it
+ * normally).
+ */
+async function deliverRefusal(
+  params: ExecuteParams,
+  text: string,
+  kind: string,
+): Promise<void> {
+  try {
+    await params.onEvent?.({ type: "assistant_message", text });
+  } catch (err) {
+    logWarn(
+      "dispatcher",
+      `onEvent(${kind}) threw: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 

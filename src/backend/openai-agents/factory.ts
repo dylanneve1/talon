@@ -40,6 +40,9 @@ import {
 const openAIAgentsFactory: BackendFactory = {
   id: "openai-agents",
   label: "OpenAI Agents",
+  // Its own shell/file tools can't be withheld per turn, so guest-scoped
+  // turns (non-operator senders) are refused rather than run with them.
+  guestToolScope: "refused",
   doctor: (config) => openAIAgentsDoctorChecks(config),
 
   async init(config, ctx) {

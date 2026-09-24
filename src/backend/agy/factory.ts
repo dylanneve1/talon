@@ -52,6 +52,9 @@ import {
 const agyFactory: BackendFactory = {
   id: "agy",
   label: "Antigravity",
+  // Its own shell/file tools can't be withheld per turn, so guest-scoped
+  // turns (non-operator senders) are refused rather than run with them.
+  guestToolScope: "refused",
   doctor: (config, isActive) => agyDoctorChecks(config, isActive),
 
   async init(config, ctx) {
