@@ -42,6 +42,7 @@ const SETTINGS: BackupSettings = {
   keepRemote: 30,
   includePalace: true,
   loginSessions: "local",
+  includeSessions: true,
   workspaceInclude: DEFAULT_WORKSPACE_INCLUDE,
   extraPaths: [],
   checkpointBeforeUpdate: true,

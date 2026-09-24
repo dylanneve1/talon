@@ -594,6 +594,9 @@ const configSchema = z.object({
    *
    *   - `workspaceInclude` — the workspace is mostly bulk that can be
    *     refetched; this is the subset that IS the agent.
+   *   - `includeSessions` — backend session transcripts (Claude Code
+   *     projects for the workspace, Codex/OpenCode/Kilo/Antigravity
+   *     stores for enabled backends) and data/traces, in their own part.
    *   - `extraPaths` — absolute or `~/…` paths outside ~/.talon worth
    *     carrying along (a Claude Code memory directory, say).
    *   - `checkpointBeforeUpdate` — pinned checkpoint before `/update`,
@@ -632,6 +635,9 @@ const configSchema = z.object({
       loginSessions: z
         .enum(["off", "local", "remote"])
         .default(DEFAULT_BACKUP_SETTINGS.loginSessions),
+      includeSessions: z
+        .boolean()
+        .default(DEFAULT_BACKUP_SETTINGS.includeSessions),
       workspaceInclude: z
         .array(z.string().min(1))
         .default([...DEFAULT_BACKUP_SETTINGS.workspaceInclude]),

@@ -190,7 +190,7 @@ describe("restoreSnapshot", () => {
       "snapshot",
     );
     expect(existsSync(join(root, "data", "talon.db-wal"))).toBe(false);
-    // Traces are excluded from a snapshot, so a restore leaves them alone.
+    // Traces travel in the sessions part and come back with it.
     expect(
       readFileSync(join(root, "data", "traces", "chat.jsonl"), "utf8"),
     ).toBe("trace kept");
@@ -205,6 +205,31 @@ describe("restoreSnapshot", () => {
     expect(
       existsSync(join(snapshotDir(snapshot.id, root), "restore-staging")),
     ).toBe(false);
+  });
+
+  it("restores the palace from its own part", async () => {
+    const root = home();
+    mkdirSync(join(root, "workspace", "palace", "wing"), { recursive: true });
+    writeFileSync(join(root, "workspace", "palace", "wing", "a.json"), "room");
+    const snapshot = await buildSnapshot({
+      kind: "backup",
+      settings: resolveBackupSettings({ includePalace: true }),
+      home: root,
+      copyDatabase,
+    });
+    rmSync(join(root, "workspace", "palace"), { recursive: true });
+    const report = await restoreSnapshot({
+      id: snapshot.id,
+      settings: SETTINGS,
+      home: root,
+      skipCheckpoint: true,
+    });
+    // The palace is excluded from the state part; its own root must not
+    // be filtered by that rule on the way back in.
+    expect(
+      readFileSync(join(root, "workspace", "palace", "wing", "a.json"), "utf8"),
+    ).toBe("room");
+    expect(report.written["workspace/palace"]).toBe(1);
   });
 
   it("refuses an id it has never seen", async () => {

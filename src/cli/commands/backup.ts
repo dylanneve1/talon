@@ -59,6 +59,7 @@ const USAGE = `
     ${pc.cyan("pin")} <id>  |  ${pc.cyan("unpin")} <id>          keep past retention, or release
     ${pc.cyan("restore")} <id> [--from <target>] [--yes] [--allow-unauthenticated]
                                        restore (daemon must be stopped)
+          [--clone]                            …onto a new machine: relocate sessions + plugin paths
     ${pc.cyan("prune")}                                apply the local retention policy
     ${pc.cyan("targets")}                              remote targets and their readiness
     ${pc.cyan("status")}                               schedule, sizes, targets
@@ -333,11 +334,13 @@ async function backupRestore(id: string, flags: Flags): Promise<void> {
     process.exitCode = 1;
     return;
   }
+  const clone = flags.flags.get("clone") === true;
   const report = await restoreSnapshot({
     id,
     settings,
     target,
     allowUnauthenticated: flags.flags.get("allow-unauthenticated") === true,
+    clone,
   });
   const written = Object.entries(report.written)
     .map(([root, count]) => `${root} (${count})`)
@@ -353,6 +356,12 @@ async function backupRestore(id: string, flags: Flags): Promise<void> {
   console.log(
     `  Database: ${report.databaseReplaced ? "replaced" : "left in place"}\n`,
   );
+  if (clone) {
+    console.log(
+      `  Clone: config.json paths ${report.configRewritten ? "rewritten for this machine" : "unchanged"}.\n` +
+        `  Reinstall fetched plugins from ${pc.cyan("~/.talon/plugins-manifest.json")} (docs/backups.md).\n`,
+    );
+  }
 }
 
 /**

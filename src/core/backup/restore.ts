@@ -36,6 +36,7 @@ import {
   unlink,
   copyFile,
 } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { dirs } from "../../util/paths.js";
@@ -50,13 +51,18 @@ import { sha256File } from "./archive/digest.js";
 import { extractTar } from "./archive/tar.js";
 import { createDecompressor } from "./archive/zstd.js";
 import { requirePassphrase } from "./passphrase.js";
-import { collectTree, isExcluded } from "./plan.js";
+import { collectTree, excludeForRoot } from "./plan.js";
 import {
   authenticateManifest,
   makePrivate,
   type ManifestTrust,
 } from "./restore-guard.js";
 import { buildSnapshot } from "./snapshot.js";
+import {
+  relocateRoot,
+  rewriteConfigForClone,
+  type CloneTarget,
+} from "./sources/relocate.js";
 import { isSnapshotId, partPath, readManifest, snapshotDir } from "./store.js";
 import type { BackupTarget } from "./targets.js";
 import type { BackupSettings, Manifest, SnapshotPart } from "./types.js";
@@ -81,6 +87,8 @@ export type RestoreReport = {
   written: Record<string, number>;
   removed: number;
   databaseReplaced: boolean;
+  /** A clone rewrote config.json's paths for this machine. */
+  configRewritten?: boolean;
 };
 
 export function restorePendingPath(home: string = dirs.root): string {
@@ -299,11 +307,19 @@ async function extractParts(
 
 // ── Applying ────────────────────────────────────────────────────────────────
 
+/** An external root and where it lands on this machine. */
+export type ExternalDestination = {
+  root: string;
+  dest: string;
+  sqlite?: boolean;
+};
+
 /** Where an archive path lands on this machine. */
 export function destinationFor(
   archivePath: string,
   home: string,
   extras: readonly { n: number; source: string }[],
+  external: readonly ExternalDestination[] = [],
 ): string | null {
   const segments = archivePath.split("/");
   if (segments[0] === "extra") {
@@ -311,6 +327,15 @@ export function destinationFor(
     if (!extra) return null; // an extra path this machine has no mapping for
     return join(extra.source, ...segments.slice(2));
   }
+  const outside = external.find(
+    (entry) =>
+      archivePath === entry.root || archivePath.startsWith(`${entry.root}/`),
+  );
+  if (outside) {
+    const rest = archivePath.slice(outside.root.length).split("/");
+    return join(outside.dest, ...rest.filter(Boolean));
+  }
+  if (segments[0] === "sessions" || segments[0] === "plugin-src") return null;
   if (archivePath === DB_MEMBER) return join(home, "data", "talon.db");
   return join(home, ...segments);
 }
@@ -325,7 +350,7 @@ async function clearCovered(
   archiveRoot: string,
 ): Promise<number> {
   const existing = await collectTree(destRoot, archiveRoot, {
-    exclude: excludeFor(archiveRoot),
+    exclude: excludeForRoot(archiveRoot),
   });
   let removed = 0;
   for (const entry of [...existing].reverse()) {
@@ -340,20 +365,6 @@ async function clearCovered(
     }
   }
   return removed;
-}
-
-/**
- * The exclusion rule for walking one include root. The palace is kept out
- * of the state part by `isExcluded`; walking its own root with that rule
- * finds nothing, which is how a palace part used to be extracted and then
- * silently never applied.
- */
-function excludeFor(root: string): (archivePath: string) => boolean {
-  if (root !== "workspace/palace") return isExcluded;
-  return (archivePath) =>
-    archivePath === root || archivePath.startsWith(`${root}/`)
-      ? false
-      : isExcluded(archivePath);
 }
 
 /**
@@ -390,6 +401,7 @@ async function applyStaged(
   manifest: Manifest,
   staging: string,
   home: string,
+  external: readonly ExternalDestination[],
 ): Promise<RestoreReport> {
   const extras = manifest.extras ?? [];
   const report: RestoreReport = {
@@ -401,18 +413,23 @@ async function applyStaged(
   for (const root of rootsToApply(manifest)) {
     const stagedRoot = join(staging, ...root.split("/"));
     const staged = await collectTree(stagedRoot, root, {
-      exclude: excludeFor(root),
+      exclude: excludeForRoot(root),
     });
     if (staged.length === 0) continue;
-    const destRoot = destinationFor(root, home, extras);
+    const destRoot = destinationFor(root, home, extras, external);
     if (!destRoot) {
       logWarn("backup", `No destination for ${root} on this machine — skipped`);
       continue;
     }
     report.removed += await clearCovered(destRoot, root);
+    // A session database's sidecars describe the file being replaced.
+    if (external.some((entry) => entry.root === root && entry.sqlite)) {
+      await rm(`${destRoot}-wal`, { force: true });
+      await rm(`${destRoot}-shm`, { force: true });
+    }
     let written = 0;
     for (const entry of staged) {
-      const dest = destinationFor(entry.archivePath, home, extras);
+      const dest = destinationFor(entry.archivePath, home, extras, external);
       if (!dest) continue;
       if (entry.type === "dir") await mkdir(dest, { recursive: true });
       else {
@@ -462,7 +479,46 @@ export type RestoreOptions = {
   skipCheckpoint?: boolean;
   /** Restore a manifest that carries no signature (see restore-guard.ts). */
   allowUnauthenticated?: ManifestTrust["allowUnauthenticated"];
+  /**
+   * Restoring onto a different machine: relocate the session stores and
+   * plugin checkouts to this user's home and rewrite config.json's paths
+   * (see sources/relocate.ts). Without it, a snapshot from another home
+   * is refused rather than written to paths this machine does not own.
+   */
+  clone?: boolean;
+  /** This machine's user home; defaults to `os.homedir()`. */
+  userHome?: string;
+  /** Environment for locating stores (CLAUDE_CONFIG_DIR, …). */
+  env?: Readonly<Record<string, string | undefined>>;
 };
+
+/**
+ * Where each external root of `manifest` goes. A plain restore puts it
+ * back where it came from; a clone relocates it to this machine.
+ */
+function externalDestinations(
+  manifest: Manifest,
+  clone: boolean,
+  target: CloneTarget,
+): ExternalDestination[] {
+  const origin = manifest.origin;
+  const foreign =
+    origin !== undefined &&
+    (origin.userHome !== target.userHome || origin.home !== target.home);
+  if (foreign && !clone && (manifest.external ?? []).length > 0) {
+    throw new TalonError(
+      `Snapshot ${manifest.id} was taken for ${origin.home} (user home ${origin.userHome}); ` +
+        `this machine is ${target.home}. Restore it with --clone to relocate its ` +
+        `session stores and plugin paths.`,
+      { reason: "bad_request" },
+    );
+  }
+  return (manifest.external ?? []).map((root) => ({
+    root: root.root,
+    dest: clone && origin ? relocateRoot(root, origin, target) : root.source,
+    ...(root.sqlite ? { sqlite: true } : {}),
+  }));
+}
 
 /**
  * Restore a snapshot over this home directory. The daemon must already be
@@ -479,11 +535,27 @@ export async function restoreSnapshot(
       reason: "bad_request",
     });
   }
+  // Same default rule as the builder: the real home looks at the real
+  // user home; a caller that points at another Talon home (a test) must
+  // say which user home goes with it.
+  const realHome = options.home === undefined;
+  const cloneTarget: CloneTarget = {
+    home,
+    userHome: options.userHome ?? homedir(),
+    env: options.env ?? (realHome ? process.env : {}),
+  };
   const missing = await missingParts(manifest, home);
   await authenticateManifest(manifest, options.settings, {
     allowUnauthenticated: options.allowUnauthenticated,
     fromRemote: options.target !== undefined && missing.length > 0,
   });
+  // Decided before anything is fetched or replaced: a refused clone must
+  // leave this machine exactly as it was.
+  const external = externalDestinations(
+    manifest,
+    options.clone ?? false,
+    cloneTarget,
+  );
   const parts = await ensureParts(manifest, home, missing, options.target);
   await verifyParts(manifest, home, options.settings, parts);
 
@@ -495,6 +567,8 @@ export async function restoreSnapshot(
       pinned: true,
       settings: options.settings,
       home,
+      userHome: options.userHome ?? (realHome ? homedir() : null),
+      env: cloneTarget.env,
     });
     checkpointId = checkpoint.id;
     log("backup", `Pre-restore checkpoint ${checkpointId} taken`);
@@ -503,8 +577,14 @@ export async function restoreSnapshot(
   const staging = join(snapshotDir(manifest.id, home), "restore-staging");
   await extractParts(manifest, home, staging, options.settings, parts);
   await options.beforeApply?.();
-  const report = await applyStaged(manifest, staging, home);
+  const report = await applyStaged(manifest, staging, home, external);
   report.checkpointId = checkpointId;
+  if (options.clone && manifest.origin) {
+    report.configRewritten = await rewriteConfigForClone(
+      manifest.origin,
+      cloneTarget,
+    );
+  }
   await rm(staging, { recursive: true, force: true });
   log(
     "backup",
