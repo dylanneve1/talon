@@ -135,6 +135,9 @@ class MessageNotifications {
             // A reply that has been superseded shouldn't buzz again.
             onlyAlertOnce: true,
             autoCancel: true,
+            // Reply text is conversation content: on a locked screen show
+            // only that a reply arrived, not what it says.
+            visibility: NotificationVisibility.private,
           ),
         ),
         payload: chatId,

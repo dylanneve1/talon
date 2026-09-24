@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io' show Directory, File, Platform;
 
 import 'package:battery_plus/battery_plus.dart';
@@ -131,7 +132,18 @@ class MeshService {
        _ringHandler = ringHandler ?? _defaultRing,
        _systemInfoProvider = systemInfoProvider ?? _defaultSystemInfo,
        _onRegistered = onRegistered,
-       _exec = deviceExec ?? DeviceExec();
+       _exec = deviceExec ?? DeviceExec() {
+    // Mesh commands climb to root/Shizuku only with the user's elevation
+    // grant for this bridge; without it they run as the app and nothing asks
+    // the root manager or Shizuku for anything.
+    _exec.allowElevation = () => elevationAllowed(prefs);
+  }
+
+  /// Whether mesh commands may use root or Shizuku: device control is live
+  /// ([deviceControlAllowed]) AND the user turned elevated access on for this
+  /// bridge. Off by default and after every new pairing.
+  static bool elevationAllowed(Prefs prefs, {bool? sandboxed}) =>
+      deviceControlAllowed(prefs, sandboxed: sandboxed) && prefs.meshElevated;
 
   bool get running => _running;
 
@@ -157,7 +169,9 @@ class MeshService {
     // ignition) the root grant would otherwise be acquired mid-command, with
     // the root manager's dialog appearing while someone is driving and the
     // command blocked behind it. Fire-and-forget: nothing here gates the mesh.
-    if (_deviceControl) {
+    // Only once the user has granted elevated access for this bridge — never
+    // as a side effect of merely connecting.
+    if (elevationAllowed(prefs)) {
       unawaited(
         _exec.ensureRootReady().catchError(
           (Object e) {
@@ -176,7 +190,7 @@ class MeshService {
     _events = client.events.listen(
       (event) {
         if (event['kind'] == 'locate') unawaited(_handleLocate(event));
-        if (event['kind'] == 'device_command') unawaited(_handleCommand(event));
+        if (event['kind'] == 'device_command') _admitCommand(event);
       },
       // SSE drops surface as stream errors. Reconnection belongs to the
       // connection's owner (AppState / MeshBackgroundRunner); without this
@@ -250,6 +264,56 @@ class MeshService {
       await sendOneFix();
     } catch (e) {
       AppLog.warn('mesh', 'locate handling failed', e);
+    }
+  }
+
+  /// How many mesh commands run at once; up to [maxQueuedCommands] more wait
+  /// for a slot, and anything beyond that is answered "busy" straight away.
+  /// Bounds what a burst of frames (a buggy or compromised daemon) can pile
+  /// onto the device.
+  static const int maxConcurrentCommands = 4;
+  static const int maxQueuedCommands = 16;
+
+  int _commandsInFlight = 0;
+  final Queue<Map<String, dynamic>> _queuedCommands = Queue();
+
+  void _admitCommand(Map<String, dynamic> event) {
+    if (_commandsInFlight < maxConcurrentCommands) {
+      _runCommand(event);
+    } else if (_queuedCommands.length < maxQueuedCommands) {
+      _queuedCommands.add(event);
+    } else {
+      unawaited(_answerBusy(event));
+    }
+  }
+
+  void _runCommand(Map<String, dynamic> event) {
+    _commandsInFlight++;
+    unawaited(
+      _handleCommand(event).whenComplete(() {
+        _commandsInFlight--;
+        if (_queuedCommands.isNotEmpty) {
+          _runCommand(_queuedCommands.removeFirst());
+        }
+      }),
+    );
+  }
+
+  Future<void> _answerBusy(Map<String, dynamic> event) async {
+    final id = event['id'];
+    if (id is! String || id.isEmpty) return;
+    final myId = await deviceId();
+    if (event['deviceId'] != myId) return;
+    try {
+      await client.postCommandResult({
+        'commandId': id,
+        'deviceId': myId,
+        'ok': false,
+        'message': 'Device is busy ($maxConcurrentCommands commands running, '
+            '$maxQueuedCommands queued) — try again shortly.',
+      });
+    } catch (e) {
+      AppLog.warn('mesh', 'busy result post failed', e);
     }
   }
 
@@ -330,9 +394,17 @@ class MeshService {
           // leave a half-written destination.
           final part = File('$downPath.part');
           final sink = part.openWrite();
+          var received = 0;
           int written;
           try {
             written = await client.downloadFile(downToken, (chunk) async {
+              received += chunk.length;
+              if (received > DeviceExec.maxWriteBytes) {
+                throw StateError(
+                  'download exceeds the ${DeviceExec.maxWriteBytes}-byte '
+                  'write cap',
+                );
+              }
               sink.add(chunk);
             });
             await sink.flush();

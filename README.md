@@ -498,6 +498,9 @@ Config file: `~/.talon/config.json`
 | `disabledTools`            | ---          | Hide individual tools by name (`end_turn` cannot be disabled)                                                           |
 | `adminUserId`              | ---          | Telegram user ID for `/admin` commands                                                                                  |
 | `allowedUsers`             | ---          | Whitelist of Telegram user IDs                                                                                          |
+| `allowedGroups`            | ---          | Telegram group IDs the bot serves. Unset: groups the admin is in are still admitted (legacy, warned at startup)          |
+| `operatorIds`              | ---          | Extra operator identities (`"123"`, `"wa_dm_<number>"`, `"discord:<id>"`, `"teams:<id>"`) — only operators get the full tool set |
+| `guestDmScope`             | on           | Conversation-only tools for non-operator senders. Always applied in groups; `enabled: false` exempts DMs (legacy)       |
 | `apiId` / `apiHash`        | ---          | Telegram API credentials for full message history                                                                       |
 | `whatsapp`                 | ---          | WhatsApp frontend: pairing, allowlists, group policy ([above](#whatsapp))                                               |
 | `discord`                  | ---          | Discord frontend: bot token, application ID, guild / channel allowlists                                                 |

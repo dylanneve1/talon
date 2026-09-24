@@ -1,6 +1,7 @@
 package org.talon.companion
 
 import android.content.Intent
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -57,6 +58,26 @@ class MainActivity : FlutterActivity() {
             ),
             applicationContext,
         )
+
+        // FLAG_SECURE while a screen showing credentials is up (connect,
+        // settings): keeps the token and pairing details out of the recents
+        // thumbnail, screenshots and screen recordings. Toggled from Dart.
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "talon/secure",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setSecure" -> {
+                    if (call.arguments == true) {
+                        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    } else {
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    }
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
 
         // Voice mode: STT/TTS + default-assistant plumbing. Activity-scoped
         // (unlike Shizuku) because it drives runtime-permission prompts and

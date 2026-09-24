@@ -56,8 +56,8 @@ import {
 import type { ToolFrontend } from "../tools/types.js";
 import {
   initGuestDmScope,
-  isGuestChat,
   isGuestPluginAllowed,
+  isGuestTurn,
   type GuestDmScopeConfig,
 } from "./guest-scope.js";
 
@@ -71,10 +71,12 @@ export type HubConfig = {
   braveApiKey?: string;
   /** Surface the native tool set (bash/read/write/… + teleport). */
   nativeTools?: boolean;
-  /** Conversation-only tool surface for non-operator DMs. */
+  /** Conversation-only tool surface for non-operator senders. */
   guestDmScope?: GuestDmScopeConfig;
-  /** Operator's Telegram id — their DM always keeps the full surface. */
+  /** Operator's Telegram id — their messages keep the full surface. */
   adminUserId?: number;
+  /** Further operator sender keys (see guest-scope.ts). */
+  operatorIds?: readonly string[];
 };
 
 let hubConfig: HubConfig = {};
@@ -82,7 +84,7 @@ let hubConfig: HubConfig = {};
 /** Set at bootstrap; safe to call again on config reload. */
 export function initHub(config: HubConfig): void {
   hubConfig = config;
-  initGuestDmScope(config.guestDmScope, config.adminUserId);
+  initGuestDmScope(config.guestDmScope, config.adminUserId, config.operatorIds);
   startChildReaper();
 }
 
@@ -227,14 +229,23 @@ function buildServerFor(target: HubTarget, bridgeUrl: string) {
       disabledTools: hubConfig.disabledTools,
       disabledToolTags: hubConfig.disabledToolTags,
       includeNativeTools: hubConfig.nativeTools,
-      guest: isGuestChat(target.chatId),
+      guest: isGuestTurn(target.chatId),
     });
   }
-  return buildProxyServer(target.serverName, () =>
-    acquireChild(childKey(target.serverName, target.chatId), () =>
+  // Re-checked per request: a session opened during an operator turn must
+  // not serve a later guest turn in the same chat.
+  return buildProxyServer(target.serverName, () => {
+    if (guestPluginDenied(target)) {
+      return Promise.reject(new Error("Not available in this chat"));
+    }
+    return acquireChild(childKey(target.serverName, target.chatId), () =>
       pluginSpec(target.serverName, target.chatId, bridgeUrl),
-    ),
-  );
+    );
+  });
+}
+
+function guestPluginDenied(target: { serverName: string; chatId: string }) {
+  return isGuestTurn(target.chatId) && !isGuestPluginAllowed(target.serverName);
 }
 
 // ── Session registry ────────────────────────────────────────────────────────
@@ -346,11 +357,7 @@ export async function handleHubRequest(
       return;
     }
 
-    if (
-      target.kind === "plugin" &&
-      isGuestChat(target.chatId) &&
-      !isGuestPluginAllowed(target.serverName)
-    ) {
+    if (target.kind === "plugin" && guestPluginDenied(target)) {
       jsonRpcError(res, 403, "Not available in this chat");
       return;
     }

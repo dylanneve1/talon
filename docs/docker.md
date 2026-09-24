@@ -61,7 +61,7 @@ companion app).
 | `TALON_MODEL`         | `model`                                   |                                                                              |
 | `TALON_BRIDGE_PORT`   | `native.port`                             | Default `19880`.                                                             |
 | `TALON_BRIDGE_URL`    | `native.publicUrl`                        | What devices dial. Pairing links need it inside a container.                 |
-| `TALON_BRIDGE_TOKEN`  | `native.token`                            | Default: auto-minted into `~/.talon/keys/bridge-token`.                      |
+| `TALON_BRIDGE_TOKEN`  | `native.token`                            | Auto-minted if unset. Your own must be ≥128 bits: `openssl rand -hex 32`.    |
 
 When `native` is among the frontends, the bridge binds `0.0.0.0` (loopback
 is unreachable from outside a container). That turns on TLS and a bearer

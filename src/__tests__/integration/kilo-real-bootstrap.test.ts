@@ -55,6 +55,9 @@ import type { Frontend } from "../../bootstrap.js";
 import type { ContextManager } from "../../core/types.js";
 import { toolInputToRecord } from "../../core/agent-runtime/events.js";
 
+/** Admin id in the test config; the test turns are sent as this user. */
+const ADMIN_ID = 1;
+
 // ── Preflight gating ───────────────────────────────────────────────────────
 
 const KILO_EXECUTABLE_ENV = "KILO_CODE_EXECUTABLE";
@@ -260,7 +263,7 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
           // Telegram frontend validation requires botToken and an admin —
           // never used, since we never call frontend.start().
           botToken: "test-bot-token",
-          adminUserId: 1,
+          adminUserId: ADMIN_ID,
           systemPrompt: "You are a test assistant. Be terse.",
           pulse: false,
           heartbeat: false,
@@ -377,6 +380,9 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
       senderName: "Test",
       isGroup: false,
       source: "message",
+      // The configured admin: a turn from anyone else is guest-scoped,
+      // which this backend refuses (it cannot enforce the guest surface).
+      senderKeys: [String(ADMIN_ID)],
       onEvent: async (event) => {
         if (event.type === "assistant_message") {
           textBlocks.push(event.text);
@@ -450,6 +456,9 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
       senderName: "Test",
       isGroup: false,
       source: "message",
+      // The configured admin: a turn from anyone else is guest-scoped,
+      // which this backend refuses (it cannot enforce the guest surface).
+      senderKeys: [String(ADMIN_ID)],
     });
 
     const afterA = getRegisteredMcpServerNames().filter((n) =>
@@ -468,6 +477,9 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
       senderName: "Test",
       isGroup: false,
       source: "message",
+      // The configured admin: a turn from anyone else is guest-scoped,
+      // which this backend refuses (it cannot enforce the guest surface).
+      senderKeys: [String(ADMIN_ID)],
     });
 
     const afterB = getRegisteredMcpServerNames();

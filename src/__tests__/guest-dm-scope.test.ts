@@ -13,9 +13,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import {
   initGuestDmScope,
-  isDmChatId,
-  isGuestChat,
   isGuestPluginAllowed,
+  resolveTurnScope,
   guestParamViolation,
   GUEST_TOOL_ALLOWLIST,
 } from "../core/mcp-hub/guest-scope.js";
@@ -38,7 +37,7 @@ async function listToolsFor(guest: boolean, chatId = "999") {
   return { client, names: tools.map((t) => t.name) };
 }
 
-describe("chat classification", () => {
+describe("DM classification", () => {
   beforeEach(() => {
     initGuestDmScope(
       { enabled: true, operatorChats: ["wa_dm_353000000001"] },
@@ -46,31 +45,29 @@ describe("chat classification", () => {
     );
   });
 
-  it("recognises DMs", () => {
-    expect(isDmChatId("999")).toBe(true);
-    expect(isDmChatId("wa_dm_353000000002")).toBe(true);
-    expect(isDmChatId("-1001426819337")).toBe(false);
-    expect(isDmChatId("wa_group_abc")).toBe(false);
-    expect(isDmChatId("heartbeat")).toBe(false);
-  });
+  const dm = (chatId: string, sender?: string) =>
+    resolveTurnScope({
+      chatId,
+      isGroup: false,
+      source: "message",
+      senderKeys: sender ? [sender] : undefined,
+    });
 
   it("treats the admin and operator chats as full access", () => {
-    expect(isGuestChat(String(ADMIN))).toBe(false);
-    expect(isGuestChat("wa_dm_353000000001")).toBe(false);
+    expect(dm(String(ADMIN), String(ADMIN))).toBe("operator");
+    expect(dm("wa_dm_353000000001")).toBe("operator");
   });
 
   it("treats every other DM as a guest", () => {
-    expect(isGuestChat("999")).toBe(true);
-    expect(isGuestChat("wa_dm_353000000002")).toBe(true);
+    expect(dm("999", "999")).toBe("guest");
+    expect(dm("wa_dm_353000000002", "wa_dm_353000000002")).toBe("guest");
   });
 
-  it("never scopes groups", () => {
-    expect(isGuestChat("-1001426819337")).toBe(false);
-  });
-
-  it("is off unless enabled", () => {
+  it("is on by default, and off only when explicitly disabled", () => {
     initGuestDmScope(undefined, ADMIN);
-    expect(isGuestChat("999")).toBe(false);
+    expect(dm("999", "999")).toBe("guest");
+    initGuestDmScope({ enabled: false }, ADMIN);
+    expect(dm("999", "999")).toBe("operator");
   });
 
   it("allows only the configured plugin servers", () => {

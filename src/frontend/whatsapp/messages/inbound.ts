@@ -273,6 +273,7 @@ async function runInboundTurn(
       numericChatId: chat.numericChatId,
       prompt,
       senderName,
+      senderKeys: identity.ids.map((id) => `wa_dm_${id}`),
       isGroup,
       source: "message",
       onEvent: (event) => onTurnEvent(runtime, chat, event),

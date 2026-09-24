@@ -29,6 +29,7 @@ import {
   registerCommandAccessGate,
 } from "./handlers/index.js";
 import { registerMiddleware } from "./middleware.js";
+import { setAllowedGroups } from "./handlers/group-access.js";
 import { confirmUpdates } from "./update-offset.js";
 import { registerCallbacks } from "./callbacks/index.js";
 import { log, logError } from "../../util/log.js";
@@ -49,7 +50,8 @@ export type TelegramFrontend = {
 // ── Access ──────────────────────────────────────────────────────────────────
 
 /**
- * Install the admin id and DM allowlist before anything else starts.
+ * Install the admin id, DM allowlist and group allowlist before anything
+ * else starts.
  * Config loading already refuses a Telegram setup without an admin; this
  * covers any other path that hands the frontend a config — without an admin
  * there is no owner, so the bot must not run at all.
@@ -62,6 +64,7 @@ function applyAccessControl(config: TalonConfig): void {
     blockedUsers: config.blockedUsers,
     adminUserId: config.adminUserId,
   });
+  setAllowedGroups(config.allowedGroups);
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@
 import type { ExecuteResult } from "../../../core/types.js";
 import type { AgentEvent } from "../../../core/agent-runtime/events.js";
 import { execute } from "../../../core/engine/dispatcher.js";
+import { LOCAL_OPERATOR_SENDER } from "../../../core/mcp-hub/guest-scope.js";
 import { toolInputToRecord } from "../../../core/agent-runtime/events.js";
 import { getBackendForChat } from "../../../core/engine/backend-controller/index.js";
 import { isDeliveryTool } from "../../../core/tools/index.js";
@@ -294,6 +295,7 @@ async function runTurn(
       numericChatId: entry.numericId,
       prompt,
       senderName: "User",
+      senderKeys: [LOCAL_OPERATOR_SENDER],
       isGroup: false,
       // Give the model the user message's id so `[msg_id:N]` is present and
       // react/reply/edit target the user's message — not the bot's.

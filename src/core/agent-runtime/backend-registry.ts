@@ -76,6 +76,14 @@ export interface BackendFactory {
   id: string;
   /** Display label used in `/status` and agent logs (e.g. "Kilo"). */
   label: string;
+  /**
+   * Can this backend run a guest-scoped turn (a non-operator sender) with
+   * nothing but the hub's conversation-only tools? `"enforced"` means its
+   * own built-ins (shell, file tools) are dropped for guest turns;
+   * `"refused"` means they can't be, so the weaver refuses guest turns on
+   * it. Absent is treated as `"refused"` — fail closed.
+   */
+  guestToolScope?: "enforced" | "refused";
   /** Initialise the backend; called exactly once per Talon process. */
   init(config: TalonConfig, ctx: BackendInitContext): Promise<BackendInstance>;
   /**
@@ -134,6 +142,14 @@ export function listBackends(): BackendFactory[] {
  */
 export function clearBackends(): void {
   backends.clear();
+}
+
+/**
+ * Whether guest-scoped turns may run on this backend. Unknown ids and
+ * factories that don't declare `guestToolScope` fail closed.
+ */
+export function backendEnforcesGuestScope(id: string): boolean {
+  return backends.get(id)?.guestToolScope === "enforced";
 }
 
 /** Whether a backend with this id is currently registered. */

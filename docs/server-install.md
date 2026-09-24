@@ -58,7 +58,16 @@ Because the bridge listens beyond loopback, it secures itself on first
 start:
 
 - **Token.** It mints a bearer token at `~/.talon/keys/bridge-token`. Every
-  client needs it. Set `"token"` in the `native` section to choose your own.
+  client needs it. Set `"token"` in the `native` section to choose your own,
+  but make it random (`openssl rand -hex 32`): a token estimated under ~128
+  bits (e.g. `hunter2`) stops the bridge from starting on a network bind
+  unless you also set `"allowWeakToken": true`.
+- **Auth throttling.** Wrong tokens are answered more and more slowly per
+  address (250 ms doubling to 8 s after two free misses), 20 in 15 minutes
+  locks that address out (`429`), and more than 100 across all addresses in
+  5 minutes starts a 10-minute cooldown for unauthenticated traffic and
+  alerts the admin chat. Paired clients are never slowed. Every event is
+  logged as a `bridge.auth event=…` line.
 - **TLS.** It serves HTTPS with a self-signed certificate at
   `~/.talon/keys/bridge-cert.pem`. Clients pin its fingerprint the first
   time they connect.
@@ -137,10 +146,12 @@ certificates in front ([mtls.md](mtls.md)).
 
 ## Troubleshooting
 
-| Symptom                                       | Fix                                                                                                                   |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `Telegram frontend requires "botToken"`       | `frontend` still includes `telegram`. Set it to `"native"`.                                                           |
-| App can't reach the server                    | `ss -ltnp \| grep 19880` should show `0.0.0.0:19880`. If it shows `127.0.0.1`, set `native.host`. Check the firewall. |
-| `401` / unauthorized in the app               | Token mismatch. Re-copy `~/.talon/keys/bridge-token`.                                                                 |
-| App refuses the certificate after a reinstall | `~/.talon/keys` was regenerated. Reconnect from the connect screen to re-pin, after checking the fingerprint.         |
-| Anything else                                 | `talon doctor` and `talon logs`.                                                                                      |
+| Symptom                                                 | Fix                                                                                                                    |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `Telegram frontend requires "botToken"`                 | `frontend` still includes `telegram`. Set it to `"native"`.                                                            |
+| App can't reach the server                              | `ss -ltnp \| grep 19880` should show `0.0.0.0:19880`. If it shows `127.0.0.1`, set `native.host`. Check the firewall.  |
+| `401` / unauthorized in the app                         | Token mismatch. Re-copy `~/.talon/keys/bridge-token`.                                                                  |
+| `429` / too many failed auth attempts                   | That address sent wrong tokens repeatedly. Fix the token, then wait out the lockout (`Retry-After`), or restart Talon. |
+| `Refusing to start the bridge: native.token looks weak` | Remove `native.token` (Talon mints a strong one) or use `openssl rand -hex 32`.                                        |
+| App refuses the certificate after a reinstall           | `~/.talon/keys` was regenerated. Reconnect from the connect screen to re-pin, after checking the fingerprint.          |
+| Anything else                                           | `talon doctor` and `talon logs`.                                                                                       |

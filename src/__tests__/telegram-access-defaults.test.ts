@@ -14,6 +14,7 @@ import {
   isAuthorizedAdmin,
   isConfiguredAdmin,
 } from "../frontend/telegram/commands/state.js";
+import { setAllowedGroups } from "../frontend/telegram/handlers/group-access.js";
 
 const ADMIN = 111;
 const FRIEND = 222;
@@ -73,6 +74,21 @@ describe("telegram group access without an admin", () => {
     ).toBe(false);
     // Denied without even asking Telegram — there is no admin to look for.
     expect(bot.api.getChatMember).not.toHaveBeenCalled();
+  });
+
+  it("denies even a listed group when no admin is configured", async () => {
+    setAccessControl({});
+    setAllowedGroups([-100789]);
+    try {
+      expect(
+        await isAccessAllowed(
+          makeCtx(STRANGER, "supergroup", -100789),
+          makeBot(),
+        ),
+      ).toBe(false);
+    } finally {
+      setAllowedGroups(undefined);
+    }
   });
 
   it("admits a group the admin belongs to", async () => {
