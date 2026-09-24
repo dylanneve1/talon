@@ -578,7 +578,7 @@ class DeviceExec {
     // goes into a fresh mktemp directory only root/shell can enter (not a
     // fixed, guessable file name), and the hash is taken of that private
     // copy — the file pm will actually read.
-    String? stagedDir;
+    final String stagedDir;
     try {
       final res = await _elevatedExec(stageApkScript(path, expected), 120000);
       final code = (res?['exitCode'] as num?)?.toInt() ?? 1;
@@ -602,8 +602,7 @@ class DeviceExec {
     } catch (e) {
       return CommandOutcome.fail('Failed to stage the APK: $e');
     }
-    if (stagedDir == null ||
-        !stagedDir.startsWith('$_apkStageRoot/talon-update.')) {
+    if (!stagedDir.startsWith('$_apkStageRoot/talon-update.')) {
       return CommandOutcome.fail(
         'Failed to stage the APK: unexpected staging path "$stagedDir".',
       );
