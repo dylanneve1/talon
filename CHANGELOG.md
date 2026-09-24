@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.14.0](https://github.com/dylanneve1/talon/compare/v5.13.0...v5.14.0) (2026-09-24)
+
+
+### Features
+
+* **status:** show the Talon version (and git commit) in /status ([#1039](https://github.com/dylanneve1/talon/issues/1039)) ([8f76c34](https://github.com/dylanneve1/talon/commit/8f76c34b4e7a09c6452034a33fceb13533d40fd0))
+
 ## [5.13.0](https://github.com/dylanneve1/talon/compare/v5.12.0...v5.13.0) (2026-09-24)
 
 
