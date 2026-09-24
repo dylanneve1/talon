@@ -40,7 +40,9 @@
  *   2. `TALON_BRIDGE_URL/health` stops responding for several
  *      consecutive pings — Talon's gateway is gone. Catches the
  *      "kilo serve / opencode serve outlives Talon" case where those
- *      daemons keep our stdin open across Talon restarts.
+ *      daemons keep our stdin open across Talon restarts. A ping that only
+ *      times out (port still bound, gateway busy) is tolerated for minutes,
+ *      not seconds — see BridgeWatchdog.
  */
 
 import crossSpawn from "cross-spawn";
@@ -203,7 +205,75 @@ export function wrapMcpCommand(command: readonly string[]): string[] {
 // within ~1 minute.
 const BRIDGE_PING_INTERVAL_MS = 15_000;
 const BRIDGE_PING_TIMEOUT_MS = 2_000;
-const BRIDGE_FAILURES_BEFORE_EXIT = 4;
+export const BRIDGE_FAILURES_BEFORE_EXIT = 4;
+// A ping that TIMES OUT means the port is still bound — the kernel accepted
+// the connection — but the gateway is too busy to answer within 2s (event
+// loop saturated by a burst of agents, a big synchronous write, …). That is
+// a live Talon, not a dead one, so it gets a much longer budget (~5 min)
+// before the child is evicted. Only a truly wedged daemon reaches it.
+export const BRIDGE_UNRESPONSIVE_BEFORE_EXIT = 20;
+
+/**
+ * Outcome of one bridge health ping:
+ *   - "ok": /health answered 2xx.
+ *   - "unreachable": nothing healthy behind the port (connection refused or
+ *     reset, non-2xx reply) — Talon is gone or restarting.
+ *   - "unresponsive": the request timed out — something holds the port but
+ *     is slow to answer; Talon is alive but busy.
+ */
+export type BridgePingOutcome = "ok" | "unreachable" | "unresponsive";
+
+/** Classify a rejected health fetch. Timeouts/aborts mean "busy", not "gone". */
+export function classifyBridgePingError(
+  err: unknown,
+): Exclude<BridgePingOutcome, "ok"> {
+  const name = (err as { name?: unknown } | null)?.name;
+  return name === "TimeoutError" || name === "AbortError"
+    ? "unresponsive"
+    : "unreachable";
+}
+
+/** Ping `${bridgeUrl}/health` once. Never throws. */
+export async function pingBridge(
+  bridgeUrl: string,
+  timeoutMs: number = BRIDGE_PING_TIMEOUT_MS,
+): Promise<BridgePingOutcome> {
+  try {
+    const resp = await fetch(`${bridgeUrl}/health`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    // Drain the body so the socket is released promptly.
+    await resp.arrayBuffer().catch(() => undefined);
+    return resp.ok ? "ok" : "unreachable";
+  } catch (err) {
+    return classifyBridgePingError(err);
+  }
+}
+
+/**
+ * Consecutive-failure bookkeeping for the bridge watchdog. `record()`
+ * returns true once the child should be shut down: after
+ * BRIDGE_FAILURES_BEFORE_EXIT failures ending in an "unreachable" ping (the
+ * port is really closed), or after BRIDGE_UNRESPONSIVE_BEFORE_EXIT failures
+ * of any kind (the daemon is wedged, not just busy).
+ */
+export class BridgeWatchdog {
+  consecutiveFailures = 0;
+
+  record(outcome: BridgePingOutcome): boolean {
+    if (outcome === "ok") {
+      this.consecutiveFailures = 0;
+      return false;
+    }
+    this.consecutiveFailures += 1;
+    if (this.consecutiveFailures >= BRIDGE_UNRESPONSIVE_BEFORE_EXIT)
+      return true;
+    return (
+      outcome === "unreachable" &&
+      this.consecutiveFailures >= BRIDGE_FAILURES_BEFORE_EXIT
+    );
+  }
+}
 
 /**
  * Run the supervisor over `argvTail` = [cmd, ...args].
@@ -346,29 +416,19 @@ export function runSupervisor(argvTail: string[]): Promise<never> {
   // (every Talon-spawned MCP server has it; ad-hoc supervisor uses
   // without the env var keep the stdin-EOF-only behavior).
   if (BRIDGE_URL) {
-    let consecutiveFailures = 0;
+    const watchdog = new BridgeWatchdog();
     const tick = async (): Promise<void> => {
       if (terminating) return;
-      try {
-        const resp = await fetch(`${BRIDGE_URL}/health`, {
-          signal: AbortSignal.timeout(BRIDGE_PING_TIMEOUT_MS),
-        });
-        if (resp.ok) {
-          consecutiveFailures = 0;
-          return;
-        }
-        consecutiveFailures += 1;
-      } catch {
-        consecutiveFailures += 1;
-      }
-      if (consecutiveFailures >= BRIDGE_FAILURES_BEFORE_EXIT) {
-        // Talon's gateway is gone. The MCP child has nothing useful to
-        // serve — bridge calls would 404 against a dead port — so shut
-        // down. Kilo/OpenCode notice the stdio close on the next
-        // interaction and drop the registration on their side.
+      const outcome = await pingBridge(BRIDGE_URL);
+      if (terminating) return;
+      if (watchdog.record(outcome)) {
+        // Talon's gateway is gone (or wedged for minutes). The MCP child
+        // has nothing useful to serve — bridge calls would 404 against a
+        // dead port — so shut down. Kilo/OpenCode notice the stdio close
+        // on the next interaction and drop the registration on their side.
         process.stderr.write(
-          `mcp-launcher: bridge ${BRIDGE_URL} unreachable for ${
-            consecutiveFailures * (BRIDGE_PING_INTERVAL_MS / 1000)
+          `mcp-launcher: bridge ${BRIDGE_URL} ${outcome} for ${
+            watchdog.consecutiveFailures * (BRIDGE_PING_INTERVAL_MS / 1000)
           }s; shutting down child\n`,
         );
         terminate(0);
