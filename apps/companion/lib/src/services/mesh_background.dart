@@ -324,10 +324,10 @@ class MeshBackgroundRunner {
   }
 
   Future<void> _watchdogRegister() async {
-    final last = _lastRegisteredAtMs;
-    final quiet = last == null
+    final lastBeat = _lastRegisteredAtMs;
+    final quiet = lastBeat == null
         ? null
-        : DateTime.now().millisecondsSinceEpoch - last;
+        : DateTime.now().millisecondsSinceEpoch - lastBeat;
     if (quiet != null && quiet < _heartbeatQuiet.inMilliseconds) {
       return; // MeshService's own heartbeat is keeping registration fresh
     }
