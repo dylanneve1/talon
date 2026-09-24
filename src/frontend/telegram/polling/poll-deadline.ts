@@ -18,7 +18,7 @@
  */
 
 import type { Transformer } from "grammy";
-import { logWarn } from "../../util/log.js";
+import { logWarn } from "../../../util/log.js";
 
 /** grammY's long-poll window when bot.start() is given none. */
 const DEFAULT_POLL_TIMEOUT_S = 30;

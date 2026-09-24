@@ -16,7 +16,7 @@
  */
 
 import type { Bot } from "grammy";
-import { log, logWarn } from "../../util/log.js";
+import { log, logWarn } from "../../../util/log.js";
 
 let highestUpdateId = 0;
 

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 
 vi.mock("../util/log.js", () => ({ logWarn: vi.fn() }));
 
-import { pollDeadline } from "../frontend/telegram/poll-deadline.js";
+import { pollDeadline } from "../frontend/telegram/polling/poll-deadline.js";
 import { logWarn } from "../util/log.js";
 
 type Prev = Parameters<ReturnType<typeof pollDeadline>>[0];
