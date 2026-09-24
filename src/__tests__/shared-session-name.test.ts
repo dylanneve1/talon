@@ -20,9 +20,7 @@ describe("extractSessionName", () => {
   });
 
   it("strips both prefix and msg_id together", () => {
-    expect(extractSessionName("[Ada] [msg_id:42] body text")).toBe(
-      "body text",
-    );
+    expect(extractSessionName("[Ada] [msg_id:42] body text")).toBe("body text");
   });
 
   it("truncates long input with ellipsis", () => {
