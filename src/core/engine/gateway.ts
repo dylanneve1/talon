@@ -30,6 +30,7 @@ import {
   listenWithRetry,
   type GatewayRouteHost,
 } from "./gateway-routes.js";
+import { gatewayToken } from "./gateway-auth.js";
 import { handlePluginAction } from "../plugin/index.js";
 import type { FrontendActionHandler } from "../types.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
@@ -422,8 +423,11 @@ export class Gateway {
 
   /** The actual bind. Always called through `start()`'s single-flight guard. */
   private async bind(port: number): Promise<number> {
+    const token = gatewayToken();
     const host: GatewayRouteHost = {
-      healthSnapshot: () => this.healthSnapshot(),
+      port: () => this.port,
+      token: () => token,
+      healthSnapshot: (full) => this.healthSnapshot(full),
       requestShutdown: () => {
         const handler = this.shutdownHandler;
         if (!handler) return false;
@@ -458,17 +462,21 @@ export class Gateway {
   /**
    * The /health body. Identity fields first — daemon discovery matches on
    * them to tell a Talon daemon from chat sessions and unrelated localhost
-   * services — then live counters.
+   * services — then, for an authenticated caller only, live counters.
    */
-  private healthSnapshot(): Record<string, unknown> {
+  private healthSnapshot(full: boolean): Record<string, unknown> {
     const w = getHealthStatus();
-    return {
+    const identity = {
       app: "talon",
       mode: this.mode,
       pid: process.pid,
       port: this.port,
       startedAt: this.startedAt,
       ok: w.healthy,
+    };
+    if (!full) return identity;
+    return {
+      ...identity,
       uptime: Math.round(process.uptime()),
       memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
       bridge: {

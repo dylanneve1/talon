@@ -19,24 +19,22 @@ export function setAdminUserId(id: number | undefined): void {
 }
 
 /**
- * True when the sender is allowed to run admin commands — either no admin is
- * configured (id 0) or the sender matches. Matches the original inline guard.
+ * True when the sender may run admin commands: an admin id is configured and
+ * the sender is that user. "No admin configured" means nobody is admin —
+ * never everyone (the Telegram frontend also refuses to start without one).
  */
 export function isAuthorizedAdmin(ctx: Context): boolean {
   return (
-    adminState.adminUserId === 0 || ctx.from?.id === adminState.adminUserId
+    adminState.adminUserId !== 0 && ctx.from?.id === adminState.adminUserId
   );
 }
 
 /**
- * Stricter than `isAuthorizedAdmin`: a configured admin id is required and
- * must match. For irreversible actions on the operator's own account, where
- * "no admin configured" must not mean "anyone may".
+ * Same rule as `isAuthorizedAdmin`; kept as the name the irreversible
+ * account actions check, so their intent stays explicit at the call site.
  */
 export function isConfiguredAdmin(ctx: Context): boolean {
-  return (
-    adminState.adminUserId !== 0 && ctx.from?.id === adminState.adminUserId
-  );
+  return isAuthorizedAdmin(ctx);
 }
 
 export type RegisterDeps = {

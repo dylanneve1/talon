@@ -12,6 +12,7 @@
 
 import { Agent, fetch as undiciFetch } from "undici";
 import { isBunRuntime } from "../../util/runtime.js";
+import { gatewayAuthHeaders } from "../engine/gateway-auth.js";
 import type { BridgeFunction } from "./types.js";
 
 /** Default wall-clock budget for a bridge action. */
@@ -91,7 +92,7 @@ export function createBridge(
     const timeoutMs = LONG_ACTION_TIMEOUTS_MS[action] ?? DEFAULT_TIMEOUT_MS;
     const init = {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...gatewayAuthHeaders() },
       // chat_id stays in body when set — gateway uses its presence as the
       // "explicit routing" signal. _chatId is the routing key either way.
       body: JSON.stringify({ action, ...params, _chatId: effectiveChatId }),

@@ -30,6 +30,7 @@ import {
   hubPluginServerNames,
 } from "../../core/mcp-hub/index.js";
 import type { ToolExclusionConfig } from "../../core/tools/mcp-env.js";
+import { GATEWAY_TOKEN_ENV } from "../../core/engine/gateway-auth.js";
 import { frontendsForChat } from "../runtime/frontends.js";
 
 /**
@@ -69,6 +70,12 @@ export interface CodexMcpServer {
    * Serialised as `default_tools_approval_mode` in the TOML config.
    */
   default_tools_approval_mode?: CodexToolApprovalMode;
+  /**
+   * Env var holding the hub's bearer token. Codex reads the value from its
+   * own environment (inherited from the daemon), so the token never lands
+   * in the `--config` flags on its command line.
+   */
+  bearer_token_env_var: string;
 }
 
 /**
@@ -140,6 +147,7 @@ export function buildCodexMcpServers(args: {
     servers[`${frontend}-tools`] = {
       url: talonHubUrl(bridgeUrl, frontend, chatId),
       default_tools_approval_mode: TALON_MCP_DEFAULT_APPROVAL,
+      bearer_token_env_var: GATEWAY_TOKEN_ENV,
     };
   }
 
@@ -149,6 +157,7 @@ export function buildCodexMcpServers(args: {
     servers["brave-search"] = {
       url: pluginHubUrl(bridgeUrl, "brave-search", chatId),
       default_tools_approval_mode: TALON_MCP_DEFAULT_APPROVAL,
+      bearer_token_env_var: GATEWAY_TOKEN_ENV,
     };
   }
 
@@ -157,6 +166,7 @@ export function buildCodexMcpServers(args: {
     servers[name] = {
       url: pluginHubUrl(bridgeUrl, name, chatId),
       default_tools_approval_mode: TALON_MCP_DEFAULT_APPROVAL,
+      bearer_token_env_var: GATEWAY_TOKEN_ENV,
     };
   }
 

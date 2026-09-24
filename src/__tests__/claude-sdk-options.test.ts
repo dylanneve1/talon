@@ -776,6 +776,9 @@ describe("buildMcpServers (heartbeat-tier paths)", () => {
     expect(servers["telegram-tools"]).toEqual({
       type: "http",
       url: "http://127.0.0.1:31337/mcp/talon/telegram/352042062",
+      // A reference the CLI expands from its env — the token itself never
+      // rides the CLI's command line.
+      headers: { Authorization: "Bearer ${TALON_GATEWAY_TOKEN}" },
       alwaysLoad: true,
       // Sits above the bridge's 1h transfer budget so the bridge's
       // descriptive timeout error fires before the SDK's generic one.

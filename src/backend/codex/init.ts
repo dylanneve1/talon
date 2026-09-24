@@ -30,6 +30,7 @@ import { getState } from "./state.js";
 import { asCodexConfig, buildCodexMcpServers } from "./mcp-config.js";
 import { detectCodexAuth, type CodexAuthInfo } from "./auth.js";
 import { startDiscovery } from "./discovery.js";
+import { gatewayToken } from "../../core/engine/gateway-auth.js";
 import {
   computeAuthFingerprint,
   loadOAuthIncompatStore,
@@ -199,6 +200,9 @@ export function ensureCodex(chatId: string): Codex {
   const codexPathOverride =
     process.env.TALON_CODEX_BINARY || state.config.codexBinary || undefined;
 
+  // Export TALON_GATEWAY_TOKEN before snapshotting the env: the MCP entries
+  // name it via `bearer_token_env_var`.
+  gatewayToken();
   const codex = new Codex({
     apiKey,
     baseUrl,

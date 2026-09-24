@@ -35,6 +35,14 @@ const BRIDGE = `http://127.0.0.1:${
   ).port
 }`;
 
+// The gateway (and its MCP hub) require the daemon's bearer token.
+const HEADERS = {
+  Authorization: `Bearer ${readFileSync(
+    join(homedir(), ".talon", "keys", "gateway-token"),
+    "utf-8",
+  ).trim()}`,
+};
+
 const keysOf = (p: string) =>
   Object.keys(
     (JSON.parse(readFileSync(p, "utf-8")) as { mcpServers: object }).mcpServers,
@@ -59,6 +67,7 @@ async function main() {
   // Frontends list is empty here; add the one hub server the brief names.
   servers["__talon__live__extras-tools"] = {
     disabled: false,
+    headers: HEADERS,
     serverUrl: `${BRIDGE}/mcp/plugin/extras-tools/${CHAT}`,
   };
   const dry = mcp.writeAgyMcpServers("live", servers, {
@@ -80,6 +89,7 @@ async function main() {
   const live = mcp.writeAgyMcpServers("live", {
     "__talon__live__extras-tools": {
       disabled: false,
+      headers: HEADERS,
       serverUrl: `${BRIDGE}/mcp/plugin/extras-tools/${CHAT}`,
     },
   });

@@ -101,14 +101,14 @@ function isMutating(cmd: WhatsAppCommand): boolean {
  * May this sender change the chat's settings? A DM sender already passed
  * the allowlist. In a group, the same allowlist is the admin rule — the
  * people in `allowedJids` are the operator's, everyone else may read
- * settings but not change them. With no allowlist at all there is no
- * admin to distinguish, the way Telegram opens up with no adminUserId.
+ * settings but not change them. With no allowlist at all nobody in a group
+ * may change them: an empty list never means everyone.
  */
 export function canChangeSettings(
   runtime: WhatsAppRuntime,
   inbound: Pick<CommandInbound, "isGroup" | "identity">,
 ): boolean {
-  if (!inbound.isGroup || runtime.allowedDms.size === 0) return true;
+  if (!inbound.isGroup) return true;
   return identityAllowed(inbound.identity, runtime.allowedDms);
 }
 

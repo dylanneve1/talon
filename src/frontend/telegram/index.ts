@@ -9,7 +9,10 @@
 import { Bot, InputFile, API_CONSTANTS } from "grammy";
 import { autoRetry } from "@grammyjs/auto-retry";
 import { apiThrottler } from "@grammyjs/transformer-throttler";
-import type { TalonConfig } from "../../core/config/index.js";
+import {
+  TELEGRAM_ADMIN_REQUIRED,
+  type TalonConfig,
+} from "../../core/config/index.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { runUntilStopped } from "../../core/frontend-runtime/run-loop.js";
@@ -43,6 +46,26 @@ export type TelegramFrontend = {
   start: () => Promise<void>;
   stop: () => Promise<void>;
 };
+
+// ── Access ──────────────────────────────────────────────────────────────────
+
+/**
+ * Install the admin id, DM allowlist and group allowlist before anything
+ * else starts.
+ * Config loading already refuses a Telegram setup without an admin; this
+ * covers any other path that hands the frontend a config — without an admin
+ * there is no owner, so the bot must not run at all.
+ */
+function applyAccessControl(config: TalonConfig): void {
+  if (!config.adminUserId) throw new Error(TELEGRAM_ADMIN_REQUIRED);
+  setAdminUserId(config.adminUserId);
+  setAccessControl({
+    allowedUsers: config.allowedUsers,
+    blockedUsers: config.blockedUsers,
+    adminUserId: config.adminUserId,
+  });
+  setAllowedGroups(config.allowedGroups);
+}
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 
@@ -82,6 +105,8 @@ export function createTelegramFrontend(
     getBridgePort: () => gateway.getPort(),
 
     async init() {
+      applyAccessControl(config);
+
       // Register Telegram action handler with the core gateway
       gateway.registerFrontendHandler(
         "telegram",
@@ -90,14 +115,6 @@ export function createTelegramFrontend(
 
       const port = await gateway.start(19876);
       log("bot", `Gateway started on port ${port}`);
-
-      setAdminUserId(config.adminUserId);
-      setAccessControl({
-        allowedUsers: config.allowedUsers,
-        blockedUsers: config.blockedUsers,
-        adminUserId: config.adminUserId,
-      });
-      setAllowedGroups(config.allowedGroups);
 
       // Gate /commands and button presses behind the DM whitelist and
       // group check BEFORE any command/callback handler is registered.

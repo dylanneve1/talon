@@ -141,8 +141,21 @@ describe("config", () => {
       expect(() => loadConfig()).toThrow("botToken");
     });
 
+    it("throws when telegram frontend has no adminUserId", async () => {
+      // No admin would leave the bot with no owner: refuse to start, and
+      // say how to fix it.
+      mockFs({ frontend: "telegram", botToken: "test-token" });
+
+      const { loadConfig } = await import("../core/config/index.js");
+      expect(() => loadConfig()).toThrow(/adminUserId.*@userinfobot/s);
+    });
+
     it("loads config from talon.json", async () => {
-      mockFs({ botToken: "test-token-123", model: "claude-opus-4-6" });
+      mockFs({
+        botToken: "test-token-123",
+        adminUserId: 1,
+        model: "claude-opus-4-6",
+      });
 
       const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
@@ -151,7 +164,7 @@ describe("config", () => {
     });
 
     it("applies defaults for missing fields", async () => {
-      mockFs({ botToken: "test-token" });
+      mockFs({ botToken: "test-token", adminUserId: 1 });
 
       const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
@@ -165,6 +178,7 @@ describe("config", () => {
     it("reads heartbeatEffort / dreamEffort", async () => {
       mockFs({
         botToken: "test-token",
+        adminUserId: 1,
         heartbeatEffort: "high",
         dreamEffort: "low",
       });
@@ -176,7 +190,7 @@ describe("config", () => {
     });
 
     it("leaves background effort unset by default (model default)", async () => {
-      mockFs({ botToken: "test-token" });
+      mockFs({ botToken: "test-token", adminUserId: 1 });
 
       const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
@@ -185,14 +199,22 @@ describe("config", () => {
     });
 
     it("rejects an unknown effort level", async () => {
-      mockFs({ botToken: "test-token", heartbeatEffort: "ludicrous" });
+      mockFs({
+        botToken: "test-token",
+        adminUserId: 1,
+        heartbeatEffort: "ludicrous",
+      });
 
       const { loadConfig } = await import("../core/config/index.js");
       expect(() => loadConfig()).toThrow(/heartbeatEffort/);
     });
 
     it("reads custom maxMessageLength", async () => {
-      mockFs({ botToken: "test-token", maxMessageLength: 8000 });
+      mockFs({
+        botToken: "test-token",
+        adminUserId: 1,
+        maxMessageLength: 8000,
+      });
 
       const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
@@ -200,7 +222,7 @@ describe("config", () => {
     });
 
     it("defaults concurrency to 1", async () => {
-      mockFs({ botToken: "test-token" });
+      mockFs({ botToken: "test-token", adminUserId: 1 });
 
       const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
@@ -216,7 +238,12 @@ describe("config", () => {
     });
 
     it("reads apiId and apiHash from config", async () => {
-      mockFs({ botToken: "test-token", apiId: 12345, apiHash: "abc123" });
+      mockFs({
+        botToken: "test-token",
+        adminUserId: 1,
+        apiId: 12345,
+        apiHash: "abc123",
+      });
 
       const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
@@ -225,7 +252,12 @@ describe("config", () => {
     });
 
     it("reads pulse settings from config", async () => {
-      mockFs({ botToken: "test-token", pulse: false, pulseIntervalMs: 600000 });
+      mockFs({
+        botToken: "test-token",
+        adminUserId: 1,
+        pulse: false,
+        pulseIntervalMs: 600000,
+      });
 
       const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
@@ -234,7 +266,11 @@ describe("config", () => {
     });
 
     it("accepts frontend as an array", async () => {
-      mockFs({ frontend: ["telegram", "terminal"], botToken: "test-token" });
+      mockFs({
+        frontend: ["telegram", "terminal"],
+        botToken: "test-token",
+        adminUserId: 1,
+      });
 
       const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
@@ -514,7 +550,7 @@ describe("config", () => {
   describe("system prompt", () => {
     it("builds system prompt from prompt files", async () => {
       mockFs(
-        { botToken: "test-token" },
+        { botToken: "test-token", adminUserId: 1 },
         { "identity.md": "I am Talon.", "base.md": "Be helpful." },
       );
 
@@ -525,7 +561,7 @@ describe("config", () => {
     });
 
     it("includes current date in system prompt", async () => {
-      mockFs({ botToken: "test-token" });
+      mockFs({ botToken: "test-token", adminUserId: 1 });
 
       const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
@@ -535,7 +571,7 @@ describe("config", () => {
 
     it("splits the prompt into cache-stable static and volatile dynamic parts", async () => {
       mockFs(
-        { botToken: "test-token" },
+        { botToken: "test-token", adminUserId: 1 },
         {
           "identity.md": "I am Talon.",
           "base.md": "Be helpful.",
@@ -570,7 +606,7 @@ describe("config", () => {
     });
 
     it("omits the minute-precision datetime section (cache-buster)", async () => {
-      mockFs({ botToken: "test-token" });
+      mockFs({ botToken: "test-token", adminUserId: 1 });
 
       const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
@@ -581,7 +617,7 @@ describe("config", () => {
     });
 
     it("includes workspace instructions in system prompt", async () => {
-      mockFs({ botToken: "test-token" });
+      mockFs({ botToken: "test-token", adminUserId: 1 });
 
       const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
@@ -636,7 +672,7 @@ describe("config", () => {
 
     it("loads telegram.md prompt for telegram frontend", async () => {
       mockFs(
-        { botToken: "test-token", frontend: "telegram" },
+        { botToken: "test-token", adminUserId: 1, frontend: "telegram" },
         { "telegram.md": "You are a Telegram bot." },
       );
 
@@ -847,7 +883,11 @@ describe("config", () => {
     });
 
     it("returns array as-is when frontend is already an array", async () => {
-      mockFs({ frontend: ["telegram", "terminal"], botToken: "test-token" });
+      mockFs({
+        frontend: ["telegram", "terminal"],
+        botToken: "test-token",
+        adminUserId: 1,
+      });
 
       const { loadConfig, getFrontends } =
         await import("../core/config/index.js");
@@ -903,7 +943,11 @@ describe("config", () => {
 
     it("rebuilds prompt with correct frontend from array config", async () => {
       mockFs(
-        { frontend: ["terminal", "telegram"], botToken: "test-token" },
+        {
+          frontend: ["terminal", "telegram"],
+          botToken: "test-token",
+          adminUserId: 1,
+        },
         { "terminal.md": "Terminal-specific prompt." },
       );
 

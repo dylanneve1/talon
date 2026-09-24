@@ -94,6 +94,20 @@ type TelegramAnswers = Pick<
   "botToken" | "adminId" | "apiId" | "apiHash"
 >;
 
+/**
+ * The Telegram admin id is required: it is the bot's owner (admin commands)
+ * and the default DM allowlist. The daemon refuses to start without it.
+ */
+export function validateTelegramAdminId(
+  value: string | undefined,
+): string | undefined {
+  const v = value?.trim() ?? "";
+  if (!v) return "Required — the bot answers only its admin (and allowedUsers)";
+  if (!/^\d+$/.test(v) || Number(v) <= 0 || !Number.isSafeInteger(Number(v)))
+    return "Must be your numeric Telegram user ID";
+  return undefined;
+}
+
 async function askTelegram(config: Config): Promise<TelegramAnswers> {
   const botToken = await askOrExit(
     p.text({
@@ -110,8 +124,9 @@ async function askTelegram(config: Config): Promise<TelegramAnswers> {
   const adminId = await askOrExit(
     p.text({
       message: "Your Telegram user ID",
-      placeholder: "optional — message @userinfobot to find yours",
+      placeholder: "message @userinfobot to find yours",
       initialValue: config.adminUserId ? String(config.adminUserId) : "",
+      validate: validateTelegramAdminId,
     }),
   );
 
@@ -620,6 +635,34 @@ export type SetupAnswers = {
 };
 
 /**
+ * Admin + DM allowlist for the saved config. With Telegram on, the admin id
+ * is the one just entered, and an empty allowlist defaults to that admin —
+ * a fresh bot answers its owner and no one else. With Telegram off, both are
+ * left as they were (other surfaces read `adminUserId` too).
+ */
+function telegramAccess(
+  existing: Config,
+  answers: SetupAnswers,
+  telegramOn: boolean,
+): Pick<Config, "adminUserId" | "allowedUsers"> {
+  const adminUserId = answers.adminId
+    ? parseInt(answers.adminId, 10) || undefined
+    : undefined;
+  if (!telegramOn || adminUserId === undefined) {
+    return {
+      adminUserId: adminUserId ?? existing.adminUserId,
+      allowedUsers: existing.allowedUsers,
+    };
+  }
+  return {
+    adminUserId,
+    allowedUsers: existing.allowedUsers?.length
+      ? existing.allowedUsers
+      : [adminUserId],
+  };
+}
+
+/**
  * Fold the wizard's answers onto the existing config.
  *
  * Extracted from `runSetup` so the merge is testable without driving the
@@ -674,9 +717,7 @@ export function buildSetupConfig(
     concurrency: existing.concurrency,
     pulse: answers.pulse,
     pulseIntervalMs: existing.pulseIntervalMs,
-    adminUserId: answers.adminId
-      ? parseInt(answers.adminId, 10) || undefined
-      : undefined,
+    ...telegramAccess(existing, answers, on("telegram")),
     apiId: answers.apiId,
     apiHash: answers.apiHash,
     maxMessageLength: existing.maxMessageLength,

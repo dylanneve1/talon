@@ -393,7 +393,8 @@ describe("group authorisation", () => {
     expect(getChatSettings(admin.chat.chatId).effort).toBe("low");
   });
 
-  it("opens settings to the whole group when no allowlist is configured", () => {
+  it("lets nobody in a group change settings when no allowlist is configured", () => {
+    // An empty allowlist never means "everyone".
     const runtime = makeRuntime([]) as { allowedDms: Set<string> };
     runtime.allowedDms = new Set();
     expect(
@@ -401,6 +402,6 @@ describe("group authorisation", () => {
         isGroup: true,
         identity: { ids: ["999"] },
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
