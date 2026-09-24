@@ -188,10 +188,15 @@ void main() {
           stringList(meshFixture['companionDeviceControlCapabilities']);
 
       await prefs.setMeshDeviceControl(true);
-      expect(MeshService.capabilitiesFor(prefs), [...core, ...control]);
+      expect(
+        MeshService.capabilitiesFor(prefs, sandboxed: false),
+        [...core, ...control],
+      );
+      // The Flatpak build is client-only: core surface, whatever the switch.
+      expect(MeshService.capabilitiesFor(prefs, sandboxed: true), core);
 
       await prefs.setMeshDeviceControl(false);
-      expect(MeshService.capabilitiesFor(prefs), core);
+      expect(MeshService.capabilitiesFor(prefs, sandboxed: false), core);
     });
 
     test('DeviceExec answers the canonical commands with contract keys',

@@ -16,6 +16,7 @@ import '../../services/autostart.dart';
 import '../../services/device_exec.dart';
 import '../../services/log.dart';
 import '../../services/mesh_background.dart';
+import '../../services/sandbox.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
 import 'settings_widgets.dart';
@@ -214,17 +215,23 @@ class _MeshCardState extends State<MeshCard> {
               onChange: (m) => widget.state.setMeshIntervalSeconds(m * 60),
             ),
           const Divider(height: 22),
+          // The Flatpak build is client-only: shell/file commands would only
+          // reach the sandbox, so the switch is shown off and greyed out.
           settingsSwitchRow(
             'Device control',
-            'Let Talon run shell + file commands on this device (teleport). '
-                'Runs at the highest privilege available: root, else Shizuku, '
-                'else the app itself.',
-            prefs.meshDeviceControl,
-            prefs.meshSharing
+            isFlatpak
+                ? 'Not available in the Flatpak build — the sandbox cannot '
+                    'run commands on this computer.'
+                : 'Let Talon run shell + file commands on this device '
+                    '(teleport). Runs at the highest privilege available: '
+                    'root, else Shizuku, else the app itself.',
+            prefs.meshDeviceControl && !isFlatpak,
+            prefs.meshSharing && !isFlatpak
                 ? (v) => widget.state.setMeshDeviceControl(v)
                 : null,
           ),
-          if (_showsPrivilege && prefs.meshDeviceControl) _privilegeRow(),
+          if (_showsPrivilege && prefs.meshDeviceControl && !isFlatpak)
+            _privilegeRow(),
           const Divider(height: 22),
           Row(
             children: [
