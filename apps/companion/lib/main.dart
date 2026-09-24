@@ -9,6 +9,7 @@ import 'src/services/haptics.dart';
 import 'src/services/mesh_background.dart';
 import 'src/services/message_notifications.dart';
 import 'src/services/prefs.dart';
+import 'src/services/private_store.dart';
 import 'src/services/voice.dart';
 import 'src/services/windows_tray.dart';
 import 'src/state/app_state.dart';
@@ -29,6 +30,11 @@ Future<void> main() async {
   // running (macOS gets the same from native code in macos/Runner).
   await WindowsTray.instance.init();
   final prefs = await Prefs.load();
+  // Linux: the settings file holds the bridge token and recent chats; keep
+  // it (and its directory) readable by this user only.
+  final privateStore = PrivateStore();
+  Prefs.privateStore = privateStore;
+  unawaited(privateStore.harden());
   TalonTheme.mode.value = switch (prefs.themeMode) {
     'light' => ThemeMode.light,
     'dark' => ThemeMode.dark,

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/connection.dart';
+import 'private_store.dart';
 
 /// Thin wrapper over [SharedPreferences] for everything we persist locally:
 /// the connection profile, per-chat read markers (unread badges), and a
@@ -44,8 +45,17 @@ class Prefs {
     }
   }
 
-  Future<void> setConnection(ConnectionConfig c) =>
-      _sp.setString(_kConnection, jsonEncode(c.toJson()));
+  Future<void> setConnection(ConnectionConfig c) async {
+    await _sp.setString(_kConnection, jsonEncode(c.toJson()));
+    // The profile carries the bridge token: make sure the file it lands in
+    // is this user's alone (a first write may have just created it).
+    await privateStore?.harden();
+  }
+
+  /// Restricts the on-disk settings store to the current OS user (Linux).
+  /// Set once by the UI isolate at startup; null in tests and on platforms
+  /// where the store already has per-user permissions.
+  static PrivateStore? privateStore;
 
   bool get onboarded => _sp.getBool(_kOnboarded) ?? false;
   Future<void> setOnboarded(bool v) => _sp.setBool(_kOnboarded, v);
