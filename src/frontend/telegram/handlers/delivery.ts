@@ -62,6 +62,11 @@ export type ProcessAndReplyParams = {
   isGroup: boolean;
   senderUsername?: string;
   senderId?: number;
+  /**
+   * Sender keys for the turn's tool scope. Defaults to `[senderId]`; the
+   * queue passes `[]` when a batch mixes senders, which guest-scopes it.
+   */
+  senderKeys?: readonly string[];
   chatTitle?: string;
 };
 
@@ -201,6 +206,8 @@ export async function processAndReply(
       prompt,
       senderName,
       senderHandle: senderUsername,
+      senderKeys:
+        params.senderKeys ?? (senderId ? [String(senderId)] : undefined),
       isGroup,
       messageId,
       source: "message",

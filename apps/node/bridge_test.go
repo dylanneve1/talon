@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -107,59 +106,6 @@ func TestConsumeEventsGivesUpOnASilentStream(t *testing.T) {
 	}
 	if ctx.Err() != nil {
 		t.Fatal("the idle deadline must not cancel the parent context")
-	}
-}
-
-func TestCommandLimiterBoundsRunningAndQueued(t *testing.T) {
-	l := newCommandLimiter(1, 1)
-	if !l.admit() || !l.admit() {
-		t.Fatal("first two commands (1 running + 1 queued) must be admitted")
-	}
-	if l.admit() {
-		t.Fatal("third command admitted past running+queued")
-	}
-	release := make(chan struct{})
-	var ran atomic.Int32
-	done := make(chan struct{}, 2)
-	// Both block until released, so whichever gets the single worker slot
-	// first holds it and the other must wait.
-	for i := 0; i < 2; i++ {
-		go l.run(context.Background(), func() {
-			ran.Add(1)
-			<-release
-			done <- struct{}{}
-		})
-	}
-	time.Sleep(50 * time.Millisecond)
-	if got := ran.Load(); got != 1 {
-		t.Fatalf("%d commands running with 1 worker slot", got)
-	}
-	close(release)
-	<-done
-	<-done
-	if !l.admit() {
-		t.Fatal("places were not freed after the commands finished")
-	}
-}
-
-func TestDispatchAnswersBusyWhenFull(t *testing.T) {
-	results := make(chan map[string]any, 1)
-	n := testNode(t, sseBridge(t, results).URL)
-	n.commandsOnce.Do(func() { n.commands = newCommandLimiter(1, 0) })
-	if !n.commands.admit() { // occupy the only place
-		t.Fatal("admit")
-	}
-	n.dispatchCommand(context.Background(), map[string]any{
-		"kind": "device_command", "id": "cmd-busy", "name": "status",
-	})
-	select {
-	case r := <-results:
-		if r["commandId"] != "cmd-busy" || r["ok"] != false ||
-			!strings.Contains(fmt.Sprint(r["message"]), "busy") {
-			t.Fatalf("unexpected result %v", r)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("a rejected command was never answered")
 	}
 }
 

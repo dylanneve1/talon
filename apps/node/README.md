@@ -63,6 +63,35 @@ successful authenticated connect (TOFU) and enforced afterwards; pre-seed it
 via `--fingerprint` for a fully pinned first contact (`/health` on the
 bridge reports it).
 
+### Local command policy
+
+The optional `policy` block controls what the mesh may do on this host. Only
+someone who can edit `config.json` can change it. Filesystem commands never
+touch the config directory or the node's own binary.
+
+```json
+"policy": {
+  "disableExec": true,
+  "disableUpdate": false,
+  "readPaths": ["/srv/share", "/var/log"],
+  "writePaths": ["/srv/share"],
+  "maxConcurrent": 8,
+  "maxWriteBytes": 4294967296
+}
+```
+
+| Key             | Effect                                                                                  | Default   |
+| --------------- | --------------------------------------------------------------------------------------- | --------- |
+| `disableExec`   | refuse `exec` (shell) and stop advertising it                                           | `false`   |
+| `disableUpdate` | refuse `update_node` and stop advertising it                                            | `false`   |
+| `readPaths`     | confine `read_file` / `list_dir` / `stat` / `upload_file` to these trees                | anywhere  |
+| `writePaths`    | confine `write_file` / `delete` / `mkdir` / `move` / `download_file` to these trees     | anywhere  |
+| `maxConcurrent` | commands running at once. 32 more can queue. Beyond that the answer is "busy"           | `8`       |
+| `maxWriteBytes` | largest file `write_file` / `download_file` may produce                                 | 4 GiB     |
+
+Paths are checked after resolving symlinks. Path limits only mean something
+with `disableExec`, because a shell can reach any file.
+
 ## How it plugs in
 
 ```
@@ -79,11 +108,23 @@ apps pair with). No daemon-side changes are required for headless nodes.
 
 ## Service management
 
-| OS      | Mechanism                                    | Notes                                              |
-| ------- | -------------------------------------------- | -------------------------------------------------- |
-| Linux   | systemd unit (system as root, else user)     | user units need `loginctl enable-linger` for boot  |
-| macOS   | LaunchAgent (`com.talon.node`)               | per-user, `KeepAlive` restarts on crash            |
-| Windows | Scheduled task (`TalonNode`, ONSTART/SYSTEM) | plain console binary — no SCM plumbing needed      |
+| OS      | Mechanism                                              | Notes                                                     |
+| ------- | ------------------------------------------------------ | --------------------------------------------------------- |
+| Linux   | systemd unit (system as root, else user)               | user units need `loginctl enable-linger` for boot         |
+| macOS   | LaunchAgent (`com.talon.node`)                         | per-user, `KeepAlive` restarts on crash                   |
+| Windows | Scheduled task (`TalonNode`, ONSTART, installing user) | runs as you, unelevated, no stored password (`/RU … /NP`) |
+
+The node always runs as the account that installed it, and it never runs as
+SYSTEM on Windows. The binary and config sit in that account's own profile,
+so a SYSTEM task would run files the user can rewrite. On Windows, creating
+the boot task still needs an elevated PowerShell. `talon-node status` flags a
+task registered by an older build that still runs as SYSTEM. Re-run
+`talon-node install` to replace it.
+
+A root install on Linux (system unit) refuses to register if the binary, the
+config, or any directory above them is owned by another user or is
+world-writable. For example, `TALON_NODE_DIR` pointed at a user-writable
+directory is refused.
 
 ## Building all targets
 

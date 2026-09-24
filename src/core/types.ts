@@ -227,6 +227,14 @@ export type ExecuteParams = {
   senderName: string;
   /** Sender's platform handle without `@` (Telegram username, Discord username). */
   senderHandle?: string;
+  /**
+   * Every key the ONE person behind this turn is known by, in operator-id
+   * form (Telegram user id, `wa_dm_<number>`, `discord:<id>`,
+   * `teams:<id>`, or `LOCAL_OPERATOR_SENDER`). Decides the turn's tool
+   * scope (core/mcp-hub/guest-scope.ts). Omit when the sender is unknown
+   * or the turn batches several senders — the turn is then guest-scoped.
+   */
+  senderKeys?: readonly string[];
   isGroup: boolean;
   /** Provider message ID. Numeric for Telegram, string snowflake for Discord. */
   messageId?: number | string;

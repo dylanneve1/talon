@@ -176,6 +176,25 @@ const nativeConfigSchema = z
      */
     token: z.string().optional(),
     /**
+     * Start the bridge on a network-reachable `host` even though `token`
+     * looks weak (under ~128 bits by a length × alphabet estimate, e.g.
+     * `hunter2`). Off by default: a weak token on a non-loopback bind
+     * refuses to start, with instructions to generate a strong one. With
+     * this set the bridge starts and logs a security warning every time.
+     * Loopback binds only ever warn.
+     */
+    allowWeakToken: z.boolean().optional(),
+    /**
+     * Maximum lifetime of one authenticated event stream (`GET /events`),
+     * in ms. When set, each stream is closed after roughly this long
+     * (±10% jitter) and the client reconnects, presenting its token again.
+     * Unset (default) = streams live until the client leaves. The companion
+     * and talon-node both reconnect on their own, but with their own
+     * backoff, and a device command sent in that gap is dropped, so this is
+     * opt-in. Minimum 60000.
+     */
+    sseMaxLifetimeMs: z.number().int().min(60_000).optional(),
+    /**
      * Origins allowed to call the bridge from a BROWSER. Native clients
      * (Electron main, Flutter, curl, talon-node) send no Origin header and
      * never need an entry here. Anything listed gets a matching
@@ -407,6 +426,19 @@ const configSchema = z.object({
   apiHash: z.string().optional(),
   adminUserId: z.number().int().optional(),
   allowedUsers: z.array(z.number().int()).optional(), // Whitelist of user IDs allowed to DM the bot
+  /**
+   * Telegram groups the bot serves. When unset, groups are admitted by the
+   * admin's membership (legacy, warned at startup). Only the operator's own
+   * messages get the full tool set in any group.
+   */
+  allowedGroups: z.array(z.number().int()).optional(),
+  /**
+   * Further operator identities, beyond `adminUserId`: messages from these
+   * senders get the full tool set; everyone else is guest-scoped. Forms:
+   * Telegram user id ("123"), WhatsApp "wa_dm_<number>", "discord:<userId>",
+   * "teams:<userId>". Discord `adminUserIds` are included automatically.
+   */
+  operatorIds: z.array(z.string()).optional(),
   // Denylist of user IDs dropped in silence — no warning reply, no admin
   // notification. For spam and prompt-injection senders, where the warning
   // itself is the reward: it confirms a live bot is reading.
@@ -578,6 +610,16 @@ const configSchema = z.object({
         .boolean()
         .default(DEFAULT_BACKUP_SETTINGS.checkpointBeforeUpdate),
       notifyChatId: z.string().optional(),
+      /**
+       * Encrypt every part (AES-256-GCM, scrypt-derived key). The
+       * passphrase comes from TALON_BACKUP_PASSPHRASE or this file —
+       * never inline, since config.json is itself inside the backup.
+       * Without a passphrase, remote targets refuse the upload.
+       */
+      encryption: z
+        .object({ passphraseFile: z.string().trim().min(1).optional() })
+        .strict()
+        .optional(),
     })
     .strict()
     .optional(),
@@ -641,16 +683,16 @@ const configSchema = z.object({
   disabledToolTags: z.array(z.string()).optional(),
 
   /**
-   * Conversation-only tool surface for DMs from anyone who isn't an
-   * operator. The admin's Telegram DM and any `operatorChats` keep
-   * everything; other DMs (Telegram user ids, `wa_dm_*`) get reply/react/
+   * Conversation-only ("guest") tool surface for anyone who isn't an
+   * operator (`adminUserId`, `operatorIds`, `operatorChats`): reply/react/
    * history/stickers plus the `guestPlugins` servers — no shell, files,
-   * mail, devices, cron, memory, agents or cross-chat sends. Groups are
-   * unaffected. Off by default. See core/mcp-hub/guest-scope.ts.
+   * mail, devices, cron, memory, agents or cross-chat sends. Always applied
+   * to non-operator senders in groups; applied to non-operator DMs unless
+   * `enabled: false` (legacy opt-out). See core/mcp-hub/guest-scope.ts.
    */
   guestDmScope: z
     .object({
-      enabled: z.boolean().default(false),
+      enabled: z.boolean().default(true),
       operatorChats: z.array(z.string()).default([]),
       guestPlugins: z.array(z.string()).optional(),
     })

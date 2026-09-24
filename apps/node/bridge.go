@@ -46,16 +46,6 @@ const (
 	stableStreamAfter   = 10 * time.Second
 )
 
-// Command concurrency: at most maxRunningCommands execute at once and at most
-// maxQueuedCommands more wait for a slot; beyond that a command is answered
-// "busy" straight away instead of spawning another goroutine and shell. A
-// burst of frames (a daemon bug, a replay) can no longer fork without bound.
-// See also #1057 (device command policy).
-const (
-	maxRunningCommands = 8
-	maxQueuedCommands  = 32
-)
-
 // capabilities this node advertises at registration. The daemon gates
 // commands on this list, so it must exactly cover what dispatch() handles.
 // locate is deliberately absent (servers have no GPS); install_apk is the
@@ -90,15 +80,18 @@ type Node struct {
 	// pinMu guards cfg.Fingerprint: read on every handshake, written once
 	// by maybeAdoptFingerprint.
 	pinMu sync.RWMutex
-	// commandsOnce/commands: the bounded command runner (see
-	// maxRunningCommands), created on first use.
-	commandsOnce sync.Once
-	commands     *commandLimiter
 	// pendingReexec is set by a successful update_node so handleCommand can
 	// restart into the new binary AFTER the command result has been posted
 	// (a re-exec replaces the whole process image, so the ack must land
 	// first or the caller would hang waiting for a reply that never comes).
 	pendingReexec atomic.Bool
+
+	// Commands run on a fixed worker pool (Policy.MaxConcurrent) fed by a
+	// bounded queue, never one goroutine per frame: a burst from a buggy or
+	// compromised daemon can't fork-bomb the host.
+	workersOnce sync.Once
+	commands    chan map[string]any
+	rejects     chan map[string]any
 }
 
 func NewNode(cfg *Config) (*Node, error) {
@@ -264,8 +257,16 @@ func (n *Node) registrationBody() map[string]any {
 		// right replacement for update_node.
 		"arch":         runtime.GOARCH,
 		"appVersion":   version,
-		"capabilities": nodeCapabilities,
+		"capabilities": n.capabilities(),
 	}
+}
+
+// capabilities is the command surface this host's policy allows.
+func (n *Node) capabilities() []string {
+	if n.cfg == nil {
+		return nodeCapabilities
+	}
+	return n.cfg.Policy.capabilities()
 }
 
 // Register upserts this node in the daemon's mesh registry.
@@ -415,10 +416,10 @@ func (n *Node) consumeEvents(ctx context.Context) (time.Duration, error) {
 			continue
 		}
 		// Commands run concurrently on purpose (a long exec must not block a
-		// status probe; the daemon correlates results by id, not order) —
-		// but bounded, and on ctx rather than the stream's context so a
-		// reconnect doesn't kill work in flight.
-		n.dispatchCommand(ctx, event)
+		// status probe; the daemon correlates results by id, not order), but
+		// on a bounded pool — see enqueueCommand.
+		n.workersOnce.Do(func() { n.startWorkers(ctx) })
+		n.enqueueCommand(event)
 	}
 	if streamCtx.Err() != nil && ctx.Err() == nil {
 		return uptime(), errStreamIdle
@@ -444,77 +445,68 @@ func (r *idleResetReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// commandLimiter bounds command concurrency: `admitted` counts running plus
-// queued commands, `running` hands out worker slots.
-type commandLimiter struct {
-	admitted chan struct{}
-	running  chan struct{}
+// startWorkers starts the command worker pool and the "busy" responder.
+// They live as long as ctx (the node's run context), across reconnects.
+func (n *Node) startWorkers(ctx context.Context) {
+	workers := defaultMaxConcurrent
+	if n.cfg != nil {
+		workers = n.cfg.Policy.maxConcurrent()
+	}
+	n.commands = make(chan map[string]any, commandQueueDepth)
+	n.rejects = make(chan map[string]any, commandQueueDepth)
+	for i := 0; i < workers; i++ {
+		go n.drain(ctx, n.commands, n.handleCommand)
+	}
+	go n.drain(ctx, n.rejects, n.answerBusy)
 }
 
-func newCommandLimiter(running, queued int) *commandLimiter {
-	return &commandLimiter{
-		admitted: make(chan struct{}, running+queued),
-		running:  make(chan struct{}, running),
+func (n *Node) drain(
+	ctx context.Context,
+	queue <-chan map[string]any,
+	handle func(context.Context, map[string]any),
+) {
+	for {
+		select {
+		case event := <-queue:
+			handle(ctx, event)
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
-// admit reserves a place without blocking; false means the node is full.
-func (l *commandLimiter) admit() bool {
+// enqueueCommand hands a command to the worker pool without ever blocking
+// the stream reader. With every worker busy and the queue full, the command
+// is answered "busy" instead (so the daemon's call resolves); if even that
+// backlog is full, it is dropped and the daemon's own timeout answers it.
+func (n *Node) enqueueCommand(event map[string]any) {
 	select {
-	case l.admitted <- struct{}{}:
-		return true
+	case n.commands <- event:
+		return
 	default:
-		return false
 	}
-}
-
-// run waits for a worker slot, runs fn, and frees the place taken by admit.
-func (l *commandLimiter) run(ctx context.Context, fn func()) {
-	defer func() { <-l.admitted }()
 	select {
-	case l.running <- struct{}{}:
-	case <-ctx.Done():
-		return
+	case n.rejects <- event:
+	default:
+		id, _ := event["id"].(string)
+		log.Printf("command backlog full — dropping %s unanswered", id)
 	}
-	defer func() { <-l.running }()
-	fn()
 }
 
-func (n *Node) limiter() *commandLimiter {
-	n.commandsOnce.Do(func() {
-		n.commands = newCommandLimiter(maxRunningCommands, maxQueuedCommands)
-	})
-	return n.commands
-}
-
-// dispatchCommand runs one command on the bounded pool, or answers "busy"
-// right away when running + queued commands are at the limit — the daemon's
-// tool call gets a clear error instead of a timeout.
-func (n *Node) dispatchCommand(ctx context.Context, event map[string]any) {
-	l := n.limiter()
-	if !l.admit() {
-		go n.rejectBusy(ctx, event)
-		return
-	}
-	go l.run(ctx, func() { n.handleCommand(ctx, event) })
-}
-
-func (n *Node) rejectBusy(ctx context.Context, event map[string]any) {
+func (n *Node) answerBusy(ctx context.Context, event map[string]any) {
 	id, _ := event["id"].(string)
 	if id == "" {
 		return
 	}
-	name, _ := event["name"].(string)
-	log.Printf("command %q (%s) rejected: node busy", name, id)
 	result := fail(
-		"node busy: %d commands running and %d queued — try again shortly",
-		maxRunningCommands, maxQueuedCommands,
+		"talon-node is busy (all workers running, %d commands queued) — try again shortly.",
+		commandQueueDepth,
 	)
 	result.CommandID = id
 	postCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := n.PostCommandResult(postCtx, result); err != nil {
-		log.Printf("could not answer command %q (%s): %v", name, id, err)
+		log.Printf("could not answer busy command %s: %v", id, err)
 	}
 }
 

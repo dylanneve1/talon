@@ -35,6 +35,9 @@ type Config struct {
 	// the DER, exactly as /health reports it). Empty = trust-on-first-use:
 	// the first successful connect records it, later connects require it.
 	Fingerprint string `json:"fingerprint,omitempty"`
+	// Policy is the host owner's local limit on what the mesh may do here
+	// (see Policy). Editable only in this file.
+	Policy Policy `json:"policy"`
 
 	// Path the config was loaded from (not serialized).
 	Path string `json:"-"`

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/connection.dart';
+import '../services/secure_window.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'brand.dart';
@@ -54,6 +55,9 @@ class _ConnectScreenState extends State<ConnectScreen> {
   @override
   void initState() {
     super.initState();
+    // Shows the bridge token / pairing details: keep it out of the recents
+    // thumbnail, screenshots and screen recordings (Android).
+    SecureWindow.acquire();
     final c = widget.state.config;
     _remote = !c.isLoopback || !_isDesktop;
     _tls = c.tls;
@@ -67,6 +71,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
 
   @override
   void dispose() {
+    SecureWindow.release();
     _host.dispose();
     _port.dispose();
     _token.dispose();
@@ -353,7 +358,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No talon://pair link on the clipboard.'),
+          content: Text('No usable talon://pair link on the clipboard.'),
         ),
       );
       return;
