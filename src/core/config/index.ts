@@ -785,15 +785,84 @@ const DEFAULT_CONFIG = {
   pulseIntervalMs: 300000,
 };
 
-function loadConfigFile(): Record<string, unknown> {
-  try {
-    if (existsSync(CONFIG_FILE)) {
-      return JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
-    }
-  } catch {
-    /* corrupt — will be recreated */
+/**
+ * A config.json that exists but cannot be used — unreadable, not JSON, or
+ * rejected by the schema. Thrown instead of falling back to defaults: a
+ * daemon that silently boots on defaults (e.g. the telegram frontend) is
+ * far more surprising than one that refuses to start. The file on disk is
+ * never touched. `issues` carries one line per problem for callers that
+ * want to render them individually.
+ */
+export class ConfigFileError extends Error {
+  constructor(
+    message: string,
+    readonly path: string,
+    readonly issues: readonly string[] = [],
+  ) {
+    super(message);
+    this.name = "ConfigFileError";
   }
-  return {};
+}
+
+/**
+ * Append a line/column hint to a JSON.parse error message. Recent V8
+ * already includes "(line L column C)"; older runtimes only report
+ * "at position N", so derive it from the raw text in that case.
+ */
+function describeJsonError(err: unknown, raw: string): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/\(line \d+ column \d+\)/.test(message)) return message;
+  const match = /at position (\d+)/.exec(message);
+  if (!match) return message;
+  const before = raw.slice(0, Number(match[1]));
+  const line = before.split("\n").length;
+  const column = before.length - before.lastIndexOf("\n");
+  return `${message} (line ${line} column ${column})`;
+}
+
+/** Render zod issues as `path: message` lines (`(root)` for top-level). */
+function formatSchemaIssues(error: z.ZodError): string[] {
+  return error.issues.map((issue) => {
+    const path = issue.path.map(String).join(".") || "(root)";
+    return `${path}: ${issue.message}`;
+  });
+}
+
+/**
+ * Read config.json. A missing file is `{}` (first run — defaults apply);
+ * a present file that cannot be read or parsed throws ConfigFileError.
+ */
+function loadConfigFile(): Record<string, unknown> {
+  if (!existsSync(CONFIG_FILE)) return {};
+  let raw: string;
+  try {
+    raw = readFileSync(CONFIG_FILE, "utf-8");
+  } catch (err) {
+    throw new ConfigFileError(
+      `Cannot read ${CONFIG_FILE}: ${err instanceof Error ? err.message : err}`,
+      CONFIG_FILE,
+    );
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    const detail = describeJsonError(err, raw);
+    throw new ConfigFileError(
+      `Invalid JSON in ${CONFIG_FILE}: ${detail}. ` +
+        `The file was left untouched — fix it and start Talon again.`,
+      CONFIG_FILE,
+      [detail],
+    );
+  }
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    throw new ConfigFileError(
+      `Invalid config in ${CONFIG_FILE}: the top level must be a JSON object.`,
+      CONFIG_FILE,
+      ["(root): expected a JSON object"],
+    );
+  }
+  return data as Record<string, unknown>;
 }
 
 function normalizeDeprecatedFrontendConfig(
@@ -879,7 +948,18 @@ export function loadConfig(): TalonConfig {
     }
   }
 
-  const parsed = configSchema.parse(fileConfig);
+  const result = configSchema.safeParse(fileConfig);
+  if (!result.success) {
+    const issues = formatSchemaIssues(result.error);
+    throw new ConfigFileError(
+      `Invalid config in ${CONFIG_FILE}:\n` +
+        issues.map((line) => `  - ${line}`).join("\n") +
+        `\nThe file was left untouched — fix it and start Talon again.`,
+      CONFIG_FILE,
+      issues,
+    );
+  }
+  const parsed = result.data;
 
   // The soul kernel is gone (#953). Its config block still parses so an
   // existing config.json keeps loading, but it no longer does anything —

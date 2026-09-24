@@ -983,8 +983,8 @@ describe("config", () => {
   });
 
   describe("loadConfigFile edge cases", () => {
-    it("handles corrupt talon.json gracefully", async () => {
-      // Simulate a corrupt JSON by having readFileSync throw
+    it("fails loudly when an existing config.json cannot be read", async () => {
+      // Simulate an unreadable file by having readFileSync throw
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn((path: string) => {
           if (path.includes("config.json") || path.includes("talon.json"))
@@ -1003,8 +1003,10 @@ describe("config", () => {
       }));
 
       const { loadConfig } = await import("../core/config/index.js");
-      // With corrupt config, it falls back to empty config => default frontend=telegram => no botToken => throws
-      expect(() => loadConfig()).toThrow("botToken");
+      // No silent fallback to defaults (which would target telegram).
+      expect(() => loadConfig()).toThrow(
+        /Cannot read .*config\.json: corrupt file/,
+      );
     });
   });
 });
