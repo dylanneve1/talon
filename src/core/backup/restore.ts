@@ -3,9 +3,10 @@
  *
  * The rules that make this safe to run on a live home directory:
  *
- *   1. Verify before you touch anything. Every part's sha256 is checked
- *      against the manifest first; a part that fails is a stopped
- *      restore, not a half-applied one.
+ *   1. Verify before you touch anything. The manifest's signature is
+ *      checked (restore-guard.ts), then every part's sha256 and — for
+ *      encrypted parts — every record's tag; a part that fails is a
+ *      stopped restore, not a half-applied one.
  *   2. Stage, then swap. The archive is extracted into a staging
  *      directory beside the snapshot (same filesystem, so the swap is
  *      renames), and only then do the live paths change.
@@ -49,11 +50,16 @@ import { sha256File } from "./archive/digest.js";
 import { extractTar } from "./archive/tar.js";
 import { createDecompressor } from "./archive/zstd.js";
 import { requirePassphrase } from "./passphrase.js";
-import { collectTree } from "./plan.js";
+import { collectTree, isExcluded } from "./plan.js";
+import {
+  authenticateManifest,
+  makePrivate,
+  type ManifestTrust,
+} from "./restore-guard.js";
 import { buildSnapshot } from "./snapshot.js";
 import { isSnapshotId, partPath, readManifest, snapshotDir } from "./store.js";
 import type { BackupTarget } from "./targets.js";
-import type { BackupSettings, Manifest } from "./types.js";
+import type { BackupSettings, Manifest, SnapshotPart } from "./types.js";
 
 /** A staged request older than this is stale and ignored. */
 export const RESTORE_PENDING_MAX_AGE_MS = 10 * 60_000;
@@ -151,19 +157,49 @@ export async function readRestorePending(
 
 // ── Parts ───────────────────────────────────────────────────────────────────
 
-/** Fetch any part that is not on local disk from the given target. */
+async function isLocal(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The parts of this snapshot that are not on local disk. */
+async function missingParts(
+  manifest: Manifest,
+  home: string,
+): Promise<SnapshotPart[]> {
+  const missing: SnapshotPart[] = [];
+  for (const part of manifest.parts) {
+    if (!(await isLocal(partPath(manifest.id, part.name, home)))) {
+      missing.push(part);
+    }
+  }
+  return missing;
+}
+
+/**
+ * Fetch every missing part from the given target and return the parts
+ * the restore will use. A missing local-only part (login sessions kept
+ * off remotes) is skipped with a warning — the restore goes on without it.
+ */
 async function ensureParts(
   manifest: Manifest,
   home: string,
+  missing: readonly SnapshotPart[],
   target?: BackupTarget,
-): Promise<void> {
-  for (const part of manifest.parts) {
-    const path = partPath(manifest.id, part.name, home);
-    try {
-      await stat(path);
+): Promise<SnapshotPart[]> {
+  const skipped = new Set<string>();
+  for (const part of missing) {
+    if (part.localOnly) {
+      logWarn(
+        "backup",
+        `${part.name} was kept on the original machine only — restoring without it (re-link WhatsApp / the userbot afterwards)`,
+      );
+      skipped.add(part.name);
       continue;
-    } catch {
-      /* not here — fall through to the download */
     }
     if (!target) {
       throw new TalonError(
@@ -171,10 +207,12 @@ async function ensureParts(
         { reason: "bad_request" },
       );
     }
+    const path = partPath(manifest.id, part.name, home);
     log("backup", `Downloading ${part.name} from ${target.id}…`);
-    await mkdir(dirname(path), { recursive: true });
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     await target.download(manifest.id, part.name, path);
   }
+  return manifest.parts.filter((part) => !skipped.has(part.name));
 }
 
 /** Who may read backups: only the settings' encryption block matters. */
@@ -191,8 +229,9 @@ export async function verifyParts(
   manifest: Manifest,
   home: string,
   settings: KeySettings = {},
+  parts: readonly SnapshotPart[] = manifest.parts,
 ): Promise<void> {
-  for (const part of manifest.parts) {
+  for (const part of parts) {
     const path = partPath(manifest.id, part.name, home);
     const actual = await sha256File(path);
     if (actual !== part.sha256) {
@@ -201,7 +240,17 @@ export async function verifyParts(
         { reason: "bad_request" },
       );
     }
-    if (!(await isEncryptedFile(path))) continue;
+    if (!(await isEncryptedFile(path))) {
+      // A signed manifest only ever lists encrypted parts; a plaintext
+      // one here was swapped in.
+      if (manifest.auth) {
+        throw new TalonError(
+          `Part ${part.name} of ${manifest.id} is not encrypted although its manifest is signed — restore aborted`,
+          { reason: "bad_request" },
+        );
+      }
+      continue;
+    }
     const passphrase = await requirePassphrase(
       settings,
       `Snapshot ${manifest.id}`,
@@ -232,10 +281,11 @@ async function extractParts(
   home: string,
   staging: string,
   settings: KeySettings,
+  parts: readonly SnapshotPart[],
 ): Promise<void> {
   await rm(staging, { recursive: true, force: true });
-  await mkdir(staging, { recursive: true });
-  for (const part of manifest.parts) {
+  await mkdir(staging, { recursive: true, mode: 0o700 });
+  for (const part of parts) {
     const source = await openPart(
       partPath(manifest.id, part.name, home),
       settings,
@@ -274,7 +324,9 @@ async function clearCovered(
   destRoot: string,
   archiveRoot: string,
 ): Promise<number> {
-  const existing = await collectTree(destRoot, archiveRoot);
+  const existing = await collectTree(destRoot, archiveRoot, {
+    exclude: excludeFor(archiveRoot),
+  });
   let removed = 0;
   for (const entry of [...existing].reverse()) {
     try {
@@ -288,6 +340,35 @@ async function clearCovered(
     }
   }
   return removed;
+}
+
+/**
+ * The exclusion rule for walking one include root. The palace is kept out
+ * of the state part by `isExcluded`; walking its own root with that rule
+ * finds nothing, which is how a palace part used to be extracted and then
+ * silently never applied.
+ */
+function excludeFor(root: string): (archivePath: string) => boolean {
+  if (root !== "workspace/palace") return isExcluded;
+  return (archivePath) =>
+    archivePath === root || archivePath.startsWith(`${root}/`)
+      ? false
+      : isExcluded(archivePath);
+}
+
+/**
+ * The roots to apply: the manifest's includes, plus the palace whenever a
+ * palace part is present (older manifests did not always list it).
+ */
+function rootsToApply(manifest: Manifest): string[] {
+  const roots = manifest.includes.filter((root) => root !== DB_MEMBER);
+  const hasPalace = manifest.parts.some((part) =>
+    part.name.startsWith("palace-"),
+  );
+  if (hasPalace && !roots.includes("workspace/palace")) {
+    roots.push("workspace/palace");
+  }
+  return roots;
 }
 
 /** Move one staged file into place, falling back to a copy across devices. */
@@ -317,10 +398,11 @@ async function applyStaged(
     removed: 0,
     databaseReplaced: false,
   };
-  for (const root of manifest.includes) {
-    if (root === DB_MEMBER) continue;
+  for (const root of rootsToApply(manifest)) {
     const stagedRoot = join(staging, ...root.split("/"));
-    const staged = await collectTree(stagedRoot, root);
+    const staged = await collectTree(stagedRoot, root, {
+      exclude: excludeFor(root),
+    });
     if (staged.length === 0) continue;
     const destRoot = destinationFor(root, home, extras);
     if (!destRoot) {
@@ -332,12 +414,12 @@ async function applyStaged(
     for (const entry of staged) {
       const dest = destinationFor(entry.archivePath, home, extras);
       if (!dest) continue;
-      if (entry.type === "dir")
-        await mkdir(dest, { recursive: true, mode: entry.mode });
+      if (entry.type === "dir") await mkdir(dest, { recursive: true });
       else {
         await placeFile(entry.source, dest);
         written += 1;
       }
+      await makePrivate(dest, entry.type, entry.mode);
     }
     report.written[root] = written;
   }
@@ -351,6 +433,7 @@ async function applyStaged(
     await rm(`${dbPath}-wal`, { force: true });
     await rm(`${dbPath}-shm`, { force: true });
     await placeFile(stagedDb, dbPath);
+    await makePrivate(dbPath, "file", 0o600);
     report.databaseReplaced = true;
   } catch {
     logWarn(
@@ -377,6 +460,8 @@ export type RestoreOptions = {
   beforeApply?: () => void | Promise<void>;
   /** Skip the automatic pre-restore checkpoint (it has already been taken). */
   skipCheckpoint?: boolean;
+  /** Restore a manifest that carries no signature (see restore-guard.ts). */
+  allowUnauthenticated?: ManifestTrust["allowUnauthenticated"];
 };
 
 /**
@@ -394,8 +479,13 @@ export async function restoreSnapshot(
       reason: "bad_request",
     });
   }
-  await ensureParts(manifest, home, options.target);
-  await verifyParts(manifest, home, options.settings);
+  const missing = await missingParts(manifest, home);
+  await authenticateManifest(manifest, options.settings, {
+    allowUnauthenticated: options.allowUnauthenticated,
+    fromRemote: options.target !== undefined && missing.length > 0,
+  });
+  const parts = await ensureParts(manifest, home, missing, options.target);
+  await verifyParts(manifest, home, options.settings, parts);
 
   let checkpointId: string | undefined;
   if (!options.skipCheckpoint) {
@@ -411,7 +501,7 @@ export async function restoreSnapshot(
   }
 
   const staging = join(snapshotDir(manifest.id, home), "restore-staging");
-  await extractParts(manifest, home, staging, options.settings);
+  await extractParts(manifest, home, staging, options.settings, parts);
   await options.beforeApply?.();
   const report = await applyStaged(manifest, staging, home);
   report.checkpointId = checkpointId;

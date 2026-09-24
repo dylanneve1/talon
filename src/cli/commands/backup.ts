@@ -23,7 +23,11 @@
 import pc from "picocolors";
 import { createInterface } from "node:readline/promises";
 import { join } from "node:path";
-import { getFrontends, loadConfig } from "../../core/config/index.js";
+import {
+  getFrontends,
+  loadBackupConfig,
+  loadConfig,
+} from "../../core/config/index.js";
 import { findRunningInstance } from "../../core/daemon/discovery.js";
 import {
   collectBackupStatus,
@@ -41,7 +45,7 @@ import {
 } from "../../core/backup/index.js";
 import { resolveBackupSettings } from "../../core/backup/plan.js";
 import { buildSnapshot } from "../../core/backup/snapshot.js";
-import { pruneLocal } from "../../core/backup/store.js";
+import { pruneLocal, reconcileIndex } from "../../core/backup/store.js";
 import { generatePassphraseFile } from "../../core/backup/passphrase.js";
 import { dirs } from "../../util/paths.js";
 import { fetchGateway } from "../daemon-api.js";
@@ -53,7 +57,8 @@ const USAGE = `
     ${pc.cyan("list")} [--remote <targetId>]           list snapshots
     ${pc.cyan("show")} <id>                            everything about one snapshot
     ${pc.cyan("pin")} <id>  |  ${pc.cyan("unpin")} <id>          keep past retention, or release
-    ${pc.cyan("restore")} <id> [--from <target>] [--yes]  restore (daemon must be stopped)
+    ${pc.cyan("restore")} <id> [--from <target>] [--yes] [--allow-unauthenticated]
+                                       restore (daemon must be stopped)
     ${pc.cyan("prune")}                                apply the local retention policy
     ${pc.cyan("targets")}                              remote targets and their readiness
     ${pc.cyan("status")}                               schedule, sizes, targets
@@ -173,6 +178,9 @@ async function backupNow(flags: Flags): Promise<void> {
 
 async function backupList(flags: Flags): Promise<void> {
   const target = flags.flags.get("remote");
+  // The manifests on disk are authoritative: a fresh host with a copied-in
+  // backups/ directory has an empty index until something reconciles it.
+  await reconcileIndex();
   const snapshots = await listSnapshots();
   const filtered =
     typeof target === "string"
@@ -316,10 +324,21 @@ async function backupRestore(id: string, flags: Flags): Promise<void> {
       return;
     }
   }
-  const settings = resolveBackupSettings(loadConfig().backup);
+  // Only the backup block: on a fresh host the real config is inside the
+  // snapshot, and a full load would reject the placeholder one.
+  const settings = resolveBackupSettings(loadBackupConfig());
   const target =
     typeof from === "string" ? await resolveTarget(from) : undefined;
-  const report = await restoreSnapshot({ id, settings, target });
+  if (typeof from === "string" && !target) {
+    process.exitCode = 1;
+    return;
+  }
+  const report = await restoreSnapshot({
+    id,
+    settings,
+    target,
+    allowUnauthenticated: flags.flags.get("allow-unauthenticated") === true,
+  });
   const written = Object.entries(report.written)
     .map(([root, count]) => `${root} (${count})`)
     .join(", ");

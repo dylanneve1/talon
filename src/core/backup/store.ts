@@ -6,6 +6,7 @@
  *
  *   backups/<id>/manifest.json          what this snapshot is
  *   backups/<id>/state.tar.zst          identity + state + database
+ *   backups/<id>/logins.tar.zst         WhatsApp auth + userbot session
  *   backups/<id>/palace-<hash12>.tar.zst  the memory palace, when present
  *
  * The manifest on disk is authoritative. SQLite is a cache so `/backup`
@@ -100,10 +101,11 @@ export async function writeManifest(
   home: string = dirs.root,
 ): Promise<void> {
   const dir = snapshotDir(manifest.id, home);
-  await mkdir(dir, { recursive: true });
+  await mkdir(dir, { recursive: true, mode: 0o700 });
   await writeFileAtomic(
     join(dir, MANIFEST_NAME),
     JSON.stringify(manifest, null, 2) + "\n",
+    { mode: 0o600 },
   );
 }
 

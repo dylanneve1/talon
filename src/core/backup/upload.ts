@@ -16,7 +16,9 @@
  * Plaintext never leaves the box: before any target is contacted, every
  * part's own bytes (not the manifest's say-so) must carry the encryption
  * header. A snapshot taken without `backup.encryption` stays local, and
- * each target records why.
+ * each target records why. Parts marked `localOnly` (login sessions, by
+ * default) are never offered to a target at all; the manifest still lists
+ * them, so a restore from the remote copy knows what it is missing.
  */
 
 import { bus } from "../bus/index.js";
@@ -34,7 +36,7 @@ import {
   writeManifest,
 } from "./store.js";
 import type { BackupTarget } from "./targets.js";
-import type { Manifest, RemoteState } from "./types.js";
+import type { Manifest, RemoteState, SnapshotPart } from "./types.js";
 
 function recordState(id: string, targetId: string, state: RemoteState): void {
   recordBackupRemote({
@@ -47,14 +49,20 @@ function recordState(id: string, targetId: string, state: RemoteState): void {
   });
 }
 
+/** The parts a remote target may receive: everything not marked local-only. */
+function remoteParts(manifest: Manifest): SnapshotPart[] {
+  return manifest.parts.filter((part) => part.localOnly !== true);
+}
+
 /** Push every part, then the manifest. Throws with the target's own words. */
 async function sendSnapshot(
   target: BackupTarget,
   manifest: Manifest,
   home: string,
 ): Promise<{ state: RemoteState; deduplicated: boolean }> {
-  let deduplicated = manifest.parts.length > 0;
-  for (const part of manifest.parts) {
+  const parts = remoteParts(manifest);
+  let deduplicated = parts.length > 0;
+  for (const part of parts) {
     const result = await target.upload(
       manifest.id,
       { ...part, path: partPath(manifest.id, part.name, home) },
@@ -78,7 +86,7 @@ async function firstPlaintextPart(
   manifest: Manifest,
   home: string,
 ): Promise<string | undefined> {
-  for (const part of manifest.parts) {
+  for (const part of remoteParts(manifest)) {
     const encrypted = await isEncryptedFile(
       partPath(manifest.id, part.name, home),
     ).catch(() => false);
