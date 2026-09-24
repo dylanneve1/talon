@@ -140,85 +140,67 @@ export async function runCli(): Promise<void> {
   }
 }
 
+type CommandHandler = (args: string[]) => void | Promise<void>;
+
+/** Every `talon <command>`, keyed by name. Handlers get the argv after the command. */
+const COMMANDS: Record<string, CommandHandler> = {
+  setup: () => runSetup(),
+  status: () => showStatus(),
+  config: () => viewConfig(),
+  logs: () => tailLogs(),
+  start: async () => {
+    printBanner();
+    await daemonStart();
+  },
+  stop: async () => {
+    printBanner();
+    await daemonStop();
+  },
+  restart: async () => {
+    printBanner();
+    await daemonRestart();
+  },
+  run: () => {
+    process.chdir(PKG_ROOT);
+    void import("../index.js");
+  },
+  chat: () => {
+    process.chdir(PKG_ROOT);
+    startChat();
+  },
+  doctor: () => runDoctor(),
+  ps: (args) => showTasks(args[0] === "--all" || args[0] === "-a"),
+  kill: (args) => killTask(args[0]),
+  events: (args) => showEvents(eventsOptions(args)),
+  backup: (args) => runBackupCommand(args),
+  plugin: (args) => runPluginCommand(args),
+  skill: (args) => runSkillCommand(args),
+  memory: (args) => runMemoryCommand(args),
+  "--version": () => console.log(pkg.version),
+  "-v": () => console.log(pkg.version),
+  "--help": () => printHelp(),
+  "-h": () => printHelp(),
+};
+
+async function unknownCommand(command: string): Promise<never> {
+  // "did you mean ...?" via the native similarity core (native/strsim-wasm).
+  const { closestMatch } = await import("../native/strsim.js");
+  const suggestion = closestMatch(command, CLI_COMMANDS);
+  const hint = suggestion
+    ? `Did you mean ${pc.cyan(`talon ${suggestion.value}`)}?`
+    : `Run ${pc.cyan("talon --help")} for usage.`;
+  console.error(`  Unknown command: ${command}\n  ${hint}\n`);
+  process.exit(1);
+}
+
 async function dispatch(command: string | undefined): Promise<void> {
-  switch (command) {
-    case "setup":
-      await runSetup();
-      break;
-    case "status":
-      await showStatus();
-      break;
-    case "config":
-      await viewConfig();
-      break;
-    case "logs":
-      tailLogs();
-      break;
-    case "start":
-      printBanner();
-      await daemonStart();
-      break;
-    case "stop":
-      printBanner();
-      await daemonStop();
-      break;
-    case "restart":
-      printBanner();
-      await daemonRestart();
-      break;
-    case "run":
-      process.chdir(PKG_ROOT);
-      import("../index.js");
-      break;
-    case "chat":
-      process.chdir(PKG_ROOT);
-      startChat();
-      break;
-    case "doctor":
-      await runDoctor();
-      break;
-    case "ps":
-      await showTasks(process.argv[3] === "--all" || process.argv[3] === "-a");
-      break;
-    case "kill":
-      await killTask(process.argv[3]);
-      break;
-    case "events":
-      await showEvents(eventsOptions(process.argv.slice(3)));
-      break;
-    case "backup":
-      await runBackupCommand(process.argv.slice(3));
-      break;
-    case "plugin":
-      await runPluginCommand(process.argv.slice(3));
-      break;
-    case "skill":
-      await runSkillCommand(process.argv.slice(3));
-      break;
-    case "memory":
-      runMemoryCommand(process.argv.slice(3));
-      break;
-    case "--version":
-    case "-v": {
-      console.log(pkg.version);
-      break;
-    }
-    case "--help":
-    case "-h":
-      printHelp();
-      break;
-    case undefined:
-      await mainMenu();
-      break;
-    default: {
-      // "did you mean ...?" via the native similarity core (native/strsim-wasm).
-      const { closestMatch } = await import("../native/strsim.js");
-      const suggestion = closestMatch(command, CLI_COMMANDS);
-      const hint = suggestion
-        ? `Did you mean ${pc.cyan(`talon ${suggestion.value}`)}?`
-        : `Run ${pc.cyan("talon --help")} for usage.`;
-      console.error(`  Unknown command: ${command}\n  ${hint}\n`);
-      process.exit(1);
-    }
+  if (command === undefined) {
+    await mainMenu();
+    return;
   }
+  const handler = Object.hasOwn(COMMANDS, command)
+    ? COMMANDS[command]
+    : undefined;
+  if (!handler) return unknownCommand(command);
+  await handler(process.argv.slice(3));
 }

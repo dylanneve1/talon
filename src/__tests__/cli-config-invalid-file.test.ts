@@ -27,6 +27,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const isRoot = process.getuid?.() === 0;
+// chmod 000 does not make a file unreadable on Windows (no POSIX mode bits).
+const cantRevokeRead = isRoot || process.platform === "win32";
 
 describe("cli config.ts — loadConfig / saveConfig against a real file", () => {
   let dir: string;
@@ -146,7 +148,7 @@ describe("cli config.ts — loadConfig / saveConfig against a real file", () => 
     });
   });
 
-  describe.skipIf(isRoot)("an existing file that can't be read", () => {
+  describe.skipIf(cantRevokeRead)("an existing file that can't be read", () => {
     it("loadConfig throws ConfigFileError naming the reason, not defaults", async () => {
       const { CONFIG_FILE } = await import("../cli/context.js");
       writeFileSync(CONFIG_FILE, JSON.stringify({ frontend: "terminal" }));
