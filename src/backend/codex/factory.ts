@@ -42,6 +42,9 @@ import {
 const codexFactory: BackendFactory = {
   id: "codex",
   label: "Codex",
+  // Its own shell/file tools can't be withheld per turn, so guest-scoped
+  // turns (non-operator senders) are refused rather than run with them.
+  guestToolScope: "refused",
   doctor: (config) => codexDoctorChecks(config),
 
   async init(config, ctx) {

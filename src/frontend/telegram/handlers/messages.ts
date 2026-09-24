@@ -455,6 +455,7 @@ export async function handleCallbackQuery(
       messageId: replyToId,
       prompt,
       senderName: sender,
+      senderId: ctx.from?.id,
       isGroup,
       chatTitle,
     });

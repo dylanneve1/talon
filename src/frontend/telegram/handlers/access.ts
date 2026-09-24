@@ -7,6 +7,7 @@ import type { Bot, Context } from "grammy";
 import { appendDailyLog } from "../../../storage/daily-log.js";
 import { log, logWarn } from "../../../util/log.js";
 import { getSenderName } from "./context.js";
+import { groupListing, warnLegacyGroup } from "./group-access.js";
 import {
   dmUsers,
   accessConfig,
@@ -146,7 +147,12 @@ export async function isAccessAllowed(
     return false;
   }
 
-  if (await isAdminInGroup(bot, ctx.chat.id)) return true;
+  const listing = groupListing(ctx.chat.id);
+  if (listing === "listed") return true;
+  if (listing === "legacy" && (await isAdminInGroup(bot, ctx.chat.id))) {
+    warnLegacyGroup(ctx.chat.id, (ctx.chat as { title?: string }).title);
+    return true;
+  }
   await notifyUnauthorized(bot, ctx, "group");
   return false;
 }
