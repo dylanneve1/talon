@@ -1,5 +1,6 @@
 /**
- * The snapshot builder — one run, one directory, two parts.
+ * The snapshot builder — one run, one directory, up to three parts
+ * (state, login sessions, palace).
  *
  * Everything here streams: entries are handed to the tar writer one at a
  * time, the tar bytes go straight through zstd into the part file, and
@@ -40,6 +41,7 @@ import {
   createEncryptor,
   passphraseOpens,
 } from "./archive/crypt.js";
+import { signManifest } from "./archive/manifest-auth.js";
 import { TarWriter } from "./archive/tar.js";
 import { createCompressor } from "./archive/zstd.js";
 import {
@@ -49,10 +51,11 @@ import {
   isInside,
   EXCLUDE_RULES,
   HOME_INCLUDES,
+  LOGIN_INCLUDES,
   workspaceRoots,
   type SourceEntry,
 } from "./plan.js";
-import { resolvePassphrase } from "./passphrase.js";
+import { passphraseFilePath, resolvePassphrase } from "./passphrase.js";
 import {
   STATE_PART,
   indexSnapshot,
@@ -71,6 +74,8 @@ import type {
 
 /** Where the database copy lands inside the archive. */
 const DB_MEMBER = "db/talon.db";
+/** The part that holds WhatsApp auth and the userbot session. */
+const LOGINS_PART = "logins.tar.zst";
 
 export type BuildOptions = {
   kind: SnapshotKind;
@@ -129,10 +134,12 @@ async function writePart(
   fill: (writer: TarWriter) => Promise<void>,
   passphrase: string | null,
 ): Promise<{ bytes: number; sha256: string }> {
-  await mkdir(dirname(destPath), { recursive: true });
+  await mkdir(dirname(destPath), { recursive: true, mode: 0o700 });
   const compressor = createCompressor();
   const tap = new Sha256Tap();
-  const out = createWriteStream(destPath);
+  // Owner-only even when encrypted: a plaintext local part holds every
+  // credential this install has.
+  const out = createWriteStream(destPath, { mode: 0o600 });
   const flushed = passphrase
     ? pipeline(compressor, await createEncryptor(passphrase), tap, out)
     : pipeline(compressor, tap, out);
@@ -153,15 +160,38 @@ async function writePart(
 
 // ── What goes in ────────────────────────────────────────────────────────────
 
+type Collected = {
+  entries: SourceEntry[];
+  /** WhatsApp auth + userbot session, bound for their own part. */
+  logins: SourceEntry[];
+  includes: string[];
+  extras: { n: number; source: string }[];
+};
+
+/**
+ * Drop the passphrase file wherever it turned up (an extra path, the
+ * secrets folder): a key inside the backup it unlocks is no key at all.
+ */
+function withoutKeyFile(
+  entries: SourceEntry[],
+  keyFile: string | null,
+): SourceEntry[] {
+  if (!keyFile) return entries;
+  const kept = entries.filter((entry) => resolve(entry.source) !== keyFile);
+  if (kept.length !== entries.length) {
+    logWarn(
+      "backup",
+      `Left the backup passphrase file ${keyFile} out of the snapshot — keep it outside backed-up paths`,
+    );
+  }
+  return kept;
+}
+
 /** Everything under ~/.talon plus the configured workspace subset and extras. */
 async function collectStateEntries(
   home: string,
   settings: BackupSettings,
-): Promise<{
-  entries: SourceEntry[];
-  includes: string[];
-  extras: { n: number; source: string }[];
-}> {
+): Promise<Collected> {
   const skipped: string[] = [];
   const onSkip = (path: string, err: unknown) => {
     skipped.push(
@@ -169,6 +199,7 @@ async function collectStateEntries(
     );
   };
   const entries: SourceEntry[] = [];
+  const logins: SourceEntry[] = [];
   const includes: string[] = [];
 
   for (const root of HOME_INCLUDES) {
@@ -176,6 +207,15 @@ async function collectStateEntries(
     if (found.length > 0) {
       entries.push(...found);
       includes.push(root);
+    }
+  }
+  if (settings.loginSessions !== "off") {
+    for (const root of LOGIN_INCLUDES) {
+      const found = await collectTree(join(home, root), root, { onSkip });
+      if (found.length > 0) {
+        logins.push(...found);
+        includes.push(root);
+      }
     }
   }
   for (const root of workspaceRoots(settings.workspaceInclude)) {
@@ -221,7 +261,13 @@ async function collectStateEntries(
       `Skipped ${skipped.length} unreadable path(s); first: ${skipped[0]}`,
     );
   }
-  return { entries, includes, extras };
+  const keyFile = passphraseFilePath(settings);
+  return {
+    entries: withoutKeyFile(entries, keyFile),
+    logins: withoutKeyFile(logins, keyFile),
+    includes,
+    extras,
+  };
 }
 
 // ── The memory palace part ──────────────────────────────────────────────────
@@ -368,6 +414,61 @@ async function readGitHead(startDir: string): Promise<string | undefined> {
 
 // ── The build ───────────────────────────────────────────────────────────────
 
+/** The state part: identity, state, workspace subset, extras and the database. */
+async function writeStatePart(
+  dir: string,
+  entries: readonly SourceEntry[],
+  passphrase: string | null,
+  options: BuildOptions,
+): Promise<SnapshotPart> {
+  const dbTemp = join(dir, "db-snapshot.tmp");
+  await rm(dbTemp, { force: true });
+  (options.copyDatabase ?? snapshotDatabase)(dbTemp);
+  const dbStat = await stat(dbTemp);
+  const name = partName(STATE_PART, passphrase);
+  const written = await writePart(
+    join(dir, name),
+    async (writer) => {
+      await addEntries(writer, entries);
+      await writer.addFile(
+        DB_MEMBER,
+        dbTemp,
+        0o600,
+        Math.floor(Date.now() / 1000),
+        dbStat.size,
+      );
+    },
+    passphrase,
+  );
+  await rm(dbTemp, { force: true });
+  return { name, ...written, ...(passphrase ? { encrypted: true } : {}) };
+}
+
+/**
+ * The login-sessions part, when there is anything to put in it. Marked
+ * local-only unless the operator opted in to shipping sessions off-host.
+ */
+async function writeLoginsPart(
+  dir: string,
+  entries: readonly SourceEntry[],
+  passphrase: string | null,
+  settings: BackupSettings,
+): Promise<SnapshotPart | null> {
+  if (entries.length === 0) return null;
+  const name = partName(LOGINS_PART, passphrase);
+  const written = await writePart(
+    join(dir, name),
+    (writer) => addEntries(writer, entries),
+    passphrase,
+  );
+  return {
+    name,
+    ...written,
+    ...(passphrase ? { encrypted: true } : {}),
+    ...(settings.loginSessions === "remote" ? {} : { localOnly: true }),
+  };
+}
+
 /**
  * Build one snapshot end to end: collect, archive, hash, write the
  * manifest, index it. Leaves nothing behind on failure — a half-written
@@ -382,43 +483,21 @@ export async function buildSnapshot(options: BuildOptions): Promise<Manifest> {
   const id = newSnapshotId(options.now ?? new Date());
   const dir = snapshotDir(id, home);
   const started = Date.now();
-  await mkdir(dir, { recursive: true });
+  await mkdir(dir, { recursive: true, mode: 0o700 });
 
   try {
-    const { entries, includes, extras } = await collectStateEntries(
-      home,
+    const collected = await collectStateEntries(home, options.settings);
+    const { includes } = collected;
+    const parts = [
+      await writeStatePart(dir, collected.entries, passphrase, options),
+    ];
+    const logins = await writeLoginsPart(
+      dir,
+      collected.logins,
+      passphrase,
       options.settings,
     );
-    const dbTemp = join(dir, "db-snapshot.tmp");
-    await rm(dbTemp, { force: true });
-    (options.copyDatabase ?? snapshotDatabase)(dbTemp);
-    const dbStat = await stat(dbTemp);
-
-    const stateName = partName(STATE_PART, passphrase);
-    const state = await writePart(
-      join(dir, stateName),
-      async (writer) => {
-        await addEntries(writer, entries);
-        await writer.addFile(
-          DB_MEMBER,
-          dbTemp,
-          0o600,
-          Math.floor(Date.now() / 1000),
-          dbStat.size,
-        );
-      },
-      passphrase,
-    );
-    await rm(dbTemp, { force: true });
-
-    const parts: SnapshotPart[] = [
-      {
-        name: stateName,
-        bytes: state.bytes,
-        sha256: state.sha256,
-        ...(passphrase ? { encrypted: true } : {}),
-      },
-    ];
+    if (logins) parts.push(logins);
     let palaceHash: string | undefined;
     if (options.settings.includePalace) {
       const palace = await buildPalacePart(id, home, passphrase);
@@ -443,11 +522,12 @@ export async function buildSnapshot(options: BuildOptions): Promise<Manifest> {
       parts,
       includes: [...includes, DB_MEMBER],
       excludes: [...EXCLUDE_RULES],
-      ...(extras.length > 0 ? { extras } : {}),
+      ...(collected.extras.length > 0 ? { extras: collected.extras } : {}),
       ...(palaceHash ? { palaceHash } : {}),
       sizeBytes: parts.reduce((sum, part) => sum + part.bytes, 0),
       remote: {},
     };
+    if (passphrase) manifest.auth = await signManifest(manifest, passphrase);
     await writeManifest(manifest, home);
     indexSnapshot(manifest);
     log(
