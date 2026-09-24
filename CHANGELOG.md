@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.15.1](https://github.com/thefalconry/talon/compare/v5.15.0...v5.15.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **usage:** read plan quota from idle backends instead of reporting 'not running' ([#1089](https://github.com/thefalconry/talon/issues/1089)) ([80ef309](https://github.com/thefalconry/talon/commit/80ef30992983bd4b3c54eec1403539e3a5d89faa))
+
 ## [5.15.0](https://github.com/thefalconry/talon/compare/v5.14.0...v5.15.0) (2026-09-24)
 
 
