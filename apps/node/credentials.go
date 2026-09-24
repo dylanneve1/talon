@@ -115,6 +115,15 @@ func (n *Node) token() string {
 func (n *Node) saveConfig() error {
 	n.tokenMu.Lock()
 	defer n.tokenMu.Unlock()
+	return n.saveConfigLocked()
+}
+
+// saveConfigLocked writes the config; the caller holds tokenMu. It also
+// holds pinMu for reading, since Save serializes cfg.Fingerprint, which a
+// concurrent TOFU adoption may be writing (lock order: tokenMu, pinMu).
+func (n *Node) saveConfigLocked() error {
+	n.pinMu.RLock()
+	defer n.pinMu.RUnlock()
 	return n.cfg.Save()
 }
 
@@ -124,7 +133,7 @@ func (n *Node) adoptCredential(token string) error {
 	defer n.tokenMu.Unlock()
 	prev := n.cfg.Token
 	n.cfg.Token = token
-	if err := n.cfg.Save(); err != nil {
+	if err := n.saveConfigLocked(); err != nil {
 		n.cfg.Token = prev
 		return err
 	}

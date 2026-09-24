@@ -27,6 +27,25 @@ import (
 // keeps the node solidly "online" while tolerating one dropped beat.
 const heartbeatInterval = 60 * time.Second
 
+// streamIdleTimeout bounds how long the event stream may stay silent. The
+// daemon writes an SSE ping comment every 25s, so three missed pings means
+// the connection is half-open (a NAT dropped the flow, a proxy stalled):
+// tear it down and reconnect instead of blocking in Read until kernel TCP
+// keepalive gives up minutes later — all while the separate heartbeat keeps
+// the node looking online and commands sent to it time out (#1061).
+// A var only so tests can shorten it.
+var streamIdleTimeout = 75 * time.Second
+
+// Reconnect backoff: doubles per failed attempt up to maxReconnectBackoff,
+// and drops back to minReconnectBackoff once a stream has stayed up for
+// stableStreamAfter — otherwise one flaky hour left every later reconnect
+// waiting the full 30s, with commands sent in that gap lost (#1061).
+const (
+	minReconnectBackoff = time.Second
+	maxReconnectBackoff = 30 * time.Second
+	stableStreamAfter   = 10 * time.Second
+)
+
 // capabilities this node advertises at registration. The daemon gates
 // commands on this list, so it must exactly cover what dispatch() handles.
 // locate is deliberately absent (servers have no GPS); install_apk is the
@@ -54,8 +73,14 @@ type Node struct {
 	client   *http.Client
 	DeviceID string
 	// seenFingerprint carries the leaf-certificate hash observed during TLS
-	// verification of the most recent connection, for TOFU capture.
-	seenFingerprint string
+	// verification of the most recent connection, for TOFU capture. Written
+	// from whichever goroutine is handshaking (heartbeat, stream, result
+	// POST), so atomic (#1061).
+	seenFingerprint atomic.Pointer[string]
+	// pinMu guards cfg.Fingerprint: read on every handshake and by every
+	// config save (TOFU adoption, credential upgrade), written once by
+	// maybeAdoptFingerprint. Lock order: tokenMu before pinMu.
+	pinMu sync.RWMutex
 	// pendingReexec is set by a successful update_node so handleCommand can
 	// restart into the new binary AFTER the command result has been posted
 	// (a re-exec replaces the whole process image, so the ack must land
@@ -105,8 +130,8 @@ func (n *Node) verifyPinnedCert(rawCerts [][]byte, _ [][]*x509.Certificate) erro
 	}
 	sum := sha256.Sum256(rawCerts[0])
 	got := hex.EncodeToString(sum[:])
-	n.seenFingerprint = got
-	if pin := n.cfg.Fingerprint; pin != "" && pin != got {
+	n.seenFingerprint.Store(&got)
+	if pin := n.pinnedFingerprint(); pin != "" && pin != got {
 		return fmt.Errorf(
 			"bridge certificate mismatch: pinned %s, got %s — refusing to connect",
 			pin, got,
@@ -120,15 +145,46 @@ func (n *Node) verifyPinnedCert(rawCerts [][]byte, _ [][]*x509.Certificate) erro
 // token works (register/health), so a rogue endpoint can't get adopted just
 // by completing a handshake.
 func (n *Node) maybeAdoptFingerprint() {
-	if n.cfg.Fingerprint != "" || n.seenFingerprint == "" {
+	seen := n.lastSeenFingerprint()
+	n.pinMu.Lock()
+	if n.cfg.Fingerprint != "" || seen == "" {
+		n.pinMu.Unlock()
 		return
 	}
-	n.cfg.Fingerprint = n.seenFingerprint
+	n.cfg.Fingerprint = seen
+	n.pinMu.Unlock()
+	// saveConfig takes tokenMu then pinMu (read), so the write can't
+	// serialize a half-swapped credential or race the pin it records.
 	if err := n.saveConfig(); err != nil {
 		log.Printf("warning: could not persist pinned fingerprint: %v", err)
 		return
 	}
-	log.Printf("pinned bridge certificate %s (trust-on-first-use)", n.cfg.Fingerprint)
+	log.Printf("pinned bridge certificate %s (trust-on-first-use)", seen)
+}
+
+// pinnedFingerprint is the configured pin ("" = none yet), safe to call from
+// any goroutine's TLS handshake.
+func (n *Node) pinnedFingerprint() string {
+	n.pinMu.RLock()
+	defer n.pinMu.RUnlock()
+	return n.cfg.Fingerprint
+}
+
+// lastSeenFingerprint is the leaf hash from the most recent handshake.
+func (n *Node) lastSeenFingerprint() string {
+	if p := n.seenFingerprint.Load(); p != nil {
+		return *p
+	}
+	return ""
+}
+
+// drainClose reads what's left of a response body (bounded) before closing
+// it. net/http only reuses a keep-alive connection whose body was read to
+// EOF; closing a partly-read body — a reply over the 4KB we parse — forces a
+// fresh TCP + TLS handshake on the next heartbeat (#1061).
+func drainClose(body io.ReadCloser) {
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, 64<<10))
+	_ = body.Close()
 }
 
 func (n *Node) apiURL(path string, query url.Values) string {
@@ -163,7 +219,7 @@ func (n *Node) postJSON(ctx context.Context, path string, body any, out any) err
 	if err != nil {
 		return err
 	}
-	defer res.Body.Close()
+	defer drainClose(res.Body)
 	reply, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
 	if res.StatusCode < 200 || res.StatusCode > 299 {
 		return fmt.Errorf("%s: HTTP %d: %s", path, res.StatusCode, strings.TrimSpace(string(reply)))
@@ -188,7 +244,7 @@ func (n *Node) Health() (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
+	defer drainClose(res.Body)
 	var out map[string]any
 	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
 		return nil, err
@@ -265,23 +321,35 @@ func (n *Node) Run(ctx context.Context) {
 	// binary is replaced out of band. No-op on Windows.
 	go watchReload(ctx, n)
 
-	backoff := time.Second
+	backoff := minReconnectBackoff
 	for ctx.Err() == nil {
-		err := n.consumeEvents(ctx)
+		uptime, err := n.consumeEvents(ctx)
 		if ctx.Err() != nil {
 			return
 		}
-		log.Printf("event stream dropped (%v) — reconnecting in %s", err, backoff)
+		var wait time.Duration
+		wait, backoff = reconnectBackoff(backoff, uptime)
+		log.Printf("event stream dropped (%v) — reconnecting in %s", err, wait)
 		select {
-		case <-time.After(backoff):
+		case <-time.After(wait):
 		case <-ctx.Done():
 			return
 		}
-		backoff *= 2
-		if backoff > 30*time.Second {
-			backoff = 30 * time.Second
-		}
 	}
+}
+
+// reconnectBackoff returns how long to wait before the next connect attempt
+// and the backoff to carry into the one after. A stream that stayed up for
+// stableStreamAfter resets to the minimum; failures double up to the cap.
+func reconnectBackoff(current, uptime time.Duration) (wait, next time.Duration) {
+	if uptime >= stableStreamAfter || current < minReconnectBackoff {
+		current = minReconnectBackoff
+	}
+	next = current * 2
+	if next > maxReconnectBackoff {
+		next = maxReconnectBackoff
+	}
+	return current, next
 }
 
 func (n *Node) heartbeatLoop(ctx context.Context) {
@@ -300,31 +368,42 @@ func (n *Node) heartbeatLoop(ctx context.Context) {
 	}
 }
 
+// errStreamIdle reports a stream torn down by the idle deadline.
+var errStreamIdle = errors.New("event stream idle past the deadline (half-open connection?)")
+
 // consumeEvents opens GET /events and dispatches device_command frames
-// addressed to this device. Blocks until the stream errors or ctx is done.
-// Each frame is `data: <json>\n\n` (standard SSE, no event names).
-func (n *Node) consumeEvents(ctx context.Context) error {
+// addressed to this device. Blocks until the stream errors, goes silent for
+// streamIdleTimeout, or ctx is done, and reports how long the stream was up
+// (0 if it never connected). Each frame is `data: <json>\n\n` (standard
+// SSE, no event names).
+func (n *Node) consumeEvents(ctx context.Context) (time.Duration, error) {
+	// The stream gets its own context so the idle deadline can cancel the
+	// read without touching ctx, which running commands still use.
+	streamCtx, cancelStream := context.WithCancel(ctx)
+	defer cancelStream()
 	// Name ourselves on the stream: the daemon addresses device_command
 	// frames (which carry transfer tokens and command lines) to the claiming
 	// client alone instead of shouting them at every connected device.
 	q := url.Values{"deviceId": {n.DeviceID}}
 	req, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, n.apiURL("/events", q), nil,
+		streamCtx, http.MethodGet, n.apiURL("/events", q), nil,
 	)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	res, err := n.client.Do(n.authed(req))
 	if err != nil {
-		return err
+		return 0, err
 	}
-	defer res.Body.Close()
+	defer drainClose(res.Body)
 	if res.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 512))
-		return fmt.Errorf("events: HTTP %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+		return 0, fmt.Errorf("events: HTTP %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
 	}
 	log.Printf("event stream connected")
+	connectedAt := time.Now()
+	uptime := func() time.Duration { return time.Since(connectedAt) }
 
 	// Re-register on every (re)connect: if the daemon restarted, its registry
 	// reloaded from disk but this device may have flipped offline meanwhile.
@@ -336,7 +415,11 @@ func (n *Node) consumeEvents(ctx context.Context) error {
 		}
 	}()
 
-	scanner := bufio.NewScanner(res.Body)
+	// Any bytes at all — frames or the daemon's ping comments — prove the
+	// connection is alive; silence past the deadline cancels the stream.
+	idle := time.AfterFunc(streamIdleTimeout, cancelStream)
+	defer idle.Stop()
+	scanner := bufio.NewScanner(&idleResetReader{r: res.Body, timer: idle, d: streamIdleTimeout})
 	// Command payloads (write_file base64 chunks) can approach ~400KB of
 	// JSON; give the scanner room well beyond that.
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
@@ -351,10 +434,28 @@ func (n *Node) consumeEvents(ctx context.Context) error {
 		n.workersOnce.Do(func() { n.startWorkers(ctx) })
 		n.enqueueCommand(event)
 	}
-	if err := scanner.Err(); err != nil {
-		return err
+	if streamCtx.Err() != nil && ctx.Err() == nil {
+		return uptime(), errStreamIdle
 	}
-	return errors.New("stream closed")
+	if err := scanner.Err(); err != nil {
+		return uptime(), err
+	}
+	return uptime(), errors.New("stream closed")
+}
+
+// idleResetReader pushes an idle deadline back every time data arrives.
+type idleResetReader struct {
+	r     io.Reader
+	timer *time.Timer
+	d     time.Duration
+}
+
+func (r *idleResetReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if n > 0 {
+		r.timer.Reset(r.d)
+	}
+	return n, err
 }
 
 // startWorkers starts the command worker pool and the "busy" responder.
