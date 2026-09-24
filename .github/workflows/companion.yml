@@ -120,6 +120,19 @@ jobs:
         if: matrix.platform == 'windows' || matrix.platform == 'linux'
         run: flutter create --platforms=${{ matrix.platform }} --project-name=talon_companion .
 
+      # local_auth_windows (the app lock's Windows Hello prompt) compiles with
+      # /await and <experimental/coroutine>, which MSVC 14.51+ turns into a hard
+      # error unless this macro is defined. windows/ is regenerated above, so
+      # define it for every target there; drop once the plugin moves to C++20
+      # coroutines.
+      - name: Allow local_auth_windows on current MSVC
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i '/^project(/a add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)' windows/CMakeLists.txt
+          grep -q _SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS windows/CMakeLists.txt
+
       # The dart package stays talon_companion (valid identifier), but every
       # user-facing name should read "Talon": the native window title, and on
       # Windows the .exe's ProductName/FileDescription (shown in Task Manager /
