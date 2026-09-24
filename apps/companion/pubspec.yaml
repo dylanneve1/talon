@@ -42,8 +42,11 @@ dependencies:
   # Pick files to attach to a message. Chosen over image_picker because it
   # supports every target this app ships to (Windows/macOS/Linux + Android),
   # whereas image_picker has no desktop-Linux/Windows implementation — and it
-  # picks any file type, not just images.
-  file_picker: ^8.1.2
+  # picks any file type, not just images. 10.x: on Linux it asks the
+  # xdg-desktop-portal FileChooser over D-Bus instead of shelling out to
+  # zenity/kdialog — the only way a file dialog works inside Flatpak, and it
+  # needs no helper binary on a normal desktop either.
+  file_picker: ^10.3.3
   # Drag-and-drop of OS files onto the chat (desktop only — Flutter has no
   # core API for a native file drop). Pure platform channels, so it adds no
   # native toolchain requirement to the Windows/macOS/Linux builds.

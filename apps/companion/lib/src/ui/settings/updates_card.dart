@@ -60,13 +60,14 @@ class _UpdatesCardState extends State<UpdatesCard> {
           const SizedBox(height: 6),
           _statusBlock(svc),
           const SizedBox(height: 4),
-          settingsSwitchRow(
-            'Check automatically',
-            'Look for a new release on launch and every six hours. Nothing '
-                'downloads until you say so.',
-            svc.autoCheck,
-            svc.busy ? null : (v) => svc.setAutoCheck(v),
-          ),
+          if (!svc.managedByFlatpak)
+            settingsSwitchRow(
+              'Check automatically',
+              'Look for a new release on launch and every six hours. Nothing '
+                  'downloads until you say so.',
+              svc.autoCheck,
+              svc.busy ? null : (v) => svc.setAutoCheck(v),
+            ),
           const SizedBox(height: 6),
           Row(
             children: [
@@ -93,6 +94,13 @@ class _UpdatesCardState extends State<UpdatesCard> {
   /// The one part of the card that changes shape: a status line for the quiet
   /// states, and a bordered panel once there's something to act on.
   Widget _statusBlock(UpdateService svc) {
+    if (svc.managedByFlatpak) {
+      return healthRow(
+        SettingsHealth.info,
+        'Updates are managed by Flatpak',
+        'Update Talon from your software centre, or run "flatpak update".',
+      );
+    }
     if (!svc.supported) {
       return healthRow(
         SettingsHealth.info,
