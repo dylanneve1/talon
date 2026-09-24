@@ -544,8 +544,10 @@ class AppState extends ChangeNotifier {
   // ── Commands ────────────────────────────────────────────────────────────────
 
   Future<void> selectChat(String chatId) async {
+    final previous = selectedChatId;
     if (chatId != selectedChatId) unawaited(_reapUnusedChats(keep: chatId));
     selectedChatId = chatId;
+    if (previous != null && previous != chatId) trimHistory(previous);
     markRead(chatId);
     notifyListeners();
     if (!_loadedHistory.contains(chatId)) await _loadHistory(chatId);
@@ -565,6 +567,18 @@ class AppState extends ChangeNotifier {
   }
 
   // ── History pagination + search ───────────────────────────────────────────
+
+  /// Drop all but the newest [_historyInitialSize] messages of a chat that
+  /// is no longer on screen. Scrollback pages loaded with [loadOlderMessages]
+  /// otherwise stay in memory for the life of the process — and a tray-
+  /// resident desktop app rarely restarts (#1062/#1063). The chat is marked
+  /// as having more history again, so scrolling up re-fetches on demand.
+  void trimHistory(String chatId) {
+    final msgs = _messages[chatId];
+    if (msgs == null || msgs.length <= _historyInitialSize) return;
+    msgs.removeRange(0, msgs.length - _historyInitialSize);
+    _historyExhausted.remove(chatId);
+  }
 
   /// Fetch the page of messages older than the oldest one currently loaded.
   /// Returns how many new messages were prepended (0 when exhausted/offline).
