@@ -32,9 +32,13 @@ class Prefs {
 
   Prefs(this._sp, {File? snapshotFile}) : _snapshotFile = snapshotFile;
 
-  static Future<Prefs> load() async => Prefs(
+  /// [fileSnapshot]: keep the offline snapshot in its own file (the app
+  /// and the background mesh isolate). Opt-in so that code which only needs
+  /// settings — and widget tests, where a platform-channel reply never
+  /// arrives inside fake async — never waits on path_provider.
+  static Future<Prefs> load({bool fileSnapshot = false}) async => Prefs(
         await SharedPreferences.getInstance(),
-        snapshotFile: await _resolveSnapshotFile(),
+        snapshotFile: fileSnapshot ? await _resolveSnapshotFile() : null,
       );
 
   static Future<File?> _resolveSnapshotFile() async {

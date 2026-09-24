@@ -28,7 +28,7 @@ Future<void> main() async {
   // Windows: tray residency — close hides to the system tray, mesh keeps
   // running (macOS gets the same from native code in macos/Runner).
   await WindowsTray.instance.init();
-  final prefs = await Prefs.load();
+  final prefs = await Prefs.load(fileSnapshot: true);
   TalonTheme.mode.value = switch (prefs.themeMode) {
     'light' => ThemeMode.light,
     'dark' => ThemeMode.dark,
