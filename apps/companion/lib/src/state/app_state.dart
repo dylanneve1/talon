@@ -561,6 +561,48 @@ class AppState extends ChangeNotifier {
       e.toString().contains('Unauthorized') ||
       e.toString().contains('(401)');
 
+  /// Drop the connection profile (token, client certificate, pins) and
+  /// everything cached from it, back to the first-run screen: the app lock's
+  /// "erase after N failed attempts" and its forgotten-passcode reset. The
+  /// device has to be paired again.
+  Future<void> forgetConnection() async {
+    _reconnect?.cancel();
+    _epoch++;
+    await _sub?.cancel();
+    _sub = null;
+    await _mesh?.stop();
+    _mesh = null;
+    _client?.dispose();
+    _client = null;
+    await prefs.revokeMeshGrants();
+    await prefs.setOnboarded(false);
+    config = ConnectionConfig.defaults();
+    _activeConfig = null;
+    await prefs.setConnection(config);
+    MeshForegroundController.notifyReconfigure();
+    chats.clear();
+    _messages.clear();
+    _turns.clear();
+    _loadedHistory.clear();
+    models = [];
+    selectedChatId = null;
+    conn = ConnState.idle;
+    connError = null;
+    AppLog.info('app_state', 'connection forgotten');
+    notifyListeners();
+  }
+
+  /// Local approval for mesh device-control commands (the app lock's
+  /// "require unlock for elevated commands"). Set by main; while unset, a
+  /// gated command is refused rather than run unapproved.
+  CommandApprover? commandApprover;
+
+  Future<String?> _approveCommand(String name) {
+    final approver = commandApprover;
+    if (approver != null) return approver(name);
+    return MeshService.defaultApproval(prefs, name);
+  }
+
   /// Apply a new connection profile and reconnect from scratch.
   Future<void> applyConfig(ConnectionConfig next) async {
     config = next;
@@ -1181,6 +1223,7 @@ class AppState extends ChangeNotifier {
     final mesh = MeshService(
       prefs,
       client,
+      approver: _approveCommand,
       // macOS stays resident in the menu bar, so this in-app mesh IS the
       // background mesh — stamp registrations so health reads healthy/stale.
       onRegistered: resident ? _stampResidentMeshAlive : null,
@@ -1205,7 +1248,7 @@ class AppState extends ChangeNotifier {
   Future<void> _startUiMeshFallback(BridgeClient client) async {
     AppLog.warn('app_state', 'starting UI-isolate mesh fallback');
     await _mesh?.stop();
-    final mesh = MeshService(prefs, client);
+    final mesh = MeshService(prefs, client, approver: _approveCommand);
     _mesh = mesh;
     try {
       await mesh.start();
@@ -1751,6 +1794,20 @@ class AppState extends ChangeNotifier {
   void _hydrateFromSnapshot() {
     final snap = prefs.snapshot;
     if (snap == null) return;
+    _hydrateFrom(snap);
+  }
+
+  /// Hydrate from a snapshot released after construction — the app lock's
+  /// sealed snapshot, opened on the first unlock. Ignored once live data has
+  /// arrived (the connection keeps running while locked, and the bridge is
+  /// authoritative and newer).
+  void restoreSnapshot(Map<String, dynamic> snap) {
+    if (_disposed || chats.isNotEmpty) return;
+    _hydrateFrom(snap);
+    notifyListeners();
+  }
+
+  void _hydrateFrom(Map<String, dynamic> snap) {
     try {
       final rawChats = snap['chats'];
       if (rawChats is List) {

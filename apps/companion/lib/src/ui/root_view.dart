@@ -6,6 +6,7 @@ import '../models/connection.dart';
 import '../services/log.dart';
 import '../services/pair_links.dart';
 import '../state/app_state.dart';
+import 'app_lock/app_lock_gate.dart';
 import 'app_shell.dart';
 import 'connect_screen.dart';
 import 'glass.dart';
@@ -78,11 +79,15 @@ class _RootViewState extends State<RootView> with WidgetsBindingObserver {
         }
         return;
       }
+      // A locked app shows nothing until it is unlocked — a pairing prompt
+      // included (#1051). Hold the link until the user is back in.
+      final lock = AppLockScope.peek(context);
+      if (lock != null) await lock.whenUnlocked();
+      if (!mounted) return;
       // Any app or web page can open a talon:// link, so it never changes
       // the connection on its own — first run included. Only an explicit
       // "Connect" in the dialog does.
       final replacing = widget.state.prefs.onboarded;
-      if (!mounted) return;
       if (!await PairConfirmDialog.ask(context, config, replacing: replacing)) {
         AppLog.info('pair', 'pairing link declined');
         return;

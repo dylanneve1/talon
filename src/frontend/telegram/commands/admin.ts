@@ -9,7 +9,7 @@
 import type { Bot } from "grammy";
 import type { TalonConfig } from "../../../core/config/index.js";
 import { respawnSelf } from "../../../core/daemon/respawn.js";
-import { isStaleCommand } from "../stale-command.js";
+import { isStaleCommand } from "../polling/stale-command.js";
 import {
   getRepoRoot,
   runSelfUpdate,

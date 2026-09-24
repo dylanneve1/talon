@@ -12,7 +12,7 @@ import { stripMcpPrefix } from "../../../core/tools/index.js";
 import { logWarn } from "../../../util/log.js";
 import { replyParamsFor, sendText } from "../actions/send.js";
 import { ambientThreadId } from "../topics.js";
-import { trackDmUser } from "./access.js";
+import { isAdminInGroup, trackDmUser } from "./access.js";
 
 export async function sendHtml(
   bot: Bot,
@@ -208,6 +208,12 @@ export async function processAndReply(
       senderHandle: senderUsername,
       senderKeys:
         params.senderKeys ?? (senderId ? [String(senderId)] : undefined),
+      // Only asked when the install opts in — it costs a (cached)
+      // getChatMember call per group turn.
+      operatorInChat:
+        isGroup && params.config.guestDmScope?.operatorGroups
+          ? await isAdminInGroup(bot, numericChatId)
+          : undefined,
       isGroup,
       messageId,
       source: "message",

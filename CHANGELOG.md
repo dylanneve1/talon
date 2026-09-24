@@ -1,5 +1,32 @@
 # Changelog
 
+## [5.17.0](https://github.com/thefalconry/talon/compare/v5.16.0...v5.17.0) (2026-09-24)
+
+
+### Features
+
+* **scope:** full tool set in groups the operator is a member of ([#1095](https://github.com/thefalconry/talon/issues/1095)) ([e4823e5](https://github.com/thefalconry/talon/commit/e4823e5c0488b0701141d2e4c731de915b41cfb5))
+
+
+### Bug Fixes
+
+* **scope:** tell the model when a turn runs with the guest tool set ([#1094](https://github.com/thefalconry/talon/issues/1094)) ([e448fa1](https://github.com/thefalconry/talon/commit/e448fa189cf7e322a499014c3d7ac6a4467fa2a5))
+* **telegram:** give getUpdates a deadline so a dead socket can't stall polling ([#1093](https://github.com/thefalconry/talon/issues/1093)) ([f6f4d3a](https://github.com/thefalconry/talon/commit/f6f4d3a48b3997dd66ec308f0e1c80ba9c196a49))
+
+## [5.16.0](https://github.com/thefalconry/talon/compare/v5.15.1...v5.16.0) (2026-09-24)
+
+
+### Features
+
+* **companion:** optional app lock (passcode + biometrics) ([#1087](https://github.com/thefalconry/talon/issues/1087)) ([9a0ebf7](https://github.com/thefalconry/talon/commit/9a0ebf7950d2c529619e85541994f43e38b2ea98))
+
+## [5.15.1](https://github.com/thefalconry/talon/compare/v5.15.0...v5.15.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **usage:** read plan quota from idle backends instead of reporting 'not running' ([#1089](https://github.com/thefalconry/talon/issues/1089)) ([80ef309](https://github.com/thefalconry/talon/commit/80ef30992983bd4b3c54eec1403539e3a5d89faa))
+
 ## [5.15.0](https://github.com/thefalconry/talon/compare/v5.14.0...v5.15.0) (2026-09-24)
 
 

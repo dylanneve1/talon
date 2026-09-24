@@ -69,6 +69,25 @@ is installed, and a managed install the app can't write to (Homebrew, `/opt`,
 
 Full mechanism: [docs/companion-updates.md](../../docs/companion-updates.md).
 
+## App lock
+
+*Settings → App lock* (off by default) puts a passcode — 6+ digits or a
+password — in front of the app, with Touch ID / Windows Hello / Android
+fingerprint or face as an optional shortcut (Linux: passcode only). The app
+locks on launch and after a chosen time away or idle (default 5 minutes).
+
+- **What it covers:** the UI (every screen, dialog and `talon://pair` prompt
+  waits behind it), the offline chat cache, which is encrypted at rest while
+  the lock is on, and notification text, which is hidden. With *Require unlock
+  for elevated commands*, mesh shell/file/install commands also wait for an
+  approval on the device, and are refused when the app isn't open.
+- **What it doesn't:** the connection and the background mesh keep running
+  while locked, so locking the app never takes the device off the mesh.
+- The passcode is never stored. An Argon2id verifier and a passcode-wrapped
+  data key sit in the platform secure store. Failed attempts back off 1s, 2s,
+  4s and so on up to 60s. *Erase connection after 10 failed attempts* is
+  optional. *Forgot passcode?* resets the lock and the pairing.
+
 ## Running it
 
 Requires the [Flutter SDK](https://docs.flutter.dev/get-started/install)

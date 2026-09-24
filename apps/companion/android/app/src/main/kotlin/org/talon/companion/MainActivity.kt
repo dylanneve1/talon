@@ -1,12 +1,16 @@
 package org.talon.companion
 
 import android.content.Intent
+import android.os.Build
 import android.view.WindowManager
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+// FlutterFragmentActivity, not FlutterActivity: BiometricPrompt (local_auth,
+// and flutter_secure_storage's auth-bound keys for the app lock) needs a
+// FragmentActivity host.
+class MainActivity : FlutterFragmentActivity() {
     private var shizuku: ShizukuBridge? = null
     private var root: RootBridge? = null
     private var pair: PairBridge? = null
@@ -72,6 +76,14 @@ class MainActivity : FlutterActivity() {
                         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
                     } else {
                         window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    }
+                    result.success(null)
+                }
+                // App lock on: keep content out of the recents thumbnail
+                // without blocking the user's own screenshots (API 33+).
+                "setRecentsScreenshotEnabled" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        setRecentsScreenshotEnabled(call.arguments != false)
                     }
                     result.success(null)
                 }

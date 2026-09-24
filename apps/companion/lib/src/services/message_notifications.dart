@@ -35,6 +35,9 @@ class MessageNotifications {
   /// whole streamed reply in a payload is pointless weight.
   static const int _maxBody = 240;
 
+  /// Body used instead of the reply while the app lock is on (#1051).
+  static const String lockedBody = 'New reply — unlock Talon to read it.';
+
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
 

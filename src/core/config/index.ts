@@ -744,6 +744,12 @@ const configSchema = z.object({
       enabled: z.boolean().default(true),
       operatorChats: z.array(z.string()).default([]),
       guestPlugins: z.array(z.string()).optional(),
+      /**
+       * Groups the operator is a member of give EVERY member the full
+       * surface (shell, files, mail, devices…). Off by default; only for
+       * groups whose members the operator trusts with the host.
+       */
+      operatorGroups: z.boolean().default(false),
     })
     .optional(),
 

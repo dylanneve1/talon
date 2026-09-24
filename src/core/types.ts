@@ -235,6 +235,11 @@ export type ExecuteParams = {
    * or the turn batches several senders — the turn is then guest-scoped.
    */
   senderKeys?: readonly string[];
+  /**
+   * Frontend-attested: the operator is a member of this group chat. With
+   * `guestDmScope.operatorGroups` on, such a turn keeps the full surface.
+   */
+  operatorInChat?: boolean;
   isGroup: boolean;
   /** Provider message ID. Numeric for Telegram, string snowflake for Discord. */
   messageId?: number | string;

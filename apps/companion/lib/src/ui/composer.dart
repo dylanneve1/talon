@@ -371,7 +371,7 @@ class _StagedTile extends StatelessWidget {
               child: Stack(
                 fit: StackFit.passthrough,
                 children: [
-                  file.isImage ? _thumbnail() : _fileChip(),
+                  file.isImage ? _thumbnail(context) : _fileChip(),
                   // A file whose upload failed blocks the send, so it says so
                   // on the tile itself and retries on tap — otherwise the
                   // greyed button has no visible explanation.
@@ -431,15 +431,22 @@ class _StagedTile extends StatelessWidget {
     );
   }
 
-  Widget _thumbnail() => Image.file(
-        File(file.path),
-        width: 72,
-        height: 72,
-        fit: BoxFit.cover,
-        // The file can vanish between staging and render; show the same chip
-        // the non-image case uses rather than a broken box.
-        errorBuilder: (_, __, ___) => _fileChip(),
-      );
+  Widget _thumbnail(BuildContext context) {
+    // Decode at the tile's physical size, not the photo's: a staged 12 MP
+    // original is ~48 MB of RGBA for a 72 px chip.
+    final px = (72 * MediaQuery.devicePixelRatioOf(context)).round();
+    return Image.file(
+      File(file.path),
+      width: 72,
+      height: 72,
+      cacheWidth: px,
+      cacheHeight: px,
+      fit: BoxFit.cover,
+      // The file can vanish between staging and render; show the same chip
+      // the non-image case uses rather than a broken box.
+      errorBuilder: (_, __, ___) => _fileChip(),
+    );
+  }
 
   Widget _fileChip() => Container(
         width: 168,

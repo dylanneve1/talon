@@ -14,7 +14,7 @@
  * the daemon was down are real work and must still be processed.
  */
 
-import { logWarn } from "../../util/log.js";
+import { logWarn } from "../../../util/log.js";
 
 /**
  * Grace window for clock skew between Telegram's timestamps and ours,
