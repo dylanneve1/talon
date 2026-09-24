@@ -113,6 +113,10 @@ class DeviceExec {
   }
 
   static const int _maxChunkBytes = 256 * 1024;
+
+  /// Largest file a mesh write (write_file chunks, download_file) may
+  /// produce on this device.
+  static const int maxWriteBytes = 2 * 1024 * 1024 * 1024;
   static const Duration _shizukuPermissionWait = Duration(seconds: 12);
 
   /// How long a root probe's answer is trusted before asking the bridge again.
@@ -720,8 +724,15 @@ class DeviceExec {
       final file = File(path);
       await file.parent.create(recursive: true);
       final bytes = base64Decode(b64);
-      // No size cap — writes proceed until a real limit fails them (disk
-      // full, permissions), and that exception is surfaced verbatim below.
+      // Capped per file: a mesh write never grows a file past maxWriteBytes.
+      // Below that, writes proceed until a real limit fails them (disk full,
+      // permissions), and that exception is surfaced verbatim below.
+      if ((truncate ? 0 : offset) + bytes.length > maxWriteBytes) {
+        return CommandOutcome.fail(
+          'write_file refused: the file would exceed the '
+          '$maxWriteBytes-byte limit for mesh writes.',
+        );
+      }
       // Write at the offset the daemon asked for — never blind-append. The
       // transfer protocol is truncate-first + sequential offsets, so a chunk
       // whose offset doesn't match the current size is out of order (or a

@@ -63,6 +63,35 @@ successful authenticated connect (TOFU) and enforced afterwards; pre-seed it
 via `--fingerprint` for a fully pinned first contact (`/health` on the
 bridge reports it).
 
+### Local command policy
+
+The optional `policy` block controls what the mesh may do on this host. Only
+someone who can edit `config.json` can change it. Filesystem commands never
+touch the config directory or the node's own binary.
+
+```json
+"policy": {
+  "disableExec": true,
+  "disableUpdate": false,
+  "readPaths": ["/srv/share", "/var/log"],
+  "writePaths": ["/srv/share"],
+  "maxConcurrent": 8,
+  "maxWriteBytes": 4294967296
+}
+```
+
+| Key             | Effect                                                                                  | Default   |
+| --------------- | --------------------------------------------------------------------------------------- | --------- |
+| `disableExec`   | refuse `exec` (shell) and stop advertising it                                           | `false`   |
+| `disableUpdate` | refuse `update_node` and stop advertising it                                            | `false`   |
+| `readPaths`     | confine `read_file` / `list_dir` / `stat` / `upload_file` to these trees                | anywhere  |
+| `writePaths`    | confine `write_file` / `delete` / `mkdir` / `move` / `download_file` to these trees     | anywhere  |
+| `maxConcurrent` | commands running at once. 32 more can queue. Beyond that the answer is "busy"           | `8`       |
+| `maxWriteBytes` | largest file `write_file` / `download_file` may produce                                 | 4 GiB     |
+
+Paths are checked after resolving symlinks. Path limits only mean something
+with `disableExec`, because a shell can reach any file.
+
 ## How it plugs in
 
 ```
