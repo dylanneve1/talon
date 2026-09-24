@@ -81,9 +81,17 @@ describe("bridge server security posture", () => {
     server = null;
   });
 
+  // Backoff off so the lockout tests can fire 20 wrong tokens quickly; the
+  // backoff itself is covered in native-bridge-auth-guard.test.ts.
   async function startServer(token?: string): Promise<number> {
     server = new BridgeServer(
-      { host: "127.0.0.1", port: 0, token, startedAt: "boot" },
+      {
+        host: "127.0.0.1",
+        port: 0,
+        token,
+        startedAt: "boot",
+        authPolicy: { backoffBaseMs: 0 },
+      },
       handlers,
     );
     return server.start();

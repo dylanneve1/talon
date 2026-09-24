@@ -176,6 +176,25 @@ const nativeConfigSchema = z
      */
     token: z.string().optional(),
     /**
+     * Start the bridge on a network-reachable `host` even though `token`
+     * looks weak (under ~128 bits by a length × alphabet estimate, e.g.
+     * `hunter2`). Off by default: a weak token on a non-loopback bind
+     * refuses to start, with instructions to generate a strong one. With
+     * this set the bridge starts and logs a security warning every time.
+     * Loopback binds only ever warn.
+     */
+    allowWeakToken: z.boolean().optional(),
+    /**
+     * Maximum lifetime of one authenticated event stream (`GET /events`),
+     * in ms. When set, each stream is closed after roughly this long
+     * (±10% jitter) and the client reconnects, presenting its token again.
+     * Unset (default) = streams live until the client leaves. The companion
+     * and talon-node both reconnect on their own, but with their own
+     * backoff, and a device command sent in that gap is dropped, so this is
+     * opt-in. Minimum 60000.
+     */
+    sseMaxLifetimeMs: z.number().int().min(60_000).optional(),
+    /**
      * Origins allowed to call the bridge from a BROWSER. Native clients
      * (Electron main, Flutter, curl, talon-node) send no Origin header and
      * never need an entry here. Anything listed gets a matching

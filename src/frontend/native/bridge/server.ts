@@ -24,8 +24,14 @@ import { createServer as createTlsServer } from "node:https";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { log, logError, logDebug, logWarn } from "../../../util/log.js";
-import { formatFingerprint, type BridgeTlsIdentity } from "./tls.js";
+import { log, logError, logDebug } from "../../../util/log.js";
+import {
+  formatFingerprint,
+  isLoopbackHost,
+  type BridgeTlsIdentity,
+} from "./tls.js";
+import { checkBridgeTokenStrength } from "./auth.js";
+import { AuthGuard, type AuthGuardPolicy } from "./auth-guard.js";
 import { contentTypeFor } from "../media/media.js";
 import { type BridgeEvent } from "../protocol.js";
 import { buildRoutes } from "./routes/index.js";
@@ -45,16 +51,33 @@ const SSE_PING_MS = 25_000;
 const MAX_BODY_BYTES = 256 * 1024;
 const PORT_FALLBACKS = 5;
 
-// Failed-auth lockout: after this many wrong tokens from one address inside
-// the window, that address gets 429s until the window lapses. The token's
-// 256 bits make brute force hopeless anyway — this is about not letting an
-// internet-facing bridge be hammered for free (and giving fail2ban-style
-// tooling a clean signal in the log). Only *presented-and-wrong* secrets
-// count: tokenless probes are just scanners finding a locked door.
-const AUTH_LOCKOUT_MAX_FAILURES = 20;
-const AUTH_LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
-/** Hard cap on tracked addresses so the map can't become a memory lever. */
-const AUTH_LOCKOUT_MAX_TRACKED = 10_000;
+/**
+ * Server-level socket deadlines (slow-loris resistance). Node applies
+ * `requestTimeout` only until the request has been fully RECEIVED, so the
+ * long-lived SSE stream (a bodyless GET) and file downloads (response
+ * bodies) are unaffected. It does bound request bodies, and every
+ * body-reading route sits behind the bearer check (an unauthenticated
+ * request is answered 401/429 with `Connection: close` before its body is
+ * read), so the budget is sized for the largest authenticated upload
+ * (512 MB) on a slow link, not for an attacker.
+ */
+export type BridgeTimeouts = {
+  /** Whole header block must arrive within this. Node default: 60s. */
+  headersMs: number;
+  /** Whole request (headers + body) must arrive within this. Node: 300s. */
+  requestMs: number;
+  /** Idle keep-alive sockets are closed after this. */
+  keepAliveMs: number;
+  /** How often Node sweeps for expired header/request deadlines. */
+  checkIntervalMs: number;
+};
+
+export const DEFAULT_BRIDGE_TIMEOUTS: BridgeTimeouts = {
+  headersMs: 20_000,
+  requestMs: 30 * 60_000,
+  keepAliveMs: 5_000,
+  checkIntervalMs: 30_000,
+};
 
 export class BridgeServer {
   private server: Server | null = null;
@@ -68,8 +91,8 @@ export class BridgeServer {
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private port = 0;
   private tlsIdentity: BridgeTlsIdentity | null = null;
-  /** Wrong-token counts per remote address (behind a proxy: per proxy). */
-  private authFailures = new Map<string, { count: number; resetAt: number }>();
+  /** Backoff, lockout and the global failure budget for wrong tokens. */
+  private readonly authGuard: AuthGuard;
   /** `METHOD /path` → handler; a Map so lookups only ever hit own entries. */
   private readonly routes: ReadonlyMap<BridgeRouteKey, RouteHandler>;
 
@@ -88,9 +111,24 @@ export class BridgeServer {
        * I/O — it resolves once, inside `start()`.
        */
       tls?: () => Promise<BridgeTlsIdentity>;
+      /** `native.allowWeakToken`: start on a public bind despite a weak token. */
+      allowWeakToken?: boolean;
+      /** Operator alert for security events (the global auth cooldown). */
+      onSecurityAlert?: (message: string) => void;
+      /**
+       * `native.sseMaxLifetimeMs`: end each event stream after this long
+       * (±10% jitter) so clients re-authenticate. Unset = never.
+       */
+      sseMaxLifetimeMs?: number;
+      /** Overrides for tests; production uses the defaults. */
+      authPolicy?: Partial<AuthGuardPolicy>;
+      timeouts?: Partial<BridgeTimeouts>;
     },
     private readonly handlers: BridgeServerHandlers,
   ) {
+    this.authGuard = new AuthGuard(opts.authPolicy, {
+      onAlert: opts.onSecurityAlert,
+    });
     this.routes = new Map(
       Object.entries(buildRoutes(this.routeHost())) as [
         BridgeRouteKey,
@@ -170,6 +208,11 @@ export class BridgeServer {
 
   async start(): Promise<number> {
     if (this.server) return this.port;
+    checkBridgeTokenStrength({
+      token: this.opts.token,
+      loopback: isLoopbackHost(this.opts.host),
+      allowWeakToken: this.opts.allowWeakToken,
+    });
     this.tlsIdentity = this.opts.tls ? await this.opts.tls() : null;
     const onRequest = (req: IncomingMessage, res: ServerResponse): void => {
       this.handle(req, res).catch((err) => {
@@ -182,12 +225,23 @@ export class BridgeServer {
     };
     // https.Server extends http.Server's request/lifecycle surface — one
     // `Server`-typed field serves both transports.
+    const t = { ...DEFAULT_BRIDGE_TIMEOUTS, ...this.opts.timeouts };
+    const serverOpts = {
+      headersTimeout: t.headersMs,
+      requestTimeout: t.requestMs,
+      keepAliveTimeout: t.keepAliveMs,
+      connectionsCheckingInterval: t.checkIntervalMs,
+    };
     const server: Server = this.tlsIdentity
       ? createTlsServer(
-          { key: this.tlsIdentity.keyPem, cert: this.tlsIdentity.certPem },
+          {
+            ...serverOpts,
+            key: this.tlsIdentity.keyPem,
+            cert: this.tlsIdentity.certPem,
+          },
           onRequest,
         )
-      : createServer(onRequest);
+      : createServer(serverOpts, onRequest);
 
     this.pingTimer = setInterval(() => {
       for (const res of this.clients.keys()) {
@@ -304,20 +358,8 @@ export class BridgeServer {
     }
 
     const remote = req.socket.remoteAddress ?? "unknown";
-    if (this.authLockedOut(remote)) {
-      res.writeHead(429, {
-        ...this.jsonHeaders(),
-        "Retry-After": String(Math.ceil(AUTH_LOCKOUT_WINDOW_MS / 1000)),
-      });
-      res.end(
-        JSON.stringify({ ok: false, error: "Too many failed auth attempts" }),
-      );
-      return;
-    }
-
     const auth = this.authState(req, url);
-    if (auth === "bad") this.recordAuthFailure(remote);
-    else if (auth === "ok") this.authFailures.delete(remote);
+    if (!(await this.admit(res, remote, auth))) return;
 
     const key = `${method} ${path}` as BridgeRouteKey;
     const route = this.routes.get(key);
@@ -330,7 +372,7 @@ export class BridgeServer {
     // Unknown routes are 401 before they are 404: an unauthenticated caller
     // learns nothing about the route map.
     if (auth !== "ok") {
-      return this.json(res, 401, { ok: false, error: "Unauthorized" });
+      return this.refuse(res, 401, "Unauthorized");
     }
     if (!route) return this.json(res, 404, { ok: false, error: "Not found" });
 
@@ -442,10 +484,33 @@ export class BridgeServer {
       "native",
       `SSE client connected${deviceId ? ` as device ${deviceId}` : ""} (${this.clients.size} total)`,
     );
+    const lifetime = this.sseLifetimeTimer(res);
     res.on("close", () => {
+      clearTimeout(lifetime);
       this.clients.delete(res);
       logDebug("native", `SSE client left (${this.clients.size} total)`);
     });
+  }
+
+  /**
+   * Optional max lifetime for an event stream: ending it makes the client
+   * reconnect and present its token again. Off unless configured —
+   * clients do reconnect, but with their own backoff, and a device command
+   * sent in that gap is lost.
+   */
+  private sseLifetimeTimer(
+    res: ServerResponse,
+  ): ReturnType<typeof setTimeout> | undefined {
+    const max = this.opts.sseMaxLifetimeMs;
+    if (!max || max <= 0) return undefined;
+    // Jitter so a fleet that connected together doesn't reconnect together.
+    const ms = Math.round(max * (0.9 + Math.random() * 0.2));
+    const timer = setTimeout(() => {
+      logDebug("native", "bridge.sse event=max_lifetime reason=expired");
+      res.end();
+    }, ms);
+    timer.unref?.();
+    return timer;
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -463,41 +528,55 @@ export class BridgeServer {
     return this.tokenMatches(candidate) ? "ok" : "bad";
   }
 
-  private authLockedOut(remote: string): boolean {
-    const entry = this.authFailures.get(remote);
-    if (!entry) return false;
-    if (Date.now() >= entry.resetAt) {
-      this.authFailures.delete(remote);
+  /**
+   * Apply the auth guard's verdict. Returns false once it has answered the
+   * request itself (429), true when routing should continue — after any
+   * backoff wait has elapsed.
+   */
+  private async admit(
+    res: ServerResponse,
+    remote: string,
+    auth: AuthState,
+  ): Promise<boolean> {
+    const verdict = this.authGuard.check(remote, auth);
+    if (verdict.kind === "reject") {
+      this.refuse(
+        res,
+        429,
+        verdict.reason === "lockout"
+          ? "Too many failed auth attempts"
+          : "Too many failed auth attempts; try again later",
+        verdict.retryAfterSec,
+      );
       return false;
     }
-    return entry.count >= AUTH_LOCKOUT_MAX_FAILURES;
+    if (verdict.kind === "delay" && !(await this.authGuard.hold(verdict.ms))) {
+      // Too many responses already held: refuse now rather than queue more.
+      this.refuse(res, 429, "Too many failed auth attempts", 1);
+      return false;
+    }
+    // The client may have hung up while we waited.
+    return !res.destroyed;
   }
 
-  private recordAuthFailure(remote: string): void {
-    const now = Date.now();
-    const entry = this.authFailures.get(remote);
-    if (!entry || now >= entry.resetAt) {
-      if (this.authFailures.size >= AUTH_LOCKOUT_MAX_TRACKED) {
-        for (const [ip, e] of this.authFailures) {
-          if (now >= e.resetAt) this.authFailures.delete(ip);
-        }
-        // Still saturated after pruning live entries — under that much churn
-        // dropping the newest attacker beats unbounded growth.
-        if (this.authFailures.size >= AUTH_LOCKOUT_MAX_TRACKED) return;
-      }
-      this.authFailures.set(remote, {
-        count: 1,
-        resetAt: now + AUTH_LOCKOUT_WINDOW_MS,
-      });
-      return;
-    }
-    entry.count++;
-    if (entry.count === AUTH_LOCKOUT_MAX_FAILURES) {
-      logWarn(
-        "native",
-        `Bridge auth lockout for ${remote} (${AUTH_LOCKOUT_MAX_FAILURES} wrong tokens in ${AUTH_LOCKOUT_WINDOW_MS / 60_000}m)`,
-      );
-    }
+  /**
+   * An auth refusal. `Connection: close` so an unauthenticated caller
+   * can't keep the socket, or dribble an unread request body into it.
+   */
+  private refuse(
+    res: ServerResponse,
+    code: 401 | 429,
+    error: string,
+    retryAfterSec?: number,
+  ): void {
+    res.writeHead(code, {
+      ...this.jsonHeaders(),
+      Connection: "close",
+      ...(retryAfterSec !== undefined
+        ? { "Retry-After": String(retryAfterSec) }
+        : {}),
+    });
+    res.end(JSON.stringify({ ok: false, error }));
   }
 
   /**
