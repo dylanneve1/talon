@@ -50,6 +50,10 @@ import {
   type NodeBinaryResolver,
 } from "../links/node-binaries.js";
 import { MeshRegistry } from "./registry.js";
+import {
+  DeviceCredentialStore,
+  type CredentialAdminContext,
+} from "../credentials/index.js";
 import type {
   DeviceCommand,
   DeviceCommandResult,
@@ -89,6 +93,12 @@ export type MeshServiceOptions = {
   presenceWatchIntervalMs?: number;
   /** Node-binary resolver override (tests — the real one builds/downloads). */
   nodeBinaryResolver?: NodeBinaryResolver;
+  /**
+   * Per-device credential store. With one, pairing links and installers
+   * carry a device's own credential and removing a device revokes it;
+   * without one (tests, embedders) links carry the shared bridge token.
+   */
+  credentials?: DeviceCredentialStore;
 };
 
 export type { MeshBridgeInfo } from "../links/bridge-links.js";
@@ -135,6 +145,10 @@ export class MeshService {
   private readonly commandTimeoutMs: number;
   private readonly presenceWatchIntervalMs: number;
   private loading: Promise<void> | null = null;
+  /** Per-device credentials (null = shared-token-only mesh). */
+  readonly credentials: DeviceCredentialStore | null;
+  /** `native.legacySharedToken` as the bridge last reported it. */
+  private legacySharedToken = true;
 
   constructor(
     private readonly registry = new MeshRegistry(),
@@ -156,18 +170,47 @@ export class MeshService {
       commandTimeoutMs: this.commandTimeoutMs,
       resolveNode: this.resolveNode,
     });
-    this.links = new BridgeLinks(this.resolveNode);
+    this.credentials = options.credentials ?? null;
+    const store = this.credentials;
+    this.links = new BridgeLinks(
+      this.resolveNode,
+      store
+        ? (scopes, origin) =>
+            store.mintNow({ deviceId: null, scopes, origin }).token
+        : undefined,
+    );
   }
 
   /** The native bridge reports its reachable identity here (null on stop). */
   setBridgeInfo(info: MeshBridgeInfo | null): void {
     this.links.setBridgeInfo(info);
+    this.legacySharedToken = info?.legacySharedToken ?? true;
+  }
+
+  /**
+   * What `talon mesh` operates on, or null for a shared-token-only mesh.
+   * Resolves registry names to ids, so callers should `load()` first.
+   */
+  credentialAdminContext(): CredentialAdminContext | null {
+    const store = this.credentials;
+    if (!store) return null;
+    return {
+      store,
+      resolveDeviceId: (query) => {
+        const resolved = this.resolveDevice(query);
+        return "error" in resolved ? undefined : resolved.target.id;
+      },
+      legacySharedToken: () => this.legacySharedToken,
+    };
   }
 
   /** Hydrate persisted devices/locations. Idempotent — safe to await from
    *  every entry point; the first caller does the read, the rest share it. */
   load(): Promise<void> {
-    this.loading ??= this.registry.load();
+    this.loading ??= Promise.all([
+      this.registry.load(),
+      this.credentials?.load(),
+    ]).then(() => undefined);
     return this.loading;
   }
 
@@ -463,13 +506,20 @@ export class MeshService {
     if (!removed) {
       return { ok: false, text: this.noSuchDevice(query).text };
     }
+    // A removed device keeps no way back in: its own credential dies with
+    // the registry entry (its live sessions drop with it).
+    const revoked =
+      (await this.credentials?.revokeDevice(removed.id, "device removed")) ??
+      [];
     return {
       ok: true,
       text:
         `Removed ${removed.name} [id: ${removed.id}] (${removed.platform}, last seen ${age(Date.now() - removed.lastSeen)}) from the mesh registry.` +
-        (target.online
-          ? " Note: it was still online — a connected companion re-registers within ~60s, so quit the app first if it keeps coming back."
-          : ""),
+        (revoked.length > 0
+          ? ` Revoked its ${revoked.length} per-device credential(s); it must be paired again to rejoin.`
+          : target.online
+            ? " Note: it was still online — a connected companion re-registers within ~60s, so quit the app first if it keeps coming back."
+            : ""),
     };
   }
 
@@ -1086,7 +1136,9 @@ let instance: MeshService | null = null;
 
 /** The daemon's shared mesh service (lazily created). */
 export function getMeshService(): MeshService {
-  instance ??= new MeshService();
+  instance ??= new MeshService(undefined, {
+    credentials: new DeviceCredentialStore(),
+  });
   return instance;
 }
 
