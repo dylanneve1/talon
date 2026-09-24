@@ -127,9 +127,7 @@ export function initGuestDmScope(
 }
 
 /** Is any of this sender's keys a configured operator? */
-function isOperatorSender(
-  senderKeys: readonly string[] | undefined,
-): boolean {
+function isOperatorSender(senderKeys: readonly string[] | undefined): boolean {
   if (!senderKeys || senderKeys.length === 0) return false;
   return senderKeys.some(
     (key) => key === LOCAL_OPERATOR_SENDER || state.operators.has(key),
