@@ -141,7 +141,8 @@ export class AgentRegistry {
         ok: false,
         error:
           `Sub-agent concurrency cap reached (${caps.maxConcurrent} live). ` +
-          `Wait for one to finish (wait_for_agent) or kill one (kill_agent).`,
+          `Wait for one to finish (wait_for_agent) or kill one (kill_agent), ` +
+          `or raise agents.maxConcurrent in ~/.talon/config.json.`,
       };
     }
 

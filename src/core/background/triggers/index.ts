@@ -5,6 +5,7 @@
  * Split by responsibility:
  *   - `state`   — injected deps + the child/timeout/log/buffer registries,
  *                 the warden set, timing constants, init + getRunningCount
+ *   - `caps`    — per-chat active-trigger caps (config.triggers)
  *   - `command` — interpreter resolution per script language
  *   - `output`  — stdout/stderr capture, payload truncation, wake firing
  *   - `exit`    — timeout/cancel/shutdown, child kill, finalizeExit, failTrigger
@@ -20,6 +21,11 @@ import { handleStdoutLine } from "./output.js";
 import { handleTimeout, finalizeExit } from "./exit.js";
 
 export { initTriggers, getRunningCount } from "./state.js";
+export {
+  getTriggerCaps,
+  triggerCapError,
+  DEFAULT_TRIGGER_CAPS,
+} from "./caps.js";
 export { commandForLanguage } from "./command.js";
 export { spawnTrigger } from "./spawn.js";
 export { cancelTrigger, shutdownTriggers } from "./exit.js";

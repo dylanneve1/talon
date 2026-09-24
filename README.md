@@ -508,6 +508,33 @@ Config file: `~/.talon/config.json`
 | `memory`                   | ---          | Long-term memory backend selection: `mempalace` or `mem0` (see above)                                                   |
 | `mempalace`                | ---          | Legacy MemPalace plugin config (prefer `memory`)                                                                        |
 | `playwright`               | ---          | Playwright plugin config (see above)                                                                                    |
+| `triggers`                 | ---          | Per-chat trigger caps, e.g. `{ "maxActivePerChat": 5, "maxPersistentPerChat": 3 }` ([Scaling limits](#scaling-limits)) |
+| `agents`                   | ---          | Sub-agent caps: `{ "maxConcurrent": 6, "maxDepth": 2, "defaultTimeoutMs": 900000 }` ([docs/agents.md](docs/agents.md)) |
+
+### Scaling limits
+
+Two caps bound how much background work Talon keeps alive. Both keep their
+historical defaults and are raised in `~/.talon/config.json`; the error a
+capped tool returns names the key to raise.
+
+| Key                             | Default | Bounds | What it caps                                                 |
+| ------------------------------- | ------- | ------ | ------------------------------------------------------------ |
+| `triggers.maxActivePerChat`     | `5`     | 1–50   | Active (running or pending) triggers per chat                |
+| `triggers.maxPersistentPerChat` | unset   | 1–50   | Optional separate budget for persistent triggers (see below) |
+| `agents.maxConcurrent`          | `6`     | 1–64   | Live sub-agents daemon-wide, children included               |
+
+With `maxPersistentPerChat` unset, persistent and ad-hoc triggers share
+`maxActivePerChat`, exactly as before. Set it and the two draw from separate
+budgets: persistent triggers count only against `maxPersistentPerChat`, and
+`maxActivePerChat` then bounds ad-hoc (non-persistent) triggers only — so a
+chat running long-lived watchers still has room for a short CI wait. Caps are
+checked at `trigger_create`; lowering one never kills a trigger already
+running, and persistent triggers resumed after a restart are not re-checked.
+
+```json
+"triggers": { "maxActivePerChat": 5, "maxPersistentPerChat": 6 },
+"agents": { "maxConcurrent": 12 }
+```
 
 ### Background reasoning effort
 

@@ -512,6 +512,25 @@ const configSchema = z.object({
     })
     .optional(),
   /**
+   * Triggers — per-chat caps on active watcher scripts (running or
+   * pending). Checked when `trigger_create` runs; triggers already running
+   * are never killed when a cap is lowered.
+   *
+   *   - `maxActivePerChat` — active triggers per chat (default 5). When
+   *     `maxPersistentPerChat` is unset this counts persistent and ad-hoc
+   *     triggers together, exactly as before.
+   *   - `maxPersistentPerChat` — optional separate budget for persistent
+   *     triggers. When set, persistent triggers count only against it and
+   *     `maxActivePerChat` bounds ad-hoc (non-persistent) triggers only, so
+   *     long-lived watchers can't starve short ad-hoc ones.
+   */
+  triggers: z
+    .object({
+      maxActivePerChat: z.number().int().min(1).max(50).default(5),
+      maxPersistentPerChat: z.number().int().min(1).max(50).optional(),
+    })
+    .optional(),
+  /**
    * Backups & checkpoints (docs/backups.md). Talon's only safety net, so
    * it is on by default: every `intervalHours` it writes a snapshot of
    * the identity, state, database and memory under ~/.talon/backups/,

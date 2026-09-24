@@ -97,6 +97,18 @@ describe("AgentRegistry caps", () => {
     expect(third.ok).toBe(false);
     if (third.ok) return;
     expect(third.error).toContain("concurrency cap");
+    expect(third.error).toContain("(2 live)");
+    expect(third.error).toContain("agents.maxConcurrent");
+  });
+
+  it("defaults maxConcurrent to 6", () => {
+    expect(DEFAULT_AGENT_CAPS.maxConcurrent).toBe(6);
+    const registry = makeRegistry();
+    for (let i = 0; i < 6; i++) expect(register(registry).ok).toBe(true);
+    const seventh = register(registry);
+    expect(seventh.ok).toBe(false);
+    if (seventh.ok) return;
+    expect(seventh.error).toContain("(6 live)");
   });
 
   it("frees the slot again once an agent settles", () => {
