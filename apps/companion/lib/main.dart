@@ -135,6 +135,12 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final foreground = state == AppLifecycleState.resumed;
+    // Leaving the foreground is the moment to persist the offline snapshot
+    // (it's no longer written on a timer during activity).
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      widget.state.persistSnapshot();
+    }
     unawaited(widget.state.prefs.setUiForeground(foreground));
     if (foreground) {
       final chatId = widget.state.selectedChatId;

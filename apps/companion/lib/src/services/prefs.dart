@@ -1,5 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:isolate';
 
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/connection.dart';
@@ -22,10 +25,28 @@ class Prefs {
 
   final SharedPreferences _sp;
   late final Map<String, int> _lastRead = _decodeLastRead();
-  Prefs(this._sp);
 
-  static Future<Prefs> load() async =>
-      Prefs(await SharedPreferences.getInstance());
+  /// Where the offline snapshot lives, or null to keep it in
+  /// SharedPreferences (no app-support directory, e.g. unit tests).
+  final File? _snapshotFile;
+
+  Prefs(this._sp, {File? snapshotFile}) : _snapshotFile = snapshotFile;
+
+  static Future<Prefs> load() async => Prefs(
+        await SharedPreferences.getInstance(),
+        snapshotFile: await _resolveSnapshotFile(),
+      );
+
+  static Future<File?> _resolveSnapshotFile() async {
+    try {
+      final dir = await getApplicationSupportDirectory();
+      return File('${dir.path}${Platform.pathSeparator}$_snapshotFileName');
+    } catch (_) {
+      return null; // no platform implementation (tests) — prefs fallback
+    }
+  }
+
+  static const _snapshotFileName = 'chat_snapshot.v1.json';
 
   /// Re-read the backing store from disk. SharedPreferences caches per
   /// isolate, so the background mesh isolate must reload after the UI isolate
@@ -226,11 +247,22 @@ class Prefs {
   }
 
   // ── Offline snapshot ──────────────────────────────────────────────────────
+  //
+  // The snapshot (every chat + recent messages) used to be one string inside
+  // SharedPreferences. Those backends rewrite the WHOLE store on every set —
+  // one XML file on Android, one JSON file on Windows — so each read-marker
+  // tick, foreground flag or mesh heartbeat rewrote the snapshot too, and the
+  // snapshot itself was encoded on the UI isolate (#1059/#1060/#1063). It now
+  // has a file of its own, encoded and written in a background isolate.
 
   /// Last-known chats + recent messages, decoded; null when absent/corrupt.
+  /// Falls back to (and migrates from) the legacy SharedPreferences entry.
   Map<String, dynamic>? get snapshot {
     try {
-      final raw = _sp.getString(_kSnapshot);
+      final file = _snapshotFile;
+      String? raw;
+      if (file != null && file.existsSync()) raw = file.readAsStringSync();
+      raw ??= _sp.getString(_kSnapshot);
       if (raw == null) return null;
       final decoded = jsonDecode(raw);
       return decoded is Map ? decoded.cast<String, dynamic>() : null;
@@ -239,6 +271,36 @@ class Prefs {
     }
   }
 
-  Future<void> saveSnapshot(Map<String, dynamic> snapshot) =>
-      _sp.setString(_kSnapshot, jsonEncode(snapshot));
+  Future<void> saveSnapshot(Map<String, dynamic> snapshot) async {
+    final file = _snapshotFile;
+    if (file == null) {
+      await _sp.setString(_kSnapshot, jsonEncode(snapshot));
+      return;
+    }
+    try {
+      await _writeSnapshotInBackground(file.path, snapshot);
+    } catch (_) {
+      return; // best-effort cache; the next save retries
+    }
+    // One-time migration: drop the legacy copy so the prefs store (rewritten
+    // on every set) shrinks back to a few hundred bytes.
+    if (_sp.containsKey(_kSnapshot)) await _sp.remove(_kSnapshot);
+  }
+
+  /// Static so the isolate closure captures only [path] and [snapshot].
+  static Future<void> _writeSnapshotInBackground(
+    String path,
+    Map<String, dynamic> snapshot,
+  ) =>
+      Isolate.run(() => writeSnapshotFile(path, snapshot),
+          debugName: 'snapshot-write');
+}
+
+/// Encode [snapshot] and replace the file at [path] atomically (temp file +
+/// rename), so a crash mid-write never leaves a truncated snapshot behind.
+void writeSnapshotFile(String path, Map<String, dynamic> snapshot) {
+  final tmp = File('$path.tmp');
+  tmp.parent.createSync(recursive: true);
+  tmp.writeAsStringSync(jsonEncode(snapshot), flush: true);
+  tmp.renameSync(path);
 }

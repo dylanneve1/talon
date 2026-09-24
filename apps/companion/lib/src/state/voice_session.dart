@@ -591,11 +591,20 @@ class VoiceSession extends ChangeNotifier {
 
   // ── Turn tracking / speech output ─────────────────────────────────────────
 
+  /// The chat turn currently followed for streamed-token updates.
+  TurnState? _turn;
+
   void _onAppState() {
     if (_disposed) return;
     final id = chatId;
     if (id == null) return;
     final turn = state.turnFor(id);
+    // Streamed tokens notify the turn, not AppState (#1059) — follow the
+    // current chat's turn too so live captions keep up with the draft.
+    if (!identical(turn, _turn)) {
+      _turn?.removeListener(_onAppState);
+      _turn = turn..addListener(_onAppState);
+    }
     if (phase != VoicePhase.thinking && phase != VoicePhase.speaking) return;
 
     if (turn.active) _turnSeen = true;
@@ -892,6 +901,8 @@ class VoiceSession extends ChangeNotifier {
       unawaited(subscription.cancel());
     }
     state.removeListener(_onAppState);
+    _turn?.removeListener(_onAppState);
+    _turn = null;
     if (sttId != null) unawaited(engine.cancelListening(sttId));
     unawaited(engine.stopSpeaking());
     super.dispose();

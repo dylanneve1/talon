@@ -12,6 +12,9 @@ import 'tool_timeline.dart';
 /// The in-progress turn, rendered in the assistant-row layout: the Talon
 /// avatar, the model's reasoning, the live tool timeline, and the streaming
 /// reply (with a blinking caret while text is still arriving).
+///
+/// Listens to its own [TurnState]: streamed tokens rebuild this row — and
+/// only this row — at most once per frame (#1059).
 class LiveTurn extends StatelessWidget {
   final TurnState turn;
   final String botName;
@@ -19,6 +22,10 @@ class LiveTurn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(listenable: turn, builder: _build);
+  }
+
+  Widget _build(BuildContext context, Widget? _) {
     // Same anatomy as a finished turn: reasoning and the tool timeline live
     // on the canvas above the bubble; only the streaming reply text wears the
     // bubble. Until text arrives, no bubble is drawn at all — the typing dots
@@ -105,9 +112,73 @@ class _LiveBadge extends StatelessWidget {
 /// The streaming draft with a blinking caret pinned to its end — the expected
 /// "still generating" signal. The caret sits inline after the markdown so it
 /// tracks the last line of text.
-class _StreamingText extends StatelessWidget {
+class _StreamingText extends StatefulWidget {
   final String text;
   const _StreamingText({required this.text});
+
+  @override
+  State<_StreamingText> createState() => _StreamingTextState();
+}
+
+/// Streaming Markdown without the O(n²): the draft is split at paragraph
+/// breaks ([markdownBlockBreaks]) into finished blocks and a live tail. Each
+/// finished block is built into a widget exactly once and the same instance
+/// is handed back on every later rebuild, so Flutter skips it entirely — no
+/// re-parse, no re-layout, no re-highlight. Only the tail (the paragraph
+/// being written) is re-parsed per frame. Before, the whole reply so far was
+/// re-parsed on every token (#1059).
+class _StreamingTextState extends State<_StreamingText> {
+  /// Offsets in the draft where finished blocks end.
+  final List<int> _breaks = [];
+  final List<Widget> _blocks = [];
+
+  /// The finished prefix, to detect a reset (a new, unrelated draft).
+  String _stable = '';
+
+  /// Matches MarkdownBody's own default spacing between blocks.
+  static const double _blockGap = 8;
+
+  @override
+  void initState() {
+    super.initState();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(_StreamingText old) {
+    super.didUpdateWidget(old);
+    if (old.text != widget.text) _sync();
+  }
+
+  void _sync() {
+    final text = widget.text;
+    if (!text.startsWith(_stable)) {
+      _breaks.clear();
+      _blocks.clear();
+      _stable = '';
+    }
+    for (final end in markdownBlockBreaks(text, from: _stableEnd)) {
+      final block = text.substring(_stableEnd, end);
+      _breaks.add(end);
+      if (block.trim().isEmpty) continue;
+      _blocks.add(Padding(
+        padding: const EdgeInsets.only(bottom: _blockGap),
+        child: _markdown(block),
+      ));
+    }
+    _stable = text.substring(0, _stableEnd);
+  }
+
+  int get _stableEnd => _breaks.isEmpty ? 0 : _breaks.last;
+
+  Widget _markdown(String data) => MarkdownBody(
+        data: data,
+        // Same builder as finalized messages — without it, a code block
+        // renders as a bare grey slab while streaming and then jumps to
+        // the framed panel on finalize.
+        builders: {'code': CodeElementBuilder()},
+        styleSheet: talonMarkdownStyle(),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -120,27 +191,26 @@ class _StreamingText extends StatelessWidget {
         borderRadius: BorderRadius.circular(2),
       ),
     );
-    return Row(
+    final tail = widget.text.substring(_stableEnd);
+    return Column(
       key: const ValueKey('draft'),
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Flexible(
-          child: MarkdownBody(
-            data: text,
-            // Same builder as finalized messages — without it, a code block
-            // renders as a bare grey slab while streaming and then jumps to
-            // the framed panel on finalize.
-            builders: {'code': CodeElementBuilder()},
-            styleSheet: talonMarkdownStyle(),
-          ),
+        ..._blocks,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (tail.trim().isNotEmpty) Flexible(child: _markdown(tail)),
+            if (MediaQuery.of(context).disableAnimations)
+              caret
+            else
+              caret
+                  .animate(onPlay: (c) => c.repeat(reverse: true))
+                  .fadeOut(duration: 650.ms, curve: Curves.easeInOut),
+          ],
         ),
-        if (MediaQuery.of(context).disableAnimations)
-          caret
-        else
-          caret
-              .animate(onPlay: (c) => c.repeat(reverse: true))
-              .fadeOut(duration: 650.ms, curve: Curves.easeInOut),
       ],
     );
   }
