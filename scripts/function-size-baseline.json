@@ -48,12 +48,6 @@
     "cx": 13
   },
   {
-    "file": "src/cli/index.ts",
-    "name": "runCli",
-    "lines": 74,
-    "cx": 26
-  },
-  {
     "file": "src/core/background/dream/index.ts",
     "name": "runDreamAgent",
     "lines": 183,
