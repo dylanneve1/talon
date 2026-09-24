@@ -37,9 +37,24 @@ import {
   type RouteContext,
   type RouteHandler,
 } from "./routes/table.js";
+import {
+  describeTier,
+  hasScope,
+  resolvePrincipal,
+  routeAllows,
+  type BridgeCredentials,
+  type BridgePrincipal,
+} from "./credentials/principal.js";
 
 export type { BridgeServerHandlers, SendOptions } from "./routes/host.js";
 export { BRIDGE_ROUTE_AUTH, type BridgeRouteKey } from "./routes/table.js";
+export type { BridgeCredentials } from "./credentials/principal.js";
+
+/** One live SSE connection: the device it claimed and who opened it. */
+type StreamSession = {
+  deviceId: string | undefined;
+  principal: BridgePrincipal;
+};
 
 const SSE_PING_MS = 25_000;
 const MAX_BODY_BYTES = 256 * 1024;
@@ -61,10 +76,12 @@ export class BridgeServer {
   /**
    * Live SSE connections → the mesh device id each one claimed on connect
    * (undefined for clients that didn't claim one: desktop UIs, and companion
-   * builds from before the claim existed). The claim is what makes
-   * `sendToDevice` addressable rather than a shout.
+   * builds from before the claim existed) and the principal that opened it.
+   * The claim is what makes `sendToDevice` addressable rather than a shout;
+   * the principal is what lets a revocation find and drop the session.
    */
-  private clients = new Map<ServerResponse, string | undefined>();
+  private clients = new Map<ServerResponse, StreamSession>();
+  private unsubscribeRevocations: (() => void) | undefined;
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private port = 0;
   private tlsIdentity: BridgeTlsIdentity | null = null;
@@ -88,6 +105,12 @@ export class BridgeServer {
        * I/O — it resolves once, inside `start()`.
        */
       tls?: () => Promise<BridgeTlsIdentity>;
+      /**
+       * Per-device credentials (core/mesh/credentials) and the migration
+       * policy. Absent: the shared `token` is the only credential, as
+       * before.
+       */
+      credentials?: BridgeCredentials;
     },
     private readonly handlers: BridgeServerHandlers,
   ) {
@@ -113,10 +136,49 @@ export class BridgeServer {
     return this.tlsIdentity?.fingerprint ?? null;
   }
 
-  /** Push an event to every connected SSE client. */
+  /**
+   * Push an event to every connected SSE client that may see it. Chat
+   * traffic is for `client`-scoped sessions only; a device-only credential
+   * hears the mesh-wide `locate` and nothing else.
+   */
   broadcast(event: BridgeEvent): void {
     if (this.clients.size === 0) return;
-    this.write(this.clients.keys(), event);
+    const targets: ServerResponse[] = [];
+    for (const [res, session] of this.clients) {
+      if (event.kind === "locate" || hasScope(session.principal, "client")) {
+        targets.push(res);
+      }
+    }
+    this.write(targets, event);
+  }
+
+  /**
+   * End every live stream opened with one of `credentialIds` — revocation
+   * (and a scope change) must bite now, not at the client's next request.
+   */
+  dropCredentialSessions(credentialIds: readonly string[]): number {
+    let dropped = 0;
+    for (const [res, { principal }] of this.clients) {
+      if (
+        principal.kind === "device" &&
+        credentialIds.includes(principal.credentialId)
+      ) {
+        this.clients.delete(res);
+        try {
+          res.end();
+        } catch {
+          /* already gone */
+        }
+        dropped++;
+      }
+    }
+    if (dropped > 0) {
+      log(
+        "native",
+        `Dropped ${dropped} live session(s) of revoked/changed credential(s) ${credentialIds.join(", ")}`,
+      );
+    }
+    return dropped;
   }
 
   /**
@@ -138,15 +200,21 @@ export class BridgeServer {
    * target claimed nothing either: a companion build that predates the claim
    * can't be addressed, and dropping its commands would take the mesh offline
    * for it. So an updated device's traffic never reaches them — the fallback
-   * shrinks to nothing as the fleet updates.
+   * shrinks to nothing as the fleet updates. Only shared-token sessions are
+   * in that fallback: a per-device credential is its own device or nobody.
+   *
+   * With per-device credentials the claim IS enforced: a credential can
+   * only claim the device it is bound to (credentials/claims.ts).
    */
   sendToDevice(deviceId: string, event: BridgeEvent): void {
     if (this.clients.size === 0) return;
     const claimed: ServerResponse[] = [];
     const unclaimed: ServerResponse[] = [];
-    for (const [res, id] of this.clients) {
+    for (const [res, { deviceId: id, principal }] of this.clients) {
       if (id === deviceId) claimed.push(res);
-      else if (id === undefined) unclaimed.push(res);
+      else if (id === undefined && principal.kind !== "device") {
+        unclaimed.push(res);
+      }
     }
     if (claimed.length === 0) {
       logDebug(
@@ -199,6 +267,9 @@ export class BridgeServer {
       }
     }, SSE_PING_MS);
     this.pingTimer.unref?.();
+    this.unsubscribeRevocations = this.opts.credentials?.authority.onRevoked(
+      (ids) => this.dropCredentialSessions(ids),
+    );
 
     return new Promise<number>((resolve, reject) => {
       let attempt = 0;
@@ -246,6 +317,8 @@ export class BridgeServer {
 
   async stop(): Promise<void> {
     clearInterval(this.pingTimer);
+    this.unsubscribeRevocations?.();
+    this.unsubscribeRevocations = undefined;
     for (const res of this.clients.keys()) {
       try {
         res.end();
@@ -315,24 +388,35 @@ export class BridgeServer {
       return;
     }
 
-    const auth = this.authState(req, url);
+    const { state: auth, principal } = this.authState(req, url);
     if (auth === "bad") this.recordAuthFailure(remote);
     else if (auth === "ok") this.authFailures.delete(remote);
 
     const key = `${method} ${path}` as BridgeRouteKey;
     const route = this.routes.get(key);
-    const ctx: RouteContext = { req, res, url, auth };
+    const ctx: RouteContext = { req, res, url, auth, principal };
+    const tier = route ? BRIDGE_ROUTE_AUTH[key] : undefined;
 
-    if (route && BRIDGE_ROUTE_AUTH[key] === "public") {
+    if (route && tier === "public") {
       await route(ctx);
       return;
     }
     // Unknown routes are 401 before they are 404: an unauthenticated caller
     // learns nothing about the route map.
-    if (auth !== "ok") {
+    if (auth !== "ok" || principal === null) {
       return this.json(res, 401, { ok: false, error: "Unauthorized" });
     }
-    if (!route) return this.json(res, 404, { ok: false, error: "Not found" });
+    if (!route || tier === undefined) {
+      return this.json(res, 404, { ok: false, error: "Not found" });
+    }
+    // Authenticated, but is this credential allowed HERE? The scope each
+    // route needs is declared in routes/table.ts.
+    if (!routeAllows(tier, principal)) {
+      return this.json(res, 403, {
+        ok: false,
+        error: `This credential lacks the ${describeTier(tier)} scope ${key} requires`,
+      });
+    }
 
     try {
       await route(ctx);
@@ -355,7 +439,9 @@ export class BridgeServer {
       corsHeaders: () => this.corsHeaders(),
       streamFile: (res, file) => this.streamFile(res, file),
       serveMedia: (res, id) => this.serveMedia(res, id),
-      openStream: (res, deviceId) => this.openStream(res, deviceId),
+      openStream: (res, deviceId, principal) =>
+        this.openStream(res, deviceId, principal),
+      credentials: this.opts.credentials,
       unknownProvision: (res) => this.unknownProvision(res),
     };
   }
@@ -410,7 +496,13 @@ export class BridgeServer {
     }
   }
 
-  private openStream(res: ServerResponse, deviceId?: string): void {
+  private openStream(
+    res: ServerResponse,
+    deviceId: string | undefined,
+    principal: BridgePrincipal,
+  ): void {
+    // A device-only credential gets its own mesh traffic, not the chats.
+    const seesChats = hasScope(principal, "client");
     res.writeHead(200, {
       ...this.corsHeaders(),
       "Content-Type": "text/event-stream",
@@ -424,20 +516,20 @@ export class BridgeServer {
       `data: ${JSON.stringify({
         kind: "hello",
         status: this.handlers.status(),
-        chats: this.handlers.listChats(),
+        chats: seesChats ? this.handlers.listChats() : [],
       })}\n\n`,
     );
     // Replay any in-progress turn so a client that connected mid-turn (or
     // reconnected after a blip) sees the tool timeline immediately, not just
     // the tools that fire after it joined.
     try {
-      for (const event of this.handlers.liveTurnEvents()) {
+      for (const event of seesChats ? this.handlers.liveTurnEvents() : []) {
         res.write(`data: ${JSON.stringify(event)}\n\n`);
       }
     } catch (err) {
       logError("native", "Failed to replay live turn to new client", err);
     }
-    this.clients.set(res, deviceId);
+    this.clients.set(res, { deviceId, principal });
     logDebug(
       "native",
       `SSE client connected${deviceId ? ` as device ${deviceId}` : ""} (${this.clients.size} total)`,
@@ -450,8 +542,11 @@ export class BridgeServer {
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
-  private authState(req: IncomingMessage, url: URL): AuthState {
-    if (!this.opts.token) return "ok";
+  private authState(
+    req: IncomingMessage,
+    url: URL,
+  ): { state: AuthState; principal: BridgePrincipal | null } {
+    if (!this.opts.token) return { state: "ok", principal: { kind: "open" } };
     const header = req.headers["authorization"];
     const fromHeader =
       typeof header === "string" && header.startsWith("Bearer ")
@@ -459,8 +554,17 @@ export class BridgeServer {
         : null;
     // EventSource can't set headers, so SSE clients pass ?token=… instead.
     const candidate = fromHeader ?? url.searchParams.get("token");
-    if (candidate === null) return "anonymous";
-    return this.tokenMatches(candidate) ? "ok" : "bad";
+    if (candidate === null) return { state: "anonymous", principal: null };
+    // The shared token or a per-device credential (credentials/principal.ts).
+    const principal = resolvePrincipal(
+      candidate,
+      req,
+      (c) => this.tokenMatches(c),
+      this.opts.credentials,
+    );
+    return principal
+      ? { state: "ok", principal }
+      : { state: "bad", principal: null };
   }
 
   private authLockedOut(remote: string): boolean {

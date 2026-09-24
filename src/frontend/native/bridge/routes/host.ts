@@ -2,6 +2,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Readable } from "node:stream";
 import type { AttachmentRef } from "./params.js";
 import type {
+  BridgeCredentials,
+  BridgePrincipal,
+} from "../credentials/principal.js";
+import type {
   BackendOption,
   ClientAttachment,
   BridgeEvent,
@@ -170,6 +174,12 @@ export type RouteHost = {
     file: { path: string; size: number },
   ) => void;
   serveMedia: (res: ServerResponse, id: string) => Promise<void>;
-  openStream: (res: ServerResponse, deviceId?: string) => void;
+  openStream: (
+    res: ServerResponse,
+    deviceId: string | undefined,
+    principal: BridgePrincipal,
+  ) => void;
   unknownProvision: (res: ServerResponse) => void;
+  /** Per-device credential support; undefined = shared token only. */
+  credentials: BridgeCredentials | undefined;
 };
