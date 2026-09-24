@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/dynamic_accent.dart';
 import '../../services/haptics.dart';
+import '../../services/mesh_background.dart';
 import '../../services/message_notifications.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
@@ -241,6 +242,7 @@ class _AppearanceCardState extends State<AppearanceCard> {
       return;
     }
     await widget.state.prefs.setMessageNotifications(v);
+    MeshForegroundController.pushUiState(messageNotifications: v);
     if (!mounted) return;
     setState(() {});
   }

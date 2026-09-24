@@ -18,6 +18,7 @@ import '../services/local_discovery.dart';
 import '../services/log.dart';
 import '../services/menu_bar.dart';
 import '../services/mesh_background.dart';
+import '../services/mesh_liveness.dart';
 import '../services/mesh_service.dart';
 import '../services/prefs.dart';
 import '../services/updater.dart';
@@ -1094,7 +1095,10 @@ class AppState extends ChangeNotifier {
 
   Future<void> _stampResidentMeshAlive() async {
     if (!prefs.meshSharing) return;
-    await prefs.setMeshBgAliveAt(DateTime.now().millisecondsSinceEpoch);
+    // A tiny file, not a prefs write: on Windows every SharedPreferences set
+    // rewrites the whole store, once a minute for as long as the tray icon
+    // lives (#1060/#1063).
+    await MeshLiveness.stamp(prefs, DateTime.now().millisecondsSinceEpoch);
   }
 
   Future<void> _startUiMeshFallback(BridgeClient client) async {

@@ -93,6 +93,7 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
     // The background mesh isolate reads this flag to decide whether a reply
     // needs a notification. We are on screen right now by definition.
     unawaited(widget.state.prefs.setUiForeground(true));
+    _pushUiState(foreground: true);
     unawaited(
       MessageNotifications.ensureInitialized(onSelect: _openChatFromTap),
     );
@@ -165,12 +166,24 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
     TalonEffects.setLifecycle(state);
     final foreground = state == AppLifecycleState.resumed;
     unawaited(widget.state.prefs.setUiForeground(foreground));
+    _pushUiState(foreground: foreground);
     if (foreground) {
       final chatId = widget.state.selectedChatId;
       // Anything waiting in the shade for the chat now on screen is read.
       if (chatId != null) unawaited(MessageNotifications.clearChat(chatId));
       unawaited(_refreshDynamicAccent());
     }
+  }
+
+  /// Hand the background mesh service the two flags it checks before
+  /// posting a reply notification, so it doesn't reload (re-parse) the whole
+  /// prefs store for every assistant message (#1060). Prefs stay the
+  /// fallback for a service that starts before the UI has spoken.
+  void _pushUiState({required bool foreground}) {
+    MeshForegroundController.pushUiState(
+      uiForeground: foreground,
+      messageNotifications: widget.state.prefs.messageNotifications,
+    );
   }
 
   /// Pull the platform accent into the palette while "Wallpaper" is the
