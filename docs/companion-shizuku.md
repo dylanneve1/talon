@@ -67,16 +67,18 @@ The `update_device` tool:
 
 1. Hashes the new APK on the daemon (streamed SHA-256) and **streams it** to
    the device (default `/sdcard/Download/talon-companion-update.apk`).
-2. Sends `install_apk` with that digest. The device **re-stages the APK into
-   `/data/local/tmp`** via the elevated shell: the push lands on app storage
+2. Sends `install_apk` with that digest. The device **re-stages the APK into a
+   fresh private directory under `/data/local/tmp`** (`mktemp -d`, mode 0700,
+   random name) via the elevated shell, in a single invocation: the push lands on app storage
    (`/sdcard/Download`), which the shell can read but the system installer
    cannot — `pm install` straight off an app-FUSE path fails with
    `Failed transaction`. It then **re-hashes the staged copy** (the file `pm`
    actually reads) and refuses to install on a mismatch — a truncated transfer
    can never be installed. (`pm install -r` also refuses a differently-signed
    APK, so a wrong file can't hijack the app.)
-3. The device runs `pm install -r -d` (keep data, allow same-or-newer)
-   **detached** via `setsid` after a short delay, so the "staged" ack flushes
+3. The device runs `pm install -r` (keep data; no `-d`, so an older build is
+   refused) **detached** via `setsid` after a short delay, re-checking the
+   digest of the staged copy immediately before `pm` reads it, so the "staged" ack flushes
    over the mesh *before* `pm` tears the app down, and the install finishes
    even as the app process dies (its parent is the Shizuku server, not the app).
 
