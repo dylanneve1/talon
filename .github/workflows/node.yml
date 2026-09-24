@@ -48,6 +48,12 @@ jobs:
       - name: Test
         run: go test ./...
 
+      # The node is all goroutines (heartbeat, SSE, per-command workers, TLS
+      # handshakes on each); the race detector catches shared-state bugs like
+      # the TOFU fingerprint race fixed in #1061.
+      - name: Test (race detector)
+        run: go test -race ./...
+
       # PR-only drift guard. On release events package.json IS the tag
       # (publish.yml verifies that) and the build tool below regenerates
       # version.txt from it — failing the release build over a version.txt
