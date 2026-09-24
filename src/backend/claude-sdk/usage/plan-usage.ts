@@ -15,20 +15,20 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { logWarn } from "../../util/log.js";
+import { logWarn } from "../../../util/log.js";
 import type {
   PlanUsage,
   PlanWindow,
-} from "../../core/agent-runtime/capabilities.js";
+} from "../../../core/agent-runtime/capabilities.js";
 
 // `cedar_ember=1` asks the endpoint to include banked limit resets (the
 // claude.ai "Reset for free" grants); `skip_spend=1` drops the spend block we
 // don't render. Resets are only reported to the CLI surface — any other
 // user agent gets `ineligible_reason: "surface"` — so the request identifies
 // as the CLI, which is what the Agent SDK runs anyway.
-const USAGE_ENDPOINT =
+export const USAGE_ENDPOINT =
   "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1";
-const CLI_USER_AGENT = "claude-cli/2.1.280 (external, cli)";
+export const CLI_USER_AGENT = "claude-cli/2.1.280 (external, cli)";
 const REQUEST_TIMEOUT_MS = 5_000;
 const CACHE_TTL_MS = 60_000;
 
@@ -48,7 +48,7 @@ interface OAuthCredentials {
   subscriptionType?: string;
 }
 
-async function readCredentials(): Promise<OAuthCredentials | undefined> {
+export async function readCredentials(): Promise<OAuthCredentials | undefined> {
   try {
     const parsed = JSON.parse(await readFile(credentialsPath(), "utf8")) as {
       claudeAiOauth?: OAuthCredentials;

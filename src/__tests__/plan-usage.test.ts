@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
   parseBankedResets,
   parsePlanUsage,
-} from "../backend/claude-sdk/plan-usage.js";
+} from "../backend/claude-sdk/usage/plan-usage.js";
 import { buildPlanDisplay } from "../frontend/presentation/status-context.js";
 import { setTimezone } from "../util/time.js";
 

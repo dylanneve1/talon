@@ -25,6 +25,11 @@ import {
   renderUsageMessage,
 } from "../render/reports.js";
 import { collectPlanUsage } from "../../presentation/plan-usage-report.js";
+import {
+  canUseReset,
+  sendResetConfirmation,
+  usageResetKeyboard,
+} from "../callbacks/usage-reset.js";
 import { collectDoctorReport } from "../../../core/doctor/index.js";
 import { handleAdminCommand } from "../admin.js";
 import { getTodayMetrics } from "../../../storage/metrics.js";
@@ -58,11 +63,32 @@ function registerMetricsCommand(bot: Bot): void {
 
 // /usage — plan limits across every exposed backend, not just this
 // chat's. Not admin-gated: it says how close the shared account is to a
-// wall, which is exactly what a user hitting one needs to know.
+// wall, which is exactly what a user hitting one needs to know. Spending a
+// banked reset is: the "Use a reset" button (and `/usage reset`) only ever
+// reach the configured admin in a DM, and both end at a Confirm press.
 function registerUsageCommand(bot: Bot, config: TalonConfig): void {
   bot.command("usage", async (ctx) => {
     const entries = await collectPlanUsage(config);
-    await ctx.reply(renderUsageMessage(entries), { parse_mode: "HTML" });
+    if (ctx.match.trim().toLowerCase() === "reset") {
+      if (!canUseReset(ctx)) {
+        await ctx.reply(
+          "Only the admin can use a usage-limit reset, in a private chat.",
+        );
+        return;
+      }
+      const target = entries.find((e) => (e.plan?.resetsAvailable ?? 0) > 0);
+      if (!target) {
+        await ctx.reply("No usage-limit reset is available to use right now.");
+        return;
+      }
+      await sendResetConfirmation(ctx, target.id);
+      return;
+    }
+    const keyboard = usageResetKeyboard(ctx, entries);
+    await ctx.reply(renderUsageMessage(entries), {
+      parse_mode: "HTML",
+      ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+    });
   });
 }
 

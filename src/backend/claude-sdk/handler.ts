@@ -38,7 +38,7 @@ import { applyRetryDecisionStream } from "../runtime/turn/handle-retry.js";
 import { getConfig } from "./state.js";
 import { buildSdkOptions, getActiveFrontends } from "./options.js";
 import { waitForMcpServersReady } from "./mcp-ready.js";
-import { invalidatePlanUsage } from "./plan-usage.js";
+import { invalidatePlanUsage } from "./usage/plan-usage.js";
 import { frontendsForChat } from "../runtime/frontends.js";
 import { rollUpTurnCache } from "../runtime/cache/cache-metrics.js";
 import {

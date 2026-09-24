@@ -30,6 +30,7 @@ import {
   evictOrphanSubprocesses as claudeEvictOrphanSubprocesses,
 } from "./index.js";
 import { createInProcessAgentHost } from "./host/in-process.js";
+import { claimBankedReset, getBankedResetOffer } from "./usage/banked-reset.js";
 
 import * as modelProvider from "./model-provider.js";
 import { claudeDoctorChecks } from "./doctor.js";
@@ -105,6 +106,10 @@ const claudeSdkFactory: BackendFactory = {
     // but the subscription's rate-limit windows are readable.
     const usage: UsageTelemetry = {
       getPlanUsage: () => host.planUsage(),
+      bankedResets: {
+        getOffer: () => getBankedResetOffer(),
+        claim: (grantId, requestId) => claimBankedReset(grantId, requestId),
+      },
     };
 
     const backend = composeBackend({

@@ -243,6 +243,67 @@ export interface UsageTelemetry {
    * plan concept; resolves `undefined` when the data can't be read.
    */
   getPlanUsage?(): Promise<PlanUsage | undefined>;
+  /**
+   * Banked one-shot limit resets, where the plan has them. Spending one is
+   * irreversible, so this is reachable only from a human-pressed confirm
+   * button — never exposed as an agent tool.
+   */
+  bankedResets?: BankedResetControl;
+}
+
+/** One banked reset grant, as the plan reports it. */
+export interface BankedResetGrant {
+  id: string;
+  label: string;
+  resetsLeft: number;
+  /** ISO deadline, when the grant has one. */
+  endsAt?: string;
+  /** Plan windows the reset clears (`five_hour`, `seven_day`, …). */
+  clears: string[];
+  /** Current utilisation per cleared window, 0-100. */
+  percentUsed: Record<string, number>;
+  /** The reset can only be spent while the account is at a limit. */
+  useRequiresLimit: boolean;
+}
+
+/** The grant a claim would spend, plus the account state around it. */
+export interface BankedResetOffer {
+  grant: BankedResetGrant;
+  atLimit: boolean;
+  /** ISO end of a post-claim cooldown, while one is running. */
+  cooldownUntil?: string;
+  /** Resets left across every usable grant. */
+  totalResetsLeft: number;
+}
+
+export type BankedResetResult =
+  | "reset"
+  | "already_used"
+  | "not_limited"
+  | "cooldown"
+  | "ineligible"
+  | "unavailable"
+  | "rate_limited"
+  | "auth_error"
+  | "error";
+
+export interface BankedResetClaim {
+  result: BankedResetResult;
+  /** Server-side reason code, when it gave one. */
+  reason?: string;
+  resetsLeft?: number;
+  cleared: string[];
+  weeklyResetsAt?: string;
+  cooldownUntil?: string;
+}
+
+export interface BankedResetControl {
+  getOffer(): Promise<BankedResetOffer | undefined>;
+  /**
+   * Spend one reset from `grantId`. `requestId` is the idempotency key:
+   * reuse it when retrying the same user action so a retry can't spend twice.
+   */
+  claim(grantId: string, requestId: string): Promise<BankedResetClaim>;
 }
 
 /** One subscription rate-limit window, as `/status` renders it. */

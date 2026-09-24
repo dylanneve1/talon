@@ -28,6 +28,17 @@ export function isAuthorizedAdmin(ctx: Context): boolean {
   );
 }
 
+/**
+ * Stricter than `isAuthorizedAdmin`: a configured admin id is required and
+ * must match. For irreversible actions on the operator's own account, where
+ * "no admin configured" must not mean "anyone may".
+ */
+export function isConfiguredAdmin(ctx: Context): boolean {
+  return (
+    adminState.adminUserId !== 0 && ctx.from?.id === adminState.adminUserId
+  );
+}
+
 export type RegisterDeps = {
   config: import("../../../core/config/index.js").TalonConfig;
   gateway?: { backend: Backend | null };
