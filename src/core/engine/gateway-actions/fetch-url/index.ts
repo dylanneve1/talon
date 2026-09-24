@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import {
   readBodyLimited,
   ResponseTooLargeError,
-} from "../../../util/http-body.js";
+} from "../../../../util/http-body.js";
 import {
   advertisedBinaryKind,
   decodeText,
@@ -18,9 +18,11 @@ import {
   isHtmlContent,
   isTextContent,
   matchesBinaryKind,
-} from "../../tools/content/web-content.js";
-import { dirs } from "../../../util/paths.js";
-import type { SharedActionHandlers } from "./types.js";
+} from "../../../tools/content/web-content.js";
+import { dirs } from "../../../../util/paths.js";
+import { getPoolConfig } from "../../backend-controller/index.js";
+import type { SharedActionHandlers } from "../types.js";
+import { BlockedUrlError, guardedFetch } from "./guard.js";
 
 const MAX_RESPONSE_MB = 50;
 const MAX_RESPONSE_BYTES = MAX_RESPONSE_MB * 1024 * 1024;
@@ -45,11 +47,19 @@ export const fetchUrlHandlers: SharedActionHandlers = {
       return { ok: false, error: "Invalid URL" };
     }
     try {
-      const resp = await fetch(url, {
-        signal: AbortSignal.timeout(15_000),
-        headers: { "User-Agent": "Talon/1.0" },
-        redirect: "follow",
-      });
+      // Every hop is checked against private/loopback/link-local ranges
+      // (see guard.ts) unless the operator opted out for local use.
+      const resp = await guardedFetch(
+        url,
+        {
+          signal: AbortSignal.timeout(15_000),
+          headers: { "User-Agent": "Talon/1.0" },
+        },
+        {
+          allowPrivateNetworks:
+            getPoolConfig()?.fetchUrl?.allowPrivateNetworks === true,
+        },
+      );
       if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` };
       const ct = resp.headers.get("content-type") ?? "";
 
@@ -125,6 +135,9 @@ export const fetchUrlHandlers: SharedActionHandlers = {
         text: `Downloaded ${typeLabel} (${(buffer.length / 1024).toFixed(0)}KB) to: ${filePath}\nRead it with the Read tool or send it with send(type="file", file_path="${filePath}").`,
       };
     } catch (err) {
+      if (err instanceof BlockedUrlError) {
+        return { ok: false, error: err.message };
+      }
       return {
         ok: false,
         error: `Fetch failed: ${err instanceof Error ? err.message : err}`,

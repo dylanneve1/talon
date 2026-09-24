@@ -583,6 +583,17 @@ const configSchema = z.object({
     .optional(),
   braveApiKey: z.string().optional(),
   /**
+   * `fetch_url` refuses hosts that resolve to loopback, private (RFC 1918,
+   * CGNAT, ULA), link-local (incl. the 169.254.169.254 metadata endpoint)
+   * or reserved addresses, re-checking every redirect hop. Set
+   * `allowPrivateNetworks: true` only on a host where the agent should
+   * read local services (a home lab, a dev server).
+   */
+  fetchUrl: z
+    .object({ allowPrivateNetworks: z.boolean().default(false) })
+    .strict()
+    .optional(),
+  /**
    * Codex-specific OpenAI API key. Prefer this, CODEX_API_KEY, or
    * TALON_CODEX_KEY when the Codex backend should use API-key billing
    * instead of `codex login` ChatGPT OAuth. This key is passed only to
