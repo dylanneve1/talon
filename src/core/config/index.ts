@@ -426,6 +426,19 @@ const configSchema = z.object({
   apiHash: z.string().optional(),
   adminUserId: z.number().int().optional(),
   allowedUsers: z.array(z.number().int()).optional(), // Whitelist of user IDs allowed to DM the bot
+  /**
+   * Telegram groups the bot serves. When unset, groups are admitted by the
+   * admin's membership (legacy, warned at startup). Only the operator's own
+   * messages get the full tool set in any group.
+   */
+  allowedGroups: z.array(z.number().int()).optional(),
+  /**
+   * Further operator identities, beyond `adminUserId`: messages from these
+   * senders get the full tool set; everyone else is guest-scoped. Forms:
+   * Telegram user id ("123"), WhatsApp "wa_dm_<number>", "discord:<userId>",
+   * "teams:<userId>". Discord `adminUserIds` are included automatically.
+   */
+  operatorIds: z.array(z.string()).optional(),
   // Denylist of user IDs dropped in silence — no warning reply, no admin
   // notification. For spam and prompt-injection senders, where the warning
   // itself is the reward: it confirms a live bot is reading.
@@ -670,16 +683,16 @@ const configSchema = z.object({
   disabledToolTags: z.array(z.string()).optional(),
 
   /**
-   * Conversation-only tool surface for DMs from anyone who isn't an
-   * operator. The admin's Telegram DM and any `operatorChats` keep
-   * everything; other DMs (Telegram user ids, `wa_dm_*`) get reply/react/
+   * Conversation-only ("guest") tool surface for anyone who isn't an
+   * operator (`adminUserId`, `operatorIds`, `operatorChats`): reply/react/
    * history/stickers plus the `guestPlugins` servers — no shell, files,
-   * mail, devices, cron, memory, agents or cross-chat sends. Groups are
-   * unaffected. Off by default. See core/mcp-hub/guest-scope.ts.
+   * mail, devices, cron, memory, agents or cross-chat sends. Always applied
+   * to non-operator senders in groups; applied to non-operator DMs unless
+   * `enabled: false` (legacy opt-out). See core/mcp-hub/guest-scope.ts.
    */
   guestDmScope: z
     .object({
-      enabled: z.boolean().default(false),
+      enabled: z.boolean().default(true),
       operatorChats: z.array(z.string()).default([]),
       guestPlugins: z.array(z.string()).optional(),
     })

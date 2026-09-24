@@ -146,6 +146,10 @@ export async function bootstrap(
     nativeTools: config.nativeTools,
     guestDmScope: config.guestDmScope,
     adminUserId: config.adminUserId,
+    operatorIds: [
+      ...(config.operatorIds ?? []),
+      ...(config.discord?.adminUserIds ?? []).map((id) => `discord:${id}`),
+    ],
   });
 
   initWorkspace(config.workspace);

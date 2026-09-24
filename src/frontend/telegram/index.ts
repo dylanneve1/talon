@@ -26,6 +26,7 @@ import {
   registerCommandAccessGate,
 } from "./handlers/index.js";
 import { registerMiddleware } from "./middleware.js";
+import { setAllowedGroups } from "./handlers/group-access.js";
 import { confirmUpdates } from "./update-offset.js";
 import { registerCallbacks } from "./callbacks/index.js";
 import { log, logError } from "../../util/log.js";
@@ -96,6 +97,7 @@ export function createTelegramFrontend(
         blockedUsers: config.blockedUsers,
         adminUserId: config.adminUserId,
       });
+      setAllowedGroups(config.allowedGroups);
 
       // Gate /commands and button presses behind the DM whitelist and
       // group check BEFORE any command/callback handler is registered.

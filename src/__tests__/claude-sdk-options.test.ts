@@ -831,7 +831,7 @@ describe("buildMcpServers (heartbeat-tier paths)", () => {
   });
 });
 
-describe("buildSdkOptions — guest DM scope", () => {
+describe("buildSdkOptions — guest turn scope", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
@@ -852,12 +852,15 @@ describe("buildSdkOptions — guest DM scope", () => {
     mockGetBridgePort.mockReturnValue(19876);
   });
 
-  it("drops SDK built-ins and non-guest plugins for a guest DM", async () => {
-    const { initGuestDmScope } = await import("../core/mcp-hub/guest-scope.js");
+  it("drops SDK built-ins and non-guest plugins for a guest turn", async () => {
+    const { initGuestDmScope, enterTurnScope } =
+      await import("../core/mcp-hub/guest-scope.js");
     initGuestDmScope({ enabled: true }, 111);
     const { buildSdkOptions } =
       await import("../backend/claude-sdk/options.js");
+    const release = enterTurnScope("999", "guest");
     const { options } = buildSdkOptions("999");
+    release();
     expect(options.tools).toEqual([]);
     const servers = Object.keys(options.mcpServers ?? {});
     expect(servers).toContain("extras-tools");
@@ -865,12 +868,15 @@ describe("buildSdkOptions — guest DM scope", () => {
     expect(servers).not.toContain("ssh-tools");
   });
 
-  it("keeps everything for the admin's DM", async () => {
-    const { initGuestDmScope } = await import("../core/mcp-hub/guest-scope.js");
+  it("keeps everything for an operator turn", async () => {
+    const { initGuestDmScope, enterTurnScope } =
+      await import("../core/mcp-hub/guest-scope.js");
     initGuestDmScope({ enabled: true }, 111);
     const { buildSdkOptions } =
       await import("../backend/claude-sdk/options.js");
-    const { options } = buildSdkOptions("111");
+    const release = enterTurnScope("-100123", "operator");
+    const { options } = buildSdkOptions("-100123");
+    release();
     expect((options.tools as string[]).length).toBeGreaterThan(0);
     expect(Object.keys(options.mcpServers ?? {})).toContain("email-tools");
   });
