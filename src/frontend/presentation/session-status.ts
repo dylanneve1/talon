@@ -38,6 +38,7 @@ import {
 } from "./status-context.js";
 import { getCacheVerdict, getMetrics } from "../../storage/metrics.js";
 import { formatDuration } from "./format.js";
+import { talonVersionLabel } from "../../util/version.js";
 
 /**
  * Clear a chat's session state everywhere it lives: Talon's session +
@@ -105,7 +106,7 @@ export interface SessionStatusData {
   sessionId: string | undefined;
   uptime: string;
   activeSessionCount: number;
-  /** Runtime name + version, e.g. "Bun 1.3.9" or "Node 24.4.0". */
+  /** Talon version plus runtime, e.g. "Talon v5.10.0 (ab12cd34) · Bun 1.3.9". */
   runtime: string;
   /** Daemon resident set size, in bytes. */
   rssBytes: number;
@@ -234,9 +235,11 @@ export async function collectSessionStatus(
     sessionId: info.sessionId,
     uptime: formatDuration(process.uptime() * 1000),
     activeSessionCount: getActiveSessionCount(),
-    runtime: process.versions.bun
-      ? `Bun ${process.versions.bun}`
-      : `Node ${process.versions.node}`,
+    runtime: `Talon ${talonVersionLabel()} · ${
+      process.versions.bun
+        ? `Bun ${process.versions.bun}`
+        : `Node ${process.versions.node}`
+    }`,
     rssBytes: memory.rss,
     daemon: buildDaemonDisplay({
       rssBytes: memory.rss,
