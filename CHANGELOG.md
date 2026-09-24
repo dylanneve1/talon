@@ -1,5 +1,48 @@
 # Changelog
 
+## [5.15.0](https://github.com/thefalconry/talon/compare/v5.14.0...v5.15.0) (2026-09-24)
+
+
+### Features
+
+* **backup:** encrypt snapshot parts and refuse plaintext remote uploads ([#1040](https://github.com/thefalconry/talon/issues/1040)) ([9e10379](https://github.com/thefalconry/talon/commit/9e10379249b9542d32b6ab327654c6d7c0a9e4a0))
+* **bridge:** auth hardening — token strength, backoff, global cooldown, timeouts ([#1042](https://github.com/thefalconry/talon/issues/1042) phase 1) ([#1050](https://github.com/thefalconry/talon/issues/1050)) ([7539828](https://github.com/thefalconry/talon/commit/7539828cc97583001c3678e89259aa7fb403da77))
+* **mesh:** device-local command policy and bounded command execution ([#1074](https://github.com/thefalconry/talon/issues/1074)) ([370c7c2](https://github.com/thefalconry/talon/commit/370c7c23ec72ff4773f5d0eb376769cf0846fd66))
+* **mesh:** per-device credentials, scopes and revocation ([#1042](https://github.com/thefalconry/talon/issues/1042) phase 2) ([#1068](https://github.com/thefalconry/talon/issues/1068)) ([e36e6ea](https://github.com/thefalconry/talon/commit/e36e6eaddd02cdd1be01c73f7f8336c884965b32))
+
+
+### Bug Fixes
+
+* **backup:** signed manifests, local-only login sessions, owner-only modes (on top of [#1040](https://github.com/thefalconry/talon/issues/1040)) ([#1065](https://github.com/thefalconry/talon/issues/1065)) ([b20adeb](https://github.com/thefalconry/talon/commit/b20adeb5a340eddfa62db7d37ced40a69252e913))
+* **companion:** harden pairing links ([#1064](https://github.com/thefalconry/talon/issues/1064)) ([523b20b](https://github.com/thefalconry/talon/commit/523b20b021474531ac64a178db072e78f08d9419))
+* **companion:** keep credentials and chats out of backups; private Linux settings file ([#1066](https://github.com/thefalconry/talon/issues/1066)) ([84e0e6a](https://github.com/thefalconry/talon/commit/84e0e6abc87106e94c081adeb2de216149649caf))
+* **companion:** keep the bridge token out of errors, logs and screenshots ([#1073](https://github.com/thefalconry/talon/issues/1073)) ([9166e3d](https://github.com/thefalconry/talon/commit/9166e3df4591a5b4e6a1fbb03ffb1122e7970bcd))
+* **companion:** private update staging and no-downgrade APK installs ([#1071](https://github.com/thefalconry/talon/issues/1071)) ([6cd47f2](https://github.com/thefalconry/talon/commit/6cd47f27ed9c7ac666d5bbda476a1c277bbdc394))
+* **node:** bound command workers, reset reconnect backoff, idle-timeout the stream ([#1080](https://github.com/thefalconry/talon/issues/1080)) ([4849bc4](https://github.com/thefalconry/talon/commit/4849bc4c47f4a5a324f69b94d73e44a344a25f1f))
+* **node:** run the Windows boot task as the installing user, not SYSTEM ([#1069](https://github.com/thefalconry/talon/issues/1069)) ([16f83ab](https://github.com/thefalconry/talon/commit/16f83ab669b594634e7d6a78f356ffcf2524029c))
+* **security:** harden default access control and local gateway auth ([#1081](https://github.com/thefalconry/talon/issues/1081)) ([641889b](https://github.com/thefalconry/talon/commit/641889beed38be8643972883a74c1f6c42ec3901))
+* **security:** hardening checklist — SSRF guard, clone --, admin DM-only, docker, audit ([#1070](https://github.com/thefalconry/talon/issues/1070)) ([86d53f7](https://github.com/thefalconry/talon/commit/86d53f7b4a9f85de7646c19639a44d4384ab1553))
+* **security:** per-sender tool scope in shared chats; fail closed where guest scope can't be enforced ([#1078](https://github.com/thefalconry/talon/issues/1078)) ([09513f9](https://github.com/thefalconry/talon/commit/09513f9cf46f65fc71d5a713c181ca8748fa3f7e))
+* **userbot:** bound reconnect steps so a hung connect can't wedge the monitor ([#1076](https://github.com/thefalconry/talon/issues/1076)) ([abac1d3](https://github.com/thefalconry/talon/commit/abac1d396ced30a2f9141425ac1a711e6b8d0c3d))
+
+
+### Performance Improvements
+
+* **companion:** let Android sleep while the mesh service idles ([#1079](https://github.com/thefalconry/talon/issues/1079)) ([6e9463d](https://github.com/thefalconry/talon/commit/6e9463dd80c7cf320740a066b5696df461572cfc))
+* **companion:** stop ambient animations when unfocused or idle, add Reduce effects ([#1072](https://github.com/thefalconry/talon/issues/1072)) ([2f8d486](https://github.com/thefalconry/talon/commit/2f8d486bb2be2045481571bceae903f143560a78))
+* **companion:** stop per-token rebuild storm and move the snapshot off prefs ([#1077](https://github.com/thefalconry/talon/issues/1077)) ([6361bb7](https://github.com/thefalconry/talon/commit/6361bb73f525bf218f3db3a5ef5cd2c6999d67f7))
+* **companion:** stop the Linux scroll crash causes in the chat list ([#1075](https://github.com/thefalconry/talon/issues/1075)) ([e8d6a6c](https://github.com/thefalconry/talon/commit/e8d6a6c66c03891e3e2772c35b0165cdef051d05))
+
+
+### Tests
+
+* **mesh:** talk to the gateway with its token in the credentials suite ([#1088](https://github.com/thefalconry/talon/issues/1088)) ([42a97e4](https://github.com/thefalconry/talon/commit/42a97e4addf434f375c7ffe2d32a86c317800eff))
+
+
+### Continuous Integration
+
+* **dependabot:** cooldown, review for production deps, SHA-pinned actions ([#1067](https://github.com/thefalconry/talon/issues/1067)) ([8a2dcff](https://github.com/thefalconry/talon/commit/8a2dcff11f3edca6cd0205a33c7e7977c0818b63))
+
 ## [5.14.0](https://github.com/dylanneve1/talon/compare/v5.13.0...v5.14.0) (2026-09-24)
 
 
