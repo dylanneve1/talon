@@ -26,6 +26,7 @@
 import type { PlanUsage } from "../../agent-runtime/capabilities.js";
 import type { TalonConfig } from "../../config/index.js";
 import {
+  acquireBackendInstance,
   getPooledBackend,
   listAvailableBackends,
 } from "../backend-controller/index.js";
@@ -191,12 +192,35 @@ function unknownHeadroom(
   return { id, label, headroom: 1, source: "none", fetchedAt: now };
 }
 
-/** Ask a pooled backend for its plan windows. Rejects like the backend does. */
+/**
+ * Ask a backend for its plan windows. Rejects like the backend does.
+ *
+ * A pooled instance is used as-is. An idle backend (no chat bound to it) is
+ * booted transiently for the read and released again: its quota is just as
+ * real when nothing is routed to it, and reporting "not running" there made
+ * `/usage` hide exactly the headroom the router needs to pick a backend that
+ * is *not* currently in use. The read is the backend's own cached one, so at
+ * most one boot per cache window.
+ */
 async function readPlanUsage(id: string): Promise<PlanUsage | undefined> {
-  const backend = getPooledBackend(id);
-  const read = backend?.usage?.getPlanUsage;
-  if (!read || !backend?.usage) return undefined;
-  return read.call(backend.usage);
+  const pooled = getPooledBackend(id);
+  if (pooled?.usage?.getPlanUsage) {
+    return pooled.usage.getPlanUsage.call(pooled.usage);
+  }
+  if (pooled) return undefined; // pooled, but reports no plan windows
+  let acquired;
+  try {
+    acquired = await acquireBackendInstance(id);
+  } catch {
+    return undefined; // can't boot it (not configured, no auth) — stay quiet
+  }
+  try {
+    const read = acquired.backend.usage?.getPlanUsage;
+    if (!read || !acquired.backend.usage) return undefined;
+    return await read.call(acquired.backend.usage);
+  } finally {
+    await acquired.release().catch(() => {});
+  }
 }
 
 /**
