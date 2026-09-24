@@ -597,6 +597,16 @@ const configSchema = z.object({
         .boolean()
         .default(DEFAULT_BACKUP_SETTINGS.checkpointBeforeUpdate),
       notifyChatId: z.string().optional(),
+      /**
+       * Encrypt every part (AES-256-GCM, scrypt-derived key). The
+       * passphrase comes from TALON_BACKUP_PASSPHRASE or this file —
+       * never inline, since config.json is itself inside the backup.
+       * Without a passphrase, remote targets refuse the upload.
+       */
+      encryption: z
+        .object({ passphraseFile: z.string().trim().min(1).optional() })
+        .strict()
+        .optional(),
     })
     .strict()
     .optional(),

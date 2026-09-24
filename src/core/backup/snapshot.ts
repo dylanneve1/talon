@@ -35,6 +35,11 @@ import {
   treeHash,
   type TreeFile,
 } from "./archive/digest.js";
+import {
+  ENCRYPTED_SUFFIX,
+  createEncryptor,
+  passphraseOpens,
+} from "./archive/crypt.js";
 import { TarWriter } from "./archive/tar.js";
 import { createCompressor } from "./archive/zstd.js";
 import {
@@ -47,6 +52,7 @@ import {
   workspaceRoots,
   type SourceEntry,
 } from "./plan.js";
+import { resolvePassphrase } from "./passphrase.js";
 import {
   STATE_PART,
   indexSnapshot,
@@ -107,20 +113,29 @@ async function addEntries(
   }
 }
 
+/** A part's file name: `.enc` marks one written through the encryptor. */
+function partName(base: string, passphrase: string | null): string {
+  return passphrase ? `${base}${ENCRYPTED_SUFFIX}` : base;
+}
+
 /**
- * Write one compressed part and return its size and digest. The digest is
- * taken off the compressed bytes, so verifying a part before extraction
- * costs one pass over the file and no decompression.
+ * Write one compressed (and, with a passphrase, encrypted) part and
+ * return its size and digest. The digest is taken off the bytes as they
+ * land on disk, so verifying a part before extraction costs one pass
+ * over the file and no decompression.
  */
 async function writePart(
   destPath: string,
   fill: (writer: TarWriter) => Promise<void>,
+  passphrase: string | null,
 ): Promise<{ bytes: number; sha256: string }> {
   await mkdir(dirname(destPath), { recursive: true });
   const compressor = createCompressor();
   const tap = new Sha256Tap();
   const out = createWriteStream(destPath);
-  const flushed = pipeline(compressor, tap, out);
+  const flushed = passphrase
+    ? pipeline(compressor, await createEncryptor(passphrase), tap, out)
+    : pipeline(compressor, tap, out);
   try {
     const writer = new TarWriter(compressor);
     await fill(writer);
@@ -253,6 +268,7 @@ async function palaceFingerprint(
 async function buildPalacePart(
   id: string,
   home: string,
+  passphrase: string | null,
 ): Promise<{ part: SnapshotPart; palaceHash: string } | null> {
   const palaceDir = join(home, "workspace", "palace");
   const entries = await collectTree(palaceDir, "workspace/palace", {
@@ -261,17 +277,61 @@ async function buildPalacePart(
   if (entries.length === 0) return null;
 
   const palaceHash = await palaceFingerprint(entries);
-  const name = `palace-${palaceHash.slice(0, 12)}.tar.zst`;
+  const name = partName(
+    `palace-${palaceHash.slice(0, 12)}.tar.zst`,
+    passphrase,
+  );
   const dest = join(snapshotDir(id, home), name);
 
+  const reused = await reusePalacePart(
+    home,
+    palaceHash,
+    name,
+    dest,
+    passphrase,
+  );
+  if (reused) return { part: reused, palaceHash };
+
+  const written = await writePart(
+    dest,
+    (writer) => addEntries(writer, entries),
+    passphrase,
+  );
+  return {
+    part: {
+      name,
+      bytes: written.bytes,
+      sha256: written.sha256,
+      contentAddressed: true,
+      ...(passphrase ? { encrypted: true } : {}),
+    },
+    palaceHash,
+  };
+}
+
+/**
+ * Hard-link an identical palace part from an older snapshot, if there is
+ * one. An encrypted part is only reused when the current passphrase opens
+ * it — after a key change the palace is re-encrypted rather than carried
+ * forward under a key the operator may no longer hold.
+ */
+async function reusePalacePart(
+  home: string,
+  palaceHash: string,
+  name: string,
+  dest: string,
+  passphrase: string | null,
+): Promise<SnapshotPart | null> {
   for (const previous of await listLocalManifests(home)) {
     if (previous.palaceHash !== palaceHash) continue;
     const reusable = previous.parts.find((part) => part.name === name);
     if (!reusable) continue;
+    const source = join(snapshotDir(previous.id, home), name);
+    if (passphrase && !(await passphraseOpens(source, passphrase))) break;
     try {
-      await linkOrCopy(join(snapshotDir(previous.id, home), name), dest);
+      await linkOrCopy(source, dest);
       log("backup", `Reused palace part from ${previous.id} (${name})`);
-      return { part: { ...reusable, contentAddressed: true }, palaceHash };
+      return { ...reusable, contentAddressed: true };
     } catch (err) {
       logWarn(
         "backup",
@@ -280,19 +340,7 @@ async function buildPalacePart(
       break;
     }
   }
-
-  const written = await writePart(dest, (writer) =>
-    addEntries(writer, entries),
-  );
-  return {
-    part: {
-      name,
-      bytes: written.bytes,
-      sha256: written.sha256,
-      contentAddressed: true,
-    },
-    palaceHash,
-  };
+  return null;
 }
 
 // ── Provenance ──────────────────────────────────────────────────────────────
@@ -328,6 +376,9 @@ async function readGitHead(startDir: string): Promise<string | undefined> {
  */
 export async function buildSnapshot(options: BuildOptions): Promise<Manifest> {
   const home = options.home ?? dirs.root;
+  // Resolved before anything is written: a configured-but-broken key must
+  // fail the snapshot, never degrade it to plaintext.
+  const passphrase = await resolvePassphrase(options.settings);
   const id = newSnapshotId(options.now ?? new Date());
   const dir = snapshotDir(id, home);
   const started = Date.now();
@@ -343,24 +394,34 @@ export async function buildSnapshot(options: BuildOptions): Promise<Manifest> {
     (options.copyDatabase ?? snapshotDatabase)(dbTemp);
     const dbStat = await stat(dbTemp);
 
-    const state = await writePart(join(dir, STATE_PART), async (writer) => {
-      await addEntries(writer, entries);
-      await writer.addFile(
-        DB_MEMBER,
-        dbTemp,
-        0o600,
-        Math.floor(Date.now() / 1000),
-        dbStat.size,
-      );
-    });
+    const stateName = partName(STATE_PART, passphrase);
+    const state = await writePart(
+      join(dir, stateName),
+      async (writer) => {
+        await addEntries(writer, entries);
+        await writer.addFile(
+          DB_MEMBER,
+          dbTemp,
+          0o600,
+          Math.floor(Date.now() / 1000),
+          dbStat.size,
+        );
+      },
+      passphrase,
+    );
     await rm(dbTemp, { force: true });
 
     const parts: SnapshotPart[] = [
-      { name: STATE_PART, bytes: state.bytes, sha256: state.sha256 },
+      {
+        name: stateName,
+        bytes: state.bytes,
+        sha256: state.sha256,
+        ...(passphrase ? { encrypted: true } : {}),
+      },
     ];
     let palaceHash: string | undefined;
     if (options.settings.includePalace) {
-      const palace = await buildPalacePart(id, home);
+      const palace = await buildPalacePart(id, home, passphrase);
       if (palace) {
         parts.push(palace.part);
         palaceHash = palace.palaceHash;
