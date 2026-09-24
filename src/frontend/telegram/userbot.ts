@@ -127,6 +127,29 @@ export async function disconnectUserClient(): Promise<void> {
 // ── Connection monitoring ────────────────────────────────────────────────────
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+/**
+ * Upper bound for any single network step in the monitor. GramJS's
+ * `connect()` can hang forever on a half-open socket; without a bound the
+ * `reconnecting` latch never clears and every later tick bails out, leaving
+ * the userbot dead until the daemon restarts.
+ */
+const RECONNECT_STEP_TIMEOUT_MS = 30_000;
+
+/** Reject if `p` doesn't settle within `ms`. Exported for tests. */
+export function withTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+  what: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${what} timed out after ${ms}ms`)),
+      ms,
+    );
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
 
 let reconnecting = false;
 // Bumped by stopConnectionMonitor so a tick whose awaits straddle a shutdown
@@ -150,7 +173,11 @@ function startConnectionMonitor(): void {
     if (client.connected) {
       try {
         // A full API round-trip; throws if the socket is silently dead.
-        await client.getMe();
+        await withTimeout(
+          client.getMe(),
+          RECONNECT_STEP_TIMEOUT_MS,
+          "liveness probe",
+        );
         return; // genuinely alive
       } catch {
         if (gen !== monitorGeneration) return; // monitor stopped mid-probe
@@ -162,8 +189,18 @@ function startConnectionMonitor(): void {
     reconnecting = true;
     logWarn("userbot", "Connection lost, attempting reconnect...");
     try {
-      await client.connect();
-      if (await client.isUserAuthorized()) {
+      await withTimeout(
+        client.connect(),
+        RECONNECT_STEP_TIMEOUT_MS,
+        "reconnect",
+      );
+      if (
+        await withTimeout(
+          client.isUserAuthorized(),
+          RECONNECT_STEP_TIMEOUT_MS,
+          "auth check",
+        )
+      ) {
         log("userbot", "Reconnected successfully.");
       } else {
         logWarn("userbot", "Reconnected but not authorized.");
@@ -174,7 +211,11 @@ function startConnectionMonitor(): void {
       // Try a full re-init on next check
       if (storedApiId && storedApiHash) {
         try {
+          // Drop the wedged client without awaiting it — its socket may be
+          // the thing that's hung.
+          const stale = client;
           client = null;
+          void stale?.disconnect().catch(() => {});
           let sessionString = "";
           if (existsSync(SESSION_FILE)) {
             sessionString = readFileSync(SESSION_FILE, "utf-8").trim();
@@ -183,8 +224,18 @@ function startConnectionMonitor(): void {
           client = new TelegramClient(session, storedApiId, storedApiHash, {
             connectionRetries: 5,
           });
-          await client.connect();
-          if (await client.isUserAuthorized()) {
+          await withTimeout(
+            client.connect(),
+            RECONNECT_STEP_TIMEOUT_MS,
+            "re-init connect",
+          );
+          if (
+            await withTimeout(
+              client.isUserAuthorized(),
+              RECONNECT_STEP_TIMEOUT_MS,
+              "re-init auth check",
+            )
+          ) {
             log("userbot", "Full re-init reconnect succeeded.");
           }
         } catch (retryErr) {
