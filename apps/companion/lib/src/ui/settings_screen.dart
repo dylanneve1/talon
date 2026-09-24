@@ -13,6 +13,8 @@ import 'extensions_screen.dart';
 import 'glass.dart';
 import 'logs_screen.dart';
 import 'motion.dart';
+import 'app_lock/app_lock_gate.dart';
+import 'settings/app_lock_card.dart';
 import 'settings/appearance_card.dart';
 import 'settings/mesh_card.dart';
 import 'settings/overview_cards.dart';
@@ -376,6 +378,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 16),
         AppearanceCard(state: widget.state),
         const SizedBox(height: 16),
+        if (AppLockScope.maybeOf(context) case final lock?) ...[
+          AppLockCard(controller: lock),
+          const SizedBox(height: 16),
+        ],
         if (VoiceService.supported) ...[
           VoiceCard(state: widget.state),
           const SizedBox(height: 16),
@@ -462,6 +468,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           columns: () => [
             [
               AppearanceCard(state: widget.state),
+              if (AppLockScope.maybeOf(context) case final lock?)
+                AppLockCard(controller: lock),
               if (VoiceService.supported) VoiceCard(state: widget.state)
             ],
             [if (cfg != null) MeshCard(state: widget.state)],

@@ -41,6 +41,21 @@ class SecureWindow {
     if (_holders == 0) _set(false);
   }
 
+  /// Keep the app out of the recents screenshot entirely (Android 13+,
+  /// `Activity.setRecentsScreenshotEnabled(false)`) — on while the app lock
+  /// is on, so the switcher never shows content even for the frame before
+  /// the privacy cover paints. Unlike FLAG_SECURE it doesn't block the
+  /// user's own screenshots. Older Android and other platforms rely on the
+  /// cover alone.
+  static void setRecentsHidden(bool hidden) {
+    if (!_supported()) return;
+    _channel
+        .invokeMethod<void>('setRecentsScreenshotEnabled', !hidden)
+        .catchError((Object e) {
+      AppLog.debug('secure', 'setRecentsScreenshotEnabled unavailable', e);
+    });
+  }
+
   static void _set(bool secure) {
     if (!_supported()) return;
     _channel.invokeMethod<void>('setSecure', secure).catchError((Object e) {

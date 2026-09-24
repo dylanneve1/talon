@@ -72,6 +72,15 @@ dependencies:
   # Locates the settings store's directory so its permissions can be
   # restricted to the current user on Linux (see PrivateStore).
   path_provider: ^2.1.5
+  # Optional app lock (#1051). cryptography: Argon2id for the passcode
+  # verifier/KEK and AES-256-GCM for the sealed chat snapshot (pure Dart, run
+  # off the UI isolate). flutter_secure_storage: the lock record in the
+  # platform keystore/keychain (its own namespace — the bridge credential
+  # store from #1068 can share the package). local_auth: Touch ID / Windows
+  # Hello / BiometricPrompt availability and prompts.
+  cryptography: ^2.9.0
+  flutter_secure_storage: ^11.2.0
+  local_auth: ^3.0.2
 
 # file_picker resolves flutter_plugin_android_lifecycle to 2.0.35, whose Android
 # library requires compiling against API 36 while file_picker itself compiles

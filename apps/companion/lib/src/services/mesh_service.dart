@@ -57,6 +57,10 @@ typedef MeshRegisteredCallback = Future<void> Function();
 /// (hardware model, OS, locale, timezone, network, …).
 typedef MeshSystemInfoProvider = Future<Map<String, String>> Function();
 
+/// Local approval for a device-control command: resolves to null to allow
+/// it, or to the refusal sent back to the daemon (app lock, #1051).
+typedef CommandApprover = Future<String?> Function(String command);
+
 class MeshService {
   /// Base commands every build can execute, advertised at registration so the
   /// daemon can refuse unsupported commands with a clear message instead of
@@ -95,6 +99,22 @@ class MeshService {
 
   bool get _deviceControl => deviceControlAllowed(prefs);
 
+  /// Commands that run code or touch files/packages on this device — the
+  /// exec-class surface the app lock's "require unlock for elevated commands"
+  /// covers (root/Shizuku execution happens only through these).
+  static bool needsApproval(String command) =>
+      DeviceExec.capabilities.contains(command) ||
+      transferCapabilities.contains(command);
+
+  /// Fallback when nothing can prompt on this device: allow unless the user
+  /// asked for local approval, in which case refuse — never run a gated
+  /// command unapproved.
+  static Future<String?> defaultApproval(Prefs prefs, String command) async =>
+      prefs.appLockElevatedGate
+          ? 'Denied on the device: it requires local approval for '
+              'device-control commands, and none could be requested.'
+          : null;
+
   final Prefs prefs;
   final BridgeClient client;
   final DeviceExec _exec;
@@ -106,6 +126,7 @@ class MeshService {
   final MeshRingHandler _ringHandler;
   final MeshSystemInfoProvider _systemInfoProvider;
   final MeshRegisteredCallback? _onRegistered;
+  final CommandApprover? _approver;
 
   StreamSubscription<Map<String, dynamic>>? _events;
   Timer? _heartbeat;
@@ -124,7 +145,9 @@ class MeshService {
     MeshSystemInfoProvider? systemInfoProvider,
     DeviceExec? deviceExec,
     MeshRegisteredCallback? onRegistered,
-  }) : _locationProvider = locationProvider ?? _defaultLocation,
+    CommandApprover? approver,
+  }) : _approver = approver,
+       _locationProvider = locationProvider ?? _defaultLocation,
        _batteryProvider = batteryProvider ?? _defaultBattery,
        _nameProvider = nameProvider ?? _defaultName,
        _versionProvider = versionProvider ?? _defaultVersion,
@@ -336,6 +359,11 @@ class MeshService {
     String? message;
     Map<String, dynamic>? data;
     try {
+      // Gated before anything runs, so a refusal can't half-execute.
+      if (_deviceControl && needsApproval(name)) {
+        final denial = await (_approver ?? _defaultApprover)(name);
+        if (denial != null) throw _CommandDenied(denial);
+      }
       switch (name) {
         case 'locate':
           await sendOneFix();
@@ -434,6 +462,10 @@ class MeshService {
               ? 'This app version does not support "$name".'
               : 'Device control is disabled on this device.';
       }
+    } on _CommandDenied catch (d) {
+      ok = false;
+      message = d.message;
+      AppLog.info('mesh', 'device_command "$name" denied locally');
     } catch (e) {
       ok = false;
       message = 'Command failed on device: $e';
@@ -452,6 +484,9 @@ class MeshService {
       AppLog.warn('mesh', 'command result post failed', e);
     }
   }
+
+  Future<String?> _defaultApprover(String command) =>
+      defaultApproval(prefs, command);
 
   Future<Map<String, dynamic>> _statusPayload() async {
     final battery = await _batteryProvider();
@@ -664,4 +699,10 @@ class MeshService {
   /// be circular. Desktop platforms need no service at all. The injection
   /// point stays for tests and future platforms.
   static Future<void> _noopForeground() async {}
+}
+
+/// A device-control command refused by local approval (see [CommandApprover]).
+class _CommandDenied implements Exception {
+  final String message;
+  const _CommandDenied(this.message);
 }

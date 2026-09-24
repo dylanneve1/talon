@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
+import '../security/app_lock/approval_relay.dart';
 import 'bridge_client.dart';
 import 'endpoint.dart';
 import 'log.dart';
@@ -63,7 +64,10 @@ class MeshTaskHandler extends TaskHandler {
   void onReceiveData(Object data) {
     if (data == MeshForegroundController.msgReconfigure) {
       unawaited(_runner?.reconfigure());
+      return;
     }
+    // The UI's answer to an app-lock approval request (#1051).
+    _runner?.approvals.handle(data);
   }
 
   @override
@@ -92,12 +96,23 @@ class MeshBackgroundRunner {
   static const int _initialBackoffMs = 2000;
   static const int _maxBackoffMs = 60000;
 
+  /// Device-control commands that need an on-device approval (app lock) ask
+  /// the UI isolate through this; with no UI in front they are refused.
+  final BackgroundCommandApprover approvals = BackgroundCommandApprover(
+    send: FlutterForegroundTask.sendDataToMain,
+  );
+
   Future<void> start() async {
     final prefs = await Prefs.load();
     _prefs = prefs;
     final client = BridgeClient(prefs.connection);
     _client = client;
-    _mesh = MeshService(prefs, client, onRegistered: _stampAlive);
+    _mesh = MeshService(
+      prefs,
+      client,
+      onRegistered: _stampAlive,
+      approver: (command) => approvals.approve(prefs, command),
+    );
     _seedChatTitles(prefs);
     // BridgeClient surfaces stream drops as errors on [events]; the mesh's
     // own subscription only consumes *device command* events, so this one
@@ -197,10 +212,13 @@ class MeshBackgroundRunner {
     // Don't notify for a reply the user is watching arrive.
     if (prefs.uiForeground) return;
 
+    // With the app lock on, the shade must not become a way around it:
+    // say that a reply arrived, not which chat or what it says.
+    final redact = prefs.appLockEnabled;
     await MessageNotifications.showMessage(
       chatId: chatId,
-      title: _chatTitles[chatId] ?? 'Talon',
-      body: text,
+      title: redact ? 'Talon' : (_chatTitles[chatId] ?? 'Talon'),
+      body: redact ? MessageNotifications.lockedBody : text,
     );
   }
 

@@ -295,7 +295,11 @@ class Prefs {
   // ── Offline snapshot ──────────────────────────────────────────────────────
 
   /// Last-known chats + recent messages, decoded; null when absent/corrupt.
+  ///
+  /// Always null while the app lock is on: the snapshot then lives only in
+  /// the sealed store and reaches the UI after unlock (AppLockController).
   Map<String, dynamic>? get snapshot {
+    if (appLockEnabled) return null;
     try {
       final raw = _sp.getString(_kSnapshot);
       if (raw == null) return null;
@@ -306,6 +310,40 @@ class Prefs {
     }
   }
 
-  Future<void> saveSnapshot(Map<String, dynamic> snapshot) =>
-      _sp.setString(_kSnapshot, jsonEncode(snapshot));
+  Future<void> saveSnapshot(Map<String, dynamic> snapshot) async {
+    if (appLockEnabled) {
+      // Encrypted at rest by the app lock; never written in the clear.
+      await sealedSnapshotSink?.call(snapshot);
+      return;
+    }
+    await _sp.setString(_kSnapshot, jsonEncode(snapshot));
+  }
+
+  /// Remove the plaintext snapshot (app lock turned on: it now lives sealed).
+  Future<void> clearPlainSnapshot() => _sp.remove(_kSnapshot).then((_) {});
+
+  /// Where snapshots go while the app lock is on — set by the UI isolate's
+  /// AppLockController, which seals them. Null elsewhere (the background
+  /// isolate never saves one), and then a locked snapshot is simply dropped.
+  static Future<void> Function(Map<String, dynamic> snapshot)?
+      sealedSnapshotSink;
+
+  // ── App lock (#1051) ──────────────────────────────────────────────────────
+  //
+  // The lock itself (verifier, wrapped keys, settings) lives in the platform
+  // secure store. These are plain mirrors for readers that can't reach it:
+  // the first frame (cover the UI before the async read lands) and the
+  // Android background isolate (redact notifications, gate device commands).
+
+  static const _kAppLockEnabled = 'applock.enabled.v1';
+  static const _kAppLockElevatedGate = 'applock.elevatedGate.v1';
+
+  bool get appLockEnabled => _sp.getBool(_kAppLockEnabled) ?? false;
+  Future<void> setAppLockEnabled(bool v) => _sp.setBool(_kAppLockEnabled, v);
+
+  /// "Require unlock for elevated commands" — only meaningful with the lock on.
+  bool get appLockElevatedGate =>
+      appLockEnabled && (_sp.getBool(_kAppLockElevatedGate) ?? false);
+  Future<void> setAppLockElevatedGate(bool v) =>
+      _sp.setBool(_kAppLockElevatedGate, v);
 }
