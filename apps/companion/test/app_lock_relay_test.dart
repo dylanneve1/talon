@@ -13,8 +13,9 @@ import 'app_lock_harness.dart';
 import 'mock_bridge.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-
+  // No TestWidgetsFlutterBinding here: it swaps in an HttpClient that answers
+  // every request with 400, and the MeshService tests talk to a real
+  // MockBridge (same as mesh_service_test.dart).
   tearDown(() => Prefs.sealedSnapshotSink = null);
 
   Future<Prefs> prefsWith(Map<String, Object> values) async {
