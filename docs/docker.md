@@ -12,7 +12,7 @@ docker run -d --name talon --restart unless-stopped \
   -e TALON_BOT_TOKEN=123456:ABC... \
   -e TALON_ADMIN_USER_ID=123456789 \
   -v ~/.talon:/home/bun/.talon -v ~/.claude:/home/bun/.claude \
-  ghcr.io/dylanneve1/talon:latest
+  ghcr.io/thefalconry/talon:latest
 docker exec -it talon claude auth login    # once, for the Claude backend
 docker restart talon
 ```

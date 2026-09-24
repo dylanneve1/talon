@@ -35,8 +35,6 @@ updates:
       # #634 bumped it the next day, silently killing the plugin. Bump BOTH
       # sides together by hand; see src/plugins/playwright/index.ts.
       - dependency-name: "@playwright/mcp"
-    reviewers:
-      - "dylanneve1"
     labels:
       - "dependencies"
     groups:

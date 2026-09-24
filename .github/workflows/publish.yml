@@ -273,8 +273,8 @@ jobs:
         run: gh release upload "$GITHUB_REF_NAME" dist/*.deb dist/*.rpm --clobber
 
   # ── Homebrew tap bump ──────────────────────────────────────────
-  # Bumps Formula/talon.rb in dylanneve1/homebrew-talon to this version
-  # with fresh per-os/arch SHA256s, so `brew install dylanneve1/talon/talon`
+  # Bumps Formula/talon.rb in thefalconry/homebrew-talon to this version
+  # with fresh per-os/arch SHA256s, so `brew install thefalconry/talon/talon`
   # tracks the latest release. Uses the cross-repo PAT (same secret
   # release-please uses); skips cleanly if it isn't configured.
   homebrew:
@@ -295,8 +295,8 @@ jobs:
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
-          REPO="dylanneve1/talon"
-          TAP="dylanneve1/homebrew-talon"
+          REPO="thefalconry/talon"
+          TAP="thefalconry/homebrew-talon"
           BASE="https://github.com/${REPO}/releases/download/${TAG}"
 
           # Fetch the checksums published by the `binaries` job and pull each
@@ -315,7 +315,7 @@ jobs:
           # Homebrew formula for Talon — auto-bumped by the talon publish workflow.
           class Talon < Formula
             desc "Multi-frontend AI agent with full tool access, streaming, cron jobs, and plugins"
-            homepage "https://github.com/dylanneve1/talon"
+            homepage "https://github.com/thefalconry/talon"
             version "${VERSION}"
             license "MIT"
 

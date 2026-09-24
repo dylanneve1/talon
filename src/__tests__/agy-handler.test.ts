@@ -224,7 +224,7 @@ function run(extra: Record<string, unknown> = {}) {
   return handleMessage({
     chatId: CHAT,
     text: "hello there",
-    senderName: "Dylan",
+    senderName: "Ada",
     ...extra,
   } as never);
 }

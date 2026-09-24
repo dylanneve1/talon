@@ -10,7 +10,7 @@ import { extractSessionName } from "../core/weaver/session-name.js";
 
 describe("extractSessionName", () => {
   it("strips leading `[Name]` prefix", () => {
-    expect(extractSessionName("[Dylan] hello world")).toBe("hello world");
+    expect(extractSessionName("[Ada] hello world")).toBe("hello world");
   });
 
   it("strips `[msg_id:N]` markers", () => {
@@ -20,7 +20,7 @@ describe("extractSessionName", () => {
   });
 
   it("strips both prefix and msg_id together", () => {
-    expect(extractSessionName("[Dylan] [msg_id:42] body text")).toBe(
+    expect(extractSessionName("[Ada] [msg_id:42] body text")).toBe(
       "body text",
     );
   });
@@ -38,7 +38,7 @@ describe("extractSessionName", () => {
   });
 
   it("returns undefined when only formatting prefixes remain", () => {
-    expect(extractSessionName("[Dylan] [msg_id:42]")).toBeUndefined();
+    expect(extractSessionName("[Ada] [msg_id:42]")).toBeUndefined();
   });
 
   it("returns undefined for whitespace-only text", () => {

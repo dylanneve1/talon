@@ -2,11 +2,11 @@
   "name": "talon-agent",
   "version": "5.18.0",
   "description": "Multi-frontend AI agent with full tool access, streaming, cron jobs, and plugin system",
-  "author": "Dylan Neve",
+  "author": "The Falconry",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dylanneve1/talon.git"
+    "url": "https://github.com/thefalconry/talon.git"
   },
   "keywords": [
     "telegram",

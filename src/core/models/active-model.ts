@@ -14,7 +14,7 @@
  * a single global-default fallback that ignored the per-chat backend.
  * That produced two recurring bug classes:
  *
- *   1. **Reset-on-non-default-backend** (Dylan, 2026-05-21): chat on
+ *   1. **Reset-on-non-default-backend** (Ada, 2026-05-21): chat on
  *      Codex, user hits Reset, code clears the override, read side
  *      returns `config.model = "claude-opus-4-7"`. Codex chat then
  *      tries to run an Anthropic id.

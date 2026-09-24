@@ -14,7 +14,7 @@ services:
   talon:
     # Published by this repo's release workflow. Pin a version (e.g. 5.5.1)
     # for updates you choose rather than updates that happen on redeploy.
-    image: ghcr.io/dylanneve1/talon:latest
+    image: ghcr.io/thefalconry/talon:latest
     pull_policy: always
     restart: unless-stopped
 

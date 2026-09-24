@@ -62,7 +62,7 @@ describe("cross-chat relay", () => {
 
   it("ignores a chat sending into itself", () => {
     noteCrossSend("tg_123", "tg_123");
-    expect(relayInbound("tg_123", "Dylan", "hi")).toBe(0);
+    expect(relayInbound("tg_123", "Ada", "hi")).toBe(0);
   });
 
   it("ignores a send with no identified caller", () => {

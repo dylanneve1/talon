@@ -40,7 +40,7 @@ void main() {
     test('FLATPAK_ID in the environment means sandboxed', () {
       expect(
         detectFlatpak(
-          environment: {'FLATPAK_ID': 'io.github.dylanneve1.TalonCompanion'},
+          environment: {'FLATPAK_ID': 'io.github.thefalconry.TalonCompanion'},
           fileExists: (_) => false,
         ),
         isTrue,

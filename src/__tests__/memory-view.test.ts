@@ -26,7 +26,7 @@ function liveShapedMemory(): string {
   return [
     "# Agent Memory",
     "",
-    "## User: Dylan",
+    "## User: Ada",
     "- Creator and primary user",
     "- Based in Dublin",
     "",
@@ -49,7 +49,7 @@ function liveShapedMemory(): string {
 describe("renderMemoryView", () => {
   describe("under the budget", () => {
     it("returns the input byte-identically", () => {
-      const content = "# Memory\n\n## User: Dylan\n- Lives in Dublin";
+      const content = "# Memory\n\n## User: Ada\n- Lives in Dublin";
       const view = renderMemoryView(content);
       expect(view.text).toBe(content);
       expect(view.truncated).toBe(false);
@@ -85,7 +85,7 @@ describe("renderMemoryView", () => {
       expect(view.text).toContain("## Active Investigations");
       expect(view.text).toContain("ROOT CAUSE");
       expect(view.text).toContain("## Branches to clean up");
-      expect(view.text).toContain("## User: Dylan");
+      expect(view.text).toContain("## User: Ada");
     });
 
     it("collapses a status family to its newest member", () => {
@@ -111,7 +111,7 @@ describe("renderMemoryView", () => {
 
     it("emits surviving sections in file order, not tier order", () => {
       const view = renderMemoryView(liveShapedMemory());
-      const iUser = view.text.indexOf("## User: Dylan");
+      const iUser = view.text.indexOf("## User: Ada");
       const iWatch = view.text.indexOf("## Inbox / CI Watch");
       const iActive = view.text.indexOf("## Active Investigations");
       // `status` ranks below `active`, but the emitted body preserves the

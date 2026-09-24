@@ -215,7 +215,7 @@ describe("codex / handleMessage — happy path", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "Say hi",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
       onTextBlock: async (text) => {
         delivered.push(text);
@@ -310,7 +310,7 @@ describe("codex / handleMessage — happy path", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "Say hi",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -360,7 +360,7 @@ describe("codex / handleMessage — happy path", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "What did I say before?",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -393,7 +393,7 @@ describe("codex / handleMessage — happy path", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "First message",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -484,7 +484,7 @@ describe("codex / handleMessage — context tokens wiring", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "hi",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -520,7 +520,7 @@ describe("codex / handleMessage — context tokens wiring", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "hi",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -560,7 +560,7 @@ describe("codex / handleMessage — context tokens wiring", () => {
       handleMessage({
         chatId: "test-chat",
         text: "hi",
-        senderName: "Dylan",
+        senderName: "Ada",
         isGroup: false,
       }),
     ).resolves.toBeDefined();
@@ -634,7 +634,7 @@ describe("codex / handleMessage — context tokens wiring", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "hi",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -664,7 +664,7 @@ describe("codex / handleMessage — context tokens wiring", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "hi again",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
       // …and this turn's API calls grow them. Simulated mid-turn (the
       // baseline is captured before runStreamed; tool events fire after).
@@ -695,7 +695,7 @@ describe("codex / handleMessage — context tokens wiring", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "hi again",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -738,7 +738,7 @@ describe("codex / handleMessage — context tokens wiring", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "hi",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -803,7 +803,7 @@ describe("codex / handleMessage — error paths", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "write a long answer",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
       onTextBlock: async (t) => {
         attempts++;
@@ -837,7 +837,7 @@ describe("codex / handleMessage — error paths", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "boom",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
       onTextBlock: async (t) => {
         delivered.push(t);
@@ -860,7 +860,7 @@ describe("codex / handleMessage — error paths", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "boom",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
       onTextBlock: async (t) => {
         delivered.push(t);
@@ -890,7 +890,7 @@ describe("codex / handleMessage — error paths", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "say nothing",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
       onTextBlock: async (t) => {
         delivered.push(t);
@@ -938,7 +938,7 @@ describe("codex / handleMessage — tool use", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "react with fire",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
       onToolUse: (name, input) => {
         tools.push({ name, input });
@@ -992,7 +992,7 @@ describe("codex / handleMessage — tool use", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "wrap up",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -1025,7 +1025,7 @@ describe("codex / handleMessage — thread options", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "ping",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -1071,7 +1071,7 @@ describe("codex / handleMessage — thread options", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "ping",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -1122,7 +1122,7 @@ describe("codex / handleMessage — active abort registry", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "hi",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -1236,7 +1236,7 @@ describe("codex / handleMessage — tool call accounting", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "react please",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
       onToolUse: (name, input) => {
         tools.push({ name, input });
@@ -1302,7 +1302,7 @@ describe("codex / handleMessage — tool call accounting", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "say hi",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
       onToolUse: (name) => {
         tools.push(name);
@@ -1353,7 +1353,7 @@ describe("codex / handleMessage — tool call accounting", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "react please",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
       onToolUse: (name) => {
         tools.push(name);
@@ -1385,7 +1385,7 @@ describe("codex / handleMessage — tool call accounting", () => {
           type: "mcp_tool_call",
           server: "mempalace-tools",
           tool: "mempalace_search",
-          arguments: { query: "Dylan" },
+          arguments: { query: "Ada" },
           status: "completed",
         },
       },
@@ -1425,8 +1425,8 @@ describe("codex / handleMessage — tool call accounting", () => {
     const calls: string[] = [];
     await handleMessage({
       chatId: "test-chat",
-      text: "look up Dylan and react",
-      senderName: "Dylan",
+      text: "look up Ada and react",
+      senderName: "Ada",
       isGroup: false,
       onToolUse: (name) => {
         calls.push(name);
@@ -1466,7 +1466,7 @@ describe("codex / handleMessage — model resolution", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "hi",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -1512,7 +1512,7 @@ describe("codex / handleMessage — model resolution", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "hi",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -1545,7 +1545,7 @@ describe("codex / handleMessage — agent_message edge cases", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "say nothing",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
       onTextBlock: async (t) => {
         delivered.push(t);
@@ -1581,7 +1581,7 @@ describe("codex / handleMessage — agent_message edge cases", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "say nothing",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
       onTextBlock: async (t) => {
         delivered.push(t);
@@ -1663,7 +1663,7 @@ describe("codex / handleMessage — non-MCP items", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "do a thing",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
       onToolUse: (name, input) => {
         tools.push({ name, input });
@@ -1733,7 +1733,7 @@ describe("codex / handleMessage — non-MCP items", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "go",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -1767,7 +1767,7 @@ describe("codex / handleMessage — session name", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "Help me debug the gateway please",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -1804,7 +1804,7 @@ describe("codex / handleMessage — session name", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "A totally different second-turn topic about Marrow",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -1826,7 +1826,7 @@ describe("codex / handleMessage — terminal failure accounting", () => {
       handleMessage({
         chatId: "test-chat",
         text: "hi",
-        senderName: "Dylan",
+        senderName: "Ada",
         isGroup: false,
       }),
     ).rejects.toThrow();
@@ -1879,7 +1879,7 @@ describe("codex / handleMessage — error recovery", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "resume me",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -1927,7 +1927,7 @@ describe("codex / handleMessage — error recovery", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "huge message",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -1984,7 +1984,7 @@ describe("codex / handleMessage — error recovery", () => {
       const result = await handleMessage({
         chatId: "test-chat",
         text: "retry me",
-        senderName: "Dylan",
+        senderName: "Ada",
         isGroup: false,
       });
 
@@ -2018,7 +2018,7 @@ describe("codex / handleMessage — error recovery", () => {
       handleMessage({
         chatId: "test-chat",
         text: "doomed",
-        senderName: "Dylan",
+        senderName: "Ada",
         isGroup: false,
       }),
     ).rejects.toThrow();
@@ -2041,7 +2041,7 @@ describe("codex / handleMessage — error recovery", () => {
       handleMessage({
         chatId: "test-chat",
         text: "auth failure",
-        senderName: "Dylan",
+        senderName: "Ada",
         isGroup: false,
       }),
     ).rejects.toThrow();
@@ -2074,7 +2074,7 @@ describe("codex / handleMessage — usage propagation", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "q",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -2095,7 +2095,7 @@ describe("codex / handleMessage — ChatGPT-auth model fallback", () => {
 
   it("pre-emptively swaps gpt-5-codex → gpt-5.5 under ChatGPT auth", async () => {
     // Set up a fake HOME with a chatgpt auth.json so this test is
-    // self-contained and works on CI (not just on Dylan's machine where
+    // self-contained and works on CI (not just on Ada's machine where
     // the real ~/.codex/auth.json happens to be in chatgpt mode).
     const fakeHome = mkdtempSync(join(tmpdir(), "talon-codex-handler-"));
     mkdirSync(join(fakeHome, ".codex"), { recursive: true });
@@ -2163,7 +2163,7 @@ describe("codex / handleMessage — ChatGPT-auth model fallback", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "hi",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -2209,7 +2209,7 @@ describe("codex / handleMessage — ChatGPT-auth model fallback", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "force the 400",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -2273,7 +2273,7 @@ describe("codex / handleMessage — ChatGPT-auth model fallback", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "force the event-path failure",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -2298,7 +2298,7 @@ describe("codex / handleMessage — ChatGPT-auth model fallback", () => {
       handleMessage({
         chatId: "test-chat",
         text: "double-failure",
-        senderName: "Dylan",
+        senderName: "Ada",
         isGroup: false,
       }),
     ).rejects.toThrow();
@@ -2412,7 +2412,7 @@ describe("codex / handleMessage — silent OAuth exit-1 recovery", () => {
     const result = await handleMessage({
       chatId: "test-chat",
       text: "hi",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -2464,7 +2464,7 @@ describe("codex / handleMessage — silent OAuth exit-1 recovery", () => {
       handleMessage({
         chatId: "test-chat",
         text: "hi",
-        senderName: "Dylan",
+        senderName: "Ada",
         isGroup: false,
       }),
     ).rejects.toMatchObject({
@@ -2527,7 +2527,7 @@ describe("codex / handleMessage — silent OAuth exit-1 recovery", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "hi",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -2583,7 +2583,7 @@ describe("codex / handleMessage — silent OAuth exit-1 recovery", () => {
     await handleMessage({
       chatId: "test-chat",
       text: "hi",
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
     });
 
@@ -2608,7 +2608,7 @@ describe("codex / handleMessage — silent OAuth exit-1 recovery", () => {
         handleMessage({
           chatId: "test-chat",
           text: "hi",
-          senderName: "Dylan",
+          senderName: "Ada",
           isGroup: false,
         }),
       ).rejects.toThrow();
@@ -2645,7 +2645,7 @@ describe("codex / handleMessage — silent OAuth exit-1 recovery", () => {
       handleMessage({
         chatId: "test-chat",
         text: "hi",
-        senderName: "Dylan",
+        senderName: "Ada",
         isGroup: false,
       }),
     ).rejects.toThrow();

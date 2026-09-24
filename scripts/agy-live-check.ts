@@ -96,7 +96,7 @@ async function main() {
   console.log("PHASE2 registered:", live.added);
 
   const child = proc.ensureChild("live-check", {
-    binary: "/home/dylan/.local/bin/agy",
+    binary: "/home/ada/.local/bin/agy",
     cwd: "/tmp/agy-live",
     model: "gemini-3.8-flash-high",
     addDirs: ["/tmp/agy-live"],

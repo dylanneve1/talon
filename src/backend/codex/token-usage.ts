@@ -71,7 +71,7 @@ interface CodexTokenTotals {
  *       "rate_limit_reached_type": null
  *     }
  *
- *   Exhausted (the silent-exit case on Dylan's free ChatGPT OAuth):
+ *   Exhausted (the silent-exit case on Ada's free ChatGPT OAuth):
  *     {
  *       "limit_id": "premium",
  *       "primary": null,
@@ -242,7 +242,7 @@ export async function readLastTokenCount(
  * Returns `null` only when the file can't be found or no `token_count`
  * event exists in it. Returns `{ usage: undefined, rateLimits: {...} }`
  * when a usage-exhausted turn writes a `token_count` event with
- * `info: null` but populated rate_limits (the literal shape on Dylan's
+ * `info: null` but populated rate_limits (the literal shape on Ada's
  * exhausted OAuth account, 2026-05-21).
  */
 export async function readLastRolloutSnapshot(

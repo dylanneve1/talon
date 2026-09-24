@@ -1,13 +1,13 @@
 # Talon Companion — Flatpak
 
 Packaging for publishing the Linux desktop companion on
-[Flathub](https://flathub.org) as `io.github.dylanneve1.TalonCompanion`.
+[Flathub](https://flathub.org) as `io.github.thefalconry.TalonCompanion`.
 
 | File | Purpose |
 | --- | --- |
-| `io.github.dylanneve1.TalonCompanion.yml` | flatpak-builder manifest |
-| `io.github.dylanneve1.TalonCompanion.metainfo.xml` | AppStream metadata (store listing) |
-| `io.github.dylanneve1.TalonCompanion.desktop` | Desktop entry |
+| `io.github.thefalconry.TalonCompanion.yml` | flatpak-builder manifest |
+| `io.github.thefalconry.TalonCompanion.metainfo.xml` | AppStream metadata (store listing) |
+| `io.github.thefalconry.TalonCompanion.desktop` | Desktop entry |
 | `icons/` | 128/256 px PNG + scalable SVG, derived from `assets/icon/talon_icon.*` |
 
 The manifest **repackages the prebuilt release bundle**
@@ -30,9 +30,9 @@ cd apps/companion/flatpak
 git clone --depth 1 https://github.com/flathub/shared-modules.git
 
 flatpak-builder --user --install-deps-from=flathub --install --force-clean \
-  build-dir io.github.dylanneve1.TalonCompanion.yml
+  build-dir io.github.thefalconry.TalonCompanion.yml
 
-flatpak run io.github.dylanneve1.TalonCompanion
+flatpak run io.github.thefalconry.TalonCompanion
 ```
 
 Worth checking on a test run:
@@ -48,10 +48,10 @@ Worth checking on a test run:
 Lint the manifest and metadata the way Flathub CI does:
 
 ```sh
-flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest io.github.dylanneve1.TalonCompanion.yml
+flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest io.github.thefalconry.TalonCompanion.yml
 flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo   # after building with --repo=repo
-appstreamcli validate io.github.dylanneve1.TalonCompanion.metainfo.xml
-desktop-file-validate io.github.dylanneve1.TalonCompanion.desktop
+appstreamcli validate io.github.thefalconry.TalonCompanion.metainfo.xml
+desktop-file-validate io.github.thefalconry.TalonCompanion.desktop
 ```
 
 ## Submitting to Flathub
@@ -64,9 +64,9 @@ Flathub builds from its own per-app repo, not from this one:
    and add shared-modules as a submodule:
    `git submodule add https://github.com/flathub/shared-modules.git`.
 3. Open a PR against `new-pr`. Reviewers build it and review the permissions;
-   the verification step for an `io.github.dylanneve1.*` id is done by the
+   the verification step for an `io.github.thefalconry.*` id is done by the
    owner of that GitHub account.
-4. Once merged, Flathub creates `flathub/io.github.dylanneve1.TalonCompanion`
+4. Once merged, Flathub creates `flathub/io.github.thefalconry.TalonCompanion`
    and gives the maintainer push access. From then on that repo is where the
    manifest lives.
 5. Updates are automatic: the `x-checker-data` block on the release archive

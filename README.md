@@ -10,7 +10,7 @@
 [![Frontends](https://img.shields.io/badge/frontends-Telegram_%7C_WhatsApp_%7C_Discord_%7C_Teams_%7C_Terminal_%7C_App-25D366)](#frontends)
 [![Backends](https://img.shields.io/badge/backends-Claude_%7C_Kilo_%7C_OpenCode_%7C_Codex_%7C_Antigravity_%7C_OpenAI_Agents-D97706)](#backends)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/dylanneve1/talon/actions/workflows/ci.yml/badge.svg)](https://github.com/dylanneve1/talon/actions/workflows/ci.yml)
+[![CI](https://github.com/thefalconry/talon/actions/workflows/ci.yml/badge.svg)](https://github.com/thefalconry/talon/actions/workflows/ci.yml)
 
 Multi-platform agentic AI harness. Runs on **Telegram**, **WhatsApp**, **Discord**, **Microsoft Teams**, the **Terminal**, and a **cross-platform Desktop/Mobile companion app** (Flutter), with a pluggable backend (**Claude Agent SDK**, **Kilo**, **OpenCode**, **Codex**, **Antigravity**, or **OpenAI Agents**) and full tool access through MCP.
 
@@ -39,7 +39,7 @@ Multi-platform agentic AI harness. Runs on **Telegram**, **WhatsApp**, **Discord
 ## Quick Start
 
 ```bash
-git clone https://github.com/dylanneve1/talon.git && cd talon
+git clone https://github.com/thefalconry/talon.git && cd talon
 npm install
 
 # Interactive setup (select frontend, configure tokens, pick model)
@@ -73,7 +73,7 @@ modules are embedded in the binary.
 
 ```bash
 # Homebrew (macOS / Linux)
-brew install dylanneve1/talon/talon
+brew install thefalconry/talon/talon
 
 # Debian / Ubuntu — download the .deb for your arch from the release, then:
 sudo apt install ./talon_<version>_amd64.deb     # or _arm64.deb
@@ -567,7 +567,7 @@ Commands: `/model`, `/effort`, `/context`, `/status`, `/reset`, `/rename`, `/res
 
 ## Production
 
-**Docker:** the image runs the daemon on Bun (`bun src/index.ts`); `~/.talon` and `~/.claude` are bind-mounted from the host into the container's `HOME=/home/bun`. Prebuilt images are on GHCR (`ghcr.io/dylanneve1/talon:latest`), and a first boot can be configured entirely from `TALON_*` environment variables — see **[docs/docker.md](docs/docker.md)** for the quick install, and **[docs/truenas.md](docs/truenas.md)** for a step-by-step TrueNAS SCALE install.
+**Docker:** the image runs the daemon on Bun (`bun src/index.ts`); `~/.talon` and `~/.claude` are bind-mounted from the host into the container's `HOME=/home/bun`. Prebuilt images are on GHCR (`ghcr.io/thefalconry/talon:latest`), and a first boot can be configured entirely from `TALON_*` environment variables — see **[docs/docker.md](docs/docker.md)** for the quick install, and **[docs/truenas.md](docs/truenas.md)** for a step-by-step TrueNAS SCALE install.
 
 ```bash
 docker compose up -d

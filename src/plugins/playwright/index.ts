@@ -15,7 +15,7 @@
  *   "playwright": {
  *     "enabled": true,
  *     "browser": "firefox",
- *     "endpointFile": "/home/dylan/camoufox-endpoint.txt"
+ *     "endpointFile": "/home/ada/camoufox-endpoint.txt"
  *   }
  *
  * VERSION COUPLING (endpoint mode): the WebSocket handshake requires the

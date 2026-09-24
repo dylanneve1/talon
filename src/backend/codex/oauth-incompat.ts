@@ -39,7 +39,7 @@
  * Keyed by auth fingerprint
  * ─────────────────────────
  *
- * If Dylan switches OAuth accounts (e.g. work vs personal) the cache
+ * If Ada switches OAuth accounts (e.g. work vs personal) the cache
  * file at `~/.codex/auth.json` changes, and what we learned about
  * account A doesn't necessarily apply to account B. To stay correct
  * across credential changes we tag the store with a fingerprint of the

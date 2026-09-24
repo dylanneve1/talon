@@ -265,14 +265,14 @@ describe("the engine seam — every frontend feeds the tap", () => {
       chatId: DM_CHAT,
       numericChatId: Number(DM_CHAT),
       prompt: `from now on use ${m}`,
-      senderName: "Dylan",
+      senderName: "Ada",
       isGroup: false,
       source: "message",
     });
     expect(spies.recordMessageSignal).toHaveBeenCalledWith({
       text: `from now on use ${m}`,
       chatKey: DM_CHAT,
-      actor: "Dylan",
+      actor: "Ada",
     });
     expect(live("directive", m)).toHaveLength(1);
   });

@@ -42,7 +42,7 @@ Map<String, dynamic> _feed({
 }) =>
     {
       'tag_name': tag,
-      'html_url': 'https://github.com/dylanneve1/talon/releases/tag/$tag',
+      'html_url': 'https://github.com/thefalconry/talon/releases/tag/$tag',
       'body': body,
       'assets': [
         {
@@ -392,8 +392,8 @@ void main() {
       final s = PlatformUpdateInstaller.unixSwapScript(
         pid: 4242,
         sourceDir: '/tmp/talon-update/new',
-        installDir: '/home/dylan/Apps/talon',
-        relaunch: '/home/dylan/Apps/talon/talon_companion',
+        installDir: '/home/ada/Apps/talon',
+        relaunch: '/home/ada/Apps/talon/talon_companion',
         cleanupDir: '/tmp/talon-update',
       );
       expect(s, contains('PID=4242'));
@@ -402,8 +402,8 @@ void main() {
       expect(
           s,
           contains("cp -a '/tmp/talon-update/new'/. "
-              "'/home/dylan/Apps/talon'/"));
-      expect(s, contains("exec '/home/dylan/Apps/talon/talon_companion'"));
+              "'/home/ada/Apps/talon'/"));
+      expect(s, contains("exec '/home/ada/Apps/talon/talon_companion'"));
       // Bounded: a wedged process must not leave a script spinning forever.
       expect(s, contains('-gt 300'));
     });

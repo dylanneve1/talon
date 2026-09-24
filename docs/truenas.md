@@ -41,7 +41,7 @@ Antigravity sign-ins. Snapshotting this one dataset backs up all of it.
     (hostname or IP, port `19880`);
   - `TALON_BACKEND` if you want something other than Claude.
 
-Click **Save**. TrueNAS pulls `ghcr.io/dylanneve1/talon` and starts it. On
+Click **Save**. TrueNAS pulls `ghcr.io/thefalconry/talon` and starts it. On
 first boot the container writes `/data/.talon/config.json` from those
 variables. After that the file is yours: the variables are ignored from then
 on, so later changes go into the file (or through `/settings` in Telegram, or

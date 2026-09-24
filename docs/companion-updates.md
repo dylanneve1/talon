@@ -9,7 +9,7 @@ works / what to do when it doesn't" page; the user-facing summary is in
 
 **Automatic checking, manual installing.** A check runs on launch and every six
 hours after (`UpdateService.checkInterval`), and costs one ~2 KB request to
-`api.github.com/repos/dylanneve1/talon/releases/latest`. Nothing downloads
+`api.github.com/repos/thefalconry/talon/releases/latest`. Nothing downloads
 until the user presses **Download & install** in *Settings → Updates* — an app
 that silently pulled a 60 MB APK over mobile data, or swapped itself under a
 live conversation, would be the wrong kind of automatic. Outside Settings the
