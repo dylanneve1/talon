@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
@@ -13,11 +14,23 @@ import 'src/services/voice.dart';
 import 'src/services/windows_tray.dart';
 import 'src/state/app_state.dart';
 import 'src/theme.dart';
+import 'src/ui/image_bounds.dart';
 import 'src/ui/root_view.dart';
 import 'src/ui/voice_mode_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Desktop windows live for days (close hides to the tray): keep the decoded
+  // image cache on a tighter budget than Flutter's 100 MB default.
+  const desktop = {
+    TargetPlatform.windows,
+    TargetPlatform.linux,
+    TargetPlatform.macOS,
+  };
+  if (desktop.contains(defaultTargetPlatform)) {
+    PaintingBinding.instance.imageCache.maximumSizeBytes =
+        kDesktopImageCacheBytes;
+  }
   // Certificate pinning for every implicitly-created HttpClient
   // (Image.network) — BridgeClient carries its own pinned client.
   BridgeTrust.install();

@@ -28,6 +28,10 @@ dependencies:
   markdown: ^7.2.2
   # Syntax highlighting inside fenced code blocks.
   flutter_highlight: ^0.7.0
+  # The highlighter flutter_highlight wraps. Used directly so highlighting can
+  # run in a background isolate and be cached (lib/src/ui/highlight_cache.dart)
+  # instead of re-running inside build on every scroll.
+  highlight: ^0.7.0
   # Declarative animation layer (gskinner, a Flutter Favorite). Replaces the
   # hand-rolled AnimationControllers with a chainable .animate() API and powers
   # the staggered list entrances, shimmer skeletons, and streaming caret.
