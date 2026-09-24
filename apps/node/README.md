@@ -79,11 +79,23 @@ apps pair with). No daemon-side changes are required for headless nodes.
 
 ## Service management
 
-| OS      | Mechanism                                    | Notes                                              |
-| ------- | -------------------------------------------- | -------------------------------------------------- |
-| Linux   | systemd unit (system as root, else user)     | user units need `loginctl enable-linger` for boot  |
-| macOS   | LaunchAgent (`com.talon.node`)               | per-user, `KeepAlive` restarts on crash            |
-| Windows | Scheduled task (`TalonNode`, ONSTART/SYSTEM) | plain console binary — no SCM plumbing needed      |
+| OS      | Mechanism                                              | Notes                                                     |
+| ------- | ------------------------------------------------------ | --------------------------------------------------------- |
+| Linux   | systemd unit (system as root, else user)               | user units need `loginctl enable-linger` for boot         |
+| macOS   | LaunchAgent (`com.talon.node`)                         | per-user, `KeepAlive` restarts on crash                   |
+| Windows | Scheduled task (`TalonNode`, ONSTART, installing user) | runs as you, unelevated, no stored password (`/RU … /NP`) |
+
+The node always runs as the account that installed it, and it never runs as
+SYSTEM on Windows. The binary and config sit in that account's own profile,
+so a SYSTEM task would run files the user can rewrite. On Windows, creating
+the boot task still needs an elevated PowerShell. `talon-node status` flags a
+task registered by an older build that still runs as SYSTEM. Re-run
+`talon-node install` to replace it.
+
+A root install on Linux (system unit) refuses to register if the binary, the
+config, or any directory above them is owned by another user or is
+world-writable. For example, `TALON_NODE_DIR` pointed at a user-writable
+directory is refused.
 
 ## Building all targets
 

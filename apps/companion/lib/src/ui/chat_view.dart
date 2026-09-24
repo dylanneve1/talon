@@ -64,6 +64,12 @@ class _ChatViewState extends State<ChatView> {
   /// and never re-fires when a row is recycled back into view on scroll.
   final Set<String> _seen = <String>{};
 
+  /// Memoised message rows (messages interleaved with day markers). Rebuilt
+  /// only when the chat's message list actually changes, not on every
+  /// AppState notification — during a streamed reply that is every token.
+  List<Object> _rows = const [];
+  Object? _rowsKey;
+
   /// Which chat the list is currently anchored to, and whether we still owe it
   /// a jump-to-newest. When you open a chat it should land on the most recent
   /// message (like any chat app), not the top of the scrollback.
@@ -333,6 +339,50 @@ class _ChatViewState extends State<ChatView> {
     );
   }
 
+  /// Interleave day markers: a quiet centered "Today / Yesterday / 4 July"
+  /// pill wherever the calendar day changes, so scrollback has temporal
+  /// landmarks instead of one undifferentiated stream. Memoised on the
+  /// list's identity, length and ends.
+  List<Object> _rowsFor(String chatId, List<ClientMessage> msgs) {
+    final key = (
+      chatId,
+      identityHashCode(msgs),
+      msgs.length,
+      msgs.isEmpty ? null : msgs.first.id,
+      msgs.isEmpty ? null : msgs.last.id,
+    );
+    if (key == _rowsKey) return _rows;
+    final rows = <Object>[];
+    DateTime? day;
+    for (final m in msgs) {
+      final t = m.time.toLocal();
+      final d = DateTime(t.year, t.month, t.day);
+      if (day == null || d != day) {
+        rows.add(d);
+        day = d;
+      }
+      rows.add(m);
+    }
+    _rowsKey = key;
+    _rowIndexCache = null;
+    return _rows = rows;
+  }
+
+  Map<Object, int>? _rowIndexCache;
+
+  /// Row index for a list key (see findChildIndexCallback), built lazily.
+  int? _rowIndex(Object key) {
+    final index = _rowIndexCache ??= {
+      for (var i = 0; i < _rows.length; i++) _rowKey(_rows[i]): i,
+    };
+    return index[key];
+  }
+
+  /// The list key's value for a row: `m:<id>` for a message, the day itself
+  /// for a divider.
+  static Object _rowKey(Object row) =>
+      row is ClientMessage ? 'm:${row.id}' : row;
+
   Widget _messages(String chatId) {
     final msgs = widget.state.messagesFor(chatId);
     final turn = widget.state.turnFor(chatId);
@@ -355,20 +405,7 @@ class _ChatViewState extends State<ChatView> {
       );
     }
 
-    // Interleave day markers: a quiet centered "Today / Yesterday / 4 July"
-    // pill wherever the calendar day changes, so scrollback has temporal
-    // landmarks instead of one undifferentiated stream.
-    final rows = <Object>[];
-    DateTime? day;
-    for (final m in msgs) {
-      final t = m.time.toLocal();
-      final d = DateTime(t.year, t.month, t.day);
-      if (day == null || d != day) {
-        rows.add(d);
-        day = d;
-      }
-      rows.add(m);
-    }
+    final rows = _rowsFor(chatId, msgs);
 
     final topLoader = widget.state.isLoadingOlder(chatId);
     final itemCount =
@@ -381,6 +418,14 @@ class _ChatViewState extends State<ChatView> {
             constraints: const BoxConstraints(maxWidth: _columnMax),
             child: ListView.builder(
               controller: _scroll,
+              // Stable keys + this lookup let an older page prepended at the
+              // top (or a row inserted mid-list) keep every existing row's
+              // element and state instead of rebuilding by shifted index.
+              findChildIndexCallback: (key) {
+                if (key is! ValueKey<Object>) return null;
+                final i = _rowIndex(key.value);
+                return i == null ? null : i + (topLoader ? 1 : 0);
+              },
               padding: EdgeInsets.fromLTRB(
                   TalonDensity.d(20, 18), 18, TalonDensity.d(20, 18), 10),
               itemCount: itemCount,
@@ -400,7 +445,10 @@ class _ChatViewState extends State<ChatView> {
                 final mi = i - (topLoader ? 1 : 0);
                 if (mi < rows.length) {
                   final row = rows[mi];
-                  if (row is DateTime) return _DayDivider(day: row);
+                  if (row is DateTime) {
+                    return _DayDivider(
+                        key: ValueKey<Object>(_rowKey(row)), day: row);
+                  }
                   final m = row as ClientMessage;
                   // Group consecutive same-role messages (day dividers break
                   // runs naturally — the neighbor is a DateTime, not a
@@ -415,6 +463,7 @@ class _ChatViewState extends State<ChatView> {
                           ? rows[mi + 1] as ClientMessage
                           : null;
                   return MessageBubble(
+                    key: ValueKey<Object>(_rowKey(m)),
                     message: m,
                     botName: widget.state.status.botName,
                     animateIn: _shouldAnimate(m),
@@ -463,7 +512,7 @@ class _ChatViewState extends State<ChatView> {
 /// Centered day marker between messages from different calendar days.
 class _DayDivider extends StatelessWidget {
   final DateTime day;
-  const _DayDivider({required this.day});
+  const _DayDivider({super.key, required this.day});
 
   static const _months = [
     'January',

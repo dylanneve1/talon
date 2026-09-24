@@ -22,6 +22,7 @@
 
 import pc from "picocolors";
 import { createInterface } from "node:readline/promises";
+import { join } from "node:path";
 import { getFrontends, loadConfig } from "../../core/config/index.js";
 import { findRunningInstance } from "../../core/daemon/discovery.js";
 import {
@@ -41,6 +42,8 @@ import {
 import { resolveBackupSettings } from "../../core/backup/plan.js";
 import { buildSnapshot } from "../../core/backup/snapshot.js";
 import { pruneLocal } from "../../core/backup/store.js";
+import { generatePassphraseFile } from "../../core/backup/passphrase.js";
+import { dirs } from "../../util/paths.js";
 import { fetchGateway } from "../daemon-api.js";
 
 const USAGE = `
@@ -54,6 +57,7 @@ const USAGE = `
     ${pc.cyan("prune")}                                apply the local retention policy
     ${pc.cyan("targets")}                              remote targets and their readiness
     ${pc.cyan("status")}                               schedule, sizes, targets
+    ${pc.cyan("keygen")} [path]                        new passphrase file (mode 600)
 `;
 
 type Flags = { values: string[]; flags: Map<string, string | true> };
@@ -354,6 +358,27 @@ async function resolveTarget(id: string): Promise<BackupTarget | undefined> {
   return target;
 }
 
+/** Write a fresh passphrase file. Prints where, never what. */
+async function backupKeygen(path: string | undefined): Promise<void> {
+  try {
+    const dest = await generatePassphraseFile(
+      path ?? join(dirs.root, "backup.key"),
+    );
+    console.log(
+      `  ${pc.green("●")} Wrote a new backup passphrase to ${pc.bold(dest)} (mode 600).\n` +
+        `    Enable it in config.json:\n` +
+        `      "backup": { "encryption": { "passphraseFile": "${dest}" } }\n` +
+        `    Keep a copy OFF this machine — encrypted snapshots cannot be\n` +
+        `    restored without it.\n`,
+    );
+  } catch (err) {
+    console.log(
+      `  ${pc.red("●")} ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    process.exitCode = 1;
+  }
+}
+
 // ── Entry ───────────────────────────────────────────────────────────────────
 
 export async function runBackupCommand(argv: readonly string[]): Promise<void> {
@@ -385,6 +410,9 @@ export async function runBackupCommand(argv: readonly string[]): Promise<void> {
       return;
     case "targets":
       await backupTargets();
+      return;
+    case "keygen":
+      await backupKeygen(id);
       return;
     case "status":
     case undefined:

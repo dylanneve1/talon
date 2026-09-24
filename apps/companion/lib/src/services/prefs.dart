@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/connection.dart';
+import 'private_store.dart';
 
 /// Thin wrapper over [SharedPreferences] for everything we persist locally:
 /// the connection profile, per-chat read markers (unread badges), and a
@@ -20,6 +21,9 @@ class Prefs {
   static const _kMeshPeriodic = 'mesh.periodic.v1';
   static const _kMeshInterval = 'mesh.intervalSeconds.v1';
   static const _kMeshDeviceControl = 'mesh.deviceControl.v1';
+  static const _kMeshElevated = 'mesh.elevated.v1';
+  static const _kMeshControlBridge = 'mesh.controlBridge.v1';
+  static const _kMeshGrantsMigrated = 'mesh.grantsMigrated.v1';
   static const _kMeshBgAliveAt = 'mesh.bg.alive_at.v1';
   static const _kMeshBgStartedAt = 'mesh.bg.started_at.v1';
 
@@ -36,21 +40,45 @@ class Prefs {
   /// and the background mesh isolate). Opt-in so that code which only needs
   /// settings — and widget tests, where a platform-channel reply never
   /// arrives inside fake async — never waits on path_provider.
-  static Future<Prefs> load({bool fileSnapshot = false}) async => Prefs(
-        await SharedPreferences.getInstance(),
-        snapshotFile: fileSnapshot ? await _resolveSnapshotFile() : null,
-      );
+  static Future<Prefs> load({bool fileSnapshot = false}) async {
+    final prefs = Prefs(
+      await SharedPreferences.getInstance(),
+      snapshotFile: fileSnapshot ? await _resolveSnapshotFile() : null,
+    );
+    await prefs._migrateMeshGrants();
+    return prefs;
+  }
 
   static Future<File?> _resolveSnapshotFile() async {
     try {
       final dir = await getApplicationSupportDirectory();
-      return File('${dir.path}${Platform.pathSeparator}$_snapshotFileName');
+      return File(
+        '${dir.path}${Platform.pathSeparator}${PrivateStore.snapshotFileName}',
+      );
     } catch (_) {
       return null; // no platform implementation (tests) — prefs fallback
     }
   }
 
-  static const _snapshotFileName = 'chat_snapshot.v1.json';
+  /// Device control used to default to on, for every bridge. It is now an
+  /// explicit, per-bridge grant (see [meshDeviceControl]); an install that
+  /// was already set up keeps what it had — bound to the bridge it is
+  /// connected to today — while a fresh install starts with it off.
+  /// Idempotent, so the UI and background isolates can both run it.
+  Future<void> _migrateMeshGrants() async {
+    if (_sp.getBool(_kMeshGrantsMigrated) ?? false) return;
+    if (onboarded) {
+      final legacy = _sp.getBool(_kMeshDeviceControl) ?? true;
+      await _sp.setBool(_kMeshDeviceControl, legacy);
+      // Before this, device control always climbed to root/Shizuku when it
+      // could; keep that for the bridge that already had it.
+      await _sp.setBool(_kMeshElevated, legacy);
+      if (legacy) {
+        await _sp.setString(_kMeshControlBridge, connection.bridgeKey);
+      }
+    }
+    await _sp.setBool(_kMeshGrantsMigrated, true);
+  }
 
   /// Re-read the backing store from disk. SharedPreferences caches per
   /// isolate, so the background mesh isolate must reload after the UI isolate
@@ -69,8 +97,17 @@ class Prefs {
     }
   }
 
-  Future<void> setConnection(ConnectionConfig c) =>
-      _sp.setString(_kConnection, jsonEncode(c.toJson()));
+  Future<void> setConnection(ConnectionConfig c) async {
+    await _sp.setString(_kConnection, jsonEncode(c.toJson()));
+    // The profile carries the bridge token: make sure the file it lands in
+    // is this user's alone (a first write may have just created it).
+    await privateStore?.harden();
+  }
+
+  /// Restricts the on-disk settings store to the current OS user (Linux).
+  /// Set once by the UI isolate at startup; null in tests and on platforms
+  /// where the store already has per-user permissions.
+  static PrivateStore? privateStore;
 
   bool get onboarded => _sp.getBool(_kOnboarded) ?? false;
   Future<void> setOnboarded(bool v) => _sp.setBool(_kOnboarded, v);
@@ -186,11 +223,42 @@ class Prefs {
       _sp.setInt(_kMeshInterval, v.clamp(60, 3600));
 
   /// Whether this device answers remote shell/filesystem commands (the
-  /// "teleport" substrate). Default on — Dylan's own devices — but visible and
-  /// revocable in settings.
-  bool get meshDeviceControl => _sp.getBool(_kMeshDeviceControl) ?? true;
-  Future<void> setMeshDeviceControl(bool v) =>
-      _sp.setBool(_kMeshDeviceControl, v);
+  /// "teleport" substrate) for the bridge it is connected to now.
+  ///
+  /// Off by default, and granted per bridge: turning it on records which
+  /// bridge it was turned on for, and a profile pointed at any other bridge
+  /// (a new pairing, a different host) reads it as off until the user turns
+  /// it on again there.
+  bool get meshDeviceControl =>
+      (_sp.getBool(_kMeshDeviceControl) ?? false) &&
+      _sp.getString(_kMeshControlBridge) == connection.bridgeKey;
+
+  Future<void> setMeshDeviceControl(bool v) async {
+    await _sp.setBool(_kMeshDeviceControl, v);
+    if (v) {
+      await _sp.setString(_kMeshControlBridge, connection.bridgeKey);
+    } else {
+      await _sp.setBool(_kMeshElevated, false);
+    }
+  }
+
+  /// Whether device control may climb to an elevated tier (root, or
+  /// Shizuku's shell UID) on Android. Off by default and never on without
+  /// [meshDeviceControl] for the same bridge; while off, commands run as the
+  /// app itself and nothing asks the root manager or Shizuku for a grant.
+  bool get meshElevated =>
+      meshDeviceControl && (_sp.getBool(_kMeshElevated) ?? false);
+
+  Future<void> setMeshElevated(bool v) => _sp.setBool(_kMeshElevated, v);
+
+  /// Withdraw device control and elevation — done whenever a pairing link
+  /// points the app at a bridge, so a newly paired bridge always starts with
+  /// neither, whatever the previous one had.
+  Future<void> revokeMeshGrants() async {
+    await _sp.setBool(_kMeshDeviceControl, false);
+    await _sp.setBool(_kMeshElevated, false);
+    await _sp.remove(_kMeshControlBridge);
+  }
 
   int? get meshBgAliveAt => _sp.getInt(_kMeshBgAliveAt);
   Future<void> setMeshBgAliveAt(int epochMs) =>
@@ -302,9 +370,16 @@ class Prefs {
 
 /// Encode [snapshot] and replace the file at [path] atomically (temp file +
 /// rename), so a crash mid-write never leaves a truncated snapshot behind.
+///
+/// The snapshot holds recent chats, so like the settings store it is this
+/// OS user's alone ([PrivateStore]): on Linux the temp file is narrowed to
+/// 0600 before any content is written, and the rename carries that mode
+/// over to the snapshot itself.
 void writeSnapshotFile(String path, Map<String, dynamic> snapshot) {
   final tmp = File('$path.tmp');
-  tmp.parent.createSync(recursive: true);
+  PrivateStore.ensurePrivateDirSync(tmp.parent.path);
+  tmp.writeAsStringSync('', flush: true);
+  PrivateStore.restrictFileSync(tmp.path);
   tmp.writeAsStringSync(jsonEncode(snapshot), flush: true);
   tmp.renameSync(path);
 }

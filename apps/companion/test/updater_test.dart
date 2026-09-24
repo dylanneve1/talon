@@ -366,6 +366,27 @@ void main() {
     });
   });
 
+  group('desktop staging directory', () {
+    test('is fresh, private and never the shared /tmp/talon-update', () async {
+      final installer = PlatformUpdateInstaller(platform: 'linux');
+      final a = await installer.stagingDir();
+      final b = await installer.stagingDir();
+      addTearDown(() async {
+        for (final d in [a, b]) {
+          if (await d.exists()) await d.delete(recursive: true);
+        }
+      });
+      expect(a.path, isNot(b.path));
+      final shared =
+          '${Directory.systemTemp.path}${Platform.pathSeparator}talon-update';
+      expect(a.path, isNot(shared));
+      expect(a.existsSync(), isTrue);
+      if (Platform.isLinux || Platform.isMacOS) {
+        expect(FileStat.statSync(a.path).mode & 0x1ff, 0x1c0); // 0700
+      }
+    });
+  });
+
   group('swap scripts', () {
     test('the POSIX script waits for this pid, then copies and relaunches', () {
       final s = PlatformUpdateInstaller.unixSwapScript(

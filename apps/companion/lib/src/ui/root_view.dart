@@ -9,6 +9,7 @@ import '../state/app_state.dart';
 import 'app_shell.dart';
 import 'connect_screen.dart';
 import 'glass.dart';
+import 'pair_confirm_dialog.dart';
 
 /// Decides between the first-run connect screen and the main app shell, and
 /// paints the global backdrop + ambient glow behind everything.
@@ -66,14 +67,29 @@ class _RootViewState extends State<RootView> with WidgetsBindingObserver {
       final config = ConnectionConfig.fromPairLink(link);
       if (config == null) {
         AppLog.warn('pair', 'ignored an unusable pairing link');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Ignored a pairing link that does not pin its bridge.',
+              ),
+            ),
+          );
+        }
         return;
       }
-      // Nothing to lose on first run — apply and get on with it. Once there
-      // IS a working connection, silently repointing the app at a different
-      // daemon is the kind of surprise that reads as a bug.
-      if (widget.state.prefs.onboarded && !await _confirm(link, config)) {
+      // Any app or web page can open a talon:// link, so it never changes
+      // the connection on its own — first run included. Only an explicit
+      // "Connect" in the dialog does.
+      final replacing = widget.state.prefs.onboarded;
+      if (!mounted) return;
+      if (!await PairConfirmDialog.ask(context, config, replacing: replacing)) {
+        AppLog.info('pair', 'pairing link declined');
         return;
       }
+      // A newly paired bridge starts without device control or elevated
+      // access, whatever the previous bridge had been granted.
+      await widget.state.prefs.revokeMeshGrants();
       await widget.state.prefs.setOnboarded(true);
       await widget.state.applyConfig(config);
       if (!mounted) return;
@@ -85,32 +101,6 @@ class _RootViewState extends State<RootView> with WidgetsBindingObserver {
     } finally {
       _checking = false;
     }
-  }
-
-  Future<bool> _confirm(String link, ConnectionConfig config) async {
-    final label = ConnectionConfig.pairLinkLabel(link);
-    final answer = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Switch connection?'),
-        content: Text(
-          'This link points Talon at ${config.host}:${config.port}'
-          '${label == null ? '' : ' ($label)'}, replacing the current '
-          'connection.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Switch'),
-          ),
-        ],
-      ),
-    );
-    return answer ?? false;
   }
 
   @override

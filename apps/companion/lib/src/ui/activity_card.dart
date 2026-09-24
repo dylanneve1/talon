@@ -163,6 +163,7 @@ class _StreamingTextState extends State<_StreamingText> {
       if (block.trim().isEmpty) continue;
       _blocks.add(Padding(
         padding: const EdgeInsets.only(bottom: _blockGap),
+        // Finished blocks never change again: full (highlighted) code blocks.
         child: _markdown(block),
       ));
     }
@@ -171,12 +172,13 @@ class _StreamingTextState extends State<_StreamingText> {
 
   int get _stableEnd => _breaks.isEmpty ? 0 : _breaks.last;
 
-  Widget _markdown(String data) => MarkdownBody(
+  Widget _markdown(String data, {bool live = false}) => MarkdownBody(
         data: data,
         // Same builder as finalized messages — without it, a code block
         // renders as a bare grey slab while streaming and then jumps to
-        // the framed panel on finalize.
-        builders: {'code': CodeElementBuilder()},
+        // the framed panel on finalize. The tail passes live: no background
+        // highlight per token (see CodeBlock).
+        builders: {'code': CodeElementBuilder(live: live)},
         styleSheet: talonMarkdownStyle(),
       );
 
@@ -202,7 +204,7 @@ class _StreamingTextState extends State<_StreamingText> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            if (tail.trim().isNotEmpty) Flexible(child: _markdown(tail)),
+            if (tail.trim().isNotEmpty) Flexible(child: _markdown(tail, live: true)),
             if (MediaQuery.of(context).disableAnimations)
               caret
             else
