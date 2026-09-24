@@ -23,7 +23,7 @@ import { logWarn } from "../../util/log.js";
 /** grammY's long-poll window when bot.start() is given none. */
 const DEFAULT_POLL_TIMEOUT_S = 30;
 /** Slack past the poll window before a connection is declared dead. */
-export const POLL_GRACE_S = 15;
+const POLL_GRACE_S = 15;
 
 export function pollDeadline(graceSeconds = POLL_GRACE_S): Transformer {
   return (prev, method, payload, signal) => {
