@@ -25,6 +25,7 @@ import { fetchGateway } from "./daemon-api.js";
 import { loadConfig, saveConfig, type Config } from "./config.js";
 import {
   cloneShallow,
+  writeInstallRecord,
   resolveSource,
   runTool,
   type ResolvedSource,
@@ -258,7 +259,16 @@ function installFromGit(
     }
     // An install is a snapshot, not a checkout — updates go through
     // `install --force`, so the clone's history has no business here.
+    // What it WAS a snapshot of is kept, so the exact commit is auditable.
     rmSync(join(stage, ".git"), { recursive: true, force: true });
+    writeInstallRecord(stage, {
+      source: source.url,
+      ...(source.subpath ? { subpath: source.subpath } : {}),
+      ...(clone.commit ? { commit: clone.commit } : {}),
+    });
+    if (clone.commit) {
+      console.log(`  ${pc.dim(`Commit ${clone.commit}`)}`);
+    }
 
     if (existsSync(join(stage, "package.json"))) {
       console.log(`  ${pc.dim("Installing dependencies…")}`);

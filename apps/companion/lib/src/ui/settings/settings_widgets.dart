@@ -13,6 +13,7 @@ import '../../models/bridge_models.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
 import '../glass.dart';
+import '../effects.dart';
 
 /// Severity for a diagnostics check row.
 enum SettingsHealth { ok, warn, bad, info }
@@ -303,10 +304,13 @@ class SettingsSkeleton extends StatelessWidget {
         ),
       );
       if (reduceMotion) return box;
-      return box.animate(onPlay: (c) => c.repeat()).shimmer(
+      return box
+          .animate(onPlay: (c) => c.repeat())
+          .shimmer(
             duration: 1200.ms,
             color: Colors.white.withValues(alpha: 0.08),
-          );
+          )
+          .wrapAmbient();
     }
 
     Widget card(int rows) => Glass(

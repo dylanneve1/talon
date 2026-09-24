@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import {
   readBodyLimited,
   ResponseTooLargeError,
-} from "../../../util/http-body.js";
+} from "../../../../util/http-body.js";
 import {
   advertisedBinaryKind,
   decodeText,
@@ -18,9 +18,11 @@ import {
   isHtmlContent,
   isTextContent,
   matchesBinaryKind,
-} from "../../tools/content/web-content.js";
-import { dirs } from "../../../util/paths.js";
-import type { SharedActionHandlers } from "./types.js";
+} from "../../../tools/content/web-content.js";
+import { dirs } from "../../../../util/paths.js";
+import { getPoolConfig } from "../../backend-controller/index.js";
+import type { SharedActionHandlers } from "../types.js";
+import { BlockedUrlError, guardedFetch } from "./guard.js";
 
 const MAX_RESPONSE_MB = 50;
 const MAX_RESPONSE_BYTES = MAX_RESPONSE_MB * 1024 * 1024;
@@ -32,24 +34,60 @@ function capText(text: string): string {
   return `${text.slice(0, MAX_TEXT_CHARS)}\n\n[Content truncated at ${MAX_TEXT_CHARS} characters]`;
 }
 
+/** Reject anything that isn't a well-formed http(s) URL. */
+function urlError(url: string): string | undefined {
+  if (!url) return "Missing URL";
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return "URL must use http or https protocol";
+    }
+  } catch {
+    return "Invalid URL";
+  }
+  return undefined;
+}
+
+/** Turn a text-ish body into the tool's text result. */
+function textResult(
+  mimeType: string,
+  buffer: Buffer,
+  ct: string,
+): { ok: true; text: string } {
+  const trimmed = decodeText(buffer, ct).trim();
+  if (!trimmed) return { ok: true, text: "(Page has no readable content)" };
+
+  // extractText is a DOM extractor — running it on JSON/XML/JavaScript/
+  // plain text strips small payloads like {"status":"ok"} to nothing,
+  // so only HTML (declared or sniffed) goes through it.
+  if (!isHtmlContent(mimeType, trimmed)) {
+    return { ok: true, text: capText(trimmed) };
+  }
+  const text = extractText(trimmed, Number.POSITIVE_INFINITY);
+  if (text.length < 20)
+    return { ok: true, text: "(Page has no readable content)" };
+  return { ok: true, text: capText(text) };
+}
+
 export const fetchUrlHandlers: SharedActionHandlers = {
   fetch_url: async (body) => {
     const url = String(body.url ?? "");
-    if (!url) return { ok: false, error: "Missing URL" };
+    const invalid = urlError(url);
+    if (invalid) return { ok: false, error: invalid };
     try {
-      const parsed = new URL(url);
-      if (!["http:", "https:"].includes(parsed.protocol)) {
-        return { ok: false, error: "URL must use http or https protocol" };
-      }
-    } catch {
-      return { ok: false, error: "Invalid URL" };
-    }
-    try {
-      const resp = await fetch(url, {
-        signal: AbortSignal.timeout(15_000),
-        headers: { "User-Agent": "Talon/1.0" },
-        redirect: "follow",
-      });
+      // Every hop is checked against private/loopback/link-local ranges
+      // (see guard.ts) unless the operator opted out for local use.
+      const resp = await guardedFetch(
+        url,
+        {
+          signal: AbortSignal.timeout(15_000),
+          headers: { "User-Agent": "Talon/1.0" },
+        },
+        {
+          allowPrivateNetworks:
+            getPoolConfig()?.fetchUrl?.allowPrivateNetworks === true,
+        },
+      );
       if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` };
       const ct = resp.headers.get("content-type") ?? "";
 
@@ -78,20 +116,7 @@ export const fetchUrlHandlers: SharedActionHandlers = {
       }
 
       if (isTextContent(mimeType, buffer)) {
-        const trimmed = decodeText(buffer, ct).trim();
-        if (!trimmed)
-          return { ok: true, text: "(Page has no readable content)" };
-
-        // extractText is a DOM extractor — running it on JSON/XML/JavaScript/
-        // plain text strips small payloads like {"status":"ok"} to nothing,
-        // so only HTML (declared or sniffed) goes through it.
-        if (!isHtmlContent(mimeType, trimmed)) {
-          return { ok: true, text: capText(trimmed) };
-        }
-        const text = extractText(trimmed, Number.POSITIVE_INFINITY);
-        if (text.length < 20)
-          return { ok: true, text: "(Page has no readable content)" };
-        return { ok: true, text: capText(text) };
+        return textResult(mimeType, buffer, ct);
       }
 
       if (buffer.length === 0)
@@ -125,6 +150,9 @@ export const fetchUrlHandlers: SharedActionHandlers = {
         text: `Downloaded ${typeLabel} (${(buffer.length / 1024).toFixed(0)}KB) to: ${filePath}\nRead it with the Read tool or send it with send(type="file", file_path="${filePath}").`,
       };
     } catch (err) {
+      if (err instanceof BlockedUrlError) {
+        return { ok: false, error: err.message };
+      }
       return {
         ok: false,
         error: `Fetch failed: ${err instanceof Error ? err.message : err}`,

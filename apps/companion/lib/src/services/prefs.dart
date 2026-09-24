@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/connection.dart';
@@ -93,6 +95,7 @@ class Prefs {
   static const _kAccentDynamic = 'accentDynamic.v1';
   static const _kTextScale = 'textScale.v1';
   static const _kHaptics = 'haptics.v1';
+  static const _kReduceEffects = 'reduceEffects.v1';
 
   /// Persisted theme selection: 'system' (default), 'light', or 'dark'.
   String get themeMode => _sp.getString(_kThemeMode) ?? 'system';
@@ -115,6 +118,15 @@ class Prefs {
   double get textScale => (_sp.getDouble(_kTextScale) ?? 1.0).clamp(0.85, 1.3);
   Future<void> setTextScale(double v) =>
       _sp.setDouble(_kTextScale, v.clamp(0.85, 1.3));
+
+  /// "Reduce effects": a static backdrop and no live blur. Unset means the
+  /// platform default — on for Windows and Linux, where continuous blur over
+  /// an animated backdrop costs the most (#1058), off elsewhere.
+  bool get reduceEffects =>
+      _sp.getBool(_kReduceEffects) ??
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux);
+  Future<void> setReduceEffects(bool v) => _sp.setBool(_kReduceEffects, v);
 
   /// UI haptic feedback (mobile). Default on.
   bool get haptics => _sp.getBool(_kHaptics) ?? true;

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import 'src/security/app_lock/app_lock_controller.dart';
@@ -17,6 +18,7 @@ import 'src/services/windows_tray.dart';
 import 'src/state/app_state.dart';
 import 'src/theme.dart';
 import 'src/ui/app_lock/app_lock_gate.dart';
+import 'src/ui/effects.dart';
 import 'src/ui/image_bounds.dart';
 import 'src/ui/root_view.dart';
 import 'src/ui/voice_mode_screen.dart';
@@ -59,6 +61,7 @@ Future<void> main() async {
   TalonTheme.accentSeed.value = seed == null ? null : Color(seed);
   TalonTheme.textScale.value = prefs.textScale;
   Haptics.enabled = prefs.haptics;
+  TalonEffects.reduce.value = prefs.reduceEffects;
   TalonTheme.apply(
     WidgetsBinding.instance.platformDispatcher.platformBrightness,
   );
@@ -93,13 +96,24 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
   StreamSubscription<void>? _assistSub;
 
+  /// The app-lock state last handed to the background isolate.
+  bool? _pushedAppLock;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // The background isolate redacts reply notifications while the lock is
+    // on; tell it as soon as the lock is turned on or off.
+    widget.appLock?.addListener(_onAppLockChanged);
+    // Decorative motion (ambient backdrop, pulses) only runs while the app is
+    // resumed and someone is using it — see TalonEffects.
+    TalonEffects.setLifecycle(WidgetsBinding.instance.lifecycleState);
+    HardwareKeyboard.instance.addHandler(_onKey);
     // The background mesh isolate reads this flag to decide whether a reply
     // needs a notification. We are on screen right now by definition.
     unawaited(widget.state.prefs.setUiForeground(true));
+    _pushUiState(foreground: true);
     unawaited(
       MessageNotifications.ensureInitialized(onSelect: _openChatFromTap),
     );
@@ -173,14 +187,39 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
   /// platform accent in case the wallpaper changed while we were away.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Desktop reports `inactive` for an unfocused window and `hidden` for a
+    // minimised/tray-hidden one: both stop the decorative animations.
+    TalonEffects.setLifecycle(state);
     final foreground = state == AppLifecycleState.resumed;
     unawaited(widget.state.prefs.setUiForeground(foreground));
+    _pushUiState(foreground: foreground);
     if (foreground) {
       final chatId = widget.state.selectedChatId;
       // Anything waiting in the shade for the chat now on screen is read.
       if (chatId != null) unawaited(MessageNotifications.clearChat(chatId));
       unawaited(_refreshDynamicAccent());
     }
+  }
+
+  /// Hand the background mesh service the two flags it checks before
+  /// posting a reply notification, so it doesn't reload (re-parse) the whole
+  /// prefs store for every assistant message (#1060). Prefs stay the
+  /// fallback for a service that starts before the UI has spoken.
+  void _pushUiState({required bool foreground}) {
+    final lock = widget.state.prefs.appLockEnabled;
+    _pushedAppLock = lock;
+    MeshForegroundController.pushUiState(
+      uiForeground: foreground,
+      messageNotifications: widget.state.prefs.messageNotifications,
+      appLockEnabled: lock,
+    );
+  }
+
+  void _onAppLockChanged() {
+    final lock = widget.state.prefs.appLockEnabled;
+    if (lock == _pushedAppLock) return;
+    _pushedAppLock = lock;
+    MeshForegroundController.pushUiState(appLockEnabled: lock);
   }
 
   /// Pull the platform accent into the palette while "Wallpaper" is the
@@ -195,6 +234,12 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
     if (TalonTheme.accentSeed.value?.toARGB32() == seed.toARGB32()) return;
     TalonTheme.accentSeed.value = seed; // listener re-applies the palette
     await widget.state.prefs.setAccentSeed(seed.toARGB32());
+  }
+
+  /// Typing counts as activity for the idle check. Never consumes the event.
+  bool _onKey(KeyEvent event) {
+    TalonEffects.markActivity();
+    return false;
   }
 
   /// The OS flipped light/dark — matters in auto mode.
@@ -213,6 +258,8 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     _assistSub?.cancel();
+    widget.appLock?.removeListener(_onAppLockChanged);
+    HardwareKeyboard.instance.removeHandler(_onKey);
     TalonTheme.mode.removeListener(_onThemeChanged);
     TalonTheme.accentSeed.removeListener(_onThemeChanged);
     TalonTheme.textScale.removeListener(_onThemeChanged);
@@ -235,15 +282,18 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
         final osFactor = mq.textScaler.scale(1.0);
         final navigator = child ?? const SizedBox.shrink();
         final lock = widget.appLock;
-        return MediaQuery(
-          data: mq.copyWith(
-            textScaler:
-                TextScaler.linear(osFactor * TalonTheme.textScale.value),
+        return ActivityListener(
+          child: MediaQuery(
+            data: mq.copyWith(
+              textScaler:
+                  TextScaler.linear(osFactor * TalonTheme.textScale.value),
+            ),
+            // Above the navigator, so no route or dialog can sit over the
+            // lock.
+            child: lock == null
+                ? navigator
+                : AppLockGate(controller: lock, child: navigator),
           ),
-          // Above the navigator, so no route or dialog can sit over the lock.
-          child: lock == null
-              ? navigator
-              : AppLockGate(controller: lock, child: navigator),
         );
       },
       home: RootView(state: widget.state),

@@ -21,6 +21,11 @@ dependencies:
   crypto: ^3.0.6
   # Persist the connection profile (host/port/token, local vs remote).
   shared_preferences: ^2.3.2
+  # App-support directory: for the mesh liveness file, which lives in its own
+  # file rather than inside the SharedPreferences store (#1060/#1063), and so
+  # the settings store's directory can be restricted to the current user on
+  # Linux (see PrivateStore).
+  path_provider: ^2.1.5
   # Markdown rendering for assistant replies (code blocks, tables, lists).
   flutter_markdown: ^0.7.4
   # AST access for the custom fenced-code-block builder (copy button +
@@ -69,9 +74,6 @@ dependencies:
   window_manager: ^0.5.2
   launch_at_startup: ^0.5.1
   flutter_local_notifications: ^22.2.0
-  # Locates the settings store's directory so its permissions can be
-  # restricted to the current user on Linux (see PrivateStore).
-  path_provider: ^2.1.5
   # Optional app lock (#1051). cryptography: Argon2id for the passcode
   # verifier/KEK and AES-256-GCM for the sealed chat snapshot (pure Dart, run
   # off the UI isolate). flutter_secure_storage: the lock record in the
