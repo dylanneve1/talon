@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.18.1](https://github.com/thefalconry/talon/compare/v5.18.0...v5.18.1) (2026-09-24)
+
+
+### Miscellaneous Chores
+
+* remove the operator's name and handle from the tree ([#1098](https://github.com/thefalconry/talon/issues/1098)) ([0c67f9a](https://github.com/thefalconry/talon/commit/0c67f9a63b479ae2e04ac3e07dcb4d1afa4f58dd))
+
 ## [5.18.0](https://github.com/thefalconry/talon/compare/v5.17.0...v5.18.0) (2026-09-24)
 
 
