@@ -93,8 +93,7 @@ class MeshBackgroundRunner {
   static const int _maxBackoffMs = 60000;
 
   Future<void> start() async {
-    // fileSnapshot: chat titles for notifications are seeded from it.
-    final prefs = await Prefs.load(fileSnapshot: true);
+    final prefs = await Prefs.load();
     _prefs = prefs;
     final client = BridgeClient(prefs.connection);
     _client = client;
