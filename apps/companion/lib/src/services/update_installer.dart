@@ -97,9 +97,11 @@ class PlatformUpdateInstaller implements UpdateInstaller {
         AppLog.warn('update', 'no native staging dir, using temp', e);
       }
     }
-    return Directory(
-      '${Directory.systemTemp.path}${Platform.pathSeparator}talon-update',
-    );
+    // A fresh, randomly named directory per download (mkdtemp: mode 0700 on
+    // POSIX), never a fixed shared path. `/tmp/talon-update` could be created
+    // in advance by another local user, who would then own the directory the
+    // unpacked build and the swap script sit in until Restart.
+    return Directory.systemTemp.createTemp('talon-update-');
   }
 
   @override
