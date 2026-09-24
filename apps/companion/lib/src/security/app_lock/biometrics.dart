@@ -62,9 +62,12 @@ class NoBiometrics extends BiometricUnlocker {
 ///   * **Android 9+** — the data key sits in `flutter_secure_storage`'s
 ///     biometric namespace: an Android Keystore key created with
 ///     `setUserAuthenticationRequired(true)`, unwrapped only inside a
-///     BiometricPrompt (fingerprint, face, or the device PIN). Every read
-///     prompts. A new fingerprint invalidates the key; unlock then falls
-///     back to the passcode and biometrics can be re-enabled.
+///     BiometricPrompt (fingerprint, face, or the device PIN). The plugin
+///     keeps that store open for the rest of the process once unwrapped, so
+///     every later unlock in the same process is confirmed with a fresh
+///     `local_auth` prompt first — there is never an unlock without one. A
+///     new fingerprint invalidates the key; unlock then falls back to the
+///     passcode and biometrics can be re-enabled.
 ///   * **macOS / Windows** — `local_auth` (Touch ID, Windows Hello) confirms
 ///     the user, then the key is read from the ordinary secure store (login
 ///     keychain / DPAPI). The keychain item can't carry a user-presence
@@ -86,10 +89,13 @@ class PlatformBiometrics extends BiometricUnlocker {
 
   static const String _key = 'biometricDataKey.v1';
 
+  /// Android: the auth-bound store has been unwrapped in this process, so
+  /// the plugin won't prompt again on its own — ask local_auth instead.
+  bool _androidStoreOpen = false;
+
   static const AndroidOptions _androidBio = AndroidOptions.biometric(
     storageNamespace: 'talon_applock_bio',
     enforceBiometrics: true,
-    requireBiometricsPerOperation: true,
     resetOnError: false,
     biometricPromptTitle: 'Unlock Talon',
     biometricPromptNegativeButton: 'Use passcode',
@@ -136,8 +142,11 @@ class PlatformBiometrics extends BiometricUnlocker {
     final encoded = base64Encode(dataKey);
     try {
       if (_android) {
-        // Writing through the auth-bound key prompts by itself.
+        // The first touch of the auth-bound store prompts by itself; after
+        // that the plugin holds it open, so confirm the user explicitly.
+        if (_androidStoreOpen && !await _authenticate(reason)) return false;
         await _androidStore.write(key: _key, value: encoded);
+        _androidStoreOpen = true;
         return true;
       }
       if (!await _authenticate(reason)) return false;
@@ -154,7 +163,9 @@ class PlatformBiometrics extends BiometricUnlocker {
     try {
       final String? encoded;
       if (_android) {
+        if (_androidStoreOpen && !await _authenticate(reason)) return null;
         encoded = await _androidStore.read(key: _key);
+        _androidStoreOpen = true;
       } else {
         if (!await _authenticate(reason)) return null;
         encoded = await _store.read(_key);

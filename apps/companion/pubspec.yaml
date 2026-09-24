@@ -77,9 +77,11 @@ dependencies:
   # off the UI isolate). flutter_secure_storage: the lock record in the
   # platform keystore/keychain (its own namespace — the bridge credential
   # store from #1068 can share the package). local_auth: Touch ID / Windows
-  # Hello / BiometricPrompt availability and prompts.
+  # Hello / BiometricPrompt availability and prompts. flutter_secure_storage
+  # stays on 10.x: 11.x's Windows plugin needs win32 ^6, while
+  # device_info_plus 11 (and the other *_plus plugins here) pin win32 ^5.
   cryptography: ^2.9.0
-  flutter_secure_storage: ^11.2.0
+  flutter_secure_storage: ^10.3.4
   local_auth: ^3.0.2
 
 # file_picker resolves flutter_plugin_android_lifecycle to 2.0.35, whose Android
