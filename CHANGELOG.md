@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.12.0](https://github.com/dylanneve1/talon/compare/v5.11.0...v5.12.0) (2026-09-24)
+
+
+### Features
+
+* **usage:** redeem a banked Claude limit reset from /usage ([#1035](https://github.com/dylanneve1/talon/issues/1035)) ([2eceeef](https://github.com/dylanneve1/talon/commit/2eceeeffbd817ba67c55f429690e1901a2c9a161))
+
+
+### Bug Fixes
+
+* **tests:** de-flake mesh registry cap and MCP-functional-2 boot under load ([#1036](https://github.com/dylanneve1/talon/issues/1036)) ([553a4e4](https://github.com/dylanneve1/talon/commit/553a4e441e1acc196cd2f5089b519143e8a8c7be))
+
 ## [5.11.0](https://github.com/dylanneve1/talon/compare/v5.10.0...v5.11.0) (2026-09-24)
 
 
