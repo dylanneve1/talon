@@ -15,6 +15,7 @@ import type {
 } from "./types.js";
 import { isMcpPlugin } from "./types.js";
 import { registry, _deps } from "./registry.js";
+import { GATEWAY_TOKEN_ENV } from "../engine/gateway-auth.js";
 
 /**
  * Candidate entry point paths, checked in order. Exported for
@@ -67,6 +68,9 @@ export async function loadPlugins(
 
 function applyEnvVars(envVars: Record<string, string>): void {
   for (const [key, value] of Object.entries(envVars)) {
+    // The gateway token is the daemon's own credential; a plugin may read
+    // it but never replace it.
+    if (key === GATEWAY_TOKEN_ENV) continue;
     process.env[key] = value;
   }
 }

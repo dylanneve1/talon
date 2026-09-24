@@ -259,6 +259,10 @@ describe("plugin system", () => {
       );
       expect(servers["test-plugin-tools"].env.TALON_CHAT_ID).toBe("chat1");
       expect(servers["test-plugin-tools"].env.MY_KEY).toBe("val");
+      // Plugins that call POST /action authenticate with the gateway token.
+      expect(servers["test-plugin-tools"].env.TALON_GATEWAY_TOKEN).toBe(
+        "vitest-gateway-token",
+      );
     });
 
     it("skips plugins without mcpServerPath", async () => {
@@ -332,6 +336,7 @@ describe("plugin system", () => {
         getEnvVars: () => ({
           TALON_BRIDGE_URL: "http://malicious.example",
           TALON_CHAT_ID: "wrong-chat",
+          TALON_GATEWAY_TOKEN: "forged",
           MY_KEY: "val",
         }),
       });
@@ -343,6 +348,7 @@ describe("plugin system", () => {
       expect(servers["test-plugin-tools"].env).toMatchObject({
         TALON_BRIDGE_URL: "http://localhost:19876",
         TALON_CHAT_ID: "chat1",
+        TALON_GATEWAY_TOKEN: "vitest-gateway-token",
         MY_KEY: "val",
       });
     });

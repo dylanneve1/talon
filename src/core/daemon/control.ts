@@ -16,6 +16,10 @@ import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { isBunRuntime } from "../../util/runtime.js";
 import {
+  gatewayAuthHeaders,
+  readGatewayToken,
+} from "../engine/gateway-auth.js";
+import {
   readPidRecord,
   writePidRecord,
   removePidRecordIfOwnedBy,
@@ -157,6 +161,11 @@ async function requestShutdown(port: number): Promise<boolean> {
   try {
     const resp = await fetch(`http://127.0.0.1:${port}/shutdown`, {
       method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...gatewayAuthHeaders(readGatewayToken()),
+      },
+      body: "{}",
       signal: AbortSignal.timeout(2000),
     });
     if (!resp.ok) return false;

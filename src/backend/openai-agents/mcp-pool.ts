@@ -25,6 +25,7 @@
 
 import { connectMcpServers, MCPServerStreamableHttp } from "@openai/agents";
 import type { MCPServer } from "@openai/agents";
+import { gatewayAuthHeaders } from "../../core/engine/gateway-auth.js";
 import {
   talonHubUrl,
   pluginHubUrl,
@@ -185,6 +186,7 @@ async function buildBundle(args: BundleInputs): Promise<OpenAIAgentsMcpBundle> {
         name: `${frontend}-tools`,
         url: talonHubUrl(bridgeUrl, frontend, chatId),
         cacheToolsList: true,
+        requestInit: { headers: gatewayAuthHeaders() },
       }),
     );
   }
@@ -197,6 +199,7 @@ async function buildBundle(args: BundleInputs): Promise<OpenAIAgentsMcpBundle> {
         name: "brave-search",
         url: pluginHubUrl(bridgeUrl, "brave-search", chatId),
         cacheToolsList: true,
+        requestInit: { headers: gatewayAuthHeaders() },
       }),
     );
   }
@@ -208,6 +211,7 @@ async function buildBundle(args: BundleInputs): Promise<OpenAIAgentsMcpBundle> {
         name,
         url: pluginHubUrl(bridgeUrl, name, chatId),
         cacheToolsList: true,
+        requestInit: { headers: gatewayAuthHeaders() },
       }),
     );
   }

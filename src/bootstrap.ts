@@ -139,6 +139,10 @@ export async function bootstrap(
   // trimming + brave key come from config; endpoints mount on the
   // gateway HTTP server).
   const { initHub } = await import("./core/mcp-hub/index.js");
+  const { setNativeToolsEnabled } =
+    await import("./core/engine/gateway-actions/native/index.js");
+  // The native shell/fs actions only answer when the tool set is on.
+  setNativeToolsEnabled(config.nativeTools);
   initHub({
     disabledTools: config.disabledTools,
     disabledToolTags: config.disabledToolTags,

@@ -576,7 +576,7 @@ The image is also ready for the **Antigravity (`agy`) backend**: add `-f docker-
 
 **Systemd:** unit file at `packaging/systemd/talon.service` — copy to `/etc/systemd/system/`, set `User=` and `WorkingDirectory=`, then `systemctl enable --now talon`.
 
-**Health endpoint:** `GET http://localhost:19876/health` returns JSON with uptime, memory, queue depth, active sessions, and last activity timestamp.
+**Health endpoint:** `GET http://localhost:19876/health` returns the daemon's identity (`app`, `mode`, `pid`, `port`, `startedAt`, `ok`). With the gateway token (`Authorization: Bearer $(cat ~/.talon/keys/gateway-token)`) it also returns uptime, memory, queue depth, active sessions, and last activity timestamp. Every other gateway route requires that token.
 
 **Logging:** Structured JSON via pino to `~/.talon/talon.log`. Rotated on startup when the file exceeds 10MB.
 

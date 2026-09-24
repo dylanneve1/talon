@@ -10,6 +10,7 @@ import { wrapMcpServer } from "../mcp-hub/launcher.js";
 import { isBunRuntime } from "../../util/runtime.js";
 import { registry, reloadState } from "./registry.js";
 import type { McpServerConfig } from "./types.js";
+import { GATEWAY_TOKEN_ENV, gatewayToken } from "../engine/gateway-auth.js";
 
 function buildBridgeEnv(
   bridgeUrl: string,
@@ -19,6 +20,9 @@ function buildBridgeEnv(
   return {
     ...envVars,
     TALON_BRIDGE_URL: bridgeUrl,
+    // Plugins that call back into the gateway (POST /action) must send
+    // this as `Authorization: Bearer <token>`.
+    [GATEWAY_TOKEN_ENV]: gatewayToken(),
     TALON_CHAT_ID: chatId,
     TALON_RELOAD_AT: reloadState.lastReloadAt,
   };

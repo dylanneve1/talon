@@ -98,19 +98,25 @@ describe("agy mcp-config — naming", () => {
 });
 
 describe("agy mcp-config — building", () => {
+  // Every entry authenticates to the hub with the gateway token.
+  const AUTH = { Authorization: "Bearer vitest-gateway-token" };
+
   it("builds the same membership codex builds, as http entries", () => {
     expect(servers()).toEqual({
       "__talon__1001426819337__telegram-tools": {
         disabled: false,
+        headers: AUTH,
         serverUrl: "http://127.0.0.1:19876/mcp/talon/telegram/-1001426819337",
       },
       "__talon__1001426819337__brave-search": {
         disabled: false,
+        headers: AUTH,
         serverUrl:
           "http://127.0.0.1:19876/mcp/plugin/brave-search/-1001426819337",
       },
       "__talon__1001426819337__extras-tools": {
         disabled: false,
+        headers: AUTH,
         serverUrl:
           "http://127.0.0.1:19876/mcp/plugin/extras-tools/-1001426819337",
       },
