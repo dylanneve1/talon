@@ -261,6 +261,8 @@ export interface PlanUsage {
   windows: PlanWindow[];
   /** How many one-shot rate-limit resets are still banked, when the plan has them. */
   resetsAvailable?: number;
+  /** ISO time the soonest-expiring banked reset must be used by, when the plan says. */
+  resetsExpireAt?: string;
   /** Epoch ms of the read, so renderers can flag figures as aged. */
   fetchedAt: number;
 }

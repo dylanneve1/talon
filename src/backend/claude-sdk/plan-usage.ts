@@ -21,7 +21,14 @@ import type {
   PlanWindow,
 } from "../../core/agent-runtime/capabilities.js";
 
-const USAGE_ENDPOINT = "https://api.anthropic.com/api/oauth/usage";
+// `cedar_ember=1` asks the endpoint to include banked limit resets (the
+// claude.ai "Reset for free" grants); `skip_spend=1` drops the spend block we
+// don't render. Resets are only reported to the CLI surface — any other
+// user agent gets `ineligible_reason: "surface"` — so the request identifies
+// as the CLI, which is what the Agent SDK runs anyway.
+const USAGE_ENDPOINT =
+  "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1";
+const CLI_USER_AGENT = "claude-cli/2.1.280 (external, cli)";
 const REQUEST_TIMEOUT_MS = 5_000;
 const CACHE_TTL_MS = 60_000;
 
@@ -77,6 +84,48 @@ function windowLabel(limit: RawLimit): string | undefined {
   return undefined;
 }
 
+interface RawResetGrant {
+  resets_left?: number;
+  ends_at?: string | null;
+  paused?: boolean;
+}
+
+/**
+ * Banked limit resets still usable: unpaused grants whose window hasn't
+ * closed. Returns the count and the soonest deadline among grants that still
+ * hold a reset, or undefined when there's nothing to offer.
+ */
+export function parseBankedResets(
+  body: unknown,
+  now = Date.now(),
+): { count: number; expiresAt?: string } | undefined {
+  const program = (body as { cedar_ember?: unknown } | null)?.cedar_ember as
+    { eligible?: boolean; grants?: unknown } | null | undefined;
+  if (!program || program.eligible === false || !Array.isArray(program.grants))
+    return undefined;
+
+  let count = 0;
+  let expiresAt: string | undefined;
+  for (const grant of program.grants as RawResetGrant[]) {
+    const left = grant.resets_left;
+    if (typeof left !== "number" || !Number.isFinite(left) || left <= 0)
+      continue;
+    if (grant.paused === true) continue;
+    const ends =
+      typeof grant.ends_at === "string" ? Date.parse(grant.ends_at) : NaN;
+    if (Number.isFinite(ends) && ends <= now) continue;
+    count += Math.floor(left);
+    if (
+      typeof grant.ends_at === "string" &&
+      Number.isFinite(ends) &&
+      (!expiresAt || ends < Date.parse(expiresAt))
+    )
+      expiresAt = grant.ends_at;
+  }
+  if (count <= 0) return undefined;
+  return { count, ...(expiresAt ? { expiresAt } : {}) };
+}
+
 export function parsePlanUsage(
   body: unknown,
   subscriptionType?: string,
@@ -103,9 +152,16 @@ export function parsePlanUsage(
   }
 
   if (windows.length === 0) return undefined;
+  const banked = parseBankedResets(body);
   return {
     ...(subscriptionType ? { plan: subscriptionType } : {}),
     windows,
+    ...(banked
+      ? {
+          resetsAvailable: banked.count,
+          ...(banked.expiresAt ? { resetsExpireAt: banked.expiresAt } : {}),
+        }
+      : {}),
     fetchedAt: Date.now(),
   };
 }
@@ -119,6 +175,7 @@ async function load(): Promise<PlanUsage | undefined> {
       headers: {
         Authorization: `Bearer ${creds.accessToken}`,
         "anthropic-beta": "oauth-2025-04-20",
+        "User-Agent": CLI_USER_AGENT,
       },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
