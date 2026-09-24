@@ -7,6 +7,7 @@ import 'package:http/io_client.dart';
 
 import '../models/bridge_models.dart';
 import '../models/connection.dart';
+import '../models/credentials.dart';
 import 'bridge_trust.dart';
 import 'log.dart';
 
@@ -181,6 +182,35 @@ class BridgeClient {
       return null;
     }
   }
+
+  // ── Per-device credentials ─────────────────────────────────────────────────
+
+  /// `GET /auth/whoami` — which credential this connection uses and whether
+  /// the daemon wants it upgraded or rotated. Null when the daemon predates
+  /// per-device credentials (the route answers 404).
+  Future<CredentialStatus?> whoami() async {
+    final res = await _http
+        .get(_u('/auth/whoami'), headers: config.authHeaders())
+        .timeout(const Duration(seconds: 12));
+    if (res.statusCode == 404) return null;
+    return CredentialStatus.fromJson(_decode(res));
+  }
+
+  /// The `POST /auth/upgrade` body a companion sends: its mesh device id and
+  /// the scopes it needs (the mesh + the chat UI). The daemon caps the grant
+  /// by its `native.companionScopes` policy.
+  static Map<String, dynamic> upgradeRequestBody(String deviceId) => {
+        'deviceId': deviceId,
+        'client': 'companion',
+        'scopes': const ['device', 'client'],
+      };
+
+  /// Trade the current bearer (shared token, or this device's credential
+  /// when rotating) for a per-device credential bound to [deviceId].
+  Future<CredentialGrant> upgradeCredential(String deviceId) async =>
+      CredentialGrant.fromJson(
+        await _postJson('/auth/upgrade', upgradeRequestBody(deviceId)),
+      );
 
   // ── SSE stream ──────────────────────────────────────────────────────────────
 

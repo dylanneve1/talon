@@ -135,7 +135,12 @@ class MeshService {
 
   bool get running => _running;
 
-  Future<String> deviceId() async {
+  Future<String> deviceId() => ensureDeviceId(prefs);
+
+  /// This install's stable mesh id, minted (and persisted) on first use.
+  /// Static so the connection owner can bind a per-device credential to the
+  /// same id the mesh registers with.
+  static Future<String> ensureDeviceId(Prefs prefs) async {
     final existing = prefs.meshDeviceId;
     if (existing != null && existing.isNotEmpty) return existing;
     final id = const Uuid().v4();

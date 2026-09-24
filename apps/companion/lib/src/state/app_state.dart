@@ -378,6 +378,7 @@ class AppState extends ChangeNotifier {
       await _refreshChats();
       unawaited(_refreshModels());
       unawaited(refreshMeshDevices());
+      unawaited(_maybeUpgradeCredential(client, epoch));
     } catch (e) {
       if (epoch != _epoch) {
         _disposeStale(client);
@@ -402,6 +403,69 @@ class AppState extends ChangeNotifier {
       _setConn(ConnState.error, e.toString());
       _scheduleReconnect();
     }
+  }
+
+  /// Set once the daemon answers 404 to `/auth/whoami` (it predates
+  /// per-device credentials) — no point asking again this session.
+  bool _credentialsUnsupported = false;
+  bool _upgradingCredential = false;
+
+  /// #1042: trade the shared bridge token for this device's own credential
+  /// (or rotate the credential when the operator asked), in band, right
+  /// after a successful connect. The new token is persisted to the profile
+  /// BEFORE it is used, and the daemon keeps the old one valid until the new
+  /// one is first presented — so neither a crash nor a lost reply can leave
+  /// the app holding a token that doesn't work.
+  ///
+  /// Local-discovery profiles are left alone: they read the token from the
+  /// daemon's 0600 discovery file on every connect, and a same-machine
+  /// client keeps full access with the shared token by design.
+  Future<void> _maybeUpgradeCredential(BridgeClient client, int epoch) async {
+    if (_credentialsUnsupported || _upgradingCredential) return;
+    if (config.canAutoDiscoverLocal) return;
+    final token = client.config.token;
+    if (token == null || token.isEmpty) return;
+    _upgradingCredential = true;
+    try {
+      final status = await client.whoami();
+      if (status == null) {
+        _credentialsUnsupported = true;
+        return;
+      }
+      if (!status.wantsNewCredential(token)) return;
+      final deviceId = await _credentialDeviceId();
+      if (deviceId == null || epoch != _epoch) return;
+      final grant = await client.upgradeCredential(deviceId);
+      if (grant.deviceId != deviceId || epoch != _epoch) return;
+      config = config.copyWith(token: grant.token);
+      await prefs.setConnection(config);
+      client.config = client.config.copyWith(token: grant.token);
+      _activeConfig = client.config;
+      // The background mesh isolate dials with its own copy of the profile.
+      MeshForegroundController.notifyReconfigure();
+      AppLog.info(
+        'app_state',
+        'now using per-device credential ${grant.credentialId} '
+            '(${grant.scopes.join(', ')})',
+      );
+    } catch (e) {
+      AppLog.warn('app_state', 'credential upgrade failed', e);
+    } finally {
+      _upgradingCredential = false;
+    }
+  }
+
+  /// The mesh device id a credential must be bound to — the SAME id this
+  /// device registers and claims its stream with, or the daemon refuses the
+  /// credential as another device's. On Android the background isolate
+  /// mints it; if it hasn't yet, wait for the next connect rather than
+  /// racing it with a second id.
+  Future<String?> _credentialDeviceId() async {
+    await prefs.reload();
+    final existing = prefs.meshDeviceId;
+    if (existing != null && existing.isNotEmpty) return existing;
+    if (MeshForegroundController.isSupported && prefs.meshSharing) return null;
+    return MeshService.ensureDeviceId(prefs);
   }
 
   /// Trust-on-first-use: after the first successful TLS connect with no pin
