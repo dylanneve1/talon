@@ -16,11 +16,11 @@ import 'update_installer.dart';
 /// deliberately skips drafts and pre-releases, so a tagged release-please
 /// build is the only thing the app will ever offer to install.
 const String kUpdateFeedUrl =
-    'https://api.github.com/repos/dylanneve1/talon/releases/latest';
+    'https://api.github.com/repos/thefalconry/talon/releases/latest';
 
 /// Human-facing releases page, for the "download it yourself" escape hatch
 /// (a managed install the app can't overwrite, or an unsupported platform).
-const String kReleasesPageUrl = 'https://github.com/dylanneve1/talon/releases';
+const String kReleasesPageUrl = 'https://github.com/thefalconry/talon/releases';
 
 /// A semantic version, ordered the way semver orders: numerically by
 /// major/minor/patch, with any pre-release suffix sorting *below* the release

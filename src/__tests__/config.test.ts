@@ -485,7 +485,7 @@ describe("config", () => {
         memory: {
           enabled: true,
           backend: "mem0",
-          mem0: { apiKey: "m0-test", userId: "dylan" },
+          mem0: { apiKey: "m0-test", userId: "ada" },
         },
       });
 
@@ -494,7 +494,7 @@ describe("config", () => {
       expect(config.mem0).toEqual({
         enabled: true,
         apiKey: "m0-test",
-        userId: "dylan",
+        userId: "ada",
       });
       expect(config.mempalace?.enabled).not.toBe(true);
     });

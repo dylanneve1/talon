@@ -124,7 +124,7 @@ function inboundFor(
       isGroup: opts.isGroup === true,
     },
     text,
-    senderName: "Dylan",
+    senderName: "Ada",
     identity: { ids: [opts.senderId ?? "100"], phone: opts.senderId ?? "100" },
     isGroup: opts.isGroup === true,
   };
@@ -234,7 +234,7 @@ describe("/model", () => {
     pushMessage(inbound.chat.chatId, {
       msgId: 1,
       senderId: 1,
-      senderName: "Dylan",
+      senderName: "Ada",
       text: "before the switch",
       timestamp: Date.now(),
     });
@@ -319,7 +319,7 @@ describe("/settings, /status, /reset, /help", () => {
     pushMessage(inbound.chat.chatId, {
       msgId: 1,
       senderId: 1,
-      senderName: "Dylan",
+      senderName: "Ada",
       text: "kept",
       timestamp: Date.now(),
     });

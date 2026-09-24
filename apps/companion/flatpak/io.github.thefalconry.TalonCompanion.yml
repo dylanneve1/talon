@@ -3,7 +3,7 @@
 # GitHub release (CI: .github/workflows/companion.yml, asset
 # talon-companion-linux.tar.gz = build/linux/x64/release/bundle); nothing is
 # compiled from the app's own source here. See README.md in this directory.
-id: io.github.dylanneve1.TalonCompanion
+id: io.github.thefalconry.TalonCompanion
 
 # Runtime choice: the Flutter Linux embedder (libflutter_linux_gtk.so) and the
 # plugins in the bundle link GTK 3, GDK, Pango, Cairo, HarfBuzz, ATK
@@ -71,7 +71,7 @@ modules:
       # bundle dir, so there is no top-level folder: strip nothing, extract
       # into bundle/ (-> talon_companion, lib/, data/).
       - type: archive
-        url: https://github.com/dylanneve1/talon/releases/download/v5.7.0/talon-companion-linux.tar.gz
+        url: https://github.com/thefalconry/talon/releases/download/v5.7.0/talon-companion-linux.tar.gz
         sha256: d8ece43dc30fdffdcfbfa562fd0ef3360b7ebc7c6da8c9b491240d7ac9501813
         strip-components: 0
         dest: bundle
@@ -81,7 +81,7 @@ modules:
         # url + sha256 whenever a new GitHub release is published.
         x-checker-data:
           type: json
-          url: https://api.github.com/repos/dylanneve1/talon/releases/latest
+          url: https://api.github.com/repos/thefalconry/talon/releases/latest
           version-query: .tag_name | sub("^v"; "")
           url-query: .assets[] | select(.name=="talon-companion-linux.tar.gz")
             | .browser_download_url
@@ -94,12 +94,12 @@ modules:
           # /proc/self/exe, so exec the real binary in place.
           - exec /app/talon-companion/talon_companion "$@"
       - type: file
-        path: io.github.dylanneve1.TalonCompanion.desktop
+        path: io.github.thefalconry.TalonCompanion.desktop
       - type: file
-        path: io.github.dylanneve1.TalonCompanion.metainfo.xml
+        path: io.github.thefalconry.TalonCompanion.metainfo.xml
       - type: file
-        path: icons/io.github.dylanneve1.TalonCompanion.svg
+        path: icons/io.github.thefalconry.TalonCompanion.svg
       - type: file
-        path: icons/io.github.dylanneve1.TalonCompanion-128.png
+        path: icons/io.github.thefalconry.TalonCompanion-128.png
       - type: file
-        path: icons/io.github.dylanneve1.TalonCompanion-256.png
+        path: icons/io.github.thefalconry.TalonCompanion-256.png

@@ -57,7 +57,7 @@ export const NODE_TARGETS: readonly NodeTarget[] = [
 ];
 
 const SUMS_ASSET = "talon-node-SHA256SUMS";
-const RELEASE_BASE = "https://github.com/dylanneve1/talon/releases/download";
+const RELEASE_BASE = "https://github.com/thefalconry/talon/releases/download";
 const DOWNLOAD_TIMEOUT_MS = 120_000;
 const BUILD_TIMEOUT_MS = 300_000;
 

@@ -16,12 +16,12 @@ arch: ${ARCH}
 version: ${VERSION}
 section: utils
 priority: optional
-maintainer: Dylan Neve <noreply@github.com>
+maintainer: The Falconry <noreply@github.com>
 description: |
   Multi-frontend AI agent with full tool access, streaming, cron jobs, and plugins.
   Self-contained standalone binary (no Node.js runtime required).
-vendor: Dylan Neve
-homepage: https://github.com/dylanneve1/talon
+vendor: The Falconry
+homepage: https://github.com/thefalconry/talon
 license: MIT
 contents:
   - src: dist/talon-bin

@@ -13,7 +13,7 @@
  * correctly end-to-end. This test pins the new `chatIdSchema` to
  * accept both signs while still rejecting zero and non-integers.
  *
- * The exact -1001426819337 case below is the one Dylan asked the
+ * The exact -1001426819337 case below is the one Ada asked the
  * heartbeat to test in chat at 2026-05-12 18:13Z. The
  * old schema rejected it; this test ensures the new schema doesn't.
  */
@@ -108,10 +108,10 @@ describe("chatIdSchema (standalone)", () => {
 
 describe("chat_id tool params (wired into send/react)", () => {
   // The exact two tool fields PR #150 wired to idSchema by mistake.
-  // After the fix they must accept both Dylan's DM (positive) AND
+  // After the fix they must accept both Ada's DM (positive) AND
   // the Pandario group (negative).
   const cases: Array<[string, number]> = [
-    ["send", 352042062], // Dylan DM
+    ["send", 352042062], // Ada DM
     ["send", -1001426819337], // Pandario group
     ["react", 352042062],
     ["react", -1001426819337],

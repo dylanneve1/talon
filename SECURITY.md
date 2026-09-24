@@ -16,7 +16,7 @@ If you discover a security vulnerability in Talon, please report it responsibly.
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Instead, use [GitHub's private vulnerability reporting](https://github.com/dylanneve1/talon/security/advisories/new) to submit your report. This ensures the issue can be assessed and fixed before public disclosure.
+Instead, use [GitHub's private vulnerability reporting](https://github.com/thefalconry/talon/security/advisories/new) to submit your report. This ensures the issue can be assessed and fixed before public disclosure.
 
 ### What to include
 

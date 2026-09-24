@@ -1260,7 +1260,7 @@ describe("MeshService hardening", () => {
 describe("MeshService registry hygiene", () => {
   const mac = (id: string): Record<string, unknown> => ({
     id,
-    name: "Dylan's MacBook Pro",
+    name: "Ada's MacBook Pro",
     platform: "macos",
     appVersion: "1.0.0",
   });
@@ -1325,7 +1325,7 @@ describe("MeshService registry hygiene", () => {
       "1",
     );
     expect(res.ok).toBe(true);
-    expect(res.text).toContain("Removed Dylan's MacBook Pro [id: mac-old]");
+    expect(res.text).toContain("Removed Ada's MacBook Pro [id: mac-old]");
     // Offline removal carries no re-register warning.
     expect(res.text).not.toContain("re-registers");
 

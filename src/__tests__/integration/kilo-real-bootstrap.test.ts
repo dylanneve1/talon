@@ -150,7 +150,7 @@ const HEALTH_TIMEOUT_MS = 15_000;
  *
  *   - `cwd` set to a fresh tempdir → kilo derives its `projectID` from a
  *     hash of the working directory; a unique cwd → unique projectID →
- *     no shared sessions / MCP catalog with prod's `/home/dylan/...` cwd.
+ *     no shared sessions / MCP catalog with prod's `/home/ada/...` cwd.
  *   - `HOME` + `XDG_DATA_HOME` + `XDG_CONFIG_HOME` set inside the tempdir
  *     → kilo writes its global state under our temp tree, not
  *     `~/.local/share/kilocode/`.
