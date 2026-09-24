@@ -45,6 +45,7 @@ import {
 } from "../../../core/mcp-hub/index.js";
 import { frontendsForChat } from "../../runtime/frontends.js";
 import { logWarn } from "../../../util/log.js";
+import { gatewayAuthHeaders } from "../../../core/engine/gateway-auth.js";
 import { AGY_MCP_PREFIX } from "../constants.js";
 
 // ── Paths ───────────────────────────────────────────────────────────────────
@@ -77,6 +78,8 @@ function agyMcpSnapshotDir(override?: string): string {
  */
 export interface AgyMcpServer {
   disabled: boolean;
+  /** Gateway bearer token (`agy mcp add --header` writes this shape). */
+  headers: Record<string, string>;
   serverUrl: string;
 }
 
@@ -129,8 +132,13 @@ export function buildAgyMcpServers(args: {
   const { chatId, bridgeUrl, frontends, braveApiKey } = args;
   const scope = args.scope ?? agyScopeSlug(chatId);
   const servers: Record<string, AgyMcpServer> = {};
+  const headers = gatewayAuthHeaders();
   const add = (name: string, url: string) => {
-    servers[agyServerKey(scope, name)] = { disabled: false, serverUrl: url };
+    servers[agyServerKey(scope, name)] = {
+      disabled: false,
+      headers,
+      serverUrl: url,
+    };
   };
 
   for (const frontend of frontendsForChat(chatId, frontends)) {
@@ -198,7 +206,11 @@ function writeConfigAtomic(
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.talon-${randomBytes(6).toString("hex")}.tmp`;
   try {
-    writeFileSync(tmp, `${JSON.stringify(file, null, 2)}\n`, "utf-8");
+    // Owner-only: Talon's entries carry the gateway token.
+    writeFileSync(tmp, `${JSON.stringify(file, null, 2)}\n`, {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
     renameSync(tmp, path);
   } catch (err) {
     try {

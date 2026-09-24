@@ -56,7 +56,7 @@ companion app).
 | --------------------- | ----------------------------------------- | ---------------------------------------------------------------------------- |
 | `TALON_FRONTEND`      | `frontend`                                | Comma list allowed. Default: `telegram` with a bot token, else `native`.     |
 | `TALON_BOT_TOKEN`     | `botToken`                                | Telegram.                                                                    |
-| `TALON_ADMIN_USER_ID` | `adminUserId`, `allowedUsers: [id]`       | A fresh bot answers only its admin.                                          |
+| `TALON_ADMIN_USER_ID` | `adminUserId`, `allowedUsers: [id]`       | Required with Telegram. A fresh bot answers only its admin.                  |
 | `TALON_BACKEND`       | `backend`                                 | `claude`, `agy`, `codex`, `kilo`, `opencode`, `openai-agents`.               |
 | `TALON_MODEL`         | `model`                                   |                                                                              |
 | `TALON_BRIDGE_PORT`   | `native.port`                             | Default `19880`.                                                             |

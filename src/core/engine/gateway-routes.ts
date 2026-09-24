@@ -1,19 +1,35 @@
 /**
  * The action gateway's HTTP routes — declared once, in order, rather than
- * implied by where an `if` sits in `Gateway.start`. Every route shares the
- * 127.0.0.1 trust boundary; the table is the list a reviewer reads.
+ * implied by where an `if` sits in `Gateway.start`. Every request first
+ * passes the transport guard (loopback Host, no browser Origin, JSON POST
+ * bodies) and every route except `/health` requires the gateway token —
+ * see gateway-auth.ts. The table is the list a reviewer reads.
  */
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { bus } from "../bus/index.js";
 import { taskTable } from "../tasks/index.js";
 import { agentRegistry } from "../agents/index.js";
 import { handleHubRequest, HUB_PATH_PREFIX } from "../mcp-hub/index.js";
+import { getMeshService } from "../mesh/index.js";
+import {
+  credentialAdmin,
+  credentialOverview,
+  type CredentialAdminContext,
+} from "../mesh/credentials/index.js";
 import { log, logError } from "../../util/log.js";
+import { checkGatewayTransport, hasValidGatewayToken } from "./gateway-auth.js";
 
 /** What the routes need from the Gateway that owns them. */
 export type GatewayRouteHost = {
-  /** The /health body — identity fields plus live counters. */
-  healthSnapshot: () => Record<string, unknown>;
+  /** The port the gateway is bound to — the only Host port it answers on. */
+  port: () => number;
+  /** The token every non-public route requires. */
+  token: () => string;
+  /**
+   * The /health body. `full` (an authenticated caller) adds the live
+   * counters; without it only the identity fields discovery matches on.
+   */
+  healthSnapshot: (full: boolean) => Record<string, unknown>;
   /** Schedule a graceful stop; false when this process cannot be stopped this way. */
   requestShutdown: () => boolean;
   /** Hot-reload plugins from config; resolves to the loaded plugin names. */
@@ -29,6 +45,8 @@ type RouteContext = {
   res: ServerResponse;
   url: URL;
   host: GatewayRouteHost;
+  /** True when the request carried a valid gateway token. */
+  authenticated: boolean;
 };
 
 type GatewayRoute = {
@@ -36,6 +54,8 @@ type GatewayRoute = {
   path: string;
   /** `prefix` matches `path` as a leading segment; default is an exact match. */
   match?: "prefix";
+  /** Served without the gateway token (still behind the transport guard). */
+  public?: boolean;
   handle: (ctx: RouteContext) => void | Promise<void>;
 };
 
@@ -55,9 +75,14 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
 
 const ROUTES: readonly GatewayRoute[] = [
   {
+    // Unauthenticated so discovery, container healthchecks and the MCP
+    // launcher's watchdog can probe it — which is why an anonymous caller
+    // only gets the identity fields, never the live counters.
     method: "GET",
     path: "/health",
-    handle: ({ res, host }) => sendJson(res, 200, host.healthSnapshot()),
+    public: true,
+    handle: ({ res, host, authenticated }) =>
+      sendJson(res, 200, host.healthSnapshot(authenticated)),
   },
   {
     // Graceful stop for `talon stop`/`talon restart`. Respond before
@@ -146,6 +171,40 @@ const ROUTES: readonly GatewayRoute[] = [
     },
   },
   {
+    // Per-device mesh credentials — the transport for `talon mesh`.
+    method: "GET",
+    path: "/mesh/credentials",
+    handle: async ({ req, res }) => {
+      const ctx = await meshCredentialContext(req, res);
+      if (ctx) sendJson(res, 200, await credentialOverview(ctx));
+    },
+  },
+  {
+    // `talon mesh revoke|rotate|scopes <device>`. Revocation drops the
+    // device's live bridge sessions before this answers.
+    method: "POST",
+    path: "/mesh/credentials",
+    handle: async ({ req, res }) => {
+      const ctx = await meshCredentialContext(req, res);
+      if (!ctx) return;
+      // A JSON content type forces a CORS preflight this gateway never
+      // grants, so a web page cannot drive credential changes via the
+      // user's browser (a text/plain "simple" POST would skip it).
+      if (!(req.headers["content-type"] ?? "").includes("application/json")) {
+        sendJson(res, 415, { ok: false, error: "Expected application/json" });
+        return;
+      }
+      let body: Record<string, unknown>;
+      try {
+        body = (await readJsonBody(req)) as Record<string, unknown>;
+      } catch {
+        sendJson(res, 400, { ok: false, error: "Invalid JSON" });
+        return;
+      }
+      sendJson(res, 200, await credentialAdmin(ctx, body));
+    },
+  },
+  {
     // MCP hub — daemon-hosted MCP-over-HTTP endpoints for every backend
     // (see core/mcp-hub).
     method: "ANY",
@@ -170,6 +229,31 @@ const ROUTES: readonly GatewayRoute[] = [
   },
 ];
 
+/**
+ * The mesh's credential admin context, or null after answering why not.
+ * Browser-originated requests are refused outright: only local processes
+ * (the CLI) manage credentials.
+ */
+async function meshCredentialContext(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<CredentialAdminContext | null> {
+  if (req.headers.origin) {
+    sendJson(res, 403, { ok: false, error: "Browser requests are refused" });
+    return null;
+  }
+  const mesh = getMeshService();
+  await mesh.load();
+  const ctx = mesh.credentialAdminContext();
+  if (!ctx) {
+    sendJson(res, 501, {
+      ok: false,
+      error: "This daemon has no per-device credential store",
+    });
+  }
+  return ctx;
+}
+
 function matches(route: GatewayRoute, req: IncomingMessage): boolean {
   if (route.method !== "ANY" && req.method !== route.method) return false;
   const url = req.url ?? "";
@@ -184,7 +268,17 @@ export async function dispatchGatewayRoute(
   res: ServerResponse,
   host: GatewayRouteHost,
 ): Promise<void> {
+  const refusal = checkGatewayTransport(req, host.port());
+  if (refusal) {
+    sendJson(res, refusal.status, { ok: false, error: refusal.error });
+    return;
+  }
+  const authenticated = hasValidGatewayToken(req, host.token());
   const route = ROUTES.find((candidate) => matches(candidate, req));
+  if (!authenticated && !route?.public) {
+    sendJson(res, 401, { ok: false, error: "Unauthorized" });
+    return;
+  }
   if (!route) {
     res.writeHead(404);
     res.end("Not found");
@@ -196,6 +290,7 @@ export async function dispatchGatewayRoute(
       res,
       url: new URL(req.url ?? "/", "http://gateway"),
       host,
+      authenticated,
     });
   } catch (err) {
     if (res.headersSent) return;

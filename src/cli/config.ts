@@ -46,6 +46,8 @@ export type Config = {
   pulse: boolean;
   pulseIntervalMs: number;
   adminUserId?: number;
+  /** Telegram DM allowlist; defaults to `[adminUserId]` when set up. */
+  allowedUsers?: number[];
   apiId?: number;
   apiHash?: string;
   maxMessageLength: number;
@@ -222,7 +224,7 @@ export function isConfigured(config: Config): boolean {
     ? config.frontend
     : [config.frontend];
   return fes.every((fe) => {
-    if (fe === "telegram") return !!config.botToken;
+    if (fe === "telegram") return !!config.botToken && !!config.adminUserId;
     if (fe === "teams") return !!config.teamsWebhookUrl;
     if (fe === "discord") return !!config.discord?.botToken;
     // WhatsApp's credentials live in ~/.talon/whatsapp-auth/, not the

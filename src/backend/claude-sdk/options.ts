@@ -32,6 +32,10 @@ import {
 import { toolFingerprint } from "../runtime/cache/cache-telemetry.js";
 import { reportToolFingerprint } from "../runtime/cache/cache-metrics.js";
 import { log, logError } from "../../util/log.js";
+import {
+  GATEWAY_TOKEN_ENV,
+  gatewayToken,
+} from "../../core/engine/gateway-auth.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { ALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
 import {
@@ -92,6 +96,8 @@ export function getActiveFrontends(): readonly string[] {
 export type HubMcpEntry = {
   type: "http";
   url: string;
+  /** Gateway bearer token — see `hubAuthHeaders`. */
+  headers: Record<string, string>;
   alwaysLoad?: boolean;
   /** Per-server tool-call timeout in ms (overrides MCP_TOOL_TIMEOUT). */
   timeout?: number;
@@ -105,6 +111,18 @@ export type HubMcpEntry = {
  * SDK's generic MCP timeout, which tells the model nothing actionable.
  */
 const FRONTEND_TOOL_CALL_TIMEOUT_MS = 3_900_000; // 65 min
+
+/**
+ * Hub auth header for the Claude CLI's MCP config. The SDK hands that config
+ * to the CLI on its command line, which other local accounts can read — so
+ * the header carries a `${TALON_GATEWAY_TOKEN}` reference the CLI expands
+ * from its environment (inherited from the daemon), never the value itself.
+ * `gatewayToken()` runs first so the variable is guaranteed to be exported.
+ */
+function hubAuthHeaders(): Record<string, string> {
+  gatewayToken();
+  return { Authorization: `Bearer \${${GATEWAY_TOKEN_ENV}}` };
+}
 
 /**
  * Build the MCP servers map for a chat query.
@@ -130,6 +148,7 @@ export function buildMcpServers(chatId: string): Record<string, HubMcpEntry> {
     servers[`${frontend}-tools`] = {
       type: "http",
       url: talonHubUrl(bridgeUrl, frontend, chatId),
+      headers: hubAuthHeaders(),
       // Always include the frontend's tools in the turn-1 prompt instead of
       // deferring them behind the SDK's tool search. These are the bot's
       // primary surface — it needs `end_turn`/`send`/`react` on EVERY turn to
@@ -155,6 +174,7 @@ export function buildMcpServers(chatId: string): Record<string, HubMcpEntry> {
     servers["brave-search"] = {
       type: "http",
       url: pluginHubUrl(bridgeUrl, "brave-search", chatId),
+      headers: hubAuthHeaders(),
     };
   }
 
@@ -176,6 +196,7 @@ export function buildPluginMcpServers(
     servers[name] = {
       type: "http",
       url: pluginHubUrl(bridgeUrl, name, chatId),
+      headers: hubAuthHeaders(),
     };
   }
   return servers;

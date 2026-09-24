@@ -58,6 +58,7 @@ vi.mock("write-file-atomic", () => ({
 import { Gateway } from "../core/engine/gateway.js";
 import { bus } from "../core/bus/index.js";
 import { taskTable } from "../core/tasks/index.js";
+import { gatewayFetch } from "./helpers/gateway-fetch.js";
 
 let gateway: Gateway;
 let port: number;
@@ -93,7 +94,7 @@ beforeEach(() => {
 async function post(
   body: Record<string, unknown>,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  const resp = await fetch(`http://127.0.0.1:${port}/action`, {
+  const resp = await gatewayFetch(`http://127.0.0.1:${port}/action`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -107,7 +108,7 @@ async function post(
 describe("gateway HTTP server", () => {
   describe("health endpoint", () => {
     it("returns health JSON", async () => {
-      const resp = await fetch(`http://127.0.0.1:${port}/health`);
+      const resp = await gatewayFetch(`http://127.0.0.1:${port}/health`);
       expect(resp.status).toBe(200);
       const data = (await resp.json()) as Record<string, unknown>;
       expect(data.ok).toBeDefined();
@@ -120,7 +121,7 @@ describe("gateway HTTP server", () => {
     it("GET /tasks lists the task table", async () => {
       const task = taskTable.begin({ kind: "heartbeat", label: "#1" });
       try {
-        const resp = await fetch(`http://127.0.0.1:${port}/tasks`);
+        const resp = await gatewayFetch(`http://127.0.0.1:${port}/tasks`);
         expect(resp.status).toBe(200);
         const data = (await resp.json()) as {
           ok: boolean;
@@ -140,7 +141,7 @@ describe("gateway HTTP server", () => {
       const abort = vi.fn();
       const task = taskTable.begin({ kind: "dream", label: "test", abort });
       try {
-        const resp = await fetch(`http://127.0.0.1:${port}/tasks/kill`, {
+        const resp = await gatewayFetch(`http://127.0.0.1:${port}/tasks/kill`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: task.id }),
@@ -154,7 +155,7 @@ describe("gateway HTTP server", () => {
     });
 
     it("POST /tasks/kill reports unknown ids", async () => {
-      const resp = await fetch(`http://127.0.0.1:${port}/tasks/kill`, {
+      const resp = await gatewayFetch(`http://127.0.0.1:${port}/tasks/kill`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: 999_999 }),
@@ -164,18 +165,24 @@ describe("gateway HTTP server", () => {
     });
 
     it("POST /tasks/kill rejects malformed bodies", async () => {
-      const invalidJson = await fetch(`http://127.0.0.1:${port}/tasks/kill`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "not json{{{",
-      });
+      const invalidJson = await gatewayFetch(
+        `http://127.0.0.1:${port}/tasks/kill`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "not json{{{",
+        },
+      );
       expect(invalidJson.status).toBe(400);
 
-      const nonIntegerId = await fetch(`http://127.0.0.1:${port}/tasks/kill`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: "7" }),
-      });
+      const nonIntegerId = await gatewayFetch(
+        `http://127.0.0.1:${port}/tasks/kill`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: "7" }),
+        },
+      );
       expect(nonIntegerId.status).toBe(400);
     });
   });
@@ -191,7 +198,7 @@ describe("gateway HTTP server", () => {
         outputTokens: 0,
       });
 
-      const all = await fetch(`http://127.0.0.1:${port}/events/recent`);
+      const all = await gatewayFetch(`http://127.0.0.1:${port}/events/recent`);
       expect(all.status).toBe(200);
       const allBody = (await all.json()) as {
         ok: boolean;
@@ -200,7 +207,7 @@ describe("gateway HTTP server", () => {
       expect(allBody.ok).toBe(true);
       expect(allBody.events.some((e) => e.id === published.id)).toBe(true);
 
-      const after = await fetch(
+      const after = await gatewayFetch(
         `http://127.0.0.1:${port}/events/recent?since=${published.id}`,
       );
       const afterBody = (await after.json()) as {
@@ -212,19 +219,19 @@ describe("gateway HTTP server", () => {
 
   describe("404 handling", () => {
     it("returns 404 for unknown paths", async () => {
-      const resp = await fetch(`http://127.0.0.1:${port}/nonexistent`);
+      const resp = await gatewayFetch(`http://127.0.0.1:${port}/nonexistent`);
       expect(resp.status).toBe(404);
     });
 
     it("returns 404 for GET /action", async () => {
-      const resp = await fetch(`http://127.0.0.1:${port}/action`);
+      const resp = await gatewayFetch(`http://127.0.0.1:${port}/action`);
       expect(resp.status).toBe(404);
     });
   });
 
   describe("malformed requests", () => {
     it("returns 400 for invalid JSON", async () => {
-      const resp = await fetch(`http://127.0.0.1:${port}/action`, {
+      const resp = await gatewayFetch(`http://127.0.0.1:${port}/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "not valid json{{{",
@@ -665,7 +672,7 @@ describe("gateway health endpoint — old activity shows minutes ago (line 211 F
       msSinceLastMessage: 5 * 60_000, // 5 minutes ago → > 60000
     });
 
-    const resp = await fetch(`http://127.0.0.1:${port}/health`);
+    const resp = await gatewayFetch(`http://127.0.0.1:${port}/health`);
     const data = (await resp.json()) as Record<string, unknown>;
     expect(data.lastActivity).toMatch(/m ago$/);
   });

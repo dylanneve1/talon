@@ -39,6 +39,7 @@ import { runSkillCommand } from "./skill.js";
 import { runMemoryCommand } from "./memory.js";
 import { mainMenu } from "./menu.js";
 import { runBackupCommand } from "./commands/backup.js";
+import { runMeshCommand } from "./commands/mesh.js";
 
 export * from "./context.js";
 export * from "./config.js";
@@ -62,6 +63,7 @@ const CLI_COMMANDS = [
   "skill",
   "memory",
   "backup",
+  "mesh",
 ];
 
 /** `talon events [-f] [--history [N]]` → the tail options. */
@@ -109,6 +111,9 @@ function printHelp(): void {
   );
   console.log(
     `    ${pc.cyan("backup")}     Snapshots and checkpoints (now/list/show/pin/restore)`,
+  );
+  console.log(
+    `    ${pc.cyan("mesh")}       Device credentials (list/revoke/rotate/scopes)`,
   );
   console.log(`    ${pc.cyan("config")}     View/edit configuration`);
   console.log(`    ${pc.cyan("logs")}       Tail log file`);
@@ -173,6 +178,7 @@ const COMMANDS: Record<string, CommandHandler> = {
   kill: (args) => killTask(args[0]),
   events: (args) => showEvents(eventsOptions(args)),
   backup: (args) => runBackupCommand(args),
+  mesh: (args) => runMeshCommand(args),
   plugin: (args) => runPluginCommand(args),
   skill: (args) => runSkillCommand(args),
   memory: (args) => runMemoryCommand(args),

@@ -38,6 +38,31 @@ void main() {
     expect(modeOf(file.path), 0x180); // 0600
   }, skip: !posix);
 
+  test('restricts an existing chat snapshot file too', () async {
+    final dir = Directory('${tmp.path}/support');
+    await dir.create();
+    final file = File('${dir.path}/${PrivateStore.snapshotFileName}');
+    await file.writeAsString('{}');
+    await Process.run('chmod', ['644', file.path]);
+
+    await PrivateStore(supportDir: () async => dir.path, applies: () => true)
+        .harden();
+
+    expect(modeOf(file.path), 0x180); // 0600
+  }, skip: !posix);
+
+  test('the snapshot writer creates a private file and directory', () {
+    final dir = '${tmp.path}/fresh/support';
+    final path = '$dir/${PrivateStore.snapshotFileName}';
+    writeSnapshotFile(path, {'chats': []});
+    writeSnapshotFile(path, {'chats': [1]});
+
+    expect(File(path).readAsStringSync(), '{"chats":[1]}');
+    expect(modeOf(path), 0x180); // 0600
+    expect(modeOf(dir), 0x1c0); // 0700
+    expect(File('$path.tmp').existsSync(), isFalse);
+  }, skip: !Platform.isLinux);
+
   test('creates a missing directory already private', () async {
     final path = '${tmp.path}/nested/support';
     await PrivateStore(supportDir: () async => path, applies: () => true)

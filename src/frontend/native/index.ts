@@ -17,7 +17,7 @@
 import type { TalonConfig } from "../../core/config/index.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
-import { log, logError } from "../../util/log.js";
+import { log, logError, logWarn } from "../../util/log.js";
 import { notifyAdmin } from "../../core/frontend-runtime/admin-notify.js";
 import { createNativeActionHandler } from "./turn/actions.js";
 import { loadOrCreateBridgeToken } from "./bridge/auth.js";
@@ -30,7 +30,11 @@ import { emitAssistant, emitPhoto } from "./turn/emit.js";
 import { startEmptyChatSweep } from "./chats/empty-chat-sweep.js";
 import { buildBridgeHandlers } from "./surface/handlers.js";
 import { createNativeRuntime, type NativeRuntime } from "./runtime.js";
-import { BridgeServer } from "./bridge/server.js";
+import { BridgeServer, type BridgeCredentials } from "./bridge/server.js";
+import {
+  DEFAULT_COMPANION_SCOPES,
+  type MeshScope,
+} from "../../core/mesh/credentials/index.js";
 import { isLoopbackHost, loadOrCreateBridgeTlsIdentity } from "./bridge/tls.js";
 
 export { summarizeToolResult } from "./turn/tool-result.js";
@@ -51,6 +55,8 @@ type BridgeListen = {
   port: number;
   token: string | undefined;
   tls: boolean;
+  legacySharedToken: boolean;
+  companionScopes: readonly MeshScope[];
 };
 
 /** Where the bridge listens, and how it is secured, from `config.native`. */
@@ -72,7 +78,32 @@ function bridgeListen(config: TalonConfig): BridgeListen {
   const token =
     configuredToken ??
     (isLoopbackHost(host) ? undefined : loadOrCreateBridgeToken());
-  return { host, port: nativeCfg.port ?? 19880, token, tls };
+  return {
+    host,
+    port: nativeCfg.port ?? 19880,
+    token,
+    tls,
+    legacySharedToken: nativeCfg.legacySharedToken ?? true,
+    companionScopes: nativeCfg.companionScopes ?? DEFAULT_COMPANION_SCOPES,
+  };
+}
+
+/**
+ * Per-device credentials for the bridge: only meaningful when the bridge
+ * authenticates at all (an open loopback bridge has nothing to scope).
+ */
+function bridgeCredentials(
+  listen: BridgeListen,
+  mesh: NativeRuntime["mesh"],
+): BridgeCredentials | undefined {
+  if (!listen.token || !mesh.credentials) return undefined;
+  return {
+    authority: mesh.credentials,
+    policy: {
+      legacySharedToken: listen.legacySharedToken,
+      companionScopes: listen.companionScopes,
+    },
+  };
 }
 
 /**
@@ -123,6 +154,7 @@ export function createNativeFrontend(
       onSecurityAlert: (message) => void notifyAdmin(message),
       startedAt: runtime.startedAt,
       ...(listen.tls ? { tls: () => loadOrCreateBridgeTlsIdentity() } : {}),
+      credentials: bridgeCredentials(listen, mesh),
     },
     buildBridgeHandlers(runtime),
   );
@@ -181,6 +213,18 @@ export function createNativeFrontend(
       );
       stopEmptyChatSweep = startEmptyChatSweep(runtime);
       await server.start();
+      if (
+        listen.token &&
+        listen.legacySharedToken &&
+        !isLoopbackHost(listen.host)
+      ) {
+        logWarn(
+          "native",
+          "native.legacySharedToken is on: remote clients may still use the shared bridge token. " +
+            "Devices trade it for their own credential on their next connect; once `talon mesh` " +
+            "lists none on the shared token, set native.legacySharedToken to false and rotate native.token.",
+        );
+      }
       const fingerprint = server.getFingerprint();
       // Tell the mesh how this bridge is reachable — everything a generated
       // node installer needs (make_node_install_link fails cleanly without it).
@@ -193,6 +237,8 @@ export function createNativeFrontend(
         ...(config.native?.publicUrl
           ? { publicUrl: config.native.publicUrl }
           : {}),
+        legacySharedToken: listen.legacySharedToken,
+        companionScopes: listen.companionScopes,
       });
       await writeBridgeDiscovery({
         port: server.getPort(),

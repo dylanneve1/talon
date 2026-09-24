@@ -28,8 +28,9 @@
  *     from the current registry — see reloadHubChildren)
  *   - orphan cleanup (children still run under the supervisor wrap)
  *
- * Endpoints live on the gateway HTTP server (127.0.0.1-bound, same
- * trust boundary as /action).
+ * Endpoints live on the gateway HTTP server (127.0.0.1-bound, behind the
+ * same token and Host/Origin guard as /action — see engine/gateway-auth.ts;
+ * every backend's hub entry carries the token as a bearer header).
  */
 
 import { randomUUID } from "node:crypto";
@@ -304,6 +305,12 @@ function jsonRpcError(
   );
 }
 
+/** `Host` values a loopback client of the gateway at `bridgeUrl` sends. */
+function loopbackHosts(bridgeUrl: string): string[] {
+  const { port } = new URL(bridgeUrl);
+  return ["127.0.0.1", "localhost", "[::1]"].map((name) => `${name}:${port}`);
+}
+
 /**
  * Handle one request under /mcp/. `bridgeUrl` is the gateway's own base
  * URL (the gateway knows its bound port; the hub does not).
@@ -358,6 +365,9 @@ export async function handleHubRequest(
     const server = buildServerFor(target, bridgeUrl);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
+      // Defence in depth behind the gateway's own Host/Origin guard.
+      enableDnsRebindingProtection: true,
+      allowedHosts: loopbackHosts(bridgeUrl),
       onsessioninitialized: (id) => {
         sessions.set(id, { transport, lastSeen: Date.now() });
       },

@@ -74,11 +74,28 @@ class InlineMarkdownText extends StatelessWidget {
     this.maxLines = 1,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    final source = data.replaceAll(RegExp(r'\s+'), ' ').trim();
+  /// Parsed previews, keyed by the raw preview text. The sidebar rebuilds
+  /// every tile whenever the chat list changes; re-running the Markdown
+  /// parser (and a whitespace regex) for each of them on every rebuild was
+  /// pure waste — a preview only changes when a new message lands (#1059).
+  static final Map<String, List<md.Node>> _parsed = {};
+  static const int _parsedCapacity = 512;
+  static final RegExp _space = RegExp(r'\s+');
+
+  static List<md.Node> _parse(String data) {
+    final hit = _parsed.remove(data);
+    if (hit != null) return _parsed[data] = hit; // refresh LRU position
+    final source = data.replaceAll(_space, ' ').trim();
     final nodes =
         md.Document(extensionSet: md.ExtensionSet.gitHubWeb).parse(source);
+    _parsed[data] = nodes;
+    if (_parsed.length > _parsedCapacity) _parsed.remove(_parsed.keys.first);
+    return nodes;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nodes = _parse(data);
     return Text.rich(
       TextSpan(style: style, children: _spans(nodes, style, separate: true)),
       maxLines: maxLines,
@@ -150,4 +167,44 @@ class InlineMarkdownText extends StatelessWidget {
     }
     return spans;
   }
+}
+
+/// Where finished blocks end in a streaming Markdown [text], scanning from
+/// [from] (0, or an offset this function returned earlier for a prefix of
+/// the same text).
+///
+/// A break is the start of a non-indented line that follows a blank line
+/// outside any fenced code block — the point after which nothing typed later
+/// can change how the text before it parses (an indented line after a blank
+/// may still belong to the previous list item, so it never breaks). A line
+/// that is still being typed can start a block but never ends one.
+List<int> markdownBlockBreaks(String text, {int from = 0}) {
+  final breaks = <int>[];
+  String? fence; // the open fence's marker (``` or ~~~), if inside one
+  var sawBlank = false;
+  var lineStart = from;
+  while (lineStart < text.length) {
+    final nl = text.indexOf('\n', lineStart);
+    final complete = nl >= 0;
+    final end = complete ? nl : text.length;
+    final line = text.substring(lineStart, end);
+    final trimmed = line.trimLeft();
+    if (fence != null) {
+      if (!complete) break;
+      if (trimmed.startsWith(fence)) fence = null;
+    } else if (trimmed.isEmpty) {
+      if (!complete) break;
+      sawBlank = true;
+    } else {
+      final indented = line.startsWith(' ') || line.startsWith('\t');
+      if (sawBlank && !indented) breaks.add(lineStart);
+      sawBlank = false;
+      if (!complete) break;
+      if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+        fence = trimmed.substring(0, 3);
+      }
+    }
+    lineStart = nl + 1;
+  }
+  return breaks;
 }

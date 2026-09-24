@@ -17,6 +17,10 @@
  */
 
 import { readPidRecord, isProcessAlive } from "./pidfile.js";
+import {
+  gatewayAuthHeaders,
+  readGatewayToken,
+} from "../engine/gateway-auth.js";
 
 export type DaemonHealth = {
   app?: string;
@@ -78,7 +82,10 @@ export async function probeHealth(
   timeoutMs = 800,
 ): Promise<DaemonHealth | null> {
   try {
+    // The token is optional here: identity fields answer without it, the
+    // live counters `talon status` shows need it.
     const resp = await fetch(`http://127.0.0.1:${port}/health`, {
+      headers: gatewayAuthHeaders(readGatewayToken()),
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!resp.ok) return null;

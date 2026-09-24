@@ -292,6 +292,14 @@ class MeshBackgroundRunner {
       // The local address when it answers, the main one otherwise — picked
       // afresh on every (re)connect, so a phone leaving home re-routes on
       // its next retry.
+      // Re-read the profile: the UI isolate may have swapped the shared
+      // token for this device's own credential (or rotated it) since the
+      // last connect, and a revoked old token only heals by picking it up.
+      try {
+        await prefs.reload();
+      } catch (_) {
+        // Stale cache at worst; the reconfigure poke still delivers it.
+      }
       client.config = await resolveEndpoint(prefs.connection);
       await client.connect();
       _connected = true;

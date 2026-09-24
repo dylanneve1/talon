@@ -47,7 +47,7 @@ import {
   whatsappAccountHandlers,
   whatsappAccountChatFreeActions,
 } from "./whatsapp-account.js";
-import { nativeHandlers } from "./native/index.js";
+import { nativeActionRefusal, nativeHandlers } from "./native/index.js";
 import { backupChatFreeActions, backupHandlers } from "./backup/index.js";
 
 // Null-prototype so a request `action` of "toString" / "constructor" / etc.
@@ -98,6 +98,8 @@ export async function handleSharedAction(
   const action = body.action as string;
   const handler = handlers[action];
   if (!handler) return null; // not a shared action — delegate to frontend
+  const refusal = nativeActionRefusal(action);
+  if (refusal) return refusal;
   return handler(body, chatId, backend, chatKey);
 }
 

@@ -22,13 +22,50 @@ import '../services/mesh_liveness.dart';
 import '../services/mesh_service.dart';
 import '../services/prefs.dart';
 import '../services/updater.dart';
+import 'frame_coalescer.dart';
 
 enum ConnState { idle, connecting, connected, error }
 
 /// Transient per-turn state: the streaming draft, the model's reasoning, and
 /// any live tool calls. Cleared when the turn ends.
-class TurnState {
-  String draft = '';
+///
+/// Also a [Listenable] of its own: streamed tokens (`delta`, `reasoning`)
+/// update the turn and notify only *its* listeners — the live bubble and the
+/// chat's follow-the-bottom scroller — at most once per frame, instead of
+/// rebuilding the whole app per token through [AppState] (#1059).
+class TurnState extends ChangeNotifier {
+  late final FrameCoalescer _frame = FrameCoalescer(notifyListeners);
+
+  /// Signal that streamed content changed. Coalesced to one notification per
+  /// frame.
+  void changed() => _frame.request();
+
+  // The draft is kept as a settled string plus a buffer of chunks that
+  // arrived since it was last read, so appending a token doesn't copy the
+  // whole reply (O(n²) over a long answer); the join happens at most once per
+  // read — i.e. once per frame.
+  String _draft = '';
+  final StringBuffer _incoming = StringBuffer();
+
+  String get draft {
+    if (_incoming.isNotEmpty) {
+      _draft = '$_draft$_incoming';
+      _incoming.clear();
+    }
+    return _draft;
+  }
+
+  set draft(String value) {
+    _incoming.clear();
+    _draft = value;
+  }
+
+  /// Append a streamed chunk without materialising the draft.
+  void appendDraft(String chunk) => _incoming.write(chunk);
+
+  /// Whether any reply text has arrived, without joining the buffer.
+  bool get hasDraft => _draft.isNotEmpty || _incoming.isNotEmpty;
+
   final List<String> reasoning = [];
   final List<ToolActivity> tools = [];
   bool active = false;
@@ -379,6 +416,7 @@ class AppState extends ChangeNotifier {
       await _refreshChats();
       unawaited(_refreshModels());
       unawaited(refreshMeshDevices());
+      unawaited(_maybeUpgradeCredential(client, epoch));
     } catch (e) {
       if (epoch != _epoch) {
         _disposeStale(client);
@@ -403,6 +441,69 @@ class AppState extends ChangeNotifier {
       _setConn(ConnState.error, e.toString());
       _scheduleReconnect();
     }
+  }
+
+  /// Set once the daemon answers 404 to `/auth/whoami` (it predates
+  /// per-device credentials) — no point asking again this session.
+  bool _credentialsUnsupported = false;
+  bool _upgradingCredential = false;
+
+  /// #1042: trade the shared bridge token for this device's own credential
+  /// (or rotate the credential when the operator asked), in band, right
+  /// after a successful connect. The new token is persisted to the profile
+  /// BEFORE it is used, and the daemon keeps the old one valid until the new
+  /// one is first presented — so neither a crash nor a lost reply can leave
+  /// the app holding a token that doesn't work.
+  ///
+  /// Local-discovery profiles are left alone: they read the token from the
+  /// daemon's 0600 discovery file on every connect, and a same-machine
+  /// client keeps full access with the shared token by design.
+  Future<void> _maybeUpgradeCredential(BridgeClient client, int epoch) async {
+    if (_credentialsUnsupported || _upgradingCredential) return;
+    if (config.canAutoDiscoverLocal) return;
+    final token = client.config.token;
+    if (token == null || token.isEmpty) return;
+    _upgradingCredential = true;
+    try {
+      final status = await client.whoami();
+      if (status == null) {
+        _credentialsUnsupported = true;
+        return;
+      }
+      if (!status.wantsNewCredential(token)) return;
+      final deviceId = await _credentialDeviceId();
+      if (deviceId == null || epoch != _epoch) return;
+      final grant = await client.upgradeCredential(deviceId);
+      if (grant.deviceId != deviceId || epoch != _epoch) return;
+      config = config.copyWith(token: grant.token);
+      await prefs.setConnection(config);
+      client.config = client.config.copyWith(token: grant.token);
+      _activeConfig = client.config;
+      // The background mesh isolate dials with its own copy of the profile.
+      MeshForegroundController.notifyReconfigure();
+      AppLog.info(
+        'app_state',
+        'now using per-device credential ${grant.credentialId} '
+            '(${grant.scopes.join(', ')})',
+      );
+    } catch (e) {
+      AppLog.warn('app_state', 'credential upgrade failed', e);
+    } finally {
+      _upgradingCredential = false;
+    }
+  }
+
+  /// The mesh device id a credential must be bound to — the SAME id this
+  /// device registers and claims its stream with, or the daemon refuses the
+  /// credential as another device's. On Android the background isolate
+  /// mints it; if it hasn't yet, wait for the next connect rather than
+  /// racing it with a second id.
+  Future<String?> _credentialDeviceId() async {
+    await prefs.reload();
+    final existing = prefs.meshDeviceId;
+    if (existing != null && existing.isNotEmpty) return existing;
+    if (MeshForegroundController.isSupported && prefs.meshSharing) return null;
+    return MeshService.ensureDeviceId(prefs);
   }
 
   /// Trust-on-first-use: after the first successful TLS connect with no pin
@@ -1192,9 +1293,50 @@ class AppState extends ChangeNotifier {
 
   void _onEvent(Map<String, dynamic> e) {
     try {
-      if (_applyEvent(e)) notifyListeners();
+      final kind = e['kind'];
+      if (kind == 'delta' || kind == 'reasoning') {
+        _onStreamEvent(e);
+        return;
+      }
+      if (_applyEvent(e)) {
+        notifyListeners();
+        if (_snapshotKinds.contains(kind)) _scheduleSnapshotSave();
+      }
     } catch (err) {
       AppLog.warn('app_state', 'ignored malformed event', err);
+    }
+  }
+
+  /// Events that change what the offline snapshot holds (chats, delivered
+  /// messages). Token-level and presence events never trigger a save.
+  static const Set<String> _snapshotKinds = {
+    'hello',
+    'chat_created',
+    'chat_updated',
+    'chat_deleted',
+    'message',
+    'message_edited',
+    'message_deleted',
+    'reaction',
+    'turn_end',
+  };
+
+  /// The per-token hot path. Only the turn's own listeners hear about it
+  /// (coalesced per frame) — unless this token changes the *shape* of the
+  /// chat view: the first reply text or reasoning of a stretch (which makes
+  /// the live row appear or swaps "still working" for text), in which case a
+  /// normal app-wide notify goes out once.
+  void _onStreamEvent(Map<String, dynamic> e) {
+    final chatId = _string(e['chatId']);
+    if (chatId == null) return;
+    final t = turnFor(chatId);
+    final shapeChange =
+        t.continuing || (!t.hasDraft && t.reasoning.isEmpty);
+    if (!_applyEvent(e)) return;
+    if (shapeChange) {
+      notifyListeners();
+    } else {
+      t.changed();
     }
   }
 
@@ -1267,7 +1409,7 @@ class AppState extends ChangeNotifier {
         if (chatId == null) return false;
         final t = turnFor(chatId);
         _clearContinuing(t, chatId);
-        t.draft += _string(e['text']) ?? '';
+        t.appendDraft(_string(e['text']) ?? '');
         return true;
       case 'tool':
         return _onTool(e);
@@ -1355,7 +1497,7 @@ class AppState extends ChangeNotifier {
           _continuingTimers.remove(chatId);
           final cur = turnFor(chatId);
           // Still mid-turn with nothing newer streaming → show "still working".
-          if (cur.active && cur.draft.isEmpty && cur.tools.isEmpty) {
+          if (cur.active && !cur.hasDraft && cur.tools.isEmpty) {
             cur.continuing = true;
             notifyListeners();
           }
@@ -1468,6 +1610,7 @@ class AppState extends ChangeNotifier {
       await _loadHistory(selectedChatId!);
     }
     notifyListeners();
+    _scheduleSnapshotSave();
   }
 
   /// Public: re-fetch the model catalog (optionally for a specific chat, so the
@@ -1532,6 +1675,7 @@ class AppState extends ChangeNotifier {
     } finally {
       _loadingHistory.remove(chatId);
       notifyListeners();
+      _scheduleSnapshotSave();
     }
   }
 
@@ -1701,23 +1845,37 @@ class AppState extends ChangeNotifier {
     _snapshotTimer = Timer(const Duration(seconds: 2), () {
       _snapshotTimer = null;
       if (_disposed) return;
-      final snapshot = <String, dynamic>{
-        'chats': chats.map((c) => c.toSnapshotJson()).toList(),
-        'messages': {
-          for (final entry in _messages.entries)
-            entry.key: entry.value
-                .where((m) => m.role != Role.system)
-                .toList()
-                .reversed
-                .take(30)
-                .toList()
-                .reversed
-                .map((m) => m.toSnapshotJson())
-                .toList(),
-        },
-      };
-      unawaited(prefs.saveSnapshot(snapshot));
+      _saveSnapshot();
     });
+  }
+
+  void _saveSnapshot() {
+    final snapshot = <String, dynamic>{
+      'chats': chats.map((c) => c.toSnapshotJson()).toList(),
+      'messages': {
+        for (final entry in _messages.entries)
+          entry.key: entry.value
+              .where((m) => m.role != Role.system)
+              .toList()
+              .reversed
+              .take(30)
+              .toList()
+              .reversed
+              .map((m) => m.toSnapshotJson())
+              .toList(),
+      },
+    };
+    // Encoded and written off the UI isolate, to its own file (Prefs).
+    unawaited(prefs.saveSnapshot(snapshot));
+  }
+
+  /// Write the offline snapshot now (app paused/hidden), instead of waiting
+  /// for the debounce.
+  void persistSnapshot() {
+    if (_disposed) return;
+    _snapshotTimer?.cancel();
+    _snapshotTimer = null;
+    _saveSnapshot();
   }
 
   @override
@@ -1726,9 +1884,10 @@ class AppState extends ChangeNotifier {
     // dispose; notifying then is an assertion error, so drop it quietly.
     if (_disposed) return;
     super.notifyListeners();
-    // Every state change is a candidate for the offline snapshot; the
-    // 2s debounce keeps this from thrashing during streaming.
-    _scheduleSnapshotSave();
+    // No snapshot save here: this used to arm one on every notify — every
+    // streamed token — and re-encode every chat on the UI isolate every 2 s
+    // during activity. Saves now follow the events that change what the
+    // snapshot holds (see _snapshotKinds), history loads, and app pause.
   }
 
   // ── Export ────────────────────────────────────────────────────────────────

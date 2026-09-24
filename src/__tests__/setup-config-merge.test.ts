@@ -43,6 +43,7 @@ const lived = (): Config =>
     heartbeatIntervalMinutes: 60,
     dreamModel: "sonnet",
     braveApiKey: "BSA-x",
+    adminUserId: 1,
     allowedUsers: [1, 2],
     nativeTools: true,
     timezone: "Europe/Dublin",
@@ -162,6 +163,7 @@ describe("isConfigured — the gate into the wizard", () => {
         cfg({
           frontend: ["telegram", "native", "whatsapp"],
           botToken: "123:abc",
+          adminUserId: 1,
           whatsapp: { allowedJids: ["353834733284"] },
         }),
       ),

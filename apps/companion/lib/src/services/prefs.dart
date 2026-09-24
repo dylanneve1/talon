@@ -1,10 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/connection.dart';
+import 'log.dart';
 import 'private_store.dart';
 
 /// Thin wrapper over [SharedPreferences] for everything we persist locally:
@@ -28,12 +32,35 @@ class Prefs {
 
   final SharedPreferences _sp;
   late final Map<String, int> _lastRead = _decodeLastRead();
-  Prefs(this._sp);
 
-  static Future<Prefs> load() async {
-    final prefs = Prefs(await SharedPreferences.getInstance());
+  /// Where the offline snapshot lives, or null to keep it in
+  /// SharedPreferences (no app-support directory, e.g. unit tests).
+  final File? _snapshotFile;
+
+  Prefs(this._sp, {File? snapshotFile}) : _snapshotFile = snapshotFile;
+
+  /// [fileSnapshot]: keep the offline snapshot in its own file (the app
+  /// and the background mesh isolate). Opt-in so that code which only needs
+  /// settings — and widget tests, where a platform-channel reply never
+  /// arrives inside fake async — never waits on path_provider.
+  static Future<Prefs> load({bool fileSnapshot = false}) async {
+    final prefs = Prefs(
+      await SharedPreferences.getInstance(),
+      snapshotFile: fileSnapshot ? await _resolveSnapshotFile() : null,
+    );
     await prefs._migrateMeshGrants();
     return prefs;
+  }
+
+  static Future<File?> _resolveSnapshotFile() async {
+    try {
+      final dir = await getApplicationSupportDirectory();
+      return File(
+        '${dir.path}${Platform.pathSeparator}${PrivateStore.snapshotFileName}',
+      );
+    } catch (_) {
+      return null; // no platform implementation (tests) — prefs fallback
+    }
   }
 
   /// Device control used to default to on, for every bridge. It is now an
@@ -305,15 +332,26 @@ class Prefs {
   }
 
   // ── Offline snapshot ──────────────────────────────────────────────────────
+  //
+  // The snapshot (every chat + recent messages) used to be one string inside
+  // SharedPreferences. Those backends rewrite the WHOLE store on every set —
+  // one XML file on Android, one JSON file on Windows — so each read-marker
+  // tick, foreground flag or mesh heartbeat rewrote the snapshot too, and the
+  // snapshot itself was encoded on the UI isolate (#1059/#1060/#1063). It now
+  // has a file of its own, encoded and written in a background isolate.
 
   /// Last-known chats + recent messages, decoded; null when absent/corrupt.
+  /// Falls back to (and migrates from) the legacy SharedPreferences entry.
   ///
   /// Always null while the app lock is on: the snapshot then lives only in
   /// the sealed store and reaches the UI after unlock (AppLockController).
   Map<String, dynamic>? get snapshot {
     if (appLockEnabled) return null;
     try {
-      final raw = _sp.getString(_kSnapshot);
+      final file = _snapshotFile;
+      String? raw;
+      if (file != null && file.existsSync()) raw = file.readAsStringSync();
+      raw ??= _sp.getString(_kSnapshot);
       if (raw == null) return null;
       final decoded = jsonDecode(raw);
       return decoded is Map ? decoded.cast<String, dynamic>() : null;
@@ -328,15 +366,65 @@ class Prefs {
       await sealedSnapshotSink?.call(snapshot);
       return;
     }
-    await _sp.setString(_kSnapshot, jsonEncode(snapshot));
+    final file = _snapshotFile;
+    if (file == null) {
+      await _sp.setString(_kSnapshot, jsonEncode(snapshot));
+      return;
+    }
+    try {
+      final write = _writeSnapshotInBackground(file.path, snapshot);
+      _plainWrite = write;
+      await write;
+    } catch (_) {
+      return; // best-effort cache; the next save retries
+    }
+    // One-time migration: drop the legacy copy so the prefs store (rewritten
+    // on every set) shrinks back to a few hundred bytes.
+    if (_sp.containsKey(_kSnapshot)) await _sp.remove(_kSnapshot);
   }
 
-  /// Remove the plaintext snapshot (app lock turned on: it now lives sealed).
-  Future<void> clearPlainSnapshot() => _sp.remove(_kSnapshot).then((_) {});
+  /// The plaintext snapshot write in flight, if any — awaited before the
+  /// plaintext is cleared, so a write that started just before the app lock
+  /// was turned on can't land after the clear.
+  Future<void>? _plainWrite;
+
+  /// Remove the plaintext snapshot — its file and the legacy
+  /// SharedPreferences entry (app lock turned on: it now lives sealed).
+  Future<void> clearPlainSnapshot() async {
+    final pending = _plainWrite;
+    if (pending != null) {
+      try {
+        await pending;
+      } catch (_) {
+        // A failed write left nothing (or only its temp file) behind.
+      }
+    }
+    final file = _snapshotFile;
+    if (file != null) {
+      for (final f in [file, File('${file.path}.tmp')]) {
+        try {
+          if (f.existsSync()) await f.delete();
+        } catch (e) {
+          AppLog.warn('prefs', 'could not remove the plaintext snapshot', e);
+        }
+      }
+    }
+    await _sp.remove(_kSnapshot);
+  }
+
+  /// Static so the isolate closure captures only [path] and [snapshot].
+  static Future<void> _writeSnapshotInBackground(
+    String path,
+    Map<String, dynamic> snapshot,
+  ) =>
+      Isolate.run(() => writeSnapshotFile(path, snapshot),
+          debugName: 'snapshot-write');
 
   /// Where snapshots go while the app lock is on — set by the UI isolate's
-  /// AppLockController, which seals them. Null elsewhere (the background
-  /// isolate never saves one), and then a locked snapshot is simply dropped.
+  /// AppLockController, which seals them (AES-256-GCM) and writes them
+  /// through [PrivateStore.writeFileSync] off the UI isolate, like the
+  /// plaintext file above. Null elsewhere (the background isolate never
+  /// saves one), and then a locked snapshot is simply dropped.
   static Future<void> Function(Map<String, dynamic> snapshot)?
       sealedSnapshotSink;
 
@@ -359,3 +447,13 @@ class Prefs {
   Future<void> setAppLockElevatedGate(bool v) =>
       _sp.setBool(_kAppLockElevatedGate, v);
 }
+
+/// Encode [snapshot] and replace the file at [path] atomically (temp file +
+/// rename), so a crash mid-write never leaves a truncated snapshot behind.
+///
+/// The snapshot holds recent chats, so like the settings store it is this
+/// OS user's alone ([PrivateStore]): on Linux the temp file is narrowed to
+/// 0600 before any content is written, and the rename carries that mode
+/// over to the snapshot itself.
+void writeSnapshotFile(String path, Map<String, dynamic> snapshot) =>
+    PrivateStore.writeFileSync(path, jsonEncode(snapshot));

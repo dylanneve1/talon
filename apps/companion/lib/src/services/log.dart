@@ -22,12 +22,16 @@ String redactSecrets(String text) => text
       _secretParam,
       (m) => '${m[1]}${m[2]}=…',
     )
-    .replaceAllMapped(_bearer, (m) => '${m[1]} …');
+    .replaceAllMapped(_bearer, (m) => '${m[1]} …')
+    // A per-device credential quoted anywhere else (a JSON reply, an
+    // exception's toString): keep the public credential id, drop the secret.
+    .replaceAllMapped(_deviceCredential, (m) => 'tdc1.${m[1]}.…');
 
 final _secretParam = RegExp(
   r"""([?&;]|\b)(token|access_token|t|provision|grant)=([^&\s#"'<>]+)""",
   caseSensitive: false,
 );
+final _deviceCredential = RegExp(r'\btdc1\.([0-9a-f]{16})\.[A-Za-z0-9_-]+');
 final _bearer = RegExp(
   r'\b(Bearer)\s+[A-Za-z0-9._~+/=-]+',
   caseSensitive: false,

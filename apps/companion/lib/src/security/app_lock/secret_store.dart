@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../services/log.dart';
+import '../../services/private_store.dart';
 
 /// Small string key/value store for app-lock secrets (the lock record, the
 /// biometric copy of the data key). An interface so tests run in memory.
@@ -66,7 +67,7 @@ class PlatformSecretStore implements SecretStore {
 class FileSecretStore implements SecretStore {
   FileSecretStore({Future<String> Function()? dir}) : _dir = dir ?? _supportDir;
 
-  static const String fileName = 'app_lock.v1.json';
+  static const String fileName = PrivateStore.appLockFileName;
 
   final Future<String> Function() _dir;
 
@@ -88,14 +89,11 @@ class FileSecretStore implements SecretStore {
   }
 
   Future<void> _writeAll(Map<String, String> values) async {
-    final file = await _file();
-    await file.parent.create(recursive: true);
-    final tmp = File('${file.path}.tmp');
-    await tmp.writeAsString(jsonEncode(values), flush: true);
-    if (!kIsWeb && (Platform.isLinux || Platform.isMacOS)) {
-      await Process.run('chmod', ['600', tmp.path]);
-    }
-    await tmp.rename(file.path);
+    final path = (await _file()).path;
+    final contents = jsonEncode(values);
+    // 0600 before any content lands, 0700 directory (PrivateStore), written
+    // off the UI isolate like the snapshot files.
+    await _writePrivateInBackground(path, contents);
   }
 
   @override
@@ -200,7 +198,7 @@ class FileSealedSnapshotStore implements SealedSnapshotStore {
   FileSealedSnapshotStore({Future<String> Function()? dir})
       : _dir = dir ?? FileSecretStore._supportDir;
 
-  static const String fileName = 'chat_snapshot.sealed.v1';
+  static const String fileName = PrivateStore.sealedSnapshotFileName;
 
   final Future<String> Function() _dir;
 
@@ -215,11 +213,10 @@ class FileSealedSnapshotStore implements SealedSnapshotStore {
 
   @override
   Future<void> write(String sealed) async {
-    final file = await _file();
-    await file.parent.create(recursive: true);
-    final tmp = File('${file.path}.tmp');
-    await tmp.writeAsString(sealed, flush: true);
-    await tmp.rename(file.path);
+    final path = (await _file()).path;
+    // Same writer as the plaintext snapshot file (Prefs.saveSnapshot): off
+    // the UI isolate, atomic, and 0600 on Linux before any byte is written.
+    await _writePrivateInBackground(path, sealed);
   }
 
   @override
@@ -245,3 +242,10 @@ class MemorySealedSnapshotStore implements SealedSnapshotStore {
     value = null;
   }
 }
+
+/// Top-level so the isolate closure captures only [path] and [contents].
+Future<void> _writePrivateInBackground(String path, String contents) =>
+    Isolate.run(
+      () => PrivateStore.writeFileSync(path, contents),
+      debugName: 'private-write',
+    );

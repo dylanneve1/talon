@@ -61,6 +61,13 @@ type Node struct {
 	// (a re-exec replaces the whole process image, so the ack must land
 	// first or the caller would hang waiting for a reply that never comes).
 	pendingReexec atomic.Bool
+	// tokenMu guards cfg.Token, which an in-band credential upgrade swaps
+	// while heartbeat, stream and command goroutines read it.
+	tokenMu sync.RWMutex
+	// upgrading serializes credential exchanges; upgradeDisabled stops them
+	// for the run (daemon without per-device credentials, unwritable config).
+	upgrading       atomic.Bool
+	upgradeDisabled atomic.Bool
 
 	// Commands run on a fixed worker pool (Policy.MaxConcurrent) fed by a
 	// bounded queue, never one goroutine per frame: a burst from a buggy or
@@ -117,7 +124,7 @@ func (n *Node) maybeAdoptFingerprint() {
 		return
 	}
 	n.cfg.Fingerprint = n.seenFingerprint
-	if err := n.cfg.Save(); err != nil {
+	if err := n.saveConfig(); err != nil {
 		log.Printf("warning: could not persist pinned fingerprint: %v", err)
 		return
 	}
@@ -133,7 +140,7 @@ func (n *Node) apiURL(path string, query url.Values) string {
 }
 
 func (n *Node) authed(req *http.Request) *http.Request {
-	req.Header.Set("Authorization", "Bearer "+n.cfg.Token)
+	req.Header.Set("Authorization", "Bearer "+n.token())
 	return req
 }
 
@@ -216,11 +223,14 @@ func (n *Node) capabilities() []string {
 	return n.cfg.Policy.capabilities()
 }
 
-// Register upserts this node in the daemon's mesh registry.
+// Register upserts this node in the daemon's mesh registry. The reply may
+// ask the node to trade its credential (see credentials.go).
 func (n *Node) Register(ctx context.Context) error {
-	err := n.postJSON(ctx, "/devices/register", n.registrationBody(), nil)
+	var reply registerReply
+	err := n.postJSON(ctx, "/devices/register", n.registrationBody(), &reply)
 	if err == nil {
 		n.maybeAdoptFingerprint()
+		n.maybeUpgradeCredential(ctx, reply)
 	}
 	return err
 }
