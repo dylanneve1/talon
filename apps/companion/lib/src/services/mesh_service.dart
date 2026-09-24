@@ -270,21 +270,25 @@ class MeshService {
 
   Future<void> sendOneFix() async {
     if (!prefs.meshSharing) return;
-    final fix = await _locationProvider();
-    if (fix == null) return;
-    final battery = await _batteryProvider();
-    await client.postLocation({
-      'deviceId': await deviceId(),
-      'lat': fix.lat,
-      'lon': fix.lon,
-      if (fix.accuracyM != null) 'accuracyM': fix.accuracyM,
-      if (fix.altitudeM != null) 'altitudeM': fix.altitudeM,
-      if (fix.speedMps != null) 'speedMps': fix.speedMps,
-      if (fix.headingDeg != null) 'headingDeg': fix.headingDeg,
-      'ts': fix.ts,
-      'provider': fix.provider,
-      if (battery.percent != null) 'batteryPct': battery.percent,
-    });
+    try {
+      final fix = await _locationProvider();
+      if (fix == null) return;
+      final battery = await _batteryProvider();
+      await client.postLocation({
+        'deviceId': await deviceId(),
+        'lat': fix.lat,
+        'lon': fix.lon,
+        if (fix.accuracyM != null) 'accuracyM': fix.accuracyM,
+        if (fix.altitudeM != null) 'altitudeM': fix.altitudeM,
+        if (fix.speedMps != null) 'speedMps': fix.speedMps,
+        if (fix.headingDeg != null) 'headingDeg': fix.headingDeg,
+        'ts': fix.ts,
+        'provider': fix.provider,
+        if (battery.percent != null) 'batteryPct': battery.percent,
+      });
+    } catch (e) {
+      AppLog.warn('mesh', 'sendOneFix failed', e);
+    }
   }
 
   Future<void> _handleLocate(Map<String, dynamic> event) async {
@@ -549,38 +553,43 @@ class MeshService {
   }
 
   static Future<MeshFix?> _defaultLocation() async {
-    if (kIsWeb) return null;
-    var serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return null;
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
+    if (kIsWeb || Platform.isLinux) return null;
+    try {
+      var serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return null;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return null;
+      }
+      if (Platform.isAndroid || Platform.isIOS) {
+        final bg = await Geolocator.checkPermission();
+        if (bg == LocationPermission.whileInUse) {
+          await Geolocator.requestPermission();
+        }
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
+      return MeshFix(
+        lat: pos.latitude,
+        lon: pos.longitude,
+        accuracyM: pos.accuracy,
+        altitudeM: pos.altitude,
+        speedMps: pos.speed,
+        headingDeg: pos.heading,
+        ts: pos.timestamp.millisecondsSinceEpoch,
+      );
+    } catch (e) {
+      AppLog.warn('mesh', 'location check failed', e);
       return null;
     }
-    if (Platform.isAndroid || Platform.isIOS) {
-      final bg = await Geolocator.checkPermission();
-      if (bg == LocationPermission.whileInUse) {
-        await Geolocator.requestPermission();
-      }
-    }
-    final pos = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        timeLimit: Duration(seconds: 15),
-      ),
-    );
-    return MeshFix(
-      lat: pos.latitude,
-      lon: pos.longitude,
-      accuracyM: pos.accuracy,
-      altitudeM: pos.altitude,
-      speedMps: pos.speed,
-      headingDeg: pos.heading,
-      ts: pos.timestamp.millisecondsSinceEpoch,
-    );
   }
 
   static Future<MeshBattery> _defaultBattery() async {
