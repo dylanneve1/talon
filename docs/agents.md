@@ -148,9 +148,10 @@ the decision to talk to a human is made.
 }
 ```
 
-- `maxConcurrent` (default 6) — live agents daemon-wide. Each is a real
-  backend run, so this is the token-spend lever. Claimed synchronously at
-  registration, so concurrent spawns cannot both slip past it.
+- `maxConcurrent` (default 6, 1–64) — live agents daemon-wide, children
+  included. Each is a real backend run, so this is the token-spend lever.
+  Claimed synchronously at registration, so concurrent spawns cannot both
+  slip past it. A refused spawn's error names `agents.maxConcurrent`.
 - `maxDepth` (default 2) — `0` = chats only, `2` = chat → agent → agent.
 - `defaultTimeoutMs` (default 15 min) — per-spawn `timeout_s` is clamped to
   [30s, 60min] at the tool boundary.

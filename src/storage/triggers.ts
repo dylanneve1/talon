@@ -38,7 +38,7 @@ import type { Trigger, TriggerLanguage } from "./repositories/triggers-repo.js";
 
 export const DEFAULT_TIMEOUT_SECONDS = 24 * 60 * 60; // 24h
 export const MAX_TIMEOUT_SECONDS = 7 * 24 * 60 * 60; // 7d
-/** Per-chat soft cap on simultaneously active triggers. */
+/** Default per-chat cap on simultaneously active triggers (`config.triggers.maxActivePerChat`). */
 export const MAX_ACTIVE_PER_CHAT = 5;
 /** Truncate fire payloads at this many bytes to keep wake prompts sane. */
 export const FIRE_PAYLOAD_MAX_BYTES = 4_096;

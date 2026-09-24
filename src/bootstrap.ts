@@ -607,7 +607,10 @@ function initRecurringAgents(
  * same delivery shape, so they are wired together.
  */
 function initWakeSubsystems(config: TalonConfig): void {
-  initTriggers({ execute: dispatcherExecute });
+  initTriggers({
+    execute: dispatcherExecute,
+    ...(config.triggers ? { caps: config.triggers } : {}),
+  });
   initAgents({
     execute: dispatcherExecute,
     ...(config.agents ? { caps: config.agents } : {}),

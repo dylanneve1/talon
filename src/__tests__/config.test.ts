@@ -980,6 +980,64 @@ describe("config", () => {
       const config = loadConfig();
       expect(config.pulse).toBe(true);
     });
+
+    it("leaves triggers/agents caps unset when absent (runtime defaults apply)", async () => {
+      mockFs({ frontend: "terminal" });
+
+      const { loadConfig } = await import("../core/config/index.js");
+      const config = loadConfig();
+      expect(config.triggers).toBeUndefined();
+      expect(config.agents).toBeUndefined();
+    });
+
+    it("defaults triggers.maxActivePerChat to 5 inside an empty block", async () => {
+      mockFs({ frontend: "terminal", triggers: {}, agents: {} });
+
+      const { loadConfig } = await import("../core/config/index.js");
+      const config = loadConfig();
+      expect(config.triggers?.maxActivePerChat).toBe(5);
+      expect(config.triggers?.maxPersistentPerChat).toBeUndefined();
+      expect(config.agents?.maxConcurrent).toBe(6);
+    });
+
+    it("accepts configured trigger and agent caps", async () => {
+      mockFs({
+        frontend: "terminal",
+        triggers: { maxActivePerChat: 12, maxPersistentPerChat: 8 },
+        agents: { maxConcurrent: 16 },
+      });
+
+      const { loadConfig } = await import("../core/config/index.js");
+      const config = loadConfig();
+      expect(config.triggers).toEqual({
+        maxActivePerChat: 12,
+        maxPersistentPerChat: 8,
+      });
+      expect(config.agents?.maxConcurrent).toBe(16);
+    });
+
+    it.each([
+      { maxActivePerChat: 0 },
+      { maxActivePerChat: 51 },
+      { maxActivePerChat: 2.5 },
+      { maxPersistentPerChat: 0 },
+      { maxPersistentPerChat: 51 },
+    ])("rejects out-of-bounds triggers caps %o", async (triggers) => {
+      mockFs({ frontend: "terminal", triggers });
+
+      const { loadConfig } = await import("../core/config/index.js");
+      expect(() => loadConfig()).toThrow();
+    });
+
+    it.each([0, 65])(
+      "rejects out-of-bounds agents.maxConcurrent %i",
+      async (maxConcurrent) => {
+        mockFs({ frontend: "terminal", agents: { maxConcurrent } });
+
+        const { loadConfig } = await import("../core/config/index.js");
+        expect(() => loadConfig()).toThrow();
+      },
+    );
   });
 
   describe("loadConfigFile edge cases", () => {
