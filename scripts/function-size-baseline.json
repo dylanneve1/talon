@@ -146,7 +146,7 @@
   {
     "file": "src/core/mcp-hub/launcher.ts",
     "name": "runSupervisor",
-    "lines": 187,
-    "cx": 23
+    "lines": 176,
+    "cx": 22
   }
 ]

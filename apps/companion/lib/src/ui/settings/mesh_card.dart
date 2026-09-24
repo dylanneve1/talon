@@ -222,16 +222,24 @@ class _MeshCardState extends State<MeshCard> {
             isFlatpak
                 ? 'Not available in the Flatpak build — the sandbox cannot '
                     'run commands on this computer.'
-                : 'Let Talon run shell + file commands on this device '
-                    '(teleport). Runs at the highest privilege available: '
-                    'root, else Shizuku, else the app itself.',
+                : 'Let the connected Talon run shell + file commands on '
+                    'this device (teleport). Granted to this bridge only — '
+                    'pairing with another one turns it off again.',
             prefs.meshDeviceControl && !isFlatpak,
             prefs.meshSharing && !isFlatpak
                 ? (v) => widget.state.setMeshDeviceControl(v)
                 : null,
           ),
-          if (_showsPrivilege && prefs.meshDeviceControl && !isFlatpak)
-            _privilegeRow(),
+          if (_showsPrivilege && prefs.meshDeviceControl && !isFlatpak) ...[
+            settingsSwitchRow(
+              'Elevated access',
+              'Allow those commands to run as root or through Shizuku when '
+                  'available. Off: they run as the app itself.',
+              prefs.meshElevated,
+              (v) => widget.state.setMeshElevated(v),
+            ),
+            if (prefs.meshElevated) _privilegeRow(),
+          ],
           const Divider(height: 22),
           Row(
             children: [

@@ -28,6 +28,7 @@ import {
   type BridgeServerHandlers,
 } from "../frontend/native/bridge/server.js";
 import { routeAllows } from "../frontend/native/bridge/credentials/principal.js";
+import type { AuthGuardPolicy } from "../frontend/native/bridge/auth-guard.js";
 import {
   DeviceCredentialStore,
   type MeshScope,
@@ -120,6 +121,7 @@ async function setup(
   opts: {
     legacySharedToken?: boolean;
     companionScopes?: MeshScope[];
+    authPolicy?: Partial<AuthGuardPolicy>;
   } = {},
 ): Promise<Setup> {
   const dir = await mkdtemp(join(tmpdir(), "talon-bridge-creds-"));
@@ -131,6 +133,7 @@ async function setup(
       port: 0,
       token: SHARED,
       startedAt: "boot",
+      ...(opts.authPolicy ? { authPolicy: opts.authPolicy } : {}),
       credentials: {
         authority: store,
         policy: {
@@ -299,6 +302,33 @@ describe("per-route scopes", () => {
         )
       ).status,
     ).toBe(401);
+  });
+});
+
+describe("auth guard", () => {
+  it("a wrong per-device credential counts toward the auth guard like a wrong shared token", async () => {
+    const { port, store } = await setup({
+      authPolicy: { backoffBaseMs: 0, globalMaxFailures: 3 },
+    });
+    const { token } = await store.mint({
+      deviceId: "a",
+      scopes: ["device"],
+      origin: "upgrade",
+    });
+    await store.revokeDevice("a", "test");
+    const garbage = `tdc1.${"0".repeat(16)}.${"A".repeat(43)}`;
+    expect((await call(port, "GET", "/auth/whoami", token)).status).toBe(401);
+    expect((await call(port, "GET", "/auth/whoami", garbage)).status).toBe(401);
+    expect((await call(port, "GET", "/auth/whoami", "wrong")).status).toBe(401);
+    // Past the global threshold: a fourth bad credential of either kind is
+    // refused outright, while a valid one still gets in.
+    expect((await call(port, "GET", "/auth/whoami", garbage)).status).toBe(429);
+    const { token: good } = await store.mint({
+      deviceId: "b",
+      scopes: ["device"],
+      origin: "upgrade",
+    });
+    expect((await call(port, "GET", "/auth/whoami", good)).status).toBe(200);
   });
 });
 

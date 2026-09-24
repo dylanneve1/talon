@@ -65,6 +65,9 @@ dependencies:
   window_manager: ^0.5.2
   launch_at_startup: ^0.5.1
   flutter_local_notifications: ^22.2.0
+  # Locates the settings store's directory so its permissions can be
+  # restricted to the current user on Linux (see PrivateStore).
+  path_provider: ^2.1.5
 
 # file_picker resolves flutter_plugin_android_lifecycle to 2.0.35, whose Android
 # library requires compiling against API 36 while file_picker itself compiles

@@ -29,6 +29,8 @@ export type SnapshotPart = {
    * targets may skip the upload entirely.
    */
   contentAddressed?: boolean;
+  /** Written through archive/crypt.ts (name ends in `.enc`). */
+  encrypted?: boolean;
 };
 
 /** Per-target upload state, mirrored into the `backup_remotes` table. */
@@ -93,4 +95,6 @@ export type BackupSettings = {
   targets?: readonly string[];
   checkpointBeforeUpdate: boolean;
   notifyChatId?: string;
+  /** Present = snapshots must be encrypted (see passphrase.ts). */
+  encryption?: { passphraseFile?: string };
 };
