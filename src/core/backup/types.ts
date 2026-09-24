@@ -74,6 +74,29 @@ export type RemoteState = {
 /** Where an `extra/<n>/…` subtree came from, so restore can put it back. */
 type ExtraMapping = { n: number; source: string };
 
+/**
+ * A root captured from outside the Talon home — a backend's session
+ * store, a plugin checkout. `source` is the absolute path at snapshot
+ * time; a clone rewrites it for the new machine (see sources/relocate.ts).
+ */
+export type ExternalRoot = {
+  /** Archive path of the root (`sessions/claude/<slug>`, `plugin-src/<n>-<name>`). */
+  root: string;
+  source: string;
+  /** How a clone relocates it. */
+  kind: "claude-project" | "session-store" | "plugin";
+  /** A SQLite file captured via `VACUUM INTO`, not copied byte-wise. */
+  sqlite?: boolean;
+};
+
+/** The paths a snapshot was taken against — what a clone rewrites from. */
+export type SnapshotOrigin = {
+  /** The operating-system user's home directory. */
+  userHome: string;
+  /** The Talon home (`~/.talon`). */
+  home: string;
+};
+
 export type Manifest = {
   schema: 1;
   id: string;
@@ -92,6 +115,9 @@ export type Manifest = {
   excludes: string[];
   /** `extra/<n>` → absolute source path. */
   extras?: ExtraMapping[];
+  /** Session stores and plugin sources from outside the Talon home. */
+  external?: ExternalRoot[];
+  origin?: SnapshotOrigin;
   /** Tree fingerprint of the palace part, for content-addressed reuse. */
   palaceHash?: string;
   /** Total bytes of all parts. */
@@ -123,6 +149,8 @@ export type BackupSettings = {
   includePalace: boolean;
   /** WhatsApp auth + userbot session: see {@link LoginSessionsPolicy}. */
   loginSessions: LoginSessionsPolicy;
+  /** Backend session transcripts and traces, in a part of their own. */
+  includeSessions: boolean;
   workspaceInclude: readonly string[];
   extraPaths: readonly string[];
   /** Unset = every registered target; `[]` = local only. */

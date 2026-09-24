@@ -21,14 +21,24 @@
  */
 
 import { createWriteStream } from "node:fs";
-import { mkdir, readFile, rm, stat } from "node:fs/promises";
-import { hostname } from "node:os";
+import {
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { homedir, hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { dirs } from "../../util/paths.js";
 import { log, logWarn } from "../../util/log.js";
 import { talonVersion } from "../../util/version.js";
-import { snapshotDatabase } from "../../storage/backup/index.js";
+import {
+  snapshotDatabase,
+  snapshotSqliteFile,
+} from "../../storage/backup/index.js";
 import { TalonError } from "../errors.js";
 import {
   Sha256Tap,
@@ -46,8 +56,8 @@ import { TarWriter } from "./archive/tar.js";
 import { createCompressor } from "./archive/zstd.js";
 import {
   collectTree,
+  excludeForRoot,
   expandUserPath,
-  isExcluded,
   isInside,
   EXCLUDE_RULES,
   HOME_INCLUDES,
@@ -56,6 +66,11 @@ import {
   type SourceEntry,
 } from "./plan.js";
 import { passphraseFilePath, resolvePassphrase } from "./passphrase.js";
+import { discoverPlugins } from "./sources/plugins.js";
+import {
+  discoverSessionRoots,
+  type SourceContext,
+} from "./sources/sessions.js";
 import {
   STATE_PART,
   indexSnapshot,
@@ -67,6 +82,7 @@ import {
 } from "./store.js";
 import type {
   BackupSettings,
+  ExternalRoot,
   Manifest,
   SnapshotKind,
   SnapshotPart,
@@ -76,6 +92,10 @@ import type {
 const DB_MEMBER = "db/talon.db";
 /** The part that holds WhatsApp auth and the userbot session. */
 const LOGINS_PART = "logins.tar.zst";
+/** How a clone reinstalls fetched plugins (see sources/plugins.ts). */
+const PLUGINS_MANIFEST = "plugins-manifest.json";
+/** Session transcripts and traces: large, churning, and their own part. */
+const SESSIONS_PART = "sessions.tar.zst";
 
 export type BuildOptions = {
   kind: SnapshotKind;
@@ -88,6 +108,14 @@ export type BuildOptions = {
   copyDatabase?: (destPath: string) => void;
   /** Clock, for deterministic ids in tests. */
   now?: Date;
+  /**
+   * The OS user's home, where backend session stores live. Defaults to
+   * `os.homedir()` for the real Talon home; a test that passes `home`
+   * without it gets no outside-the-home sources at all.
+   */
+  userHome?: string | null;
+  /** Environment for store discovery (CODEX_HOME, …); same default rule. */
+  env?: Readonly<Record<string, string | undefined>>;
 };
 
 // ── Archive writing ─────────────────────────────────────────────────────────
@@ -272,17 +300,6 @@ async function collectStateEntries(
 
 // ── The memory palace part ──────────────────────────────────────────────────
 
-/** Palace members, exempt from the rule that keeps them out of the state part. */
-function palaceExclude(archivePath: string): boolean {
-  if (
-    archivePath === "workspace/palace" ||
-    archivePath.startsWith("workspace/palace/")
-  ) {
-    return false;
-  }
-  return isExcluded(archivePath);
-}
-
 /**
  * Fingerprint the palace: path + size + mtime + content digest of every
  * file. Content, not just mtime, because a restored or re-synced palace
@@ -318,7 +335,7 @@ async function buildPalacePart(
 ): Promise<{ part: SnapshotPart; palaceHash: string } | null> {
   const palaceDir = join(home, "workspace", "palace");
   const entries = await collectTree(palaceDir, "workspace/palace", {
-    exclude: palaceExclude,
+    exclude: excludeForRoot("workspace/palace"),
   });
   if (entries.length === 0) return null;
 
@@ -389,6 +406,176 @@ async function reusePalacePart(
   return null;
 }
 
+// ── Outside the home: plugins and sessions ─────────────────────────────────
+
+/** config.json as data — the snapshot reads what it is about to archive. */
+async function readConfigJson(home: string): Promise<Record<string, unknown>> {
+  try {
+    const parsed: unknown = JSON.parse(
+      await readFile(join(home, "config.json"), "utf8"),
+    );
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+async function sourceContext(
+  options: BuildOptions,
+  home: string,
+): Promise<SourceContext> {
+  const realHome = options.home === undefined;
+  return {
+    home,
+    userHome:
+      options.userHome !== undefined
+        ? options.userHome
+        : realHome
+          ? homedir()
+          : null,
+    env: options.env ?? (realHome ? process.env : {}),
+    config: await readConfigJson(home),
+  };
+}
+
+type CollectedExternal = {
+  entries: SourceEntry[];
+  includes: string[];
+  external: ExternalRoot[];
+};
+
+/** Walk external directory roots into archive members. */
+async function collectExternal(
+  roots: readonly ExternalRoot[],
+): Promise<CollectedExternal> {
+  const collected: CollectedExternal = {
+    entries: [],
+    includes: [],
+    external: [],
+  };
+  for (const root of roots) {
+    const found = await collectTree(root.source, root.root, {
+      exclude: excludeForRoot(root.root),
+    });
+    if (found.length === 0) continue;
+    collected.entries.push(...found);
+    collected.includes.push(root.root);
+    collected.external.push(root);
+  }
+  return collected;
+}
+
+/**
+ * Plugin checkouts plus `plugins-manifest.json` (written next to the part
+ * and archived as a file at the root, so a restore leaves it in the home).
+ */
+async function collectPlugins(
+  ctx: SourceContext,
+  dir: string,
+): Promise<CollectedExternal> {
+  const { manifest, roots } = await discoverPlugins(ctx);
+  const collected = await collectExternal(roots);
+  const manifestPath = join(dir, `${PLUGINS_MANIFEST}.tmp`);
+  await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n", {
+    mode: 0o600,
+  });
+  const { size, mtimeMs } = await stat(manifestPath);
+  collected.entries.push({
+    archivePath: PLUGINS_MANIFEST,
+    source: manifestPath,
+    type: "file",
+    mode: 0o600,
+    mtime: Math.floor(mtimeMs / 1000),
+    size,
+  });
+  collected.includes.push(PLUGINS_MANIFEST);
+  return collected;
+}
+
+/**
+ * Consistent copies of the SQLite files among the session roots. A store
+ * that SQLite cannot open is skipped with a warning rather than copied
+ * byte-wise — a torn copy would restore as a corrupt session store.
+ */
+async function copySqliteRoots(
+  roots: readonly ExternalRoot[],
+  dir: string,
+): Promise<CollectedExternal> {
+  const collected: CollectedExternal = {
+    entries: [],
+    includes: [],
+    external: [],
+  };
+  for (const [index, root] of roots.entries()) {
+    const temp = join(dir, `sqlite-${index}.tmp`);
+    try {
+      await rm(temp, { force: true });
+      snapshotSqliteFile(root.source, temp);
+    } catch (err) {
+      logWarn("backup", `Skipped ${root.source}: ${String(err)}`);
+      continue;
+    }
+    const { size } = await stat(temp);
+    collected.entries.push({
+      archivePath: root.root,
+      source: temp,
+      type: "file",
+      mode: 0o600,
+      mtime: Math.floor(Date.now() / 1000),
+      size,
+    });
+    collected.includes.push(root.root);
+    collected.external.push(root);
+  }
+  return collected;
+}
+
+/** The sessions part: backend transcripts, session databases, traces. */
+async function buildSessionsPart(
+  dir: string,
+  ctx: SourceContext,
+  passphrase: string | null,
+): Promise<{ part: SnapshotPart; collected: CollectedExternal } | null> {
+  const roots = await discoverSessionRoots(ctx);
+  const trees = await collectExternal(roots.filter((r) => !r.sqlite));
+  const traces = await collectTree(
+    join(ctx.home, "data", "traces"),
+    "data/traces",
+    { exclude: excludeForRoot("data/traces") },
+  );
+  const databases = await copySqliteRoots(
+    roots.filter((r) => r.sqlite),
+    dir,
+  );
+  const entries = [...trees.entries, ...traces, ...databases.entries];
+  if (entries.length === 0) return null;
+  const name = partName(SESSIONS_PART, passphrase);
+  const written = await writePart(
+    join(dir, name),
+    (writer) => addEntries(writer, entries),
+    passphrase,
+  );
+  return {
+    part: {
+      name,
+      bytes: written.bytes,
+      sha256: written.sha256,
+      ...(passphrase ? { encrypted: true } : {}),
+    },
+    collected: {
+      entries,
+      includes: [
+        ...trees.includes,
+        ...(traces.length > 0 ? ["data/traces"] : []),
+        ...databases.includes,
+      ],
+      external: [...trees.external, ...databases.external],
+    },
+  };
+}
+
 // ── Provenance ──────────────────────────────────────────────────────────────
 
 /** Short git HEAD of the checkout Talon runs from, when there is one. */
@@ -414,7 +601,10 @@ async function readGitHead(startDir: string): Promise<string | undefined> {
 
 // ── The build ───────────────────────────────────────────────────────────────
 
-/** The state part: identity, state, workspace subset, extras and the database. */
+/**
+ * The state part: identity, state, workspace subset, extras, the plugin
+ * checkouts and the database copy.
+ */
 async function writeStatePart(
   dir: string,
   entries: readonly SourceEntry[],
@@ -469,6 +659,13 @@ async function writeLoginsPart(
   };
 }
 
+/** Delete the scratch files a build leaves beside its parts. */
+async function removeScratch(dir: string): Promise<void> {
+  for (const name of await readdir(dir)) {
+    if (name.endsWith(".tmp")) await rm(join(dir, name), { force: true });
+  }
+}
+
 /**
  * Build one snapshot end to end: collect, archive, hash, write the
  * manifest, index it. Leaves nothing behind on failure — a half-written
@@ -486,18 +683,35 @@ export async function buildSnapshot(options: BuildOptions): Promise<Manifest> {
   await mkdir(dir, { recursive: true, mode: 0o700 });
 
   try {
-    const collected = await collectStateEntries(home, options.settings);
-    const { includes } = collected;
-    const parts = [
-      await writeStatePart(dir, collected.entries, passphrase, options),
+    const ctx = await sourceContext(options, home);
+    const state = await collectStateEntries(home, options.settings);
+    const plugins = await collectPlugins(ctx, dir);
+    const parts: SnapshotPart[] = [
+      await writeStatePart(
+        dir,
+        [...state.entries, ...plugins.entries],
+        passphrase,
+        options,
+      ),
     ];
     const logins = await writeLoginsPart(
       dir,
-      collected.logins,
+      state.logins,
       passphrase,
       options.settings,
     );
     if (logins) parts.push(logins);
+    const includes = [...state.includes, ...plugins.includes];
+    const external = [...plugins.external];
+
+    if (options.settings.includeSessions) {
+      const sessions = await buildSessionsPart(dir, ctx, passphrase);
+      if (sessions) {
+        parts.push(sessions.part);
+        includes.push(...sessions.collected.includes);
+        external.push(...sessions.collected.external);
+      }
+    }
     let palaceHash: string | undefined;
     if (options.settings.includePalace) {
       const palace = await buildPalacePart(id, home, passphrase);
@@ -507,6 +721,7 @@ export async function buildSnapshot(options: BuildOptions): Promise<Manifest> {
         includes.push("workspace/palace");
       }
     }
+    await removeScratch(dir);
 
     const gitHead = await readGitHead(process.cwd());
     const manifest: Manifest = {
@@ -522,7 +737,9 @@ export async function buildSnapshot(options: BuildOptions): Promise<Manifest> {
       parts,
       includes: [...includes, DB_MEMBER],
       excludes: [...EXCLUDE_RULES],
-      ...(collected.extras.length > 0 ? { extras: collected.extras } : {}),
+      ...(state.extras.length > 0 ? { extras: state.extras } : {}),
+      ...(external.length > 0 ? { external } : {}),
+      ...(ctx.userHome ? { origin: { userHome: ctx.userHome, home } } : {}),
       ...(palaceHash ? { palaceHash } : {}),
       sizeBytes: parts.reduce((sum, part) => sum + part.bytes, 0),
       remote: {},

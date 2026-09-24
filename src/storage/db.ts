@@ -58,6 +58,11 @@ const sqliteModule = (await import(
   IS_BUN ? "bun:sqlite" : "node:sqlite"
 )) as Record<string, new (path: string) => SqlDatabase>;
 const Database = IS_BUN ? sqliteModule.Database : sqliteModule.DatabaseSync;
+/** The same constructor, with the options bag both runtimes accept. */
+const ReadOnlyDatabase = Database as unknown as new (
+  path: string,
+  options: Record<string, boolean>,
+) => SqlDatabase;
 
 let db: SqlDatabase | null = null;
 
@@ -234,6 +239,24 @@ export function snapshotDatabase(destPath: string): void {
   const database = getDatabase();
   mkdirSync(dirname(destPath), { recursive: true });
   database.prepare(dbSql.vacuumInto).run(destPath);
+}
+
+/**
+ * Consistent copy of ANOTHER program's SQLite file (a backend's session
+ * store) — the same `VACUUM INTO` as {@link snapshotDatabase}, through a
+ * read-only handle so the owner's database and WAL are never written.
+ */
+export function snapshotSqliteFile(sourcePath: string, destPath: string): void {
+  const foreign = new ReadOnlyDatabase(
+    sourcePath,
+    IS_BUN ? { readonly: true } : { readOnly: true },
+  );
+  try {
+    mkdirSync(dirname(destPath), { recursive: true });
+    foreign.prepare(dbSql.vacuumInto).run(destPath);
+  } finally {
+    foreign.close();
+  }
 }
 
 export function closeDatabase(): void {

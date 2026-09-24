@@ -53,6 +53,7 @@ export const DEFAULT_BACKUP_SETTINGS = {
   keepRemote: 30,
   includePalace: true,
   loginSessions: "local",
+  includeSessions: true,
   workspaceInclude: DEFAULT_WORKSPACE_INCLUDE,
   extraPaths: [] as readonly string[],
   checkpointBeforeUpdate: true,
@@ -71,8 +72,11 @@ export const HOME_INCLUDES: readonly string[] = [
   "prompts",
   "data",
   "keys",
+  "google",
+  "plugins",
   "mesh-devices.json",
   "mesh-history.json",
+  "mesh-locations.json",
   "teleport-state.json",
   "agent-workspace",
 ];
@@ -96,8 +100,9 @@ export const EXCLUDE_RULES: readonly string[] = [
   "*venv*/",
   "ns/ (FUSE mount — never stat()ed)",
   "backups/",
-  "data/traces/**",
+  "data/traces/** (in the sessions part)",
   "data/talon.db* (the database is added via VACUUM INTO)",
+  "plugin-src/**/{dist,build,.venv,cache,.cache,__pycache__}/",
   "*.tmp-*",
   "workspace/palace/** (its own part)",
 ];
@@ -111,7 +116,6 @@ export function isExcluded(path: string): boolean {
   const segments = path.split("/").filter(Boolean);
   if (segments.length === 0) return true;
   const first = segments[0];
-  const last = segments[segments.length - 1];
   // Anchored rules — only at the root of the archive.
   if (first === "ns" || first === "backups") return true;
   if (
@@ -128,17 +132,56 @@ export function isExcluded(path: string): boolean {
   }
   if (path === "workspace/palace" || path.startsWith("workspace/palace/"))
     return true;
-  // Rules that hold at any depth: build output, virtualenvs, half-written
-  // files from an atomic write that never landed.
-  if (
+  if (isExcludedAnywhere(path)) return true;
+  // Plugin sources: the code and its lockfiles, not what a build or an
+  // install regenerates from them.
+  if (first === "plugin-src" && segments.some((s) => PLUGIN_BUILD_DIRS.has(s)))
+    return true;
+  return false;
+}
+
+/** Build and cache output inside a plugin checkout — regenerated on install. */
+const PLUGIN_BUILD_DIRS = new Set([
+  "dist",
+  "build",
+  ".venv",
+  "cache",
+  ".cache",
+  "__pycache__",
+]);
+
+/** Archive roots that live in their own part, exempt from {@link isExcluded}. */
+const OWN_PART_ROOTS = ["workspace/palace", "data/traces"] as const;
+
+/**
+ * The exclusion rule for one include root. The palace and the traces are
+ * kept out of the state part by {@link isExcluded} because they travel in
+ * parts of their own; walking those roots (to build their part, or to
+ * restore them) must therefore not apply that same rule to them.
+ */
+export function excludeForRoot(root: string): (archivePath: string) => boolean {
+  const own = OWN_PART_ROOTS.find(
+    (prefix) => root === prefix || root.startsWith(`${prefix}/`),
+  );
+  if (!own) return isExcluded;
+  return (archivePath) =>
+    archivePath === own || archivePath.startsWith(`${own}/`)
+      ? isExcludedAnywhere(archivePath)
+      : isExcluded(archivePath);
+}
+
+/**
+ * The rules that hold at any depth: build output, virtualenvs, and
+ * half-written files from an atomic write that never landed.
+ */
+function isExcludedAnywhere(path: string): boolean {
+  const segments = path.split("/").filter(Boolean);
+  const last = segments[segments.length - 1] ?? "";
+  return (
     segments.some(
       (s) => s === "node-bin" || s === "node_modules" || s.includes("venv"),
-    )
-  ) {
-    return true;
-  }
-  if (last.includes(".tmp-")) return true;
-  return false;
+    ) || last.includes(".tmp-")
+  );
 }
 
 /**
