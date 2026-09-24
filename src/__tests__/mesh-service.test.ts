@@ -1390,6 +1390,12 @@ describe("MeshService registry bounds", () => {
     expect(devices).toHaveLength(1);
   });
 
+  // 130 sequential registrations each do a real, awaited fs write (mkdtemp +
+  // write + rename) — comfortably fast normally, but this is the one test in
+  // the file with enough of them that heavy disk/CPU contention from a
+  // full-suite run can push it past the default 15s testTimeout even though
+  // nothing is actually wrong. See the identical rationale in
+  // vitest.config.ts for the global timeout bump.
   it("caps the registry, evicting the least-recently-seen device", async () => {
     const service = await tempService();
     // 130 registrations into a 128-device registry, oldest first: the two
@@ -1413,7 +1419,45 @@ describe("MeshService registry bounds", () => {
     expect(ids.has("node-1")).toBe(false);
     expect(ids.has("node-2")).toBe(true);
     expect(ids.has("node-129")).toBe(true);
-  });
+  }, 30_000);
+
+  it("breaks a last-seen tie deterministically instead of picking an arbitrary survivor", async () => {
+    const service = await tempService();
+    // Three devices registered with the EXACT same lastSeen (a real
+    // possibility: a bulk backfill, or two heartbeats landing in the same
+    // millisecond) followed by 127 devices with strictly newer timestamps —
+    // 130 total against a 128 cap, so the tied group must supply both
+    // evictions. Eviction breaks the tie by registration order (earlier
+    // registration = staler), so node-0 and node-1 (registered first among
+    // the tied trio) go and node-2 (registered last among them) survives —
+    // deterministically, not by however `Array.prototype.sort` happens to
+    // handle equal keys.
+    const tiedTs = Date.now() - 200 * 60_000;
+    for (const id of ["node-0", "node-1", "node-2"]) {
+      await service.register(
+        { id, name: id, platform: "linux", appVersion: "1.0.0" },
+        tiedTs,
+      );
+    }
+    for (let i = 3; i < 130; i++) {
+      await service.register(
+        {
+          id: `node-${i}`,
+          name: `Node ${i}`,
+          platform: "linux",
+          appVersion: "1.0.0",
+        },
+        tiedTs + (i - 2) * 60_000,
+      );
+    }
+    const { devices } = await service.list();
+    expect(devices).toHaveLength(128);
+    const ids = new Set(devices.map((d) => d.id));
+    expect(ids.has("node-0")).toBe(false);
+    expect(ids.has("node-1")).toBe(false);
+    expect(ids.has("node-2")).toBe(true);
+    expect(ids.has("node-129")).toBe(true);
+  }, 30_000);
 
   it("bounds locations reported by ids that never registered", async () => {
     const service = await tempService();

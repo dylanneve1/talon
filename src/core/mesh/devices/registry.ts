@@ -205,12 +205,25 @@ export class MeshRegistry {
    * taking their location + history with them (an evicted device leaves no
    * residue). Returns whether anything went, so callers know the location and
    * history sidecars need rewriting too.
+   *
+   * Two devices can legitimately share a `lastSeen` millisecond (a bulk
+   * backfill, or two heartbeats landing in the same event-loop tick) —
+   * ties are broken by registration order (the earlier registration is
+   * treated as staler) so eviction is deterministic rather than depending on
+   * `Array.prototype.sort`'s stability guarantee to preserve the `Map`'s
+   * insertion order.
    */
   private enforceDeviceCap(): boolean {
     if (this.devices.size <= MAX_DEVICES) return false;
     const stalest = [...this.devices.values()]
-      .sort((a, b) => a.lastSeen - b.lastSeen)
-      .slice(0, this.devices.size - MAX_DEVICES);
+      .map((device, insertionIndex) => ({ device, insertionIndex }))
+      .sort(
+        (a, b) =>
+          a.device.lastSeen - b.device.lastSeen ||
+          a.insertionIndex - b.insertionIndex,
+      )
+      .slice(0, this.devices.size - MAX_DEVICES)
+      .map(({ device }) => device);
     for (const device of stalest) {
       this.devices.delete(device.id);
       this.locations.delete(device.id);
@@ -230,12 +243,21 @@ export class MeshRegistry {
    * unknown device ids past MAX_UNREGISTERED_LOCATIONS are dropped
    * stalest-first, with their history. Registered devices are untouched —
    * their entries are already bounded by the device cap.
+   *
+   * Same explicit tie-break as {@link enforceDeviceCap}: fixes with an
+   * identical `ts` fall back to insertion order instead of leaning on sort
+   * stability.
    */
   private enforceOrphanLocationCap(): boolean {
     let dropped = false;
     const orphans = [...this.locations.values()]
       .filter((l) => !this.devices.has(l.deviceId))
-      .sort((a, b) => a.ts - b.ts);
+      .map((location, insertionIndex) => ({ location, insertionIndex }))
+      .sort(
+        (a, b) =>
+          a.location.ts - b.location.ts || a.insertionIndex - b.insertionIndex,
+      )
+      .map(({ location }) => location);
     if (orphans.length > MAX_UNREGISTERED_LOCATIONS) {
       for (const loc of orphans.slice(
         0,
