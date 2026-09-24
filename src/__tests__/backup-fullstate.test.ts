@@ -268,6 +268,29 @@ describe("full-state snapshot contents", () => {
   });
 });
 
+/** Resolves once another process has committed rows to `pair` in `db`. */
+async function waitForRows(db: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const probe = new DatabaseSync(db, { readOnly: true });
+    try {
+      const has = probe
+        .prepare("SELECT name FROM sqlite_master WHERE name = 'pair'")
+        .get();
+      if (has) {
+        const row = probe.prepare("SELECT count(*) AS n FROM pair").get() as {
+          n: number;
+        };
+        if (row.n > 0) return;
+      }
+    } finally {
+      probe.close();
+    }
+    if (Date.now() > deadline) throw new Error("writer never committed");
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 describe("consistent copies of a live session database", () => {
   it("copies a WAL database that another process is writing to", async () => {
     const root = mkdtempSync(join(tmpdir(), "talon-fullstate-db-"));
@@ -276,16 +299,20 @@ describe("consistent copies of a live session database", () => {
     // Every transaction inserts two rows, so any consistent copy holds an
     // even number of `pair` rows; a torn byte-wise copy would not be
     // guaranteed to.
+    // The writer runs until the test drops a stop file, so the copies are
+    // always taken mid-write however slow the runner is (a fixed run time
+    // raced the snapshots on Windows).
+    const stopFile = join(root, "stop");
     const writer = spawn(
       process.execPath,
       [
         "-e",
-        `const { DatabaseSync } = require("node:sqlite");
+        `const { existsSync } = require("node:fs");
+         const { DatabaseSync } = require("node:sqlite");
          const db = new DatabaseSync(${JSON.stringify(db)});
          db.exec("PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS pair (n)");
-         const stop = Date.now() + 1500;
          let i = 0;
-         while (Date.now() < stop) {
+         while (!existsSync(${JSON.stringify(stopFile)})) {
            db.exec("BEGIN; INSERT INTO pair VALUES (" + i + "); INSERT INTO pair VALUES (" + i + "); COMMIT");
            i++;
          }
@@ -293,37 +320,43 @@ describe("consistent copies of a live session database", () => {
       ],
       { stdio: "ignore" },
     );
-    const copies: number[] = [];
-    await new Promise((r) => setTimeout(r, 200));
-    for (let n = 0; n < 5; n++) {
-      const dest = join(root, `copy-${n}.db`);
-      snapshotSqliteFile(db, dest);
-      const copy = new DatabaseSync(dest, { readOnly: true });
-      expect(
-        (
-          copy.prepare("PRAGMA integrity_check").get() as {
-            integrity_check: string;
-          }
-        ).integrity_check,
-      ).toBe("ok");
-      const hasPair = copy
-        .prepare("SELECT name FROM sqlite_master WHERE name = 'pair'")
-        .get();
-      const count = hasPair
-        ? (
-            copy.prepare("SELECT count(*) AS n FROM pair").get() as {
-              n: number;
+    // Listen before anything else can let the writer finish unobserved.
+    const exited = new Promise((r) => writer.once("exit", r));
+    try {
+      await waitForRows(db);
+      const copies: number[] = [];
+      for (let n = 0; n < 5; n++) {
+        const dest = join(root, `copy-${n}.db`);
+        snapshotSqliteFile(db, dest);
+        const copy = new DatabaseSync(dest, { readOnly: true });
+        expect(
+          (
+            copy.prepare("PRAGMA integrity_check").get() as {
+              integrity_check: string;
             }
-          ).n
-        : 0;
-      copy.close();
-      expect(count % 2).toBe(0);
-      copies.push(count);
-      await new Promise((r) => setTimeout(r, 150));
+          ).integrity_check,
+        ).toBe("ok");
+        const hasPair = copy
+          .prepare("SELECT name FROM sqlite_master WHERE name = 'pair'")
+          .get();
+        const count = hasPair
+          ? (
+              copy.prepare("SELECT count(*) AS n FROM pair").get() as {
+                n: number;
+              }
+            ).n
+          : 0;
+        copy.close();
+        expect(count % 2).toBe(0);
+        copies.push(count);
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      // The copies were taken while rows were landing.
+      expect(copies.some((n) => n > 0)).toBe(true);
+    } finally {
+      writeFileSync(stopFile, "");
+      await exited;
     }
-    await new Promise((r) => writer.on("exit", r));
-    // The copies were taken while rows were landing.
-    expect(copies.some((n) => n > 0)).toBe(true);
     // The source database was only read: the writer's rows are all there.
     const source = new DatabaseSync(db, { readOnly: true });
     expect(
