@@ -23,6 +23,8 @@ import {
   isGuestTurn,
   LOCAL_OPERATOR_SENDER,
   resolveTurnScope,
+  GUEST_SCOPE_NOTICE,
+  scopePrompt,
 } from "../core/mcp-hub/guest-scope.js";
 import { buildTalonToolServer } from "../core/mcp-hub/talon-server.js";
 import { setAccessControl } from "../frontend/telegram/handlers/access.js";
@@ -124,6 +126,16 @@ describe("turn scope bracket", () => {
     first();
     expect(isGuestTurn(GROUP)).toBe(true);
     second();
+  });
+});
+
+describe("scope notice", () => {
+  it("tells a guest turn its tools are withheld on purpose", () => {
+    expect(scopePrompt("guest", "hi")).toBe(`${GUEST_SCOPE_NOTICE}\n\nhi`);
+  });
+
+  it("leaves an operator turn's prompt untouched", () => {
+    expect(scopePrompt("operator", "hi")).toBe("hi");
   });
 });
 

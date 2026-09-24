@@ -30,7 +30,11 @@ import type { TurnPhase } from "../../storage/session-record.js";
 import { retrieveForTurn, type TurnMemory } from "../memory/turn-retrieval.js";
 import { TalonError } from "../errors.js";
 import { backendEnforcesGuestScope } from "../agent-runtime/backend-registry.js";
-import { enterTurnScope, resolveTurnScope } from "../mcp-hub/guest-scope.js";
+import {
+  enterTurnScope,
+  resolveTurnScope,
+  scopePrompt,
+} from "../mcp-hub/guest-scope.js";
 import { Loom } from "./loom.js";
 import { carryTurnEvents, startShuttleTiming } from "./shuttle.js";
 import type { Thread, ThreadSnapshot } from "./thread.js";
@@ -253,7 +257,7 @@ export class Weaver {
       const stream = backend.chat.runChatTurn({
         chatId: params.chatId,
         model: warp.ref,
-        text: params.prompt,
+        text: scopePrompt(scope, params.prompt),
         senderName: params.senderName,
         senderHandle: params.senderHandle,
         isGroup: params.isGroup,

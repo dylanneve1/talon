@@ -186,6 +186,24 @@ export function enterTurnScope(chatId: string, scope: ToolScope): () => void {
   };
 }
 
+/**
+ * What a guest turn's prompt opens with. The model shares one session per
+ * chat across senders, so without it an operator turn followed by a guest
+ * turn looks like the MCP servers dropping out from under it — and the
+ * model says so in the chat, blaming restarts or a broken supervisor.
+ */
+export const GUEST_SCOPE_NOTICE =
+  "[Tool scope notice: this message is from someone other than the operator, " +
+  "so this turn has the conversation-only tool set (replies, reactions, this " +
+  "chat's history, web search). Shell, files, plugins and the rest are withheld " +
+  "on purpose and come back on the operator's next message. This is access " +
+  "control, not a fault — don't report it as tools dropping or try to work around it.]";
+
+/** The prompt a backend sees for a turn of this scope. */
+export function scopePrompt(scope: ToolScope, prompt: string): string {
+  return scope === "guest" ? `${GUEST_SCOPE_NOTICE}\n\n${prompt}` : prompt;
+}
+
 /** Is the turn running in this chat right now guest-scoped? */
 export function isGuestTurn(chatId: string): boolean {
   return activeScopes.get(chatId)?.scope === "guest";
