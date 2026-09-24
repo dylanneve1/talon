@@ -44,9 +44,10 @@ Future<void> main() async {
   // Windows: tray residency — close hides to the system tray, mesh keeps
   // running (macOS gets the same from native code in macos/Runner).
   await WindowsTray.instance.init();
-  final prefs = await Prefs.load();
-  // Linux: the settings file holds the bridge token and recent chats; keep
-  // it (and its directory) readable by this user only.
+  final prefs = await Prefs.load(fileSnapshot: true);
+  // Linux: the settings file holds the bridge token, and the chat snapshot
+  // file recent chats; keep them (and their directory) readable by this
+  // user only.
   final privateStore = PrivateStore();
   Prefs.privateStore = privateStore;
   unawaited(privateStore.harden());
@@ -165,6 +166,12 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
     // minimised/tray-hidden one: both stop the decorative animations.
     TalonEffects.setLifecycle(state);
     final foreground = state == AppLifecycleState.resumed;
+    // Leaving the foreground is the moment to persist the offline snapshot
+    // (it's no longer written on a timer during activity).
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      widget.state.persistSnapshot();
+    }
     unawaited(widget.state.prefs.setUiForeground(foreground));
     _pushUiState(foreground: foreground);
     if (foreground) {

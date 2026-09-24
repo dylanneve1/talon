@@ -10,10 +10,11 @@ import 'log.dart';
 /// `shared_preferences` on Linux writes `shared_preferences.json` under the
 /// app's support directory (`~/.local/share/<app id>/`) with a plain file
 /// write, i.e. mode `0666 & ~umask` — typically 0644 — in a directory that
-/// is typically 0755. That file holds the bridge token and a snapshot of
-/// recent chats, so on a machine with other local users (and a home directory
-/// they can traverse) it was readable by them. This narrows the directory to
-/// 0700 and the file to 0600, matching how talon-node stores its own config.
+/// is typically 0755. That file holds the bridge token, and the chat
+/// snapshot file beside it recent chats, so on a machine with other local
+/// users (and a home directory they can traverse) they were readable by
+/// them. This narrows the directory to 0700 and the files to 0600, matching
+/// how talon-node stores its own config.
 ///
 /// macOS (`~/Library/Preferences`) and Windows (`%APPDATA%`) already sit
 /// under per-user permissions, so this is a no-op there. Android keeps app
@@ -31,6 +32,13 @@ class PrivateStore {
   /// File name `shared_preferences_linux` uses inside the support directory.
   static const prefsFileName = 'shared_preferences.json';
 
+  /// The offline chat snapshot, kept beside the settings file (see
+  /// `Prefs.saveSnapshot`). Holds recent chats, so it gets the same mode.
+  static const snapshotFileName = 'chat_snapshot.v1.json';
+
+  /// Every file in the support directory that must be this user's alone.
+  static const privateFileNames = [prefsFileName, snapshotFileName];
+
   static bool _isLinux() => !kIsWeb && Platform.isLinux;
 
   static Future<String> _defaultSupportDir() async =>
@@ -47,10 +55,38 @@ class PrivateStore {
       // never exists with a wider mode than the one set below.
       await dir.create(recursive: true);
       await _chmod('700', dir.path);
-      final file = File('${dir.path}/$prefsFileName');
-      if (await file.exists()) await _chmod('600', file.path);
+      for (final name in privateFileNames) {
+        final file = File('${dir.path}/$name');
+        if (await file.exists()) await _chmod('600', file.path);
+      }
     } catch (e) {
       AppLog.warn('prefs', 'could not restrict settings file permissions', e);
+    }
+  }
+
+  // Synchronous variants for writers running off the UI isolate (the
+  // snapshot writer), where there is no PrivateStore instance. They throw on
+  // failure so a caller never goes on to write private data into a file it
+  // could not restrict. No-ops off Linux.
+
+  /// Create [path] (recursively) if missing; a directory created here is
+  /// narrowed to 0700 straight away.
+  static void ensurePrivateDirSync(String path) {
+    final dir = Directory(path);
+    if (dir.existsSync()) return;
+    dir.createSync(recursive: true);
+    if (_isLinux()) _chmodSync('700', path);
+  }
+
+  /// Narrow an existing file to 0600.
+  static void restrictFileSync(String path) {
+    if (_isLinux()) _chmodSync('600', path);
+  }
+
+  static void _chmodSync(String mode, String path) {
+    final result = Process.runSync('chmod', [mode, path]);
+    if (result.exitCode != 0) {
+      throw FileSystemException('chmod $mode failed: ${result.stderr}', path);
     }
   }
 

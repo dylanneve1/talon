@@ -81,6 +81,11 @@ class _ChatViewState extends State<ChatView> {
   /// jump-to-latest affordance is useful.
   bool _awayFromBottom = false;
 
+  /// The on-screen chat's live turn. Streamed tokens notify it (not
+  /// AppState), so following the growing reply to the bottom hangs off it.
+  TurnState? _followedTurn;
+  bool _followQueued = false;
+
   /// Voice mode is offered only where a speech recognizer actually exists
   /// (Android with a recognition service). Probed once at mount.
   bool _voiceAvailable = false;
@@ -101,9 +106,33 @@ class _ChatViewState extends State<ChatView> {
 
   @override
   void dispose() {
+    _followedTurn?.removeListener(_onTurnTick);
     _attachments.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _followTurn(TurnState turn) {
+    if (identical(turn, _followedTurn)) return;
+    _followedTurn?.removeListener(_onTurnTick);
+    _followedTurn = turn..addListener(_onTurnTick);
+  }
+
+  /// A token landed (already coalesced to one per frame): once the live row
+  /// has laid out, keep the view pinned to the bottom if it already was.
+  /// jumpTo, not animateTo — restarting a 160 ms scroll animation on every
+  /// frame of a stream is exactly the churn this path exists to avoid.
+  void _onTurnTick() {
+    if (_followQueued) return;
+    _followQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _followQueued = false;
+      if (!mounted || !_scroll.hasClients) return;
+      final pos = _scroll.position;
+      if (pos.maxScrollExtent - pos.pixels < 260) {
+        _scroll.jumpTo(pos.maxScrollExtent);
+      }
+    });
   }
 
   /// Stage everything dropped on the chat. Directories and empty files are
@@ -238,6 +267,7 @@ class _ChatViewState extends State<ChatView> {
       builder: (context, _) {
         final chat = widget.state.selectedChat;
         if (chat == null) return const _EmptyState();
+        _followTurn(widget.state.turnFor(chat.id));
         _autoScroll(chat.id, widget.state.messagesFor(chat.id).length);
         return Column(
           children: [
@@ -358,7 +388,7 @@ class _ChatViewState extends State<ChatView> {
     final msgs = widget.state.messagesFor(chatId);
     final turn = widget.state.turnFor(chatId);
     final showActivity = turn.active &&
-        (turn.draft.isNotEmpty ||
+        (turn.hasDraft ||
             turn.reasoning.isNotEmpty ||
             turn.tools.isNotEmpty ||
             turn.typing ||
