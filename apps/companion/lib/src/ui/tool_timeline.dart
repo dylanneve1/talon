@@ -13,6 +13,7 @@ import '../theme.dart';
 // every widget that renders a tool already imports this file.
 export '../models/tool_format.dart';
 import 'motion.dart';
+import 'effects.dart';
 
 /// The agent's tool activity, rendered as a connected vertical timeline: one
 /// node per call, linked by a hairline rail, with a live spinner while running
@@ -196,7 +197,8 @@ class _ToolStepState extends State<ToolStep> {
         )
             .animate(onPlay: (c) => c.repeat(reverse: true))
             .fadeOut(duration: 1100.ms, curve: Curves.easeInOut)
-            .scaleXY(end: 1.9, curve: Curves.easeOut),
+            .scaleXY(end: 1.9, curve: Curves.easeOut)
+            .wrapAmbient(),
         ring,
       ],
     );

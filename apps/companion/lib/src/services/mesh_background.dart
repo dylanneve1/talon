@@ -7,6 +7,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'bridge_client.dart';
 import 'endpoint.dart';
 import 'log.dart';
+import 'mesh_liveness.dart';
 import 'mesh_service.dart';
 import 'message_notifications.dart';
 import 'prefs.dart';
@@ -63,6 +64,8 @@ class MeshTaskHandler extends TaskHandler {
   void onReceiveData(Object data) {
     if (data == MeshForegroundController.msgReconfigure) {
       unawaited(_runner?.reconfigure());
+    } else if (data is Map) {
+      _runner?.applyUiState(data);
     }
   }
 
@@ -92,10 +95,40 @@ class MeshBackgroundRunner {
   static const int _initialBackoffMs = 2000;
   static const int _maxBackoffMs = 60000;
 
+  /// Stream events only a chat UI cares about.
+  static const Set<String> _uiOnlyKinds = {
+    'delta',
+    'reasoning',
+    'tool',
+    'typing',
+    'turn_start',
+    'status',
+  };
+
+  /// MeshService re-registers every 60 s on its own; the watchdog only
+  /// registers when that heartbeat has gone quiet for this long, so there is
+  /// one registration a minute instead of two (#1060).
+  static const Duration _heartbeatQuiet = Duration(seconds: 75);
+
+  /// UI state pushed over the task channel (see
+  /// MeshForegroundController.pushUiState); null until the UI has spoken,
+  /// in which case prefs are the fallback.
+  bool? _uiForeground;
+  bool? _notificationsEnabled;
+
+  void applyUiState(Map<dynamic, dynamic> data) {
+    final fg = data[MeshForegroundController.keyUiForeground];
+    if (fg is bool) _uiForeground = fg;
+    final notify = data[MeshForegroundController.keyNotifications];
+    if (notify is bool) _notificationsEnabled = notify;
+  }
+
   Future<void> start() async {
     final prefs = await Prefs.load();
     _prefs = prefs;
-    final client = BridgeClient(prefs.connection);
+    // This isolate never renders a reply, so it skips decoding the token
+    // firehose the UI isolate is already decoding (#1060).
+    final client = BridgeClient(prefs.connection, skipKinds: _uiOnlyKinds);
     _client = client;
     _mesh = MeshService(prefs, client, onRegistered: _stampAlive);
     _seedChatTitles(prefs);
@@ -185,17 +218,26 @@ class MeshBackgroundRunner {
 
     final prefs = _prefs;
     if (prefs == null) return;
-    // Both flags are written by the UI isolate, which has its own
-    // SharedPreferences cache — reload or we read a stale snapshot of a
-    // setting the user just changed (or a foreground state from minutes ago).
-    try {
-      await prefs.reload();
-    } catch (_) {
-      // A failed reload just means slightly stale flags; still worth notifying.
+    var enabled = _notificationsEnabled;
+    var foreground = _uiForeground;
+    if (enabled == null || foreground == null) {
+      // The UI hasn't pushed its state to this run of the service yet. Both
+      // flags are written by the UI isolate, which has its own
+      // SharedPreferences cache — reload or we read a stale snapshot of a
+      // setting the user just changed (or a foreground state from minutes
+      // ago). Once pushed, no per-message reload (re-parse of the prefs
+      // file) is needed at all.
+      try {
+        await prefs.reload();
+      } catch (_) {
+        // A failed reload just means slightly stale flags.
+      }
+      enabled ??= prefs.messageNotifications;
+      foreground ??= prefs.uiForeground;
     }
-    if (!prefs.messageNotifications) return;
+    if (!enabled) return;
     // Don't notify for a reply the user is watching arrive.
-    if (prefs.uiForeground) return;
+    if (foreground) return;
 
     await MessageNotifications.showMessage(
       chatId: chatId,
@@ -227,6 +269,14 @@ class MeshBackgroundRunner {
       // The local address when it answers, the main one otherwise — picked
       // afresh on every (re)connect, so a phone leaving home re-routes on
       // its next retry.
+      // Re-read the profile: the UI isolate may have swapped the shared
+      // token for this device's own credential (or rotated it) since the
+      // last connect, and a revoked old token only heals by picking it up.
+      try {
+        await prefs.reload();
+      } catch (_) {
+        // Stale cache at worst; the reconfigure poke still delivers it.
+      }
       client.config = await resolveEndpoint(prefs.connection);
       await client.connect();
       _connected = true;
@@ -261,7 +311,12 @@ class MeshBackgroundRunner {
   Future<void> _stampAlive() async {
     final prefs = _prefs;
     if (prefs == null || !prefs.meshSharing) return;
-    await prefs.setMeshBgAliveAt(DateTime.now().millisecondsSinceEpoch);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    // Every successful registration lands here (MeshService's heartbeat
+    // included), so the watchdog can tell whether one is due.
+    _lastRegisteredAtMs = now;
+    // Its own tiny file, not a SharedPreferences write (#1060).
+    await MeshLiveness.stamp(prefs, now);
   }
 
   /// 60s watchdog (the foreground task's repeat event): keep registration
@@ -277,6 +332,13 @@ class MeshBackgroundRunner {
   }
 
   Future<void> _watchdogRegister() async {
+    final lastBeat = _lastRegisteredAtMs;
+    final quiet = lastBeat == null
+        ? null
+        : DateTime.now().millisecondsSinceEpoch - lastBeat;
+    if (quiet != null && quiet < _heartbeatQuiet.inMilliseconds) {
+      return; // MeshService's own heartbeat is keeping registration fresh
+    }
     try {
       await _registerHealthy();
     } catch (e) {
@@ -423,6 +485,10 @@ class MeshForegroundController {
   /// Data message poking the task isolate to reload prefs and reconnect.
   static const String msgReconfigure = 'mesh.reconfigure.v1';
   static const Duration staleAliveAfter = Duration(seconds: 90);
+
+  /// Keys of the UI-state map pushed to the task with [pushUiState].
+  static const String keyUiForeground = 'ui.foreground';
+  static const String keyNotifications = 'ui.messageNotifications';
   static const Duration startGrace = Duration(seconds: 20);
 
   static bool get isSupported => !kIsWeb && Platform.isAndroid;
@@ -451,7 +517,7 @@ class MeshForegroundController {
         sharingEnabled: prefs.meshSharing,
         serviceRunning: true,
         nowMs: DateTime.now().millisecondsSinceEpoch,
-        aliveAtMs: prefs.meshBgAliveAt,
+        aliveAtMs: await MeshLiveness.read(prefs),
         startedAtMs: prefs.meshBgStartedAt,
       );
       if (health.shouldBounce) {
@@ -495,8 +561,12 @@ class MeshForegroundController {
         eventAction: ForegroundTaskEventAction.repeat(60000),
         autoRunOnBoot: true,
         autoRunOnMyPackageReplaced: true,
-        allowWakeLock: true,
-        allowWifiLock: true,
+        // No lifetime wake/Wi-Fi locks (#1060): they kept the SoC and radio
+        // awake 24/7 while mesh sharing was on. An open socket in a
+        // foreground service still wakes the CPU for incoming frames;
+        // commands take short, timed locks while they run (CommandWakeLock).
+        allowWakeLock: false,
+        allowWifiLock: false,
       ),
     );
     final prefs = await Prefs.load();
@@ -553,7 +623,7 @@ class MeshForegroundController {
         sharingEnabled: prefs.meshSharing,
         serviceRunning: residentMeshRunning,
         nowMs: DateTime.now().millisecondsSinceEpoch,
-        aliveAtMs: prefs.meshBgAliveAt,
+        aliveAtMs: await MeshLiveness.read(prefs),
         startedAtMs: prefs.meshBgStartedAt,
       );
     }
@@ -574,9 +644,25 @@ class MeshForegroundController {
       sharingEnabled: prefs.meshSharing,
       serviceRunning: running,
       nowMs: DateTime.now().millisecondsSinceEpoch,
-      aliveAtMs: prefs.meshBgAliveAt,
+      aliveAtMs: await MeshLiveness.read(prefs),
       startedAtMs: prefs.meshBgStartedAt,
     );
+  }
+
+  /// Tell the running service whether the UI is in front and whether reply
+  /// notifications are on, so it never has to reload prefs per message.
+  /// Fire-and-forget; harmless when the service isn't up.
+  static void pushUiState({bool? uiForeground, bool? messageNotifications}) {
+    if (!isSupported) return;
+    try {
+      FlutterForegroundTask.sendDataToTask({
+        if (uiForeground != null) keyUiForeground: uiForeground,
+        if (messageNotifications != null)
+          keyNotifications: messageNotifications,
+      });
+    } catch (e) {
+      AppLog.warn('mesh_bg', 'ui state push failed', e);
+    }
   }
 
   /// Fire-and-forget poke; the runner re-reads prefs and reconnects. Silently

@@ -81,8 +81,9 @@ RUN apt-get update \
 # Two ways in, both landing at /usr/local/bin/agy (on PATH, which is where
 # the backend looks by default):
 #   1. Bake it in:  --build-arg AGY_DOWNLOAD_URL=<url of the linux binary
-#      for this platform> --build-arg AGY_SHA256=<its sha256>. The digest
-#      is checked; a mismatch fails the build.
+#      for this platform> --build-arg AGY_SHA256=<its sha256>. Both are
+#      required: a missing or mismatched digest fails the build, because
+#      an unverified binary would run with the agent's credentials.
 #   2. Bind-mount a host binary at run time — docker-compose.agy.yml.
 # Either way the OAuth sign-in lives in ~/.gemini, mounted at run time
 # (see docker-compose.agy.yml and docs/docker.md).
@@ -90,12 +91,12 @@ ARG AGY_DOWNLOAD_URL=""
 ARG AGY_SHA256=""
 RUN set -eu; \
   if [ -n "$AGY_DOWNLOAD_URL" ]; then \
-    curl -fsSL "$AGY_DOWNLOAD_URL" -o /tmp/agy; \
-    if [ -n "$AGY_SHA256" ]; then \
-      echo "$AGY_SHA256  /tmp/agy" | sha256sum -c -; \
-    else \
-      echo "WARNING: AGY_SHA256 not set — the agy download is unverified" >&2; \
+    if [ -z "$AGY_SHA256" ]; then \
+      echo "ERROR: AGY_DOWNLOAD_URL is set but AGY_SHA256 is not — refusing an unverified binary" >&2; \
+      exit 1; \
     fi; \
+    curl -fsSL "$AGY_DOWNLOAD_URL" -o /tmp/agy; \
+    echo "$AGY_SHA256  /tmp/agy" | sha256sum -c -; \
     install -m 0755 /tmp/agy /usr/local/bin/agy; \
     rm -f /tmp/agy; \
   fi
@@ -146,7 +147,10 @@ USER 1000:1000
 # container restarts. See docker-compose.yml for the canonical layout.
 VOLUME /home/bun/.talon
 
-# 19876: gateway + /health. 19880: native bridge (companion app, nodes).
-EXPOSE 19876 19880
+# 19880: native bridge (companion app, nodes). The gateway (19876) binds
+# 127.0.0.1 inside the container and only serves the in-container
+# HEALTHCHECK and CLI — publishing it would expose nothing, so it is not
+# declared.
+EXPOSE 19880
 
 # CMD and HEALTHCHECK are inherited from the selected base stage.

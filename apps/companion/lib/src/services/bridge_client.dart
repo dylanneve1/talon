@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show HttpClient, X509Certificate;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
 import '../models/bridge_models.dart';
 import '../models/connection.dart';
+import '../models/credentials.dart';
 import 'bridge_trust.dart';
 import 'log.dart';
 
@@ -78,7 +80,28 @@ class BridgeClient {
   /// makes this a plain UI connection.
   String? meshDeviceId;
 
-  BridgeClient(ConnectionConfig config) : _config = config;
+  BridgeClient(ConnectionConfig config, {this.skipKinds = const {}})
+      : _config = config;
+
+  /// Event kinds this client drops *before* JSON-decoding them. The
+  /// background mesh isolate sets this to the chat-UI firehose (`delta`,
+  /// `reasoning`, …) it never uses — otherwise both isolates parse every
+  /// streamed token while the app is open (#1060).
+  final Set<String> skipKinds;
+
+  /// The `kind` of an SSE frame without decoding it, when it can be read
+  /// cheaply: the daemon serialises every event with `kind` as its first
+  /// key (`{"kind":"delta",…}`). Anything else returns null and is decoded
+  /// normally, so an unexpected shape never loses an event.
+  @visibleForTesting
+  static String? peekKind(String raw) {
+    const prefix = '{"kind":"';
+    if (!raw.startsWith(prefix)) return null;
+    final end = raw.indexOf('"', prefix.length);
+    if (end < 0) return null;
+    final kind = raw.substring(prefix.length, end);
+    return kind.contains(r'\') ? null : kind;
+  }
 
   /// Fingerprint of the certificate seen on the most recent TLS handshake —
   /// the pin candidate the caller persists after a successful first connect.
@@ -182,6 +205,35 @@ class BridgeClient {
     }
   }
 
+  // ── Per-device credentials ─────────────────────────────────────────────────
+
+  /// `GET /auth/whoami` — which credential this connection uses and whether
+  /// the daemon wants it upgraded or rotated. Null when the daemon predates
+  /// per-device credentials (the route answers 404).
+  Future<CredentialStatus?> whoami() async {
+    final res = await _http
+        .get(_u('/auth/whoami'), headers: config.authHeaders())
+        .timeout(const Duration(seconds: 12));
+    if (res.statusCode == 404) return null;
+    return CredentialStatus.fromJson(_decode(res));
+  }
+
+  /// The `POST /auth/upgrade` body a companion sends: its mesh device id and
+  /// the scopes it needs (the mesh + the chat UI). The daemon caps the grant
+  /// by its `native.companionScopes` policy.
+  static Map<String, dynamic> upgradeRequestBody(String deviceId) => {
+        'deviceId': deviceId,
+        'client': 'companion',
+        'scopes': const ['device', 'client'],
+      };
+
+  /// Trade the current bearer (shared token, or this device's credential
+  /// when rotating) for a per-device credential bound to [deviceId].
+  Future<CredentialGrant> upgradeCredential(String deviceId) async =>
+      CredentialGrant.fromJson(
+        await _postJson('/auth/upgrade', upgradeRequestBody(deviceId)),
+      );
+
   // ── SSE stream ──────────────────────────────────────────────────────────────
 
   /// Open the event stream. Completes once the response headers arrive (i.e.
@@ -262,6 +314,10 @@ class BridgeClient {
     final raw = buffer.toString().trim();
     buffer.clear();
     if (raw.isEmpty || _closed) return;
+    if (skipKinds.isNotEmpty) {
+      final kind = peekKind(raw);
+      if (kind != null && skipKinds.contains(kind)) return;
+    }
     try {
       final obj = _decodeObject(raw);
       _events.add(obj);

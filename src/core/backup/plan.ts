@@ -52,6 +52,7 @@ export const DEFAULT_BACKUP_SETTINGS = {
   keepLocal: 12,
   keepRemote: 30,
   includePalace: true,
+  loginSessions: "local",
   workspaceInclude: DEFAULT_WORKSPACE_INCLUDE,
   extraPaths: [] as readonly string[],
   checkpointBeforeUpdate: true,
@@ -70,12 +71,21 @@ export const HOME_INCLUDES: readonly string[] = [
   "prompts",
   "data",
   "keys",
-  "whatsapp-auth",
-  ".user-session",
   "mesh-devices.json",
   "mesh-history.json",
   "teleport-state.json",
   "agent-workspace",
+];
+
+/**
+ * Login sessions — the WhatsApp pairing and the userbot's Telegram login
+ * (the operator's own account). They get their own part so they can stay
+ * on this machine: a stolen remote copy must not be a logged-in session.
+ * Re-linking after a disaster is a QR scan; losing the account is not.
+ */
+export const LOGIN_INCLUDES: readonly string[] = [
+  "whatsapp-auth",
+  ".user-session",
 ];
 
 /** The exclusion rules, in the words the manifest records them by. */

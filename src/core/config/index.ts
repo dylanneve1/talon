@@ -221,6 +221,29 @@ const nativeConfigSchema = z
       .string()
       .regex(/^https?:\/\/\S+$/, "native.publicUrl must be an http(s) URL")
       .optional(),
+    /**
+     * Accept the shared `token` from remote (non-loopback, or proxied)
+     * clients. Every device now gets its own credential when it pairs, and
+     * devices still holding the shared token trade it for one in-band on
+     * their next connect; the daemon log and `talon mesh` list the ones
+     * that have not. Once none remain, set this to false and rotate
+     * `token` — it then only works for same-machine clients (the desktop
+     * app and CLI, via the 0600 discovery file). Default true for this
+     * release; the default flips to false in a later one.
+     */
+    legacySharedToken: z.boolean().optional(),
+    /**
+     * Scopes a companion's per-device credential carries — at pairing and
+     * on the in-band upgrade. Default ["device", "client"]: the mesh plus
+     * the chat UI. Adding "operator" lets every paired phone change config,
+     * toggle plugins and read logs; prefer granting it to one device with
+     * `talon mesh scopes <device> device,client,operator`. Nodes always get
+     * ["device"].
+     */
+    companionScopes: z
+      .array(z.enum(["device", "client", "operator"]))
+      .min(1)
+      .optional(),
   })
   .strict();
 
@@ -577,6 +600,7 @@ const configSchema = z.object({
    *     so a bad update is one restore away from undone.
    *   - `notifyChatId` — where failures are reported; falls back to the
    *     admin chat.
+   *   - `encryption` / `loginSessions` — see docs/backup-security.md.
    */
   backup: z
     .object({
@@ -600,6 +624,14 @@ const configSchema = z.object({
         .max(1000)
         .default(DEFAULT_BACKUP_SETTINGS.keepRemote),
       includePalace: z.boolean().default(DEFAULT_BACKUP_SETTINGS.includePalace),
+      /**
+       * WhatsApp auth + the userbot's Telegram login. "local" (default)
+       * keeps them in local snapshots only; "remote" also uploads them
+       * (encrypted); "off" leaves them out entirely.
+       */
+      loginSessions: z
+        .enum(["off", "local", "remote"])
+        .default(DEFAULT_BACKUP_SETTINGS.loginSessions),
       workspaceInclude: z
         .array(z.string().min(1))
         .default([...DEFAULT_BACKUP_SETTINGS.workspaceInclude]),
@@ -624,6 +656,17 @@ const configSchema = z.object({
     .strict()
     .optional(),
   braveApiKey: z.string().optional(),
+  /**
+   * `fetch_url` refuses hosts that resolve to loopback, private (RFC 1918,
+   * CGNAT, ULA), link-local (incl. the 169.254.169.254 metadata endpoint)
+   * or reserved addresses, re-checking every redirect hop. Set
+   * `allowPrivateNetworks: true` only on a host where the agent should
+   * read local services (a home lab, a dev server).
+   */
+  fetchUrl: z
+    .object({ allowPrivateNetworks: z.boolean().default(false) })
+    .strict()
+    .optional(),
   /**
    * Codex-specific OpenAI API key. Prefer this, CODEX_API_KEY, or
    * TALON_CODEX_KEY when the Codex backend should use API-key billing
@@ -1085,6 +1128,29 @@ export function loadConfig(): TalonConfig {
     systemPrompt: joinSystemPromptParts(promptParts),
     systemPromptParts: promptParts,
   };
+}
+
+/**
+ * Only the `backup` block, validated — without writing a default config
+ * or checking frontend requirements. `talon backup restore` on a fresh
+ * host has no real config yet (it is inside the snapshot), and the
+ * default one would fail on its empty botToken before anything restored.
+ */
+export function loadBackupConfig(): TalonConfig["backup"] {
+  const fileConfig = loadConfigFile();
+  const result = configSchema.shape.backup.safeParse(fileConfig.backup);
+  if (!result.success) {
+    const issues = formatSchemaIssues(result.error).map(
+      (line) => `backup.${line}`,
+    );
+    throw new ConfigFileError(
+      `Invalid backup config in ${CONFIG_FILE}:\n` +
+        issues.map((line) => `  - ${line}`).join("\n"),
+      CONFIG_FILE,
+      issues,
+    );
+  }
+  return result.data;
 }
 
 /**

@@ -1,0 +1,509 @@
+/**
+ * Per-device mesh credentials — the store, the operator surface, and how
+ * the mesh uses them (pairing links, installers, remove_device).
+ */
+
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../util/log.js", () => ({
+  log: vi.fn(),
+  logError: vi.fn(),
+  logWarn: vi.fn(),
+  logDebug: vi.fn(),
+}));
+
+import { mkdtemp, readFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  DeviceCredentialStore,
+  credentialAdmin,
+  credentialOverview,
+  isDeviceCredentialToken,
+  type CredentialAdminContext,
+} from "../core/mesh/credentials/index.js";
+import { MeshRegistry, MeshService } from "../core/mesh/index.js";
+import { setMeshService } from "../core/mesh/devices/service.js";
+import { dispatchGatewayRoute } from "../core/engine/gateway-routes.js";
+
+async function tempFile(name: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "talon-mesh-creds-"));
+  return join(dir, name);
+}
+
+async function tempStore(now?: () => number): Promise<{
+  store: DeviceCredentialStore;
+  file: string;
+}> {
+  const file = await tempFile("credentials.json");
+  return { store: new DeviceCredentialStore(file, now), file };
+}
+
+/** Let fire-and-forget persistence settle. */
+const settle = () => new Promise((r) => setTimeout(r, 30));
+
+describe("DeviceCredentialStore", () => {
+  it("mints a tdc1 token, stores only its hash, and authenticates it", async () => {
+    const { store, file } = await tempStore();
+    const { token, credential } = await store.mint({
+      deviceId: "phone",
+      scopes: ["device", "client"],
+      origin: "upgrade",
+    });
+    expect(isDeviceCredentialToken(token)).toBe(true);
+    expect(token.split(".")[1]).toBe(credential.id);
+    const onDisk = await readFile(file, "utf8");
+    expect(onDisk).not.toContain(token.split(".")[2]);
+    expect(onDisk).toContain(credential.id);
+    expect((credential as Record<string, unknown>).tokenHash).toBeUndefined();
+
+    const auth = store.authenticate(token);
+    expect(auth).toMatchObject({
+      id: credential.id,
+      deviceId: "phone",
+      scopes: ["device", "client"],
+    });
+    expect(auth?.lastUsedAt).toBeTypeOf("number");
+  });
+
+  it("rejects wrong secrets, unknown ids and malformed tokens", async () => {
+    const { store } = await tempStore();
+    const { token } = await store.mint({
+      deviceId: "a",
+      scopes: ["device"],
+      origin: "upgrade",
+    });
+    const [p, id, secret] = token.split(".");
+    const flipped = `${p}.${id}.${secret!.startsWith("A") ? "B" : "A"}${secret!.slice(1)}`;
+    expect(store.authenticate(flipped)).toBeNull();
+    expect(store.authenticate(`tdc1.0000000000000000.${secret}`)).toBeNull();
+    expect(store.authenticate("shared-token")).toBeNull();
+    expect(store.authenticate("")).toBeNull();
+  });
+
+  it("drops unknown scopes and refuses a credential with none", async () => {
+    const { store } = await tempStore();
+    const { credential } = await store.mint({
+      deviceId: "a",
+      scopes: ["client", "bogus" as never, "device", "client"],
+      origin: "upgrade",
+    });
+    expect(credential.scopes).toEqual(["device", "client"]);
+    await expect(
+      store.mint({ deviceId: "b", scopes: [], origin: "upgrade" }),
+    ).rejects.toThrow(/scope/);
+  });
+
+  it("revocation fails authentication and notifies listeners", async () => {
+    const { store } = await tempStore();
+    const { token, credential } = await store.mint({
+      deviceId: "a",
+      scopes: ["device"],
+      origin: "upgrade",
+    });
+    const seen: string[][] = [];
+    store.onRevoked((ids) => seen.push([...ids]));
+    const revoked = await store.revokeDevice("a", "lost laptop");
+    expect(revoked.map((c) => c.id)).toEqual([credential.id]);
+    expect(seen).toEqual([[credential.id]]);
+    expect(store.authenticate(token)).toBeNull();
+    expect(store.list()[0]).toMatchObject({ revokeReason: "lost laptop" });
+  });
+
+  it("survives a restart: rows reload from disk", async () => {
+    const { store, file } = await tempStore();
+    const { token } = await store.mint({
+      deviceId: "node-1",
+      scopes: ["device"],
+      origin: "install",
+    });
+    const reloaded = new DeviceCredentialStore(file);
+    await reloaded.load();
+    expect(reloaded.authenticate(token)?.deviceId).toBe("node-1");
+  });
+
+  it("binds an unbound credential once, and never to an id another credential holds", async () => {
+    const { store } = await tempStore();
+    await store.mint({
+      deviceId: "taken",
+      scopes: ["device"],
+      origin: "upgrade",
+    });
+    const pair = store.mintNow({
+      deviceId: null,
+      scopes: ["device", "client"],
+      origin: "pair",
+    });
+    const id = pair.credential.id;
+    expect(store.bind(id, "taken")).toMatchObject({ ok: false });
+    expect(store.bind(id, "phone")).toMatchObject({ ok: true });
+    expect(store.bind(id, "phone")).toMatchObject({ ok: true });
+    expect(store.bind(id, "other")).toMatchObject({ ok: false });
+    expect(store.authenticate(pair.token)?.deviceId).toBe("phone");
+  });
+
+  it("expires an unbound credential that is never used", async () => {
+    let now = 1_000_000;
+    const { store } = await tempStore(() => now);
+    const { token } = store.mintNow({
+      deviceId: null,
+      scopes: ["device"],
+      origin: "install",
+    });
+    expect(store.authenticate(token)).not.toBeNull();
+    now += 8 * 24 * 60 * 60 * 1000;
+    expect(store.authenticate(token)).toBeNull();
+  });
+
+  it("keeps a superseded credential until its replacement is first used", async () => {
+    const { store } = await tempStore();
+    const old = await store.mint({
+      deviceId: "a",
+      scopes: ["device"],
+      origin: "upgrade",
+    });
+    expect(store.authenticate(old.token)).not.toBeNull(); // adopted
+    const next = await store.mint({
+      deviceId: "a",
+      scopes: ["device"],
+      origin: "rotate",
+    });
+    // The reply carrying `next` may have been lost — the old one still works.
+    expect(store.authenticate(old.token)).not.toBeNull();
+    const revoked: string[] = [];
+    store.onRevoked((ids) => revoked.push(...ids));
+    expect(store.authenticate(next.token)).not.toBeNull();
+    await settle();
+    expect(revoked).toEqual([old.credential.id]);
+    expect(store.authenticate(old.token)).toBeNull();
+  });
+
+  it("a retried upgrade revokes the never-used credential it replaces", async () => {
+    const { store } = await tempStore();
+    const lost = await store.mint({
+      deviceId: "a",
+      scopes: ["device"],
+      origin: "upgrade",
+    });
+    const retry = await store.mint({
+      deviceId: "a",
+      scopes: ["device"],
+      origin: "upgrade",
+    });
+    expect(store.authenticate(lost.token)).toBeNull();
+    expect(store.authenticate(retry.token)).not.toBeNull();
+    expect(store.activeFor("a").map((c) => c.id)).toEqual([
+      retry.credential.id,
+    ]);
+  });
+
+  it("rotation requests surface via rotationDue and expire after the grace window", async () => {
+    let now = 5_000_000;
+    const { store } = await tempStore(() => now);
+    const { token, credential } = await store.mint({
+      deviceId: "a",
+      scopes: ["device"],
+      origin: "upgrade",
+    });
+    expect(store.rotationDue(credential.id)).toBe(false);
+    await store.requestRotation("a");
+    expect(store.rotationDue(credential.id)).toBe(true);
+    expect(store.authenticate(token)).not.toBeNull();
+    now += 8 * 24 * 60 * 60 * 1000;
+    expect(store.authenticate(token)).toBeNull();
+  });
+
+  it("scope changes notify listeners so live sessions re-authenticate", async () => {
+    const { store } = await tempStore();
+    const { token, credential } = await store.mint({
+      deviceId: "a",
+      scopes: ["device"],
+      origin: "upgrade",
+    });
+    const seen: string[] = [];
+    store.onRevoked((ids) => seen.push(...ids));
+    await store.setScopes("a", ["device", "operator"]);
+    expect(seen).toEqual([credential.id]);
+    expect(store.authenticate(token)?.scopes).toEqual(["device", "operator"]);
+  });
+
+  it("tracks devices still on the shared token until they hold a credential", async () => {
+    const { store } = await tempStore();
+    expect(store.noteLegacy("old-phone")).toBe(true);
+    expect(store.noteLegacy("old-phone")).toBe(false);
+    expect(store.legacyDevices().map((d) => d.deviceId)).toEqual(["old-phone"]);
+    await store.mint({
+      deviceId: "old-phone",
+      scopes: ["device"],
+      origin: "upgrade",
+    });
+    expect(store.legacyDevices()).toEqual([]);
+  });
+});
+
+describe("credential admin (talon mesh)", () => {
+  async function adminContext(): Promise<CredentialAdminContext> {
+    const { store } = await tempStore();
+    return {
+      store,
+      resolveDeviceId: (q) => (q === "Pixel" ? "phone" : undefined),
+      legacySharedToken: () => false,
+    };
+  }
+
+  it("revokes by registry name, by device id, and by credential id", async () => {
+    const ctx = await adminContext();
+    await ctx.store.mint({
+      deviceId: "phone",
+      scopes: ["device"],
+      origin: "pair",
+    });
+    const byName = await credentialAdmin(ctx, {
+      op: "revoke",
+      device: "Pixel",
+    });
+    expect(byName).toMatchObject({ ok: true });
+    const again = await credentialAdmin(ctx, { op: "revoke", device: "phone" });
+    expect(again).toMatchObject({ ok: false });
+
+    const { credential } = await ctx.store.mint({
+      deviceId: "laptop",
+      scopes: ["device"],
+      origin: "pair",
+    });
+    const byId = await credentialAdmin(ctx, {
+      op: "revoke",
+      device: credential.id,
+    });
+    expect(byId).toMatchObject({ ok: true });
+    expect(ctx.store.activeFor("laptop")).toEqual([]);
+  });
+
+  it("sets scopes from a comma list and rejects an empty one", async () => {
+    const ctx = await adminContext();
+    await ctx.store.mint({
+      deviceId: "phone",
+      scopes: ["device"],
+      origin: "pair",
+    });
+    expect(
+      await credentialAdmin(ctx, {
+        op: "scopes",
+        device: "phone",
+        scopes: "device, client,operator",
+      }),
+    ).toMatchObject({ ok: true });
+    expect(ctx.store.activeFor("phone")[0]?.scopes).toEqual([
+      "device",
+      "client",
+      "operator",
+    ]);
+    expect(
+      await credentialAdmin(ctx, {
+        op: "scopes",
+        device: "phone",
+        scopes: "root",
+      }),
+    ).toMatchObject({ ok: false });
+  });
+
+  it("rotate marks the credential and unknown devices are an error", async () => {
+    const ctx = await adminContext();
+    const { credential } = await ctx.store.mint({
+      deviceId: "phone",
+      scopes: ["device"],
+      origin: "pair",
+    });
+    expect(
+      await credentialAdmin(ctx, { op: "rotate", device: "phone" }),
+    ).toMatchObject({
+      ok: true,
+    });
+    expect(ctx.store.rotationDue(credential.id)).toBe(true);
+    expect(
+      await credentialAdmin(ctx, { op: "rotate", device: "nope" }),
+    ).toMatchObject({
+      ok: false,
+    });
+    expect(
+      await credentialAdmin(ctx, { op: "bogus", device: "phone" }),
+    ).toMatchObject({
+      ok: false,
+    });
+  });
+
+  it("the overview lists credentials without their hashes", async () => {
+    const ctx = await adminContext();
+    await ctx.store.mint({
+      deviceId: "phone",
+      scopes: ["device"],
+      origin: "pair",
+    });
+    const overview = await credentialOverview(ctx);
+    expect(overview.credentials).toHaveLength(1);
+    expect(JSON.stringify(overview)).not.toContain("tokenHash");
+    expect(overview.legacySharedToken).toBe(false);
+  });
+});
+
+describe("mesh service with credentials", () => {
+  async function service(): Promise<MeshService> {
+    const dir = await mkdtemp(join(tmpdir(), "talon-mesh-cred-svc-"));
+    return new MeshService(
+      new MeshRegistry({
+        devices: join(dir, "devices.json"),
+        locations: join(dir, "locations.json"),
+        history: join(dir, "history.json"),
+      }),
+      {
+        credentials: new DeviceCredentialStore(join(dir, "credentials.json")),
+        nodeBinaryResolver: async () => ({
+          path: "/bin/true",
+          sha256: "a".repeat(64),
+          size: 1,
+          version: "9.9.9",
+          source: "cache",
+        }),
+      },
+    );
+  }
+
+  function bridge(svc: MeshService): void {
+    svc.setBridgeInfo({
+      scheme: "https",
+      host: "10.0.0.2",
+      port: 19880,
+      token: "shared-secret",
+      fingerprint: "f".repeat(64),
+    });
+  }
+
+  it("pairing links carry an unbound per-device credential, never the shared token", async () => {
+    const svc = await service();
+    await svc.load();
+    bridge(svc);
+    const minted = svc.makeCompanionPairLink("Phone");
+    expect(minted.ok).toBe(true);
+    if (!minted.ok) return;
+    expect(isDeviceCredentialToken(minted.token)).toBe(true);
+    expect(minted.token).not.toBe("shared-secret");
+    const cred = svc.credentials!.authenticate(minted.token);
+    expect(cred).toMatchObject({
+      deviceId: null,
+      scopes: ["device", "client"],
+    });
+  });
+
+  it("node installers carry a device-only credential", async () => {
+    const svc = await service();
+    await svc.load();
+    bridge(svc);
+    const minted = await svc.makeNodeInstallLink("linux", "amd64");
+    const grant = /provision=([A-Za-z0-9_-]+)/.exec(minted.text)![1]!;
+    const script = svc.openNodeInstall(grant)!.script;
+    expect(script).not.toContain("shared-secret");
+    const token = /--token "([^"]+)"/.exec(script)![1]!;
+    expect(svc.credentials!.authenticate(token)?.scopes).toEqual(["device"]);
+  });
+
+  it("remove_device revokes the device's credential", async () => {
+    const svc = await service();
+    await svc.load();
+    await svc.register({
+      id: "phone",
+      name: "Pixel",
+      platform: "android",
+      appVersion: "1",
+    });
+    const { token } = await svc.credentials!.mint({
+      deviceId: "phone",
+      scopes: ["device"],
+      origin: "pair",
+    });
+    const result = await svc.removeDevice("phone");
+    expect(result.ok).toBe(true);
+    expect(result.text).toMatch(/Revoked its 1 per-device credential/);
+    expect(svc.credentials!.authenticate(token)).toBeNull();
+  });
+});
+
+describe("gateway /mesh/credentials", () => {
+  let server: Server | undefined;
+  afterEach(async () => {
+    setMeshService(null);
+    await new Promise<void>((r) => (server ? server.close(() => r()) : r()));
+    server = undefined;
+  });
+
+  async function start(): Promise<{ port: number; svc: MeshService }> {
+    const dir = await mkdtemp(join(tmpdir(), "talon-mesh-cred-gw-"));
+    const svc = new MeshService(
+      new MeshRegistry({
+        devices: join(dir, "devices.json"),
+        locations: join(dir, "locations.json"),
+        history: join(dir, "history.json"),
+      }),
+      { credentials: new DeviceCredentialStore(join(dir, "creds.json")) },
+    );
+    setMeshService(svc);
+    const host = {
+      healthSnapshot: () => ({}),
+      requestShutdown: () => false,
+      reloadPlugins: async () => [],
+      hubOrigin: () => "",
+      handleAction: async () => ({}),
+    };
+    server = createServer(
+      (req, res) => void dispatchGatewayRoute(req, res, host),
+    );
+    await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
+    const addr = server.address() as { port: number };
+    return { port: addr.port, svc };
+  }
+
+  it("lists and revokes through the loopback gateway", async () => {
+    const { port, svc } = await start();
+    const { token } = await svc.credentials!.mint({
+      deviceId: "phone",
+      scopes: ["device"],
+      origin: "pair",
+    });
+    const list = await fetch(`http://127.0.0.1:${port}/mesh/credentials`);
+    expect(
+      ((await list.json()) as { credentials: unknown[] }).credentials,
+    ).toHaveLength(1);
+    const revoke = await fetch(`http://127.0.0.1:${port}/mesh/credentials`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ op: "revoke", device: "phone" }),
+    });
+    expect(await revoke.json()).toMatchObject({ ok: true });
+    expect(svc.credentials!.authenticate(token)).toBeNull();
+  });
+
+  it("refuses browser-originated and non-JSON writes", async () => {
+    const { port, svc } = await start();
+    await svc.credentials!.mint({
+      deviceId: "phone",
+      scopes: ["device"],
+      origin: "pair",
+    });
+    const fromPage = await fetch(`http://127.0.0.1:${port}/mesh/credentials`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "https://evil.example",
+      },
+      body: JSON.stringify({ op: "revoke", device: "phone" }),
+    });
+    expect(fromPage.status).toBe(403);
+    const simple = await fetch(`http://127.0.0.1:${port}/mesh/credentials`, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({ op: "revoke", device: "phone" }),
+    });
+    expect(simple.status).toBe(415);
+    expect(svc.credentials!.activeFor("phone")).toHaveLength(1);
+  });
+});

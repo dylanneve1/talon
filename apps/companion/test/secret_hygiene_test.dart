@@ -29,6 +29,15 @@ void main() {
       }
     });
 
+    test('keeps a per-device credential id but drops its secret', () {
+      const sample = 'Qm9ndXMtZml4dHVyZS1zZWNyZXQtbm90LWEtcmVhbC1';
+      final out = redactSecrets(
+        'upgrade reply {"token":"tdc1.0123456789abcdef.$sample"}',
+      );
+      expect(out, isNot(contains(sample)));
+      expect(out, contains('tdc1.0123456789abcdef.…'));
+    });
+
     test('leaves ordinary text alone', () {
       const text = 'Unauthorized — check your token (at=5, format=json)';
       expect(redactSecrets(text), text);

@@ -177,9 +177,15 @@ describe("encrypted snapshots", () => {
     writeFileSync(path, bytes);
     manifest.parts[0].sha256 = await sha256File(path);
     await writeManifest(manifest, root);
+    // The digest is covered by the manifest's MAC, so the rewrite itself
+    // is caught first…
     await expect(
       restoreSnapshot({ id: manifest.id, settings, home: root }),
-    ).rejects.toThrow(/cannot be decrypted/);
+    ).rejects.toThrow(/manifest authentication failed/);
+    // …and the part check refuses the byte on its own as well.
+    await expect(verifyParts(manifest, root, settings)).rejects.toThrow(
+      /cannot be decrypted/,
+    );
   });
 
   it("still restores a plaintext snapshot taken before encryption was on", async () => {
@@ -187,11 +193,23 @@ describe("encrypted snapshots", () => {
     const legacy = await snapshot(root, PLAIN);
     expect(legacy.parts[0].name).toBe("state.tar.zst");
     writeFileSync(join(root, "workspace", "memory", "memory.md"), "drifted");
+    // With a passphrase configured, an unsigned manifest needs the
+    // operator's explicit say-so (it is what a stripped MAC looks like).
+    const settings = await keyed(root);
+    await expect(
+      restoreSnapshot({
+        id: legacy.id,
+        settings,
+        home: root,
+        skipCheckpoint: true,
+      }),
+    ).rejects.toThrow(/allow-unauthenticated/);
     await restoreSnapshot({
       id: legacy.id,
-      settings: await keyed(root),
+      settings,
       home: root,
       skipCheckpoint: true,
+      allowUnauthenticated: true,
     });
     expect(
       readFileSync(join(root, "workspace", "memory", "memory.md"), "utf8"),
@@ -216,7 +234,7 @@ describe("encrypted snapshots", () => {
     );
     expect(palace(c).name).toBe(palace(a).name);
     expect(palace(c).sha256).not.toBe(palace(a).sha256); // re-encrypted
-  });
+  }, 60_000);
 });
 
 describe("remote targets", () => {

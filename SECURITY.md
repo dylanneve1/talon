@@ -39,6 +39,13 @@ Instead, use [GitHub's private vulnerability reporting](https://github.com/dylan
 - **Bridge auth**: bearer-token auth with constant-time comparison. A
   non-loopback bind with no configured token auto-mints a persistent one
   (`~/.talon/keys/bridge-token`) — the bridge is never open on the network.
+- **Per-device credentials**: every paired device and node holds its own
+  bearer credential (only a hash is stored), bound to its device id and
+  scoped (`device` / `client` / `operator`); a credential can never act as
+  another device, and `talon mesh revoke` cuts one device off and drops its
+  live sessions. The shared token is a legacy path, accepted from remote
+  clients only while `native.legacySharedToken` is on. See
+  docs/mesh-credentials.md.
 - **Brute-force lockout**: an address presenting repeated wrong tokens is
   refused (HTTP 429) for a cooldown window, and the lockout is logged for
   fail2ban-style tooling. Tokenless probes don't count — only wrong secrets.

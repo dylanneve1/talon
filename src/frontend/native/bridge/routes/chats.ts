@@ -1,5 +1,6 @@
 import type { RouteHost } from "./host.js";
-import type { BridgeRoutes } from "./table.js";
+import { claimDevice } from "../credentials/claims.js";
+import type { BridgeRoutes, RouteContext } from "./table.js";
 import {
   asAttachmentRefs,
   asPositiveInt,
@@ -7,6 +8,23 @@ import {
   deviceIdParam,
 } from "./params.js";
 import { log, logWarn } from "../../../../util/log.js";
+
+/**
+ * GET /events. A per-device credential can only name its own device (and
+ * is named by it when it omits the claim) — see credentials/claims.ts.
+ */
+function openEvents(host: RouteHost, ctx: RouteContext): void {
+  const { res, url, principal } = ctx;
+  const claim = claimDevice(principal, deviceIdParam(url), host.credentials);
+  if (!claim.ok || !principal) {
+    host.json(res, 403, {
+      ok: false,
+      error: claim.ok ? "Forbidden" : claim.error,
+    });
+    return;
+  }
+  host.openStream(res, claim.deviceId, principal);
+}
 
 export function chatRoutes(
   host: RouteHost,
@@ -33,7 +51,7 @@ export function chatRoutes(
 
     // A mesh client names itself here so device-addressed events reach
     // it alone (see sendToDevice); UI clients simply omit it.
-    "GET /events": ({ res, url }) => host.openStream(res, deviceIdParam(url)),
+    "GET /events": (ctx) => openEvents(host, ctx),
     "GET /chats": ({ res }) => json(res, 200, { chats: h.listChats() }),
     "POST /chats": async ({ req, res }) => {
       const body = await readJson(req);
