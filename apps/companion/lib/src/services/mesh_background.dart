@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
+import '../security/app_lock/approval_relay.dart';
 import 'bridge_client.dart';
 import 'endpoint.dart';
 import 'log.dart';
@@ -64,9 +65,11 @@ class MeshTaskHandler extends TaskHandler {
   void onReceiveData(Object data) {
     if (data == MeshForegroundController.msgReconfigure) {
       unawaited(_runner?.reconfigure());
-    } else if (data is Map) {
-      _runner?.applyUiState(data);
+      return;
     }
+    if (data is Map) _runner?.applyUiState(data);
+    // The UI's answer to an app-lock approval request (#1051).
+    _runner?.approvals.handle(data);
   }
 
   @override
@@ -95,6 +98,12 @@ class MeshBackgroundRunner {
   static const int _initialBackoffMs = 2000;
   static const int _maxBackoffMs = 60000;
 
+  /// Device-control commands that need an on-device approval (app lock) ask
+  /// the UI isolate through this; with no UI in front they are refused.
+  final BackgroundCommandApprover approvals = BackgroundCommandApprover(
+    send: FlutterForegroundTask.sendDataToMain,
+  );
+
   /// Stream events only a chat UI cares about.
   static const Set<String> _uiOnlyKinds = {
     'delta',
@@ -115,12 +124,15 @@ class MeshBackgroundRunner {
   /// in which case prefs are the fallback.
   bool? _uiForeground;
   bool? _notificationsEnabled;
+  bool? _appLockEnabled;
 
   void applyUiState(Map<dynamic, dynamic> data) {
     final fg = data[MeshForegroundController.keyUiForeground];
     if (fg is bool) _uiForeground = fg;
     final notify = data[MeshForegroundController.keyNotifications];
     if (notify is bool) _notificationsEnabled = notify;
+    final lock = data[MeshForegroundController.keyAppLock];
+    if (lock is bool) _appLockEnabled = lock;
   }
 
   Future<void> start() async {
@@ -130,7 +142,12 @@ class MeshBackgroundRunner {
     // firehose the UI isolate is already decoding (#1060).
     final client = BridgeClient(prefs.connection, skipKinds: _uiOnlyKinds);
     _client = client;
-    _mesh = MeshService(prefs, client, onRegistered: _stampAlive);
+    _mesh = MeshService(
+      prefs,
+      client,
+      onRegistered: _stampAlive,
+      approver: (command) => approvals.approve(prefs, command),
+    );
     _seedChatTitles(prefs);
     // BridgeClient surfaces stream drops as errors on [events]; the mesh's
     // own subscription only consumes *device command* events, so this one
@@ -239,10 +256,16 @@ class MeshBackgroundRunner {
     // Don't notify for a reply the user is watching arrive.
     if (foreground) return;
 
+    // With the app lock on, the shade must not become a way around it:
+    // say that a reply arrived, not which chat or what it says.
+    // Pushed by the UI whenever the lock is turned on or off; this isolate's
+    // prefs cache is only reloaded until the UI has spoken, so it could be
+    // stale here.
+    final redact = _appLockEnabled ?? prefs.appLockEnabled;
     await MessageNotifications.showMessage(
       chatId: chatId,
-      title: _chatTitles[chatId] ?? 'Talon',
-      body: text,
+      title: redact ? 'Talon' : (_chatTitles[chatId] ?? 'Talon'),
+      body: redact ? MessageNotifications.lockedBody : text,
     );
   }
 
@@ -489,6 +512,7 @@ class MeshForegroundController {
   /// Keys of the UI-state map pushed to the task with [pushUiState].
   static const String keyUiForeground = 'ui.foreground';
   static const String keyNotifications = 'ui.messageNotifications';
+  static const String keyAppLock = 'ui.appLock';
   static const Duration startGrace = Duration(seconds: 20);
 
   static bool get isSupported => !kIsWeb && Platform.isAndroid;
@@ -652,13 +676,18 @@ class MeshForegroundController {
   /// Tell the running service whether the UI is in front and whether reply
   /// notifications are on, so it never has to reload prefs per message.
   /// Fire-and-forget; harmless when the service isn't up.
-  static void pushUiState({bool? uiForeground, bool? messageNotifications}) {
+  static void pushUiState({
+    bool? uiForeground,
+    bool? messageNotifications,
+    bool? appLockEnabled,
+  }) {
     if (!isSupported) return;
     try {
       FlutterForegroundTask.sendDataToTask({
         if (uiForeground != null) keyUiForeground: uiForeground,
         if (messageNotifications != null)
           keyNotifications: messageNotifications,
+        if (appLockEnabled != null) keyAppLock: appLockEnabled,
       });
     } catch (e) {
       AppLog.warn('mesh_bg', 'ui state push failed', e);

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
+import 'src/security/app_lock/app_lock_controller.dart';
 import 'src/services/bridge_trust.dart';
 import 'src/services/dynamic_accent.dart';
 import 'src/services/haptics.dart';
@@ -16,6 +17,7 @@ import 'src/services/voice.dart';
 import 'src/services/windows_tray.dart';
 import 'src/state/app_state.dart';
 import 'src/theme.dart';
+import 'src/ui/app_lock/app_lock_gate.dart';
 import 'src/ui/effects.dart';
 import 'src/ui/image_bounds.dart';
 import 'src/ui/root_view.dart';
@@ -65,13 +67,25 @@ Future<void> main() async {
     WidgetsBinding.instance.platformDispatcher.platformBrightness,
   );
   TalonTheme.syncSystemChrome();
+  // App lock (#1051). Built before AppState so the sealed-snapshot sink is in
+  // place before anything saves; its record loads in the background — the
+  // prefs mirror already tells the first frame whether to cover the UI, and
+  // the connection never waits for it.
+  final appLock = AppLockController.platform(prefs);
   final state = AppState(prefs);
-  runApp(TalonApp(state: state));
+  appLock.onSnapshotUnsealed = state.restoreSnapshot;
+  appLock.onWipe = state.forgetConnection;
+  state.commandApprover = appLock.approveCommand;
+  unawaited(appLock.load());
+  runApp(TalonApp(state: state, appLock: appLock));
 }
 
 class TalonApp extends StatefulWidget {
   final AppState state;
-  const TalonApp({super.key, required this.state});
+
+  /// The optional app lock; null in tests that don't exercise it.
+  final AppLockController? appLock;
+  const TalonApp({super.key, required this.state, this.appLock});
 
   @override
   State<TalonApp> createState() => _TalonAppState();
@@ -83,10 +97,16 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
   StreamSubscription<void>? _assistSub;
 
+  /// The app-lock state last handed to the background isolate.
+  bool? _pushedAppLock;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // The background isolate redacts reply notifications while the lock is
+    // on; tell it as soon as the lock is turned on or off.
+    widget.appLock?.addListener(_onAppLockChanged);
     // Decorative motion (ambient backdrop, pulses) only runs while the app is
     // resumed and someone is using it — see TalonEffects.
     TalonEffects.setLifecycle(WidgetsBinding.instance.lifecycleState);
@@ -137,6 +157,12 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
     final state = widget.state;
     if (!state.prefs.onboarded) return;
     if (VoiceModeScreen.open.value) return; // already in a session
+    // The assist gesture must not open a live microphone behind the lock.
+    final lock = widget.appLock;
+    if (lock != null) {
+      await lock.whenUnlocked();
+      if (!mounted) return;
+    }
     // Clear the native pending flag so this launch is handled exactly once.
     await VoiceService.instance.consumeAssistLaunch();
     if (state.selectedChatId == null && state.chats.isNotEmpty) {
@@ -187,10 +213,20 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
   /// prefs store for every assistant message (#1060). Prefs stay the
   /// fallback for a service that starts before the UI has spoken.
   void _pushUiState({required bool foreground}) {
+    final lock = widget.state.prefs.appLockEnabled;
+    _pushedAppLock = lock;
     MeshForegroundController.pushUiState(
       uiForeground: foreground,
       messageNotifications: widget.state.prefs.messageNotifications,
+      appLockEnabled: lock,
     );
+  }
+
+  void _onAppLockChanged() {
+    final lock = widget.state.prefs.appLockEnabled;
+    if (lock == _pushedAppLock) return;
+    _pushedAppLock = lock;
+    MeshForegroundController.pushUiState(appLockEnabled: lock);
   }
 
   /// Pull the platform accent into the palette while "Wallpaper" is the
@@ -229,6 +265,7 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     _assistSub?.cancel();
+    widget.appLock?.removeListener(_onAppLockChanged);
     HardwareKeyboard.instance.removeHandler(_onKey);
     TalonTheme.mode.removeListener(_onThemeChanged);
     TalonTheme.accentSeed.removeListener(_onThemeChanged);
@@ -250,13 +287,19 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
       builder: (context, child) {
         final mq = MediaQuery.of(context);
         final osFactor = mq.textScaler.scale(1.0);
+        final navigator = child ?? const SizedBox.shrink();
+        final lock = widget.appLock;
         return ActivityListener(
           child: MediaQuery(
             data: mq.copyWith(
               textScaler:
                   TextScaler.linear(osFactor * TalonTheme.textScale.value),
             ),
-            child: child ?? const SizedBox.shrink(),
+            // Above the navigator, so no route or dialog can sit over the
+            // lock.
+            child: lock == null
+                ? navigator
+                : AppLockGate(controller: lock, child: navigator),
           ),
         );
       },

@@ -36,8 +36,21 @@ class PrivateStore {
   /// `Prefs.saveSnapshot`). Holds recent chats, so it gets the same mode.
   static const snapshotFileName = 'chat_snapshot.v1.json';
 
+  /// The app lock's sealed (AES-256-GCM) snapshot, which replaces the
+  /// plaintext one while the lock is on (see `FileSealedSnapshotStore`).
+  static const sealedSnapshotFileName = 'chat_snapshot.sealed.v1';
+
+  /// The app lock record's file fallback on Linux without a Secret Service
+  /// (see `FileSecretStore`).
+  static const appLockFileName = 'app_lock.v1.json';
+
   /// Every file in the support directory that must be this user's alone.
-  static const privateFileNames = [prefsFileName, snapshotFileName];
+  static const privateFileNames = [
+    prefsFileName,
+    snapshotFileName,
+    sealedSnapshotFileName,
+    appLockFileName,
+  ];
 
   static bool _isLinux() => !kIsWeb && Platform.isLinux;
 
@@ -81,6 +94,19 @@ class PrivateStore {
   /// Narrow an existing file to 0600.
   static void restrictFileSync(String path) {
     if (_isLinux()) _chmodSync('600', path);
+  }
+
+  /// Replace the file at [path] with [contents] atomically (temp file +
+  /// rename), so a crash mid-write never leaves a truncated file behind. On
+  /// Linux the temp file is narrowed to 0600 before any content is written,
+  /// and the rename carries that mode over to the file itself.
+  static void writeFileSync(String path, String contents) {
+    final tmp = File('$path.tmp');
+    ensurePrivateDirSync(tmp.parent.path);
+    tmp.writeAsStringSync('', flush: true);
+    restrictFileSync(tmp.path);
+    tmp.writeAsStringSync(contents, flush: true);
+    tmp.renameSync(path);
   }
 
   static void _chmodSync(String mode, String path) {
