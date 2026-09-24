@@ -72,7 +72,8 @@ Usage:
 Flags (run/install/status):
   --config <path>       Config file (default: %s)
   --bridge <url>        Bridge base URL, e.g. https://host:19880
-  --token <token>       Bridge bearer token
+  --token <token>       Bridge bearer token (a per-device credential; a shared
+                        token is swapped for one automatically on connect)
   --name <name>         Device name shown in the mesh (default: hostname)
   --fingerprint <hex>   Pinned bridge TLS certificate SHA-256 (TOFU when empty)
 
@@ -156,6 +157,7 @@ func statusCmd(cfg *Config) {
 	} else {
 		fmt.Printf("pinned cert: (none — trust-on-first-use)\n")
 	}
+	fmt.Printf("credential:  %s\n", credentialKind(cfg.Token))
 	fmt.Printf("service:     %s\n", serviceState())
 	if cfg.Bridge == "" {
 		return

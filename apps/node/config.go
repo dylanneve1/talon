@@ -23,7 +23,10 @@ type Config struct {
 	// Bridge is the base URL of the daemon's native bridge,
 	// e.g. "https://100.64.0.1:19880".
 	Bridge string `json:"bridge"`
-	// Token is the bridge bearer token (same one companion apps pair with).
+	// Token is the bridge bearer: this node's own per-device credential
+	// (tdc1.…, minted into the installer), or — on nodes installed before
+	// per-device credentials — the shared bridge token, which the node
+	// trades for its own credential in band and rewrites here.
 	Token string `json:"token"`
 	// Name is the device name shown across the mesh. Defaults to hostname.
 	Name string `json:"name,omitempty"`
