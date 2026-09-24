@@ -10,13 +10,15 @@
  *   4. anything else                         → { kind: "other" } — the caller
  *      decides (plugins treat it as an npm spec, skills reject it)
  *
- * Cloning always uses `--depth=1` (installs never need history) and spawns
+ * Cloning always uses `--depth=1` (installs never need history), ends the
+ * options with `--` so a URL can never be read as a git flag, and reports
+ * the commit it got so the install can be pinned/audited later. It spawns
  * `git`/`npm` via cross-spawn, which resolves the `.cmd`/`.exe` shims on
  * Windows — never assume a POSIX shell here.
  */
 
 import crossSpawn from "cross-spawn";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -91,16 +93,49 @@ export function runTool(
 }
 
 export type CloneOutcome =
-  { ok: true; dir: string; cleanup: () => void } | { ok: false; error: string };
+  | { ok: true; dir: string; commit?: string; cleanup: () => void }
+  | { ok: false; error: string };
+
+/** The checked-out commit of a clone, when git can tell us. */
+function headCommit(dir: string): string | undefined {
+  const result = crossSpawn.sync("git", ["-C", dir, "rev-parse", "HEAD"], {
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const sha = result.status === 0 ? result.stdout?.toString().trim() : "";
+  return sha && /^[0-9a-f]{40,64}$/.test(sha) ? sha : undefined;
+}
 
 /** Shallow-clone into a fresh temp directory. Caller must run `cleanup`. */
 export function cloneShallow(url: string): CloneOutcome {
+  // `--` below already stops option parsing; refusing a leading dash too
+  // means a hostile "URL" never even reaches git.
+  if (url.startsWith("-")) {
+    return { ok: false, error: `Refusing a git URL that starts with "-"` };
+  }
   const dir = mkdtempSync(join(tmpdir(), "talon-install-"));
   const cleanup = () => rmSync(dir, { recursive: true, force: true });
-  const outcome = runTool("git", ["clone", "--depth=1", url, dir]);
+  const outcome = runTool("git", ["clone", "--depth=1", "--", url, dir]);
   if (!outcome.ok) {
     cleanup();
     return { ok: false, error: `Clone failed: ${outcome.error}` };
   }
-  return { ok: true, dir, cleanup };
+  return { ok: true, dir, commit: headCommit(dir), cleanup };
+}
+
+/** The file a git-installed plugin keeps its provenance in. */
+const INSTALL_RECORD = ".talon-install.json";
+
+/** Write where an install came from and exactly which commit it is. */
+export function writeInstallRecord(
+  dir: string,
+  record: { source: string; subpath?: string; commit?: string },
+): void {
+  writeFileSync(
+    join(dir, INSTALL_RECORD),
+    JSON.stringify(
+      { ...record, installedAt: new Date().toISOString() },
+      null,
+      2,
+    ) + "\n",
+  );
 }
