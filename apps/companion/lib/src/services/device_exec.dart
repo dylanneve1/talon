@@ -45,6 +45,15 @@ class DeviceExec {
   final MethodChannel _shizuku;
   final MethodChannel _root;
   final bool Function() _isAndroid;
+
+  /// Whether this executor may use (or ask for) root or Shizuku at all.
+  /// The mesh points this at the user's per-bridge elevation grant (see
+  /// `Prefs.meshElevated`); while it answers false, commands run as the app
+  /// and no root/Shizuku grant dialog is ever raised on their behalf. The
+  /// settings screen and the app's own updater keep the default, since the
+  /// user is driving those directly.
+  bool Function() allowElevation = _always;
+  static bool _always() => true;
   Future<bool>? _pendingShizukuPermission;
 
   /// Last Shizuku state string reported by the native bridge ("ready",
@@ -180,6 +189,7 @@ class DeviceExec {
   /// dialogs) on top of each other.
   Future<bool> ensureRootReady() async {
     if (!_isAndroid()) return false;
+    if (!allowElevation()) return false;
     if (_rootDemoted) return false;
     final cached = _lastRoot;
     final probedAt = _rootProbedAt;
@@ -274,6 +284,7 @@ class DeviceExec {
   /// Prefer elevated Android execution, but never hang the command forever
   /// waiting for a permission dialog that may be ignored.
   Future<bool> ensureShizukuReady() async {
+    if (!allowElevation()) return false;
     if (await shizukuReady()) return true;
     if (!_isAndroid()) return false;
     return requestShizuku();
@@ -286,6 +297,13 @@ class DeviceExec {
     // Desktop platforms run commands as the logged-in OS user; the
     // root/shizuku/app distinction is Android-only.
     if (!_isAndroid()) return const {'execPrivilege': 'user'};
+    if (!allowElevation()) {
+      return const {
+        'execPrivilege': 'app',
+        'execVia': 'none',
+        'elevation': 'off (enable elevated access in the companion settings)',
+      };
+    }
     Map<String, dynamic>? shizuku;
     try {
       shizuku = await _shizuku.invokeMapMethod<String, dynamic>('getStatus');
@@ -431,7 +449,9 @@ class DeviceExec {
       cmd,
       cwd: cwd,
       budget: budget,
-      privilegeWarning: _isAndroid()
+      privilegeWarning: _isAndroid() && !allowElevation()
+          ? 'Elevated access is off in the companion settings; ran as app UID.'
+          : _isAndroid()
           ? 'Elevation not used (root=${_rootStateLabel() ?? 'unknown'}, '
               'shizuku=${_lastShizukuState ?? 'unknown'}); ran as app UID.'
           : null,

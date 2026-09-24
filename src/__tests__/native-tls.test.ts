@@ -180,13 +180,13 @@ describe("bridge server over TLS", () => {
     peerDerSha256: string;
   }> {
     return new Promise((resolvePromise, reject) => {
+      // Capture the peer certificate at handshake time: auth refusals are
+      // sent with `Connection: close`, so by the time the response callback
+      // runs the socket may already be torn down.
+      let peerDerSha256 = "";
       const req = request(
         { host: "127.0.0.1", port, path, ca, headers },
         (res) => {
-          const socket = res.socket as import("node:tls").TLSSocket;
-          const peerDerSha256 = createHash("sha256")
-            .update(socket.getPeerCertificate().raw)
-            .digest("hex");
           const chunks: Buffer[] = [];
           res.on("data", (chunk: Buffer) => chunks.push(chunk));
           res.on("end", () =>
@@ -198,6 +198,17 @@ describe("bridge server over TLS", () => {
           );
         },
       );
+      req.on("socket", (socket) => {
+        const tlsSocket = socket as import("node:tls").TLSSocket;
+        const capture = (): void => {
+          const raw = tlsSocket.getPeerCertificate()?.raw;
+          if (raw)
+            peerDerSha256 = createHash("sha256").update(raw).digest("hex");
+        };
+        // A reused keep-alive socket has already shaken hands.
+        capture();
+        if (!peerDerSha256) tlsSocket.once("secureConnect", capture);
+      });
       req.on("error", reject);
       req.end();
     });
