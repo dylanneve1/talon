@@ -26,6 +26,7 @@ import {
 import { MeshRegistry, MeshService } from "../core/mesh/index.js";
 import { setMeshService } from "../core/mesh/devices/service.js";
 import { dispatchGatewayRoute } from "../core/engine/gateway-routes.js";
+import { gatewayFetch, TEST_GATEWAY_TOKEN } from "./helpers/gateway-fetch.js";
 
 async function tempFile(name: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "talon-mesh-creds-"));
@@ -447,18 +448,22 @@ describe("gateway /mesh/credentials", () => {
       { credentials: new DeviceCredentialStore(join(dir, "creds.json")) },
     );
     setMeshService(svc);
+    let boundPort = 0;
     const host = {
       healthSnapshot: () => ({}),
       requestShutdown: () => false,
       reloadPlugins: async () => [],
       hubOrigin: () => "",
       handleAction: async () => ({}),
+      port: () => boundPort,
+      token: () => TEST_GATEWAY_TOKEN,
     };
     server = createServer(
       (req, res) => void dispatchGatewayRoute(req, res, host),
     );
     await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
     const addr = server.address() as { port: number };
+    boundPort = addr.port;
     return { port: addr.port, svc };
   }
 
@@ -469,15 +474,20 @@ describe("gateway /mesh/credentials", () => {
       scopes: ["device"],
       origin: "pair",
     });
-    const list = await fetch(`http://127.0.0.1:${port}/mesh/credentials`);
+    const list = await gatewayFetch(
+      `http://127.0.0.1:${port}/mesh/credentials`,
+    );
     expect(
       ((await list.json()) as { credentials: unknown[] }).credentials,
     ).toHaveLength(1);
-    const revoke = await fetch(`http://127.0.0.1:${port}/mesh/credentials`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ op: "revoke", device: "phone" }),
-    });
+    const revoke = await gatewayFetch(
+      `http://127.0.0.1:${port}/mesh/credentials`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "revoke", device: "phone" }),
+      },
+    );
     expect(await revoke.json()).toMatchObject({ ok: true });
     expect(svc.credentials!.authenticate(token)).toBeNull();
   });
@@ -489,20 +499,26 @@ describe("gateway /mesh/credentials", () => {
       scopes: ["device"],
       origin: "pair",
     });
-    const fromPage = await fetch(`http://127.0.0.1:${port}/mesh/credentials`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Origin: "https://evil.example",
+    const fromPage = await gatewayFetch(
+      `http://127.0.0.1:${port}/mesh/credentials`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://evil.example",
+        },
+        body: JSON.stringify({ op: "revoke", device: "phone" }),
       },
-      body: JSON.stringify({ op: "revoke", device: "phone" }),
-    });
+    );
     expect(fromPage.status).toBe(403);
-    const simple = await fetch(`http://127.0.0.1:${port}/mesh/credentials`, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify({ op: "revoke", device: "phone" }),
-    });
+    const simple = await gatewayFetch(
+      `http://127.0.0.1:${port}/mesh/credentials`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ op: "revoke", device: "phone" }),
+      },
+    );
     expect(simple.status).toBe(415);
     expect(svc.credentials!.activeFor("phone")).toHaveLength(1);
   });
