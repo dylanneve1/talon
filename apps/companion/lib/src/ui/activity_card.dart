@@ -8,6 +8,7 @@ import 'assistant_surface.dart';
 import 'code_block.dart';
 import 'markdown.dart';
 import 'tool_timeline.dart';
+import 'effects.dart';
 
 /// The in-progress turn, rendered in the assistant-row layout: the Talon
 /// avatar, the model's reasoning, the live tool timeline, and the streaming
@@ -210,7 +211,8 @@ class _StreamingTextState extends State<_StreamingText> {
             else
               caret
                   .animate(onPlay: (c) => c.repeat(reverse: true))
-                  .fadeOut(duration: 650.ms, curve: Curves.easeInOut),
+                  .fadeOut(duration: 650.ms, curve: Curves.easeInOut)
+                  .wrapAmbient(),
           ],
         ),
       ],
@@ -377,7 +379,8 @@ class _WorkingPill extends StatelessWidget {
                   .animate(onPlay: (c) => c.repeat(reverse: true))
                   .fadeIn(
                       begin: 0.35, duration: 900.ms, curve: Curves.easeInOut)
-                  .scaleXY(begin: 0.85, end: 1.15, curve: Curves.easeInOut),
+                  .scaleXY(begin: 0.85, end: 1.15, curve: Curves.easeInOut)
+                  .wrapAmbient(),
           const SizedBox(width: 7),
           Text(
             'Still working…',
@@ -420,7 +423,8 @@ class _TypingDots extends StatelessWidget {
       return base
           .animate(onPlay: (c) => c.repeat(reverse: true))
           .fadeIn(delay: (i * 160).ms, duration: 500.ms, begin: 0.3)
-          .scaleXY(begin: 0.7, end: 1, curve: Curves.easeOut);
+          .scaleXY(begin: 0.7, end: 1, curve: Curves.easeOut)
+          .wrapAmbient();
     }
 
     return SizedBox(

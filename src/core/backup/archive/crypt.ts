@@ -117,7 +117,7 @@ export function parseHeader(buf: Buffer): EncryptionHeader {
   const chunkSize = buf.readUInt32BE(at);
   at += 4;
   if (kdf !== KDF_SCRYPT) throw formatError(`unknown key derivation ${kdf}`);
-  if (log2N < 10 || log2N > 20 || r < 1 || r > 32 || p < 1 || p > 16) {
+  if (!scryptParamsInRange({ log2N, r, p })) {
     throw formatError("scrypt parameters out of range");
   }
   if (chunkSize < 1 || chunkSize > MAX_CHUNK) {
@@ -130,22 +130,45 @@ export function parseHeader(buf: Buffer): EncryptionHeader {
   return { log2N, r, p, chunkSize, salt, iv };
 }
 
-/** scrypt → 32-byte key, with enough maxmem for the header's parameters. */
+/** scrypt cost parameters, as recorded next to whatever they protect. */
+export type ScryptParams = { log2N: number; r: number; p: number };
+
+/** The scrypt parameters every new part and manifest is written with. */
+export const DEFAULT_SCRYPT: ScryptParams = {
+  log2N: DEFAULT_LOG2N,
+  r: 8,
+  p: 1,
+};
+
+/** True when stored parameters are inside the range this build accepts. */
+export function scryptParamsInRange({ log2N, r, p }: ScryptParams): boolean {
+  return log2N >= 10 && log2N <= 20 && r >= 1 && r <= 32 && p >= 1 && p <= 16;
+}
+
+/** scrypt → 32-byte key, with enough maxmem for the given parameters. */
+export function deriveScryptKey(
+  passphrase: string,
+  salt: Buffer,
+  params: ScryptParams,
+): Promise<Buffer> {
+  const N = 2 ** params.log2N;
+  const maxmem = 2 * 128 * N * params.r * params.p + 1024 * 1024;
+  return new Promise((resolve, reject) => {
+    scrypt(
+      passphrase,
+      salt,
+      KEY_BYTES,
+      { N, r: params.r, p: params.p, maxmem },
+      (err, key) => (err ? reject(err) : resolve(key)),
+    );
+  });
+}
+
 function deriveKey(
   passphrase: string,
   header: EncryptionHeader,
 ): Promise<Buffer> {
-  const N = 2 ** header.log2N;
-  const maxmem = 2 * 128 * N * header.r * header.p + 1024 * 1024;
-  return new Promise((resolve, reject) => {
-    scrypt(
-      passphrase,
-      header.salt,
-      KEY_BYTES,
-      { N, r: header.r, p: header.p, maxmem },
-      (err, key) => (err ? reject(err) : resolve(key)),
-    );
-  });
+  return deriveScryptKey(passphrase, header.salt, header);
 }
 
 function nonceFor(iv: Buffer, counter: number): Buffer {

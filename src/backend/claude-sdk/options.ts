@@ -35,7 +35,7 @@ import { log, logError } from "../../util/log.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { ALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
 import {
-  isGuestChat,
+  isGuestTurn,
   isGuestPluginAllowed,
 } from "../../core/mcp-hub/guest-scope.js";
 import { VALID_TOOL_FRONTENDS } from "../../core/mcp-hub/talon-server.js";
@@ -393,10 +393,10 @@ export function buildSdkOptions(
   const { postToolUseFailureHook, postToolBatchHook } =
     buildTurnTerminatorHooks();
 
-  // Guest DMs (non-operator) get no SDK built-ins at all — Bash/Read/
+  // Guest turns (non-operator sender) get no SDK built-ins at all — Bash/Read/
   // Write/Skill live outside the hub, so the hub's guest scope can't hide
   // them — and only the plugin servers the guest scope allows.
-  const guest = isGuestChat(chatId);
+  const guest = isGuestTurn(chatId);
   const builtinTools = guest
     ? []
     : config.nativeTools

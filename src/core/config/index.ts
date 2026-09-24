@@ -426,6 +426,19 @@ const configSchema = z.object({
   apiHash: z.string().optional(),
   adminUserId: z.number().int().optional(),
   allowedUsers: z.array(z.number().int()).optional(), // Whitelist of user IDs allowed to DM the bot
+  /**
+   * Telegram groups the bot serves. When unset, groups are admitted by the
+   * admin's membership (legacy, warned at startup). Only the operator's own
+   * messages get the full tool set in any group.
+   */
+  allowedGroups: z.array(z.number().int()).optional(),
+  /**
+   * Further operator identities, beyond `adminUserId`: messages from these
+   * senders get the full tool set; everyone else is guest-scoped. Forms:
+   * Telegram user id ("123"), WhatsApp "wa_dm_<number>", "discord:<userId>",
+   * "teams:<userId>". Discord `adminUserIds` are included automatically.
+   */
+  operatorIds: z.array(z.string()).optional(),
   // Denylist of user IDs dropped in silence — no warning reply, no admin
   // notification. For spam and prompt-injection senders, where the warning
   // itself is the reward: it confirms a live bot is reading.
@@ -564,6 +577,7 @@ const configSchema = z.object({
    *     so a bad update is one restore away from undone.
    *   - `notifyChatId` — where failures are reported; falls back to the
    *     admin chat.
+   *   - `encryption` / `loginSessions` — see docs/backup-security.md.
    */
   backup: z
     .object({
@@ -587,6 +601,14 @@ const configSchema = z.object({
         .max(1000)
         .default(DEFAULT_BACKUP_SETTINGS.keepRemote),
       includePalace: z.boolean().default(DEFAULT_BACKUP_SETTINGS.includePalace),
+      /**
+       * WhatsApp auth + the userbot's Telegram login. "local" (default)
+       * keeps them in local snapshots only; "remote" also uploads them
+       * (encrypted); "off" leaves them out entirely.
+       */
+      loginSessions: z
+        .enum(["off", "local", "remote"])
+        .default(DEFAULT_BACKUP_SETTINGS.loginSessions),
       workspaceInclude: z
         .array(z.string().min(1))
         .default([...DEFAULT_BACKUP_SETTINGS.workspaceInclude]),
@@ -611,6 +633,17 @@ const configSchema = z.object({
     .strict()
     .optional(),
   braveApiKey: z.string().optional(),
+  /**
+   * `fetch_url` refuses hosts that resolve to loopback, private (RFC 1918,
+   * CGNAT, ULA), link-local (incl. the 169.254.169.254 metadata endpoint)
+   * or reserved addresses, re-checking every redirect hop. Set
+   * `allowPrivateNetworks: true` only on a host where the agent should
+   * read local services (a home lab, a dev server).
+   */
+  fetchUrl: z
+    .object({ allowPrivateNetworks: z.boolean().default(false) })
+    .strict()
+    .optional(),
   /**
    * Codex-specific OpenAI API key. Prefer this, CODEX_API_KEY, or
    * TALON_CODEX_KEY when the Codex backend should use API-key billing
@@ -670,16 +703,16 @@ const configSchema = z.object({
   disabledToolTags: z.array(z.string()).optional(),
 
   /**
-   * Conversation-only tool surface for DMs from anyone who isn't an
-   * operator. The admin's Telegram DM and any `operatorChats` keep
-   * everything; other DMs (Telegram user ids, `wa_dm_*`) get reply/react/
+   * Conversation-only ("guest") tool surface for anyone who isn't an
+   * operator (`adminUserId`, `operatorIds`, `operatorChats`): reply/react/
    * history/stickers plus the `guestPlugins` servers — no shell, files,
-   * mail, devices, cron, memory, agents or cross-chat sends. Groups are
-   * unaffected. Off by default. See core/mcp-hub/guest-scope.ts.
+   * mail, devices, cron, memory, agents or cross-chat sends. Always applied
+   * to non-operator senders in groups; applied to non-operator DMs unless
+   * `enabled: false` (legacy opt-out). See core/mcp-hub/guest-scope.ts.
    */
   guestDmScope: z
     .object({
-      enabled: z.boolean().default(false),
+      enabled: z.boolean().default(true),
       operatorChats: z.array(z.string()).default([]),
       guestPlugins: z.array(z.string()).optional(),
     })
@@ -1072,6 +1105,29 @@ export function loadConfig(): TalonConfig {
     systemPrompt: joinSystemPromptParts(promptParts),
     systemPromptParts: promptParts,
   };
+}
+
+/**
+ * Only the `backup` block, validated — without writing a default config
+ * or checking frontend requirements. `talon backup restore` on a fresh
+ * host has no real config yet (it is inside the snapshot), and the
+ * default one would fail on its empty botToken before anything restored.
+ */
+export function loadBackupConfig(): TalonConfig["backup"] {
+  const fileConfig = loadConfigFile();
+  const result = configSchema.shape.backup.safeParse(fileConfig.backup);
+  if (!result.success) {
+    const issues = formatSchemaIssues(result.error).map(
+      (line) => `backup.${line}`,
+    );
+    throw new ConfigFileError(
+      `Invalid backup config in ${CONFIG_FILE}:\n` +
+        issues.map((line) => `  - ${line}`).join("\n"),
+      CONFIG_FILE,
+      issues,
+    );
+  }
+  return result.data;
 }
 
 /**

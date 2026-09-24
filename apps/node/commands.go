@@ -47,6 +47,11 @@ func dispatch(ctx context.Context, n *Node, name string, params map[string]any) 
 			result = fail("Command failed on device: %v", r)
 		}
 	}()
+	if n != nil && n.cfg != nil {
+		if err := n.cfg.Policy.check(name, params, n.protectedPaths()); err != nil {
+			return fail("%v", err)
+		}
+	}
 	switch name {
 	case "ring":
 		return cmdRing(params)
@@ -476,7 +481,11 @@ func cmdDownloadFile(ctx context.Context, n *Node, params map[string]any) comman
 	if err != nil {
 		return fail("download_file failed: %v", err)
 	}
-	written, err := n.downloadStream(ctx, token, dst)
+	var out io.Writer = dst
+	if n.cfg != nil {
+		out = &limitWriter{w: dst, max: n.cfg.Policy.maxWriteBytes()}
+	}
+	written, err := n.downloadStream(ctx, token, out)
 	if closeErr := dst.Close(); err == nil {
 		err = closeErr
 	}

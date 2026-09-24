@@ -31,7 +31,37 @@ export type SnapshotPart = {
   contentAddressed?: boolean;
   /** Written through archive/crypt.ts (name ends in `.enc`). */
   encrypted?: boolean;
+  /**
+   * Kept on this machine only — never handed to a remote target. Login
+   * sessions (WhatsApp, the userbot) are, unless `backup.loginSessions`
+   * is "remote". A restore from a remote copy skips a missing local-only
+   * part instead of failing.
+   */
+  localOnly?: boolean;
 };
+
+/**
+ * The MAC over a manifest (see archive/manifest-auth.ts). Present on
+ * every snapshot written with a backup passphrase.
+ */
+export type ManifestAuth = {
+  v: 1;
+  alg: "hmac-sha256";
+  kdf: "scrypt";
+  log2N: number;
+  r: number;
+  p: number;
+  /** base64 */
+  salt: string;
+  /** base64 */
+  mac: string;
+};
+
+/**
+ * Where WhatsApp and userbot login sessions may go: nowhere, the local
+ * snapshot store only, or also to remote targets.
+ */
+type LoginSessionsPolicy = "off" | "local" | "remote";
 
 /** Per-target upload state, mirrored into the `backup_remotes` table. */
 export type RemoteState = {
@@ -67,6 +97,8 @@ export type Manifest = {
   /** Total bytes of all parts. */
   sizeBytes: number;
   remote: Record<string, RemoteState>;
+  /** MAC under the backup passphrase; absent on plaintext/legacy snapshots. */
+  auth?: ManifestAuth;
 };
 
 /** A snapshot as the listing surfaces show it. */
@@ -89,6 +121,8 @@ export type BackupSettings = {
   keepLocal: number;
   keepRemote: number;
   includePalace: boolean;
+  /** WhatsApp auth + userbot session: see {@link LoginSessionsPolicy}. */
+  loginSessions: LoginSessionsPolicy;
   workspaceInclude: readonly string[];
   extraPaths: readonly string[];
   /** Unset = every registered target; `[]` = local only. */

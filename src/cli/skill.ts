@@ -171,6 +171,9 @@ async function cmdInstall(args: string[]): Promise<void> {
         return;
       }
       installed = installAll(dirs, force);
+      if (clone.commit) {
+        console.log(`  ${pc.dim(`From ${resolved.url} @ ${clone.commit}`)}`);
+      }
     } finally {
       clone.cleanup();
     }

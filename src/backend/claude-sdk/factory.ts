@@ -41,6 +41,9 @@ const claudeSdkFactory: BackendFactory = {
   // no migration is needed.
   id: "claude",
   label: "Anthropic",
+  // Guest turns run with no SDK built-ins and only guest-allowed MCP
+  // servers (see options.ts), so the hub's guest scope is the whole surface.
+  guestToolScope: "enforced",
   doctor: (config, isActive) => claudeDoctorChecks(config, isActive),
 
   async init(config, ctx) {

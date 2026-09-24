@@ -97,6 +97,13 @@ vi.mock("../core/models/active-model.js", () => ({
   resolveExplicitModelRef: mockResolveExplicitModelRef,
 }));
 
+// fetch_url resolves every host before fetching (SSRF guard); keep the
+// test hosts public and offline.
+vi.mock("node:dns/promises", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:dns/promises")>()),
+  lookup: vi.fn(async () => [{ address: "93.184.215.14", family: 4 }]),
+}));
+
 // Mock node:fs for fetch_url binary download path
 const mockExistsSync = vi.fn(() => true);
 const mockMkdirSync = vi.fn();
@@ -1034,11 +1041,12 @@ describe("gateway shared actions", () => {
         123,
       );
 
+      // Redirects are followed by hand so each hop is SSRF-checked.
       expect(mockFetch).toHaveBeenCalledWith(
-        "https://example.com",
+        new URL("https://example.com"),
         expect.objectContaining({
           headers: { "User-Agent": "Talon/1.0" },
-          redirect: "follow",
+          redirect: "manual",
         }),
       );
     });
