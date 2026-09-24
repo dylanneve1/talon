@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.16.0](https://github.com/thefalconry/talon/compare/v5.15.1...v5.16.0) (2026-09-24)
+
+
+### Features
+
+* **companion:** optional app lock (passcode + biometrics) ([#1087](https://github.com/thefalconry/talon/issues/1087)) ([9a0ebf7](https://github.com/thefalconry/talon/commit/9a0ebf7950d2c529619e85541994f43e38b2ea98))
+
 ## [5.15.1](https://github.com/thefalconry/talon/compare/v5.15.0...v5.15.1) (2026-09-24)
 
 
