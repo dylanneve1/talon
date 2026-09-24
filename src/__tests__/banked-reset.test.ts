@@ -16,8 +16,8 @@ import {
   parseClaimResponse,
   parseResetStatus,
   pickGrant,
-} from "../backend/claude-sdk/banked-reset.js";
-import { getPlanUsage } from "../backend/claude-sdk/plan-usage.js";
+} from "../backend/claude-sdk/usage/banked-reset.js";
+import { getPlanUsage } from "../backend/claude-sdk/usage/plan-usage.js";
 
 const ORG = "11111111-2222-3333-4444-555555555555";
 const NOW = Date.parse("2026-09-24T00:00:00Z");

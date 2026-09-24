@@ -18,13 +18,13 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { logWarn } from "../../util/log.js";
+import { logWarn } from "../../../util/log.js";
 import type {
   BankedResetClaim,
   BankedResetGrant,
   BankedResetOffer,
   BankedResetResult,
-} from "../../core/agent-runtime/capabilities.js";
+} from "../../../core/agent-runtime/capabilities.js";
 import {
   CLI_USER_AGENT,
   USAGE_ENDPOINT,

@@ -15,11 +15,11 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { logWarn } from "../../util/log.js";
+import { logWarn } from "../../../util/log.js";
 import type {
   PlanUsage,
   PlanWindow,
-} from "../../core/agent-runtime/capabilities.js";
+} from "../../../core/agent-runtime/capabilities.js";
 
 // `cedar_ember=1` asks the endpoint to include banked limit resets (the
 // claude.ai "Reset for free" grants); `skip_spend=1` drops the spend block we

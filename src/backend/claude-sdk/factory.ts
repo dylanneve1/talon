@@ -30,7 +30,7 @@ import {
   evictOrphanSubprocesses as claudeEvictOrphanSubprocesses,
 } from "./index.js";
 import { createInProcessAgentHost } from "./host/in-process.js";
-import { claimBankedReset, getBankedResetOffer } from "./banked-reset.js";
+import { claimBankedReset, getBankedResetOffer } from "./usage/banked-reset.js";
 
 import * as modelProvider from "./model-provider.js";
 import { claudeDoctorChecks } from "./doctor.js";

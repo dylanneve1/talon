@@ -39,7 +39,7 @@ import {
 } from "../handler.js";
 import { waitForMcpServersReady } from "../mcp-ready.js";
 import { listModels as claudeListModels } from "../model-provider.js";
-import { getPlanUsage } from "../plan-usage.js";
+import { getPlanUsage } from "../usage/plan-usage.js";
 
 /**
  * Install an MCP server set on the chat's live query. `null` when the
