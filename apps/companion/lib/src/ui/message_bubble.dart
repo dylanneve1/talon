@@ -9,6 +9,7 @@ import '../theme.dart';
 import 'assistant_surface.dart';
 import 'composer.dart' show iconForMime;
 import 'code_block.dart';
+import 'image_bounds.dart';
 import 'markdown.dart';
 import 'motion.dart';
 import 'tool_timeline.dart';
@@ -199,11 +200,16 @@ class MessageBubble extends StatelessWidget {
                                     child: _InlineImage(url: imageUrl!),
                                   ),
                                 if (message.text.isNotEmpty)
-                                  SelectableText(
-                                    message.text,
-                                    style: TalonType.body.copyWith(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w500,
+                                  // One SelectionArea, plain Text inside —
+                                  // not a SelectableText, which drags in an
+                                  // EditableText + focus node per row.
+                                  SelectionArea(
+                                    child: Text(
+                                      message.text,
+                                      style: TalonType.body.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                     ),
                                   ),
                                 if (files.isNotEmpty)
@@ -265,19 +271,26 @@ class MessageBubble extends StatelessWidget {
                 child: _InlineImage(url: imageUrl!),
               ),
             // Suppress the "…" placeholder for an attachment-only message.
+            // A single selection system per reply: one SelectionArea over a
+            // non-selectable MarkdownBody (whose code panels carry no
+            // SelectionArea of their own). `selectable: true` built a
+            // SelectableText per paragraph and nested a SelectionArea per code
+            // block — two systems, torn down mid-drag whenever the lazy list
+            // disposed the row, a known desktop crash while scrolling (#1062).
             if (!((imageUrl != null || files.isNotEmpty) &&
                 message.text.isEmpty))
-              MarkdownBody(
-                data: message.text.isEmpty ? '…' : message.text,
-                selectable: true,
-                builders: {'code': CodeElementBuilder()},
-                onTapLink: (_, href, __) {
-                  if (href != null) {
-                    launchUrl(Uri.parse(href),
-                        mode: LaunchMode.externalApplication);
-                  }
-                },
-                styleSheet: talonMarkdownStyle(),
+              SelectionArea(
+                child: MarkdownBody(
+                  data: message.text.isEmpty ? '…' : message.text,
+                  builders: {'code': CodeElementBuilder()},
+                  onTapLink: (_, href, __) {
+                    if (href != null) {
+                      launchUrl(Uri.parse(href),
+                          mode: LaunchMode.externalApplication);
+                    }
+                  },
+                  styleSheet: talonMarkdownStyle(),
+                ),
               ),
             if (files.isNotEmpty) _FileList(files: files, onAccent: false),
           ],
@@ -347,6 +360,9 @@ class _InlineImage extends StatelessWidget {
   final String url;
   const _InlineImage({required this.url});
 
+  static const double _maxWidth = 340;
+  static const double _maxHeight = 420;
+
   @override
   Widget build(BuildContext context) {
     return Semantics(
@@ -357,9 +373,18 @@ class _InlineImage extends StatelessWidget {
         child: ClipRRect(
           borderRadius: TalonRadius.rMd,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 340, maxHeight: 420),
-            child: Image.network(
-              url,
+            constraints: const BoxConstraints(
+                maxWidth: _maxWidth, maxHeight: _maxHeight),
+            child: Image(
+              // Decoded at the box's physical size, not the photo's: a 12 MP
+              // original is ~48 MB of RGBA for a 340 px thumbnail, and a tall
+              // screenshot can exceed the GL texture limit outright (#1062).
+              image: boundedNetworkImage(
+                url,
+                maxWidth: _maxWidth,
+                maxHeight: _maxHeight,
+                devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+              ),
               // contain, not cover: cover cropped anything non-square into an
               // arbitrary window, which is what made history images look wrong.
               // contain keeps the full frame at its natural aspect ratio.
@@ -420,7 +445,10 @@ class _InlineImage extends StatelessWidget {
               Center(
                 child: InteractiveViewer(
                   maxScale: 5,
-                  child: Image.network(url, fit: BoxFit.contain),
+                  child: Image(
+                    image: fullScreenNetworkImage(url),
+                    fit: BoxFit.contain,
+                  ),
                 ),
               ),
               Positioned(

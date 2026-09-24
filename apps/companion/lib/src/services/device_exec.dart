@@ -45,6 +45,15 @@ class DeviceExec {
   final MethodChannel _shizuku;
   final MethodChannel _root;
   final bool Function() _isAndroid;
+
+  /// Whether this executor may use (or ask for) root or Shizuku at all.
+  /// The mesh points this at the user's per-bridge elevation grant (see
+  /// `Prefs.meshElevated`); while it answers false, commands run as the app
+  /// and no root/Shizuku grant dialog is ever raised on their behalf. The
+  /// settings screen and the app's own updater keep the default, since the
+  /// user is driving those directly.
+  bool Function() allowElevation = _always;
+  static bool _always() => true;
   Future<bool>? _pendingShizukuPermission;
 
   /// Last Shizuku state string reported by the native bridge ("ready",
@@ -180,6 +189,7 @@ class DeviceExec {
   /// dialogs) on top of each other.
   Future<bool> ensureRootReady() async {
     if (!_isAndroid()) return false;
+    if (!allowElevation()) return false;
     if (_rootDemoted) return false;
     final cached = _lastRoot;
     final probedAt = _rootProbedAt;
@@ -274,6 +284,7 @@ class DeviceExec {
   /// Prefer elevated Android execution, but never hang the command forever
   /// waiting for a permission dialog that may be ignored.
   Future<bool> ensureShizukuReady() async {
+    if (!allowElevation()) return false;
     if (await shizukuReady()) return true;
     if (!_isAndroid()) return false;
     return requestShizuku();
@@ -286,6 +297,13 @@ class DeviceExec {
     // Desktop platforms run commands as the logged-in OS user; the
     // root/shizuku/app distinction is Android-only.
     if (!_isAndroid()) return const {'execPrivilege': 'user'};
+    if (!allowElevation()) {
+      return const {
+        'execPrivilege': 'app',
+        'execVia': 'none',
+        'elevation': 'off (enable elevated access in the companion settings)',
+      };
+    }
     Map<String, dynamic>? shizuku;
     try {
       shizuku = await _shizuku.invokeMapMethod<String, dynamic>('getStatus');
@@ -431,7 +449,9 @@ class DeviceExec {
       cmd,
       cwd: cwd,
       budget: budget,
-      privilegeWarning: _isAndroid()
+      privilegeWarning: _isAndroid() && !allowElevation()
+          ? 'Elevated access is off in the companion settings; ran as app UID.'
+          : _isAndroid()
           ? 'Elevation not used (root=${_rootStateLabel() ?? 'unknown'}, '
               'shizuku=${_lastShizukuState ?? 'unknown'}); ran as app UID.'
           : null,
@@ -531,20 +551,23 @@ class DeviceExec {
   ///   1. It requires an elevated tier — root, or Shizuku's shell/ADB UID. The
   ///      app UID cannot install a package without a user tapping through
   ///      PackageInstaller, which a headless mesh command can't do.
-  ///   2. The APK is RE-STAGED into /data/local/tmp before `pm install`. The
+  ///   2. The APK is RE-STAGED under /data/local/tmp before `pm install`. The
   ///      daemon pushes to app storage (/sdcard/Download), which the shell can
   ///      read but the system installer cannot — `pm install` straight off an
   ///      app-FUSE path dies with "Failed transaction" (seen live on the
-  ///      Pixel 10, 2026-07-10). /data/local/tmp is shell-owned and
-  ///      pm-readable, so the elevated shell copies the file there first and
-  ///      the integrity hash is checked on the copy pm will actually read.
+  ///      Pixel 10, 2026-07-10). The copy goes into a fresh `mktemp -d`
+  ///      directory (0700, random name), and the integrity hash is checked on
+  ///      that copy — and checked again by the install worker immediately
+  ///      before `pm install` reads it.
   ///   3. The actual `pm install` runs DETACHED (setsid) after a short delay,
   ///      so this command can post its "staged" ack over the mesh BEFORE pm
   ///      tears the app down, and the install still completes even though the
   ///      app process dies mid-way (its parent is the Shizuku server, not us).
   ///
   /// `pm install -r` also refuses a differently-signed APK, so a wrong or
-  /// tampered file can't hijack the app — it just fails the reinstall.
+  /// tampered file can't hijack the app — it just fails the reinstall — and,
+  /// without `-d`, refuses a lower versionCode, so an older signed build
+  /// can't be rolled back onto the device either.
   Future<CommandOutcome> installApk(
     String path, {
     String? sha256,
@@ -563,77 +586,55 @@ class DeviceExec {
         'Grant root, or install Shizuku and grant Talon permission, then retry.',
       );
     }
-    // Existence is probed through the elevated shell, not dart:io — the shell
-    // is what reads the APK from here on, and the app UID often cannot stat
-    // shell-owned locations like /data/local/tmp at all.
+    final expected = (sha256 ?? '').trim().toLowerCase();
+    if (expected.isNotEmpty && !RegExp(r'^[0-9a-f]{64}$').hasMatch(expected)) {
+      return CommandOutcome.fail(
+        'APK integrity check failed: "$sha256" is not a SHA-256 digest. '
+        'Aborting install.',
+      );
+    }
+    // Stage, verify and report in ONE elevated shell: existence is probed
+    // there (the app UID often cannot even stat shell-owned paths), the copy
+    // goes into a fresh mktemp directory only root/shell can enter (not a
+    // fixed, guessable file name), and the hash is taken of that private
+    // copy — the file pm will actually read.
+    final String stagedDir;
     try {
-      final probe =
-          await _elevatedExec('test -f ${_shQuote(path)} && echo ok', 15000);
-      if ('${probe?['stdout'] ?? ''}'.trim() != 'ok') {
-        return CommandOutcome.fail('No such APK on device: $path');
-      }
-    } catch (e) {
-      return CommandOutcome.fail('Could not probe the APK path: $e');
-    }
-    // Re-stage onto a pm-readable path (see doc comment, robustness #2).
-    const stageDir = '/data/local/tmp';
-    var staged = path;
-    var copied = false;
-    if (!path.startsWith('$stageDir/')) {
-      staged = '$stageDir/talon-companion-update.apk';
-      try {
-        final cp = await _elevatedExec(
-          'cp -f ${_shQuote(path)} ${_shQuote(staged)}',
-          120000,
-        );
-        if ((cp?['exitCode'] ?? 1) != 0) {
+      final res = await _elevatedExec(stageApkScript(path, expected), 120000);
+      final code = (res?['exitCode'] as num?)?.toInt() ?? 1;
+      final out = '${res?['stdout'] ?? ''}'.trim();
+      final err = '${res?['stderr'] ?? ''}'.trim();
+      switch (code) {
+        case 0:
+          stagedDir = out.split('\n').last.trim();
+        case 3:
+          return CommandOutcome.fail('No such APK on device: $path');
+        case 6:
           return CommandOutcome.fail(
-            'Failed to stage the APK into $stageDir: '
-            '${'${cp?['stderr'] ?? ''}'.trim()}',
-          );
-        }
-        copied = true;
-      } catch (e) {
-        return CommandOutcome.fail('Failed to stage the APK into $stageDir: $e');
-      }
-    }
-    // Integrity gate: verify the pushed bytes match what the daemon sent
-    // BEFORE handing the file to pm — a truncated transfer must never be
-    // installed. Uses the elevated shell's sha256sum rather than pulling in a
-    // Dart crypto dependency.
-    if (sha256 != null && sha256.isNotEmpty) {
-      try {
-        final check =
-            await _elevatedExec('sha256sum ${_shQuote(staged)}', 30000);
-        final line = '${check?['stdout'] ?? ''}'.trim();
-        final digest = line.isEmpty ? '' : line.split(RegExp(r'\s+')).first;
-        if (digest.isEmpty) {
-          return CommandOutcome.fail('Could not hash the APK for verification.');
-        }
-        if (digest.toLowerCase() != sha256.toLowerCase()) {
-          return CommandOutcome.fail(
-            'APK integrity check failed: expected $sha256, got $digest. '
+            'APK integrity check failed: expected $expected, got $err. '
             'Aborting install.',
           );
-        }
-      } catch (e) {
-        return CommandOutcome.fail('APK verification failed: $e');
+        default:
+          return CommandOutcome.fail(
+            'Failed to stage the APK into $_apkStageRoot: $err',
+          );
       }
+    } catch (e) {
+      return CommandOutcome.fail('Failed to stage the APK: $e');
     }
+    if (!stagedDir.startsWith('$_apkStageRoot/talon-update.')) {
+      return CommandOutcome.fail(
+        'Failed to stage the APK: unexpected staging path "$stagedDir".',
+      );
+    }
+    final staged = '$stagedDir/update.apk';
+    final logPath = '$stagedDir/install.log';
     final delay = (delayMs ?? 3000).clamp(0, 30000);
     final sleepSecs = (delay / 1000).ceil();
-    const logPath = '$stageDir/talon-install.log';
-    // Detached worker: sleep (let the ack flush), then reinstall keeping data
-    // (-r) allowing same-or-newer versions (-d), logging the outcome, and
-    // cleaning up the staged copy (only the copy we made — never the pushed
-    // original, so a failed install can be retried without a re-push).
-    final worker = 'sleep $sleepSecs; '
-        'pm install -r -d ${_shQuote(staged)} > ${_shQuote(logPath)} 2>&1; '
-        'echo "exit=\$?" >> ${_shQuote(logPath)}'
-        '${copied ? '; rm -f ${_shQuote(staged)}' : ''}';
     try {
       await _elevatedExec(
-        'setsid sh -c ${_shQuote(worker)} >/dev/null 2>&1 &',
+        'setsid sh -c ${_shQuote(installApkWorker(stagedDir, expected, sleepSecs))} '
+        '>/dev/null 2>&1 &',
         5000,
       );
     } catch (e) {
@@ -653,6 +654,52 @@ class DeviceExec {
             : 'shizuku',
       },
     );
+  }
+
+  /// Where elevated installs stage their private copy: shell-owned and
+  /// readable by `pm`, unlike the app-FUSE path the daemon pushes to.
+  static const _apkStageRoot = '/data/local/tmp';
+
+  /// Elevated staging step for [installApk]. Exit codes: 0 = staged (prints
+  /// the private directory), 3 = no such source, 4/5 = staging failed,
+  /// 6 = hash mismatch (prints the actual digest on stderr).
+  @visibleForTesting
+  static String stageApkScript(
+    String source,
+    String expected, {
+    String root = _apkStageRoot,
+  }) {
+    final src = _shQuote(source);
+    final want = _shQuote(expected);
+    return [
+      '[ -f $src ] || exit 3',
+      'd=\$(mktemp -d -p ${_shQuote(root)} talon-update.XXXXXXXXXX) || exit 4',
+      'chmod 700 "\$d" && cp -f $src "\$d/update.apk" || '
+          '{ rm -rf "\$d"; exit 5; }',
+      'if [ -n $want ]; then '
+          'got=\$(sha256sum "\$d/update.apk" | cut -d" " -f1); '
+          'if [ "\$got" != $want ]; then rm -rf "\$d"; echo "\$got" >&2; '
+          'exit 6; fi; fi',
+      'echo "\$d"',
+    ].join('\n');
+  }
+
+  /// The detached install worker: wait (so the mesh ack flushes before pm
+  /// tears the app down), re-check the digest right before handing the file
+  /// to pm, then `pm install -r` — keep data, same-or-newer only: no `-d`, so
+  /// an older (validly signed) build can never be rolled back on. The staged
+  /// APK is removed afterwards; the log stays beside it.
+  @visibleForTesting
+  static String installApkWorker(String dir, String expected, int sleepSecs) {
+    final apk = _shQuote('$dir/update.apk');
+    final log = _shQuote('$dir/install.log');
+    final want = _shQuote(expected);
+    return 'sleep $sleepSecs; '
+        'if [ -z $want ] || '
+        '[ "\$(sha256sum $apk | cut -d" " -f1)" = $want ]; then '
+        'pm install -r $apk > $log 2>&1; echo "exit=\$?" >> $log; '
+        'else echo "integrity check failed before install" > $log; fi; '
+        'rm -f $apk';
   }
 
   /// Run one command at the highest tier available, for the install pipeline's

@@ -124,6 +124,7 @@ func runNode(cfg *Config) {
 	if err := cfg.Validate(); err != nil {
 		log.Fatalf("config: %v", err)
 	}
+	hardenProcess()
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,

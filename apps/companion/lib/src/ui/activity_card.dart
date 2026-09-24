@@ -132,7 +132,8 @@ class _StreamingText extends StatelessWidget {
             // Same builder as finalized messages — without it, a code block
             // renders as a bare grey slab while streaming and then jumps to
             // the framed panel on finalize.
-            builders: {'code': CodeElementBuilder()},
+            // live: no background highlight per token (see CodeBlock).
+            builders: {'code': CodeElementBuilder(live: true)},
             styleSheet: talonMarkdownStyle(),
           ),
         ),

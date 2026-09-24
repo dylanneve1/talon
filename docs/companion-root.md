@@ -1,7 +1,9 @@
 # Companion root access (Android)
 
-Device control (teleport) runs at the **highest privilege the device will give
-it**, picked per command with no configuration:
+With **Settings → Mesh → Elevated access** on (it is off by default, and off
+again for every newly paired bridge), device control (teleport) runs at the
+**highest privilege the device will give it**, picked per command. With it
+off, everything runs at the `app` tier:
 
 | Tier | uid | How it's reached | What it adds |
 | --- | --- | --- | --- |

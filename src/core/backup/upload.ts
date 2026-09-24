@@ -12,6 +12,11 @@
  * `failed` with its reason and the run carries on — the next run retries
  * it. The manifest keeps the per-target state alongside the parts, so a
  * snapshot restored onto a new machine still knows where its copies are.
+ *
+ * Plaintext never leaves the box: before any target is contacted, every
+ * part's own bytes (not the manifest's say-so) must carry the encryption
+ * header. A snapshot taken without `backup.encryption` stays local, and
+ * each target records why.
  */
 
 import { bus } from "../bus/index.js";
@@ -21,6 +26,7 @@ import {
   deleteBackupRemote,
   recordBackupRemote,
 } from "../../storage/backup/index.js";
+import { isEncryptedFile } from "./archive/crypt.js";
 import {
   partPath,
   reindexSnapshot,
@@ -63,6 +69,39 @@ async function sendSnapshot(
   };
 }
 
+/** The refusal every target records for an unencrypted snapshot. */
+export const PLAINTEXT_REFUSAL =
+  "remote backup targets require backup.encryption";
+
+/** The first part whose file is not encrypted (or is missing), if any. */
+async function firstPlaintextPart(
+  manifest: Manifest,
+  home: string,
+): Promise<string | undefined> {
+  for (const part of manifest.parts) {
+    const encrypted = await isEncryptedFile(
+      partPath(manifest.id, part.name, home),
+    ).catch(() => false);
+    if (!encrypted) return part.name;
+  }
+  return undefined;
+}
+
+/** Mark every target failed without contacting any of them. */
+function refuseAll(
+  manifest: Manifest,
+  targets: readonly BackupTarget[],
+  partName: string,
+): void {
+  const error = `${PLAINTEXT_REFUSAL} (part ${partName} is not encrypted; the snapshot stays local)`;
+  for (const target of targets) {
+    const state: RemoteState = { status: "failed", error };
+    manifest.remote[target.id] = state;
+    recordState(manifest.id, target.id, state);
+  }
+  logWarn("backup", `Not uploading ${manifest.id}: ${error}`);
+}
+
 /**
  * Upload one snapshot to every target. Returns the manifest with its
  * `remote` map filled in; it is rewritten on disk and reindexed so the
@@ -74,6 +113,22 @@ export async function uploadSnapshot(
   home: string = dirs.root,
 ): Promise<Manifest> {
   if (targets.length === 0) return manifest;
+  const plaintext = await firstPlaintextPart(manifest, home);
+  if (plaintext !== undefined) {
+    refuseAll(manifest, targets, plaintext);
+  } else {
+    await uploadToAll(manifest, targets, home);
+  }
+  await writeManifest(manifest, home);
+  reindexSnapshot(manifest);
+  return manifest;
+}
+
+async function uploadToAll(
+  manifest: Manifest,
+  targets: readonly BackupTarget[],
+  home: string,
+): Promise<void> {
   await Promise.all(
     targets.map(async (target) => {
       if (!target.ready) {
@@ -116,9 +171,6 @@ export async function uploadSnapshot(
       }
     }),
   );
-  await writeManifest(manifest, home);
-  reindexSnapshot(manifest);
-  return manifest;
 }
 
 /**

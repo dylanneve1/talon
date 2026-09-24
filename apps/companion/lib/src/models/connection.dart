@@ -1,5 +1,6 @@
 import 'dart:convert' show base64;
-import 'dart:io' show Platform, SecurityContext;
+import 'dart:io'
+    show InternetAddress, InternetAddressType, Platform, SecurityContext;
 
 /// How the companion reaches a Talon daemon.
 ///
@@ -307,10 +308,20 @@ class ConnectionConfig {
   /// daemon's `/mesh link`, opened from the pairing page or pasted in.
   ///
   /// The link carries the credentials themselves (`u` bridge URL, `t` token,
-  /// `f` certificate fingerprint, `n` a display name) rather than a grant to
-  /// redeem: by the time it reaches the phone the daemon's single-use grant is
-  /// already spent, and a link that needed one more round trip would fail on
-  /// exactly the flaky first connection it exists to make painless.
+  /// `f` certificate fingerprint) rather than a grant to redeem: by the time
+  /// it reaches the phone the daemon's single-use grant is already spent, and
+  /// a link that needed one more round trip would fail on exactly the flaky
+  /// first connection it exists to make painless.
+  ///
+  /// Anything can hand the app a link, so only a link that pins what it
+  /// points at is usable:
+  ///   - an `https` bridge must come with a well-formed certificate
+  ///     fingerprint, which becomes the profile's pin;
+  ///   - a plain `http` bridge (which has no certificate to pin) is accepted
+  ///     only on a loopback or private-network address;
+  ///   - the host must be a plain DNS name or IP literal, so what the
+  ///     confirmation dialog shows is exactly what gets dialled.
+  /// Any display name the link suggests (`n`) is ignored.
   ///
   /// Returns null for anything that isn't a usable pairing link, so a
   /// clipboard full of something else is a quiet no rather than a wrong
@@ -318,7 +329,7 @@ class ConnectionConfig {
   static ConnectionConfig? fromPairLink(String raw) {
     final uri = Uri.tryParse(raw.trim());
     if (uri == null) return null;
-    if (uri.scheme.toLowerCase() != 'talon' ) return null;
+    if (uri.scheme.toLowerCase() != 'talon') return null;
     // Both `talon://pair?…` (host = pair) and `talon:pair?…` (path = pair)
     // reach here depending on which side built the link.
     final target = uri.host.isNotEmpty ? uri.host : uri.path;
@@ -326,16 +337,26 @@ class ConnectionConfig {
     final bridge = uri.queryParameters['u']?.trim() ?? '';
     if (bridge.isEmpty) return null;
     final parsed = parseHostInput(bridge);
-    if (parsed.host.isEmpty) return null;
+    // An explicit scheme is required: guessing one would decide whether the
+    // fingerprint rule or the private-address rule applies.
+    final tls = parsed.tls;
+    if (tls == null) return null;
+    final host = parsed.host.toLowerCase();
+    if (!isPlainHostName(host)) return null;
     final token = uri.queryParameters['t']?.trim() ?? '';
-    final fingerprint = uri.queryParameters['f']?.trim() ?? '';
-    final tls = parsed.tls ?? false;
+    String? fingerprint;
+    if (tls) {
+      fingerprint = normalizeFingerprint(uri.queryParameters['f']);
+      if (fingerprint == null) return null;
+    } else if (!isPrivateAddress(host)) {
+      return null;
+    }
     return ConnectionConfig(
-      host: parsed.host,
+      host: host,
       port: parsed.port ?? defaultPortFor(tls),
       token: token.isEmpty ? null : token,
       tls: tls,
-      fingerprint: fingerprint.isEmpty ? null : fingerprint,
+      fingerprint: fingerprint,
       // A paired bridge is somewhere else by definition; never adopt it as a
       // daemon this device is supposed to launch and supervise.
       manageLocalDaemon: false,
@@ -343,12 +364,52 @@ class ConnectionConfig {
     );
   }
 
-  /// The display name a pairing link suggests for the daemon, if any.
-  static String? pairLinkLabel(String raw) {
-    final uri = Uri.tryParse(raw.trim());
-    final name = uri?.queryParameters['n']?.trim();
-    return (name == null || name.isEmpty) ? null : name;
+  /// True for a bare DNS name or IP literal: ASCII letters, digits, dots,
+  /// hyphens (and colons for IPv6). Rejects anything a confirmation dialog
+  /// could render misleadingly — userinfo, whitespace, percent-escapes,
+  /// non-ASCII look-alikes, bidi controls.
+  static bool isPlainHostName(String host) {
+    if (host.isEmpty || host.length > 253) return false;
+    if (host.contains(':')) {
+      return RegExp(r'^[0-9a-f:.]+$').hasMatch(host) &&
+          InternetAddress.tryParse(host) != null;
+    }
+    const label = r'[a-z0-9]([a-z0-9-]*[a-z0-9])?';
+    return RegExp('^$label(\\.$label)*\$').hasMatch(host);
   }
+
+  /// True when [host] is an IP literal on loopback, a private network
+  /// (RFC 1918 / IPv6 unique-local) or link-local. Hostnames are never
+  /// private here: what a name resolves to is decided by whoever answers
+  /// the DNS query, not by the link.
+  static bool isPrivateAddress(String host) {
+    if (host == 'localhost') return true;
+    final addr = InternetAddress.tryParse(host);
+    if (addr == null) return false;
+    if (addr.isLoopback || addr.isLinkLocal) return true;
+    final b = addr.rawAddress;
+    if (addr.type == InternetAddressType.IPv4) {
+      return b[0] == 10 ||
+          (b[0] == 172 && b[1] >= 16 && b[1] <= 31) ||
+          (b[0] == 192 && b[1] == 168);
+    }
+    // IPv6 unique-local fc00::/7.
+    return (b[0] & 0xfe) == 0xfc;
+  }
+
+  /// The whole fingerprint in AA:BB:… form, for a user to compare with the
+  /// one the daemon prints (`talon status`).
+  static String formatFingerprint(String fingerprint) {
+    final hex = fingerprint.toUpperCase();
+    return [
+      for (var i = 0; i + 1 < hex.length; i += 2) hex.substring(i, i + 2),
+    ].join(':');
+  }
+
+  /// Identity of the bridge this profile talks to, for per-bridge grants
+  /// (see `Prefs.meshDeviceControl`): a grant given to one bridge never
+  /// carries over to a profile pointed somewhere else.
+  String get bridgeKey => '${host.toLowerCase()}:$port';
 
   /// First-run default tuned to the platform: desktop discovers local Talon;
   /// mobile starts in remote mode (the user supplies a host + token).

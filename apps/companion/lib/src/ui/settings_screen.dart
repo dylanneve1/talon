@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../models/bridge_models.dart';
 import '../services/log.dart';
+import '../services/secure_window.dart';
 import '../services/voice.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -96,6 +97,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    // Shows the bridge token / pairing details: keep it out of the recents
+    // thumbnail, screenshots and screen recordings (Android).
+    SecureWindow.acquire();
     // Rebuild on AppState changes: the mesh toggles / device list live in
     // AppState + prefs, and mutate via notifyListeners — without this
     // subscription the switches only repainted on a manual refresh.
@@ -105,6 +109,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    SecureWindow.release();
     widget.state.removeListener(_onAppState);
     _name.dispose();
     _tz.dispose();
