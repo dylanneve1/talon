@@ -257,9 +257,10 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
           frontend: "telegram",
           backend: "kilo",
           model: modelId,
-          // Telegram frontend validation requires botToken — never used,
-          // since we never call frontend.start().
+          // Telegram frontend validation requires botToken and an admin —
+          // never used, since we never call frontend.start().
           botToken: "test-bot-token",
+          adminUserId: 1,
           systemPrompt: "You are a test assistant. Be terse.",
           pulse: false,
           heartbeat: false,

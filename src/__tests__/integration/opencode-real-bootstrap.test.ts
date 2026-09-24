@@ -199,6 +199,7 @@ opencodeDescribe("OpenCode backend — real bootstrap (integration)", () => {
           backend: "opencode",
           model: modelId,
           botToken: "test-bot-token",
+          adminUserId: 1,
           systemPrompt: "You are a test assistant. Be terse.",
           pulse: false,
           heartbeat: false,

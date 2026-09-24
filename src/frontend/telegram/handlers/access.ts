@@ -33,13 +33,26 @@ export function setAccessControl(cfg: {
   blockedUsers?: number[];
   adminUserId?: number;
 }): void {
-  accessConfig.allowedUserIds = cfg.allowedUsers?.length
-    ? new Set(cfg.allowedUsers)
-    : null;
+  accessConfig.allowedUserIds = resolveAllowedUsers(cfg);
   accessConfig.blockedUserIds = cfg.blockedUsers?.length
     ? new Set(cfg.blockedUsers)
     : null;
   accessConfig.adminId = cfg.adminUserId ?? 0;
+}
+
+/**
+ * The DM allowlist. Never "everyone": an unset `allowedUsers` defaults to the
+ * admin alone, and the admin is always on the list so an allowlist that
+ * forgot them cannot lock the operator out. No admin and no allowlist is an
+ * empty list — nobody.
+ */
+function resolveAllowedUsers(cfg: {
+  allowedUsers?: number[];
+  adminUserId?: number;
+}): Set<number> {
+  const allowed = new Set(cfg.allowedUsers ?? []);
+  if (cfg.adminUserId) allowed.add(cfg.adminUserId);
+  return allowed;
 }
 
 /**
@@ -55,11 +68,8 @@ function isBlocked(senderId: number | undefined): boolean {
   return accessConfig.blockedUserIds.has(senderId);
 }
 
-/**
- * Check if a DM user is allowed. Returns true if no whitelist is set.
- */
+/** Check if a DM user is on the allowlist (see `resolveAllowedUsers`). */
 function isDmAllowed(senderId: number | undefined): boolean {
-  if (!accessConfig.allowedUserIds) return true;
   return senderId !== undefined && accessConfig.allowedUserIds.has(senderId);
 }
 
@@ -67,7 +77,8 @@ function isDmAllowed(senderId: number | undefined): boolean {
  * Check if the admin is a member of a group. Caches results for 10 minutes.
  */
 async function isAdminInGroup(bot: Bot, chatId: number): Promise<boolean> {
-  if (!accessConfig.adminId) return true; // no admin configured, allow all groups
+  // No admin configured: no group can prove the operator is present — deny.
+  if (!accessConfig.adminId) return false;
   const cached = verifiedGroups.get(chatId);
   if (cached !== undefined && cached.expiresAt > Date.now()) {
     return cached.isMember;

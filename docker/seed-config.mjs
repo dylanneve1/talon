@@ -17,6 +17,7 @@
 //   TALON_BOT_TOKEN       Telegram bot token.
 //   TALON_ADMIN_USER_ID   Telegram user id: made admin AND the only
 //                         allowed DM user, so a fresh bot answers no one else.
+//                         Required whenever the Telegram frontend is seeded.
 //   TALON_BACKEND         claude | agy | codex | kilo | opencode | openai-agents
 //   TALON_MODEL           Default model id.
 //   TALON_BRIDGE_PORT     Native bridge port (default 19880).
@@ -59,6 +60,15 @@ const config = {
 };
 
 const admin = env("TALON_ADMIN_USER_ID");
+if (frontends.includes("telegram") && !admin) {
+  // A Telegram bot without an admin has no owner and no access rule; the
+  // daemon refuses to start that way, so fail here with the actual fix.
+  console.error(
+    "[seed-config] TALON_ADMIN_USER_ID is required with the Telegram frontend (TALON_BOT_TOKEN). " +
+      "Set it to your numeric Telegram user id (message @userinfobot to find it).",
+  );
+  process.exit(1);
+}
 if (admin) {
   const id = Number(admin);
   if (!Number.isInteger(id)) {

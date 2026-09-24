@@ -122,13 +122,14 @@ describe("command access gate", () => {
     expect(bot.api.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("is a no-op when no whitelist is configured", async () => {
+  it("refuses everyone when neither a whitelist nor an admin is configured", async () => {
+    // An empty whitelist never means "everyone".
     setAccessControl({ allowedUsers: [], adminUserId: 0 });
     const { bot, mws } = makeBot();
     registerCommandAccessGate(bot);
     const next = vi.fn().mockResolvedValue(undefined);
     await mws[0](commandCtx(STRANGER), next);
-    expect(next).toHaveBeenCalledOnce();
+    expect(next).not.toHaveBeenCalled();
   });
 });
 

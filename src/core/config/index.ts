@@ -1016,9 +1016,11 @@ export function loadConfig(): TalonConfig {
     ? parsed.frontend
     : [parsed.frontend];
   for (const fe of frontends) {
-    if (fe === "telegram" && !parsed.botToken) {
+    if (fe === "telegram" && (!parsed.botToken || !parsed.adminUserId)) {
       throw new Error(
-        `Telegram frontend requires "botToken" in ${CONFIG_FILE}. Run "talon setup" to configure.`,
+        parsed.botToken
+          ? TELEGRAM_ADMIN_REQUIRED
+          : `Telegram frontend requires "botToken" in ${CONFIG_FILE}. Run "talon setup" to configure.`,
       );
     }
     if (fe === "teams" && !parsed.teamsWebhookUrl) {
@@ -1044,6 +1046,16 @@ export function loadConfig(): TalonConfig {
     systemPromptParts: promptParts,
   };
 }
+
+/**
+ * Why a Telegram frontend without `adminUserId` refuses to start: the admin
+ * is who may run operator commands and who the DM allowlist defaults to, so
+ * without one the bot would have no owner at all.
+ */
+export const TELEGRAM_ADMIN_REQUIRED =
+  `Telegram frontend requires "adminUserId" (your numeric Telegram user id) in ${CONFIG_FILE}. ` +
+  `It decides who may run admin commands and, unless "allowedUsers" lists more people, who may DM the bot. ` +
+  `Find your id by messaging @userinfobot, then run "talon setup" or add "adminUserId": <id> to the config.`;
 
 /**
  * Rebuild the system prompt with plugin additions.
