@@ -99,8 +99,8 @@ void main() {
       TalonEffects.clock = () => now;
       TalonEffects.markActivity();
 
-      await tester.pumpWidget(_host(ActivityListener(
-        child: const TalonBackdrop(child: SizedBox.expand()),
+      await tester.pumpWidget(_host(const ActivityListener(
+        child: TalonBackdrop(child: SizedBox.expand()),
       )));
       await tester.pump(const Duration(milliseconds: 100));
       expect(tester.binding.hasScheduledFrame, isTrue);
@@ -137,13 +137,13 @@ void main() {
         return const SizedBox();
       }),
     )));
-    expect(TickerMode.of(inner), isTrue);
+    expect(TickerMode.valuesOf(inner).enabled, isTrue);
     TalonEffects.setLifecycle(AppLifecycleState.inactive);
     await tester.pump();
-    expect(TickerMode.of(inner), isFalse);
+    expect(TickerMode.valuesOf(inner).enabled, isFalse);
     TalonEffects.setLifecycle(AppLifecycleState.resumed);
     await tester.pump();
-    expect(TickerMode.of(inner), isTrue);
+    expect(TickerMode.valuesOf(inner).enabled, isTrue);
   });
 
   testWidgets('software GL forces blur and ambient motion off',
