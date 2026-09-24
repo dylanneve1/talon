@@ -353,7 +353,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No talon://pair link on the clipboard.'),
+          content: Text('No usable talon://pair link on the clipboard.'),
         ),
       );
       return;

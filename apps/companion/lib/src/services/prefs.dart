@@ -17,6 +17,9 @@ class Prefs {
   static const _kMeshPeriodic = 'mesh.periodic.v1';
   static const _kMeshInterval = 'mesh.intervalSeconds.v1';
   static const _kMeshDeviceControl = 'mesh.deviceControl.v1';
+  static const _kMeshElevated = 'mesh.elevated.v1';
+  static const _kMeshControlBridge = 'mesh.controlBridge.v1';
+  static const _kMeshGrantsMigrated = 'mesh.grantsMigrated.v1';
   static const _kMeshBgAliveAt = 'mesh.bg.alive_at.v1';
   static const _kMeshBgStartedAt = 'mesh.bg.started_at.v1';
 
@@ -24,8 +27,31 @@ class Prefs {
   late final Map<String, int> _lastRead = _decodeLastRead();
   Prefs(this._sp);
 
-  static Future<Prefs> load() async =>
-      Prefs(await SharedPreferences.getInstance());
+  static Future<Prefs> load() async {
+    final prefs = Prefs(await SharedPreferences.getInstance());
+    await prefs._migrateMeshGrants();
+    return prefs;
+  }
+
+  /// Device control used to default to on, for every bridge. It is now an
+  /// explicit, per-bridge grant (see [meshDeviceControl]); an install that
+  /// was already set up keeps what it had — bound to the bridge it is
+  /// connected to today — while a fresh install starts with it off.
+  /// Idempotent, so the UI and background isolates can both run it.
+  Future<void> _migrateMeshGrants() async {
+    if (_sp.getBool(_kMeshGrantsMigrated) ?? false) return;
+    if (onboarded) {
+      final legacy = _sp.getBool(_kMeshDeviceControl) ?? true;
+      await _sp.setBool(_kMeshDeviceControl, legacy);
+      // Before this, device control always climbed to root/Shizuku when it
+      // could; keep that for the bridge that already had it.
+      await _sp.setBool(_kMeshElevated, legacy);
+      if (legacy) {
+        await _sp.setString(_kMeshControlBridge, connection.bridgeKey);
+      }
+    }
+    await _sp.setBool(_kMeshGrantsMigrated, true);
+  }
 
   /// Re-read the backing store from disk. SharedPreferences caches per
   /// isolate, so the background mesh isolate must reload after the UI isolate
@@ -161,11 +187,42 @@ class Prefs {
       _sp.setInt(_kMeshInterval, v.clamp(60, 3600));
 
   /// Whether this device answers remote shell/filesystem commands (the
-  /// "teleport" substrate). Default on — Dylan's own devices — but visible and
-  /// revocable in settings.
-  bool get meshDeviceControl => _sp.getBool(_kMeshDeviceControl) ?? true;
-  Future<void> setMeshDeviceControl(bool v) =>
-      _sp.setBool(_kMeshDeviceControl, v);
+  /// "teleport" substrate) for the bridge it is connected to now.
+  ///
+  /// Off by default, and granted per bridge: turning it on records which
+  /// bridge it was turned on for, and a profile pointed at any other bridge
+  /// (a new pairing, a different host) reads it as off until the user turns
+  /// it on again there.
+  bool get meshDeviceControl =>
+      (_sp.getBool(_kMeshDeviceControl) ?? false) &&
+      _sp.getString(_kMeshControlBridge) == connection.bridgeKey;
+
+  Future<void> setMeshDeviceControl(bool v) async {
+    await _sp.setBool(_kMeshDeviceControl, v);
+    if (v) {
+      await _sp.setString(_kMeshControlBridge, connection.bridgeKey);
+    } else {
+      await _sp.setBool(_kMeshElevated, false);
+    }
+  }
+
+  /// Whether device control may climb to an elevated tier (root, or
+  /// Shizuku's shell UID) on Android. Off by default and never on without
+  /// [meshDeviceControl] for the same bridge; while off, commands run as the
+  /// app itself and nothing asks the root manager or Shizuku for a grant.
+  bool get meshElevated =>
+      meshDeviceControl && (_sp.getBool(_kMeshElevated) ?? false);
+
+  Future<void> setMeshElevated(bool v) => _sp.setBool(_kMeshElevated, v);
+
+  /// Withdraw device control and elevation — done whenever a pairing link
+  /// points the app at a bridge, so a newly paired bridge always starts with
+  /// neither, whatever the previous one had.
+  Future<void> revokeMeshGrants() async {
+    await _sp.setBool(_kMeshDeviceControl, false);
+    await _sp.setBool(_kMeshElevated, false);
+    await _sp.remove(_kMeshControlBridge);
+  }
 
   int? get meshBgAliveAt => _sp.getInt(_kMeshBgAliveAt);
   Future<void> setMeshBgAliveAt(int epochMs) =>

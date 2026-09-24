@@ -23,8 +23,15 @@ This tier is enough for "clean up my Downloads folder", moving/reading/writing
 files in shared storage, and running ordinary shell tools that ship with
 Android (`ls`, `rm`, `mv`, `find`, `cat`, …).
 
-Toggle in the app: **Settings → Mesh → Device control** (default ON). When
-off, the device advertises no exec/fs capabilities and refuses those commands.
+Toggle in the app: **Settings → Mesh → Device control** (default OFF). It is
+granted to the bridge the app is connected to: pointing the app at another
+bridge (including through a pairing link) turns it off again until you enable
+it there. When off, the device advertises no exec/fs capabilities and refuses
+those commands.
+
+Root and Shizuku are a separate switch, **Settings → Mesh → Elevated access**
+(default OFF, Android only). While it is off, commands run at this app-UID tier
+and the app never asks the root manager or Shizuku for a grant.
 
 ## 2. Shizuku (optional, elevated)
 
@@ -79,7 +86,7 @@ The `update_device` tool:
 and the service — hence the whole mesh loop — auto-restarts and reconnects. The
 link drops only for the seconds the process is being swapped.
 
-Requirements: **device control on** + **Shizuku granted** (silent install needs
+Requirements: **device control on** + **elevated access on** + **Shizuku granted** (silent install needs
 shell UID; the app UID can't install a package without a user tapping through
 PackageInstaller). Without Shizuku, `install_apk` returns a clear "needs
 Shizuku" message and nothing is installed.
