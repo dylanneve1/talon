@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -60,6 +61,13 @@ type Node struct {
 	// (a re-exec replaces the whole process image, so the ack must land
 	// first or the caller would hang waiting for a reply that never comes).
 	pendingReexec atomic.Bool
+
+	// Commands run on a fixed worker pool (Policy.MaxConcurrent) fed by a
+	// bounded queue, never one goroutine per frame: a burst from a buggy or
+	// compromised daemon can't fork-bomb the host.
+	workersOnce sync.Once
+	commands    chan map[string]any
+	rejects     chan map[string]any
 }
 
 func NewNode(cfg *Config) (*Node, error) {
@@ -196,8 +204,16 @@ func (n *Node) registrationBody() map[string]any {
 		// right replacement for update_node.
 		"arch":         runtime.GOARCH,
 		"appVersion":   version,
-		"capabilities": nodeCapabilities,
+		"capabilities": n.capabilities(),
 	}
+}
+
+// capabilities is the command surface this host's policy allows.
+func (n *Node) capabilities() []string {
+	if n.cfg == nil {
+		return nodeCapabilities
+	}
+	return n.cfg.Policy.capabilities()
 }
 
 // Register upserts this node in the daemon's mesh registry.
@@ -319,14 +335,81 @@ func (n *Node) consumeEvents(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		// Commands run concurrently on purpose: a long exec must not block a
-		// status probe, and the daemon correlates results by id, not order.
-		go n.handleCommand(ctx, event)
+		// Commands run concurrently on purpose (a long exec must not block a
+		// status probe; the daemon correlates results by id, not order), but
+		// on a bounded pool — see enqueueCommand.
+		n.workersOnce.Do(func() { n.startWorkers(ctx) })
+		n.enqueueCommand(event)
 	}
 	if err := scanner.Err(); err != nil {
 		return err
 	}
 	return errors.New("stream closed")
+}
+
+// startWorkers starts the command worker pool and the "busy" responder.
+// They live as long as ctx (the node's run context), across reconnects.
+func (n *Node) startWorkers(ctx context.Context) {
+	workers := defaultMaxConcurrent
+	if n.cfg != nil {
+		workers = n.cfg.Policy.maxConcurrent()
+	}
+	n.commands = make(chan map[string]any, commandQueueDepth)
+	n.rejects = make(chan map[string]any, commandQueueDepth)
+	for i := 0; i < workers; i++ {
+		go n.drain(ctx, n.commands, n.handleCommand)
+	}
+	go n.drain(ctx, n.rejects, n.answerBusy)
+}
+
+func (n *Node) drain(
+	ctx context.Context,
+	queue <-chan map[string]any,
+	handle func(context.Context, map[string]any),
+) {
+	for {
+		select {
+		case event := <-queue:
+			handle(ctx, event)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// enqueueCommand hands a command to the worker pool without ever blocking
+// the stream reader. With every worker busy and the queue full, the command
+// is answered "busy" instead (so the daemon's call resolves); if even that
+// backlog is full, it is dropped and the daemon's own timeout answers it.
+func (n *Node) enqueueCommand(event map[string]any) {
+	select {
+	case n.commands <- event:
+		return
+	default:
+	}
+	select {
+	case n.rejects <- event:
+	default:
+		id, _ := event["id"].(string)
+		log.Printf("command backlog full — dropping %s unanswered", id)
+	}
+}
+
+func (n *Node) answerBusy(ctx context.Context, event map[string]any) {
+	id, _ := event["id"].(string)
+	if id == "" {
+		return
+	}
+	result := fail(
+		"talon-node is busy (all workers running, %d commands queued) — try again shortly.",
+		commandQueueDepth,
+	)
+	result.CommandID = id
+	postCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := n.PostCommandResult(postCtx, result); err != nil {
+		log.Printf("could not answer busy command %s: %v", id, err)
+	}
 }
 
 func (n *Node) handleCommand(ctx context.Context, event map[string]any) {
