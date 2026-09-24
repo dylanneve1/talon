@@ -28,7 +28,7 @@ import type { ActionResult } from "../../types.js";
 import type { Backend } from "../../agent-runtime/capabilities.js";
 import type { SharedActionHandlers } from "./types.js";
 import { historyHandlers } from "./history.js";
-import { fetchUrlHandlers } from "./fetch-url.js";
+import { fetchUrlHandlers } from "./fetch-url/index.js";
 import { cronHandlers } from "./cron.js";
 import { triggerHandlers } from "./triggers.js";
 import { agentContextActions, agentHandlers } from "./agents/index.js";

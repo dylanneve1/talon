@@ -66,12 +66,6 @@
     "cx": 30
   },
   {
-    "file": "src/core/engine/gateway-actions/fetch-url.ts",
-    "name": ".fetch_url",
-    "lines": 94,
-    "cx": 26
-  },
-  {
     "file": "src/core/errors.ts",
     "name": "classify",
     "lines": 189,

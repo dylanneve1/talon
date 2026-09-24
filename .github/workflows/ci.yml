@@ -825,9 +825,14 @@ jobs:
         with:
           node-version: 24
 
-      - name: Audit dependencies
-        # --package-lock-only audits straight from the lockfile — the
-        # advisory check doesn't need a node_modules install.
+      # --package-lock-only audits straight from the lockfile — the
+      # advisory check doesn't need a node_modules install.
+      - name: Audit production dependencies (fail on high)
+        # What ships to users: a high-severity advisory blocks the merge.
+        run: npm audit --omit=dev --audit-level=high --package-lock-only
+
+      - name: Audit all dependencies (fail on critical)
+        # Dev tooling never ships, but it runs in CI; keep the old bar.
         run: npm audit --audit-level=critical --package-lock-only
 
   # ── Secret scanning ───────────────────────────────────────────

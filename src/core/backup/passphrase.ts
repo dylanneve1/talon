@@ -63,6 +63,17 @@ async function readPassphraseFile(raw: string): Promise<string> {
 }
 
 /**
+ * Absolute path of the configured passphrase file, or null. The snapshot
+ * builder uses it to keep the key out of every part.
+ */
+export function passphraseFilePath(
+  settings: Pick<BackupSettings, "encryption">,
+): string | null {
+  const file = settings.encryption?.passphraseFile;
+  return file ? expandUserPath(file) : null;
+}
+
+/**
  * The passphrase this deployment encrypts with, or null when encryption
  * is not configured. Throws when it is configured but unusable.
  */
