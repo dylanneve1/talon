@@ -111,6 +111,48 @@ describe("resolveTurnScope", () => {
   });
 });
 
+describe("operatorGroups", () => {
+  const inGroup = (operatorInChat: boolean | undefined) => ({
+    chatId: GROUP,
+    isGroup: true,
+    source: "message" as const,
+    senderKeys: [String(STRANGER)],
+    operatorInChat,
+  });
+
+  it("stays off by default — membership alone changes nothing", () => {
+    expect(resolveTurnScope(inGroup(true))).toBe("guest");
+  });
+
+  it("gives every member the full scope in a group the operator is in", () => {
+    initGuestDmScope({ operatorGroups: true }, ADMIN);
+    expect(resolveTurnScope(inGroup(true))).toBe("operator");
+    expect(resolveTurnScope({ ...inGroup(true), senderKeys: [] })).toBe(
+      "operator",
+    );
+    expect(resolveTurnScope({ ...inGroup(true), source: "pulse" })).toBe(
+      "operator",
+    );
+  });
+
+  it("keeps guest scope where the operator is absent or unverified", () => {
+    initGuestDmScope({ operatorGroups: true }, ADMIN);
+    expect(resolveTurnScope(inGroup(false))).toBe("guest");
+    expect(resolveTurnScope(inGroup(undefined))).toBe("guest");
+  });
+
+  it("never applies to DMs", () => {
+    initGuestDmScope({ operatorGroups: true }, ADMIN);
+    expect(
+      resolveTurnScope({
+        ...inGroup(true),
+        chatId: String(STRANGER),
+        isGroup: false,
+      }),
+    ).toBe("guest");
+  });
+});
+
 describe("turn scope bracket", () => {
   it("marks the chat only while the turn runs", () => {
     const release = enterTurnScope(GROUP, "guest");

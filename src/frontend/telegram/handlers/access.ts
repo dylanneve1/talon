@@ -77,7 +77,10 @@ function isDmAllowed(senderId: number | undefined): boolean {
 /**
  * Check if the admin is a member of a group. Caches results for 10 minutes.
  */
-async function isAdminInGroup(bot: Bot, chatId: number): Promise<boolean> {
+export async function isAdminInGroup(
+  bot: Bot,
+  chatId: number,
+): Promise<boolean> {
   // No admin configured: no group can prove the operator is present — deny.
   if (!accessConfig.adminId) return false;
   const cached = verifiedGroups.get(chatId);

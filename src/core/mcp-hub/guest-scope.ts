@@ -42,6 +42,12 @@ export type GuestDmScopeConfig = {
   operatorChats?: readonly string[];
   /** Plugin/hub server names a guest may use. */
   guestPlugins?: readonly string[];
+  /**
+   * Full surface for everyone in a group the operator is a member of
+   * (default false). Membership is attested by the frontend per turn
+   * (`TurnScopeInput.operatorInChat`).
+   */
+  operatorGroups?: boolean;
 };
 
 export type ToolScope = "operator" | "guest";
@@ -94,6 +100,7 @@ type ScopeState = {
   /** The operator's Telegram DM, where private output is delivered. */
   operatorDm: string | null;
   plugins: Set<string>;
+  operatorGroups: boolean;
 };
 
 let state: ScopeState = {
@@ -101,6 +108,7 @@ let state: ScopeState = {
   operators: new Set(),
   operatorDm: null,
   plugins: new Set(DEFAULT_GUEST_PLUGINS),
+  operatorGroups: false,
 };
 
 /**
@@ -123,6 +131,7 @@ export function initGuestDmScope(
     operators,
     operatorDm: adminUserId ? String(adminUserId) : null,
     plugins: new Set(cfg?.guestPlugins ?? DEFAULT_GUEST_PLUGINS),
+    operatorGroups: cfg?.operatorGroups === true,
   };
 }
 
@@ -145,6 +154,8 @@ export type TurnScopeInput = {
   source: "message" | "pulse" | "cron" | "trigger" | "agent";
   /** Keys of the ONE person behind this turn; absent when unknown/mixed. */
   senderKeys?: readonly string[];
+  /** The frontend checked the operator is a member of this group chat. */
+  operatorInChat?: boolean;
 };
 
 /**
@@ -153,6 +164,8 @@ export type TurnScopeInput = {
  *   - Background turns the operator set up (cron, triggers, agent
  *     reports) keep the full surface; guests can't create them.
  *   - Pulse in a group reacts to whoever is talking there: guest.
+ *   - With `operatorGroups` on, any turn in a group the operator is a
+ *     member of is operator — the operator vouches for its members.
  *   - A message turn is operator only when its sender is an operator.
  *     Two legacy DM exceptions keep single-user installs working: the
  *     explicit `guestDmScope.enabled: false` opt-out, and an install with
@@ -160,6 +173,9 @@ export type TurnScopeInput = {
  *     own allowlist there).
  */
 export function resolveTurnScope(input: TurnScopeInput): ToolScope {
+  if (input.isGroup && state.operatorGroups && input.operatorInChat) {
+    return "operator";
+  }
   if (input.source !== "message") {
     return input.source === "pulse" && input.isGroup ? "guest" : "operator";
   }
