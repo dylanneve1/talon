@@ -21,10 +21,11 @@ dependencies:
   crypto: ^3.0.6
   # Persist the connection profile (host/port/token, local vs remote).
   shared_preferences: ^2.3.2
-  # App-support directory: for the offline chat snapshot, which lives in its
-  # own file rather than inside the SharedPreferences store (#1059/#1063),
-  # and so the settings store's directory can be restricted to the current
-  # user on Linux (see PrivateStore).
+  # App-support directory: for the offline chat snapshot and the mesh
+  # liveness file, which each live in their own file rather than inside the
+  # SharedPreferences store (#1059/#1060/#1063), and so the settings store's
+  # directory can be restricted to the current user on Linux (see
+  # PrivateStore).
   path_provider: ^2.1.5
   # Markdown rendering for assistant replies (code blocks, tables, lists).
   flutter_markdown: ^0.7.4

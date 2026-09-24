@@ -12,6 +12,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:uuid/uuid.dart';
 
 import 'bridge_client.dart';
+import 'command_wake_lock.dart';
 import 'device_exec.dart';
 import 'log.dart';
 import 'prefs.dart';
@@ -189,7 +190,10 @@ class MeshService {
     }
     _events = client.events.listen(
       (event) {
-        if (event['kind'] == 'locate') unawaited(_handleLocate(event));
+        // Each command holds the device awake only while it runs (#1060).
+        if (event['kind'] == 'locate') {
+          unawaited(CommandWakeLock.hold(() => _handleLocate(event)));
+        }
         if (event['kind'] == 'device_command') _admitCommand(event);
       },
       // SSE drops surface as stream errors. Reconnection belongs to the
@@ -290,7 +294,9 @@ class MeshService {
   void _runCommand(Map<String, dynamic> event) {
     _commandsInFlight++;
     unawaited(
-      _handleCommand(event).whenComplete(() {
+      // Held only while the command runs (#1060); a queued command is
+      // covered by the ones ahead of it until it starts.
+      CommandWakeLock.hold(() => _handleCommand(event)).whenComplete(() {
         _commandsInFlight--;
         if (_queuedCommands.isNotEmpty) {
           _runCommand(_queuedCommands.removeFirst());
