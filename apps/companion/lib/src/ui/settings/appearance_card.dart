@@ -12,6 +12,7 @@ import '../../services/haptics.dart';
 import '../../services/message_notifications.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
+import '../effects.dart';
 import 'settings_widgets.dart';
 
 class AppearanceCard extends StatefulWidget {
@@ -177,6 +178,17 @@ class _AppearanceCardState extends State<AppearanceCard> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 6),
+          settingsSwitchRow(
+            'Reduce effects',
+            'Static background and no live blur — lighter on CPU, GPU and '
+                'battery',
+            TalonEffects.reduce.value,
+            (v) {
+              setState(() => TalonEffects.reduce.value = v);
+              widget.state.prefs.setReduceEffects(v);
+            },
           ),
           if (mobile) ...[
             const SizedBox(height: 6),

@@ -9,6 +9,7 @@ import '../models/bridge_models.dart';
 import '../services/haptics.dart';
 import '../state/composer_attachments.dart';
 import '../theme.dart';
+import 'effects.dart';
 
 /// The message input. Enter sends; Shift+Enter inserts a newline. Grows with
 /// content up to a cap, then scrolls. Any number of files of any type can be
@@ -602,7 +603,8 @@ class _StopButton extends StatelessWidget {
             ? button
             : button
                 .animate(onPlay: (c) => c.repeat(reverse: true))
-                .fadeIn(begin: 0.75, duration: 850.ms, curve: Curves.easeInOut),
+                .fadeIn(begin: 0.75, duration: 850.ms, curve: Curves.easeInOut)
+                .wrapAmbient(),
       ),
     );
   }

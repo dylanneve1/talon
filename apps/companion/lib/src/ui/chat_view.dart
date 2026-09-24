@@ -19,6 +19,7 @@ import 'context_sheet.dart';
 import 'message_bubble.dart';
 import 'model_sheet.dart';
 import 'voice_mode_screen.dart';
+import 'effects.dart';
 
 const double _columnMax = 768;
 
@@ -1213,10 +1214,13 @@ class _HistorySkeleton extends StatelessWidget {
         ),
       );
       if (reduceMotion) return box;
-      return box.animate(onPlay: (c) => c.repeat()).shimmer(
+      return box
+          .animate(onPlay: (c) => c.repeat())
+          .shimmer(
             duration: 1200.ms,
             color: Colors.white.withValues(alpha: 0.06),
-          );
+          )
+          .wrapAmbient();
     }
 
     return Align(
