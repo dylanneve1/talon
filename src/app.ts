@@ -40,6 +40,7 @@ import {
   crashCleanup,
   crashStep,
   handleUncaughtException,
+  handleUnhandledRejection,
 } from "./core/daemon/crash.js";
 import { log, logError, logWarn } from "./util/log.js";
 import { bootPhase, bootReport } from "./core/daemon/boot-timer.js";
@@ -361,12 +362,7 @@ process.on("uncaughtException", (err) =>
   handleUncaughtException(err, crashHooks),
 );
 
-process.on("unhandledRejection", (reason) => {
-  logWarn(
-    "bot",
-    `Unhandled rejection: ${reason instanceof Error ? reason.message : reason}`,
-  );
-});
+process.on("unhandledRejection", handleUnhandledRejection);
 
 // ── Start ────────────────────────────────────────────────────────────────────
 
