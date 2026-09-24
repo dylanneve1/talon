@@ -97,11 +97,23 @@ class PlatformUpdateInstaller implements UpdateInstaller {
         AppLog.warn('update', 'no native staging dir, using temp', e);
       }
     }
-    // A fresh, randomly named directory per download (mkdtemp: mode 0700 on
-    // POSIX), never a fixed shared path. `/tmp/talon-update` could be created
-    // in advance by another local user, who would then own the directory the
-    // unpacked build and the swap script sit in until Restart.
-    return Directory.systemTemp.createTemp('talon-update-');
+    // A fresh, randomly named directory per download, never a fixed shared
+    // path: `/tmp/talon-update` could be created in advance by another local
+    // user, who would then own the directory the unpacked build and the swap
+    // script sit in until Restart. Dart creates it 0777 & ~umask (other users
+    // can list but not write it); narrow it to this user alone.
+    final dir = await Directory.systemTemp.createTemp('talon-update-');
+    if (!Platform.isWindows) {
+      final chmod = await Process.run('chmod', ['700', dir.path]);
+      if (chmod.exitCode != 0) {
+        await dir.delete(recursive: true);
+        throw FileSystemException(
+          'could not make the update staging directory private',
+          dir.path,
+        );
+      }
+    }
+    return dir;
   }
 
   @override
