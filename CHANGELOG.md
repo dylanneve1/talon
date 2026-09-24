@@ -1,5 +1,18 @@
 # Changelog
 
+## [5.17.0](https://github.com/thefalconry/talon/compare/v5.16.0...v5.17.0) (2026-09-24)
+
+
+### Features
+
+* **scope:** full tool set in groups the operator is a member of ([#1095](https://github.com/thefalconry/talon/issues/1095)) ([e4823e5](https://github.com/thefalconry/talon/commit/e4823e5c0488b0701141d2e4c731de915b41cfb5))
+
+
+### Bug Fixes
+
+* **scope:** tell the model when a turn runs with the guest tool set ([#1094](https://github.com/thefalconry/talon/issues/1094)) ([e448fa1](https://github.com/thefalconry/talon/commit/e448fa189cf7e322a499014c3d7ac6a4467fa2a5))
+* **telegram:** give getUpdates a deadline so a dead socket can't stall polling ([#1093](https://github.com/thefalconry/talon/issues/1093)) ([f6f4d3a](https://github.com/thefalconry/talon/commit/f6f4d3a48b3997dd66ec308f0e1c80ba9c196a49))
+
 ## [5.16.0](https://github.com/thefalconry/talon/compare/v5.15.1...v5.16.0) (2026-09-24)
 
 
