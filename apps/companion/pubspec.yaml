@@ -21,6 +21,9 @@ dependencies:
   crypto: ^3.0.6
   # Persist the connection profile (host/port/token, local vs remote).
   shared_preferences: ^2.3.2
+  # App-support directory for the offline chat snapshot, which lives in its
+  # own file rather than inside the SharedPreferences store (#1059/#1063).
+  path_provider: ^2.1.5
   # Markdown rendering for assistant replies (code blocks, tables, lists).
   flutter_markdown: ^0.7.4
   # AST access for the custom fenced-code-block builder (copy button +

@@ -11,6 +11,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:uuid/uuid.dart';
 
 import 'bridge_client.dart';
+import 'command_wake_lock.dart';
 import 'device_exec.dart';
 import 'log.dart';
 import 'prefs.dart';
@@ -175,8 +176,13 @@ class MeshService {
     }
     _events = client.events.listen(
       (event) {
-        if (event['kind'] == 'locate') unawaited(_handleLocate(event));
-        if (event['kind'] == 'device_command') unawaited(_handleCommand(event));
+        // Each command holds the device awake only while it runs (#1060).
+        if (event['kind'] == 'locate') {
+          unawaited(CommandWakeLock.hold(() => _handleLocate(event)));
+        }
+        if (event['kind'] == 'device_command') {
+          unawaited(CommandWakeLock.hold(() => _handleCommand(event)));
+        }
       },
       // SSE drops surface as stream errors. Reconnection belongs to the
       // connection's owner (AppState / MeshBackgroundRunner); without this

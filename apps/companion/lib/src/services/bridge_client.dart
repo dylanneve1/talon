@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show HttpClient, X509Certificate;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
@@ -78,7 +79,28 @@ class BridgeClient {
   /// makes this a plain UI connection.
   String? meshDeviceId;
 
-  BridgeClient(ConnectionConfig config) : _config = config;
+  BridgeClient(ConnectionConfig config, {this.skipKinds = const {}})
+      : _config = config;
+
+  /// Event kinds this client drops *before* JSON-decoding them. The
+  /// background mesh isolate sets this to the chat-UI firehose (`delta`,
+  /// `reasoning`, …) it never uses — otherwise both isolates parse every
+  /// streamed token while the app is open (#1060).
+  final Set<String> skipKinds;
+
+  /// The `kind` of an SSE frame without decoding it, when it can be read
+  /// cheaply: the daemon serialises every event with `kind` as its first
+  /// key (`{"kind":"delta",…}`). Anything else returns null and is decoded
+  /// normally, so an unexpected shape never loses an event.
+  @visibleForTesting
+  static String? peekKind(String raw) {
+    const prefix = '{"kind":"';
+    if (!raw.startsWith(prefix)) return null;
+    final end = raw.indexOf('"', prefix.length);
+    if (end < 0) return null;
+    final kind = raw.substring(prefix.length, end);
+    return kind.contains(r'\') ? null : kind;
+  }
 
   /// Fingerprint of the certificate seen on the most recent TLS handshake —
   /// the pin candidate the caller persists after a successful first connect.
@@ -262,6 +284,10 @@ class BridgeClient {
     final raw = buffer.toString().trim();
     buffer.clear();
     if (raw.isEmpty || _closed) return;
+    if (skipKinds.isNotEmpty) {
+      final kind = peekKind(raw);
+      if (kind != null && skipKinds.contains(kind)) return;
+    }
     try {
       final obj = _decodeObject(raw);
       _events.add(obj);
