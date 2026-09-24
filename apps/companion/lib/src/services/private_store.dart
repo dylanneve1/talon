@@ -64,10 +64,10 @@ class PrivateStore {
     }
   }
 
-  /// Synchronous variants for writers running off the UI isolate (the
-  /// snapshot writer), where there is no [PrivateStore] instance. They throw
-  /// on failure so a caller never goes on to write private data into a file
-  /// it could not restrict. No-ops off Linux.
+  // Synchronous variants for writers running off the UI isolate (the
+  // snapshot writer), where there is no PrivateStore instance. They throw on
+  // failure so a caller never goes on to write private data into a file it
+  // could not restrict. No-ops off Linux.
 
   /// Create [path] (recursively) if missing; a directory created here is
   /// narrowed to 0700 straight away.
