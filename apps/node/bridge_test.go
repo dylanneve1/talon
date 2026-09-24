@@ -121,15 +121,15 @@ func TestCommandLimiterBoundsRunningAndQueued(t *testing.T) {
 	release := make(chan struct{})
 	var ran atomic.Int32
 	done := make(chan struct{}, 2)
-	go l.run(context.Background(), func() {
-		ran.Add(1)
-		<-release
-		done <- struct{}{}
-	})
-	go l.run(context.Background(), func() {
-		ran.Add(1)
-		done <- struct{}{}
-	})
+	// Both block until released, so whichever gets the single worker slot
+	// first holds it and the other must wait.
+	for i := 0; i < 2; i++ {
+		go l.run(context.Background(), func() {
+			ran.Add(1)
+			<-release
+			done <- struct{}{}
+		})
+	}
 	time.Sleep(50 * time.Millisecond)
 	if got := ran.Load(); got != 1 {
 		t.Fatalf("%d commands running with 1 worker slot", got)
