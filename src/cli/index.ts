@@ -24,7 +24,7 @@ import pc from "picocolors";
 // inlines the JSON at compile time; tsx/node resolve it from the package.
 import pkg from "../../package.json" with { type: "json" };
 import { PKG_ROOT } from "./context.js";
-import { printBanner } from "./config.js";
+import { printBanner, ConfigFileError } from "./config.js";
 import { runSetup } from "./setup.js";
 import { showStatus } from "./status.js";
 import { viewConfig } from "./config-view.js";
@@ -121,15 +121,35 @@ function printHelp(): void {
 /** Route a `talon <command>` invocation. Called by the entry point. */
 export async function runCli(): Promise<void> {
   const command = process.argv[2];
+  try {
+    await dispatch(command);
+  } catch (err) {
+    // A present-but-invalid config.json: every command below that reads
+    // config (directly, or via `mainMenu`'s "is this configured?" check)
+    // is async but was previously invoked without `await`, so this throw
+    // would otherwise surface as a bare unhandled-rejection stack trace —
+    // or, worse for the main menu, never happen at all, because the old
+    // loader swallowed the error and returned defaults, sending a broken
+    // install into the first-run wizard, which then saves over the file.
+    if (err instanceof ConfigFileError) {
+      console.error(`\n  ${pc.red("✖")} ${err.message}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    throw err;
+  }
+}
+
+async function dispatch(command: string | undefined): Promise<void> {
   switch (command) {
     case "setup":
-      runSetup();
+      await runSetup();
       break;
     case "status":
-      showStatus();
+      await showStatus();
       break;
     case "config":
-      viewConfig();
+      await viewConfig();
       break;
     case "logs":
       tailLogs();
@@ -155,7 +175,7 @@ export async function runCli(): Promise<void> {
       startChat();
       break;
     case "doctor":
-      runDoctor();
+      await runDoctor();
       break;
     case "ps":
       await showTasks(process.argv[3] === "--all" || process.argv[3] === "-a");
@@ -188,7 +208,7 @@ export async function runCli(): Promise<void> {
       printHelp();
       break;
     case undefined:
-      mainMenu();
+      await mainMenu();
       break;
     default: {
       // "did you mean ...?" via the native similarity core (native/strsim-wasm).
