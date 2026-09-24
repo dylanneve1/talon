@@ -6,6 +6,7 @@
  *   - `health`     — stats / errors / logs / daily
  *   - `background` — cron / pulse
  * Anything else (including no subcommand) gets the usage listing.
+ * chats / daily / errors / logs answer only in the admin's DM.
  */
 
 import type { Bot, Context } from "grammy";
@@ -43,6 +44,19 @@ const ADMIN_SUBCOMMANDS: Record<string, AdminSubcommand> = Object.assign(
   } satisfies Record<string, AdminSubcommand>,
 );
 
+/**
+ * Subcommands whose output is operator-only material — log lines, the
+ * day's interactions from every chat, the list of chats, raw errors.
+ * The admin is authorized everywhere, but running these in a group would
+ * post that material to every member, so they answer only in a DM.
+ */
+const DM_ONLY_SUBCOMMANDS: ReadonlySet<string> = new Set([
+  "chats",
+  "daily",
+  "errors",
+  "logs",
+]);
+
 async function replyUsage(ctx: Context): Promise<void> {
   await ctx.reply(
     [
@@ -72,6 +86,12 @@ export async function handleAdminCommand(
   const run = ADMIN_SUBCOMMANDS[subcommand];
   if (!run) {
     await replyUsage(ctx);
+    return;
+  }
+  if (DM_ONLY_SUBCOMMANDS.has(subcommand) && ctx.chat?.type !== "private") {
+    await ctx.reply(
+      `/admin ${subcommand} only works in a private chat with the bot — it would show operator data to everyone here.`,
+    );
     return;
   }
   await run(ctx, rest, bot, config);

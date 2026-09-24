@@ -63,6 +63,19 @@ companion app).
 | `TALON_BRIDGE_URL`    | `native.publicUrl`                        | What devices dial. Pairing links need it inside a container.                 |
 | `TALON_BRIDGE_TOKEN`  | `native.token`                            | Auto-minted if unset. Your own must be ≥128 bits: `openssl rand -hex 32`.    |
 
+**Remove the secrets from the container definition after the first boot.**
+`TALON_BOT_TOKEN` and `TALON_BRIDGE_TOKEN` are only read once, to seed
+`config.json`. Left in place, they stay visible to anyone who can run
+`docker inspect` or read `/proc/<pid>/environ`, and in compose files or
+appliance UIs, long after Talon has stopped using them. Delete the `-e`
+flags (or compose/appliance entries) once `~/.talon/config.json` exists, and
+recreate the container. Rotating the token later means editing
+`config.json`, not the environment.
+
+The gateway on port 19876 binds `127.0.0.1` inside the container and serves
+only the healthcheck and the in-container CLI. The image doesn't `EXPOSE` it,
+and there's no reason to publish it.
+
 When `native` is among the frontends, the bridge binds `0.0.0.0` (loopback
 is unreachable from outside a container). That turns on TLS and a bearer
 token automatically.
