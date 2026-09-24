@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.13.0](https://github.com/dylanneve1/talon/compare/v5.12.0...v5.13.0) (2026-09-24)
+
+
+### Features
+
+* **companion:** Flatpak packaging for Flathub (client-only) ([#1022](https://github.com/dylanneve1/talon/issues/1022)) ([ba623e1](https://github.com/dylanneve1/talon/commit/ba623e16d1bec3d1d6c068a87e2022828ca87b8c))
+
 ## [5.12.0](https://github.com/dylanneve1/talon/compare/v5.11.0...v5.12.0) (2026-09-24)
 
 
