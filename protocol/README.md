@@ -33,6 +33,7 @@ instead of shipping a silent misrender or a device command that times out.
 | `fixtures/protocol_v1.json` | Static REST shapes: message, chat, status, search result, log entry |
 | `fixtures/events_v1.json` | The SSE stream: one sample per `BridgeEvent` kind (a coherent session, in order), plus forward-compat frames that clients must tolerate |
 | `fixtures/mesh_v1.json` | The device mesh: registration bodies, device/location shapes, capability lists, one canonical `device_command` per command (with `dataKeys` = the result keys both device kinds must produce), and command-result shapes |
+| `fixtures/auth_v1.json` | Per-device credentials (#1042): the credential token format, the in-band upgrade/rotation exchange (`POST /auth/upgrade`), the `credential` hint on the `/devices/register` reply, and `GET /auth/whoami` — plus a forward-compat hint clients must ignore |
 | `fixtures/agent-host_v1.json` | The agent-host protocol (see below): one sample per `HostRequest` and `HostReply`, one `event` frame per `AgentEvent` kind as a coherent turn, the `log` / `metric` notices, plus forward-compat frames |
 
 ## Where each side asserts the Bridge Protocol
@@ -42,6 +43,8 @@ instead of shipping a silent misrender or a device command that times out.
   fixture is checked for exhaustiveness against the `BridgeEvent` union — a
   new event kind fails compile until a sample is added here. Registrations
   and locations run through the real `MeshRegistry` normalizers.
+  `src/__tests__/protocol-auth-fixture.test.ts` replays the auth fixture's
+  requests against a live bridge and pins every reply to its shape.
 - **Companion** — `apps/companion/test/protocol_fixture_test.dart` and
   `apps/companion/test/protocol_conformance_test.dart` (flutter test,
   companion CI). The event session is streamed over a live SSE connection
@@ -51,7 +54,9 @@ instead of shipping a silent misrender or a device command that times out.
 - **talon-node** — `apps/node/protocol_conformance_test.go` (go test, node
   CI). Capability parity with `nodeCapabilities`, SSE `device_command` frame
   decoding, registration body keys, and real `dispatch()` execution of every
-  `run: true` command in a sandbox.
+  `run: true` command in a sandbox. The auth fixture's upgrade request is
+  built by `upgradeRequestBody`, and every register/upgrade reply parses
+  through the node's real decoders (unknown credential actions ignored).
 
 ## The agent-host protocol
 

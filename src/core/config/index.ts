@@ -221,6 +221,29 @@ const nativeConfigSchema = z
       .string()
       .regex(/^https?:\/\/\S+$/, "native.publicUrl must be an http(s) URL")
       .optional(),
+    /**
+     * Accept the shared `token` from remote (non-loopback, or proxied)
+     * clients. Every device now gets its own credential when it pairs, and
+     * devices still holding the shared token trade it for one in-band on
+     * their next connect; the daemon log and `talon mesh` list the ones
+     * that have not. Once none remain, set this to false and rotate
+     * `token` — it then only works for same-machine clients (the desktop
+     * app and CLI, via the 0600 discovery file). Default true for this
+     * release; the default flips to false in a later one.
+     */
+    legacySharedToken: z.boolean().optional(),
+    /**
+     * Scopes a companion's per-device credential carries — at pairing and
+     * on the in-band upgrade. Default ["device", "client"]: the mesh plus
+     * the chat UI. Adding "operator" lets every paired phone change config,
+     * toggle plugins and read logs; prefer granting it to one device with
+     * `talon mesh scopes <device> device,client,operator`. Nodes always get
+     * ["device"].
+     */
+    companionScopes: z
+      .array(z.enum(["device", "client", "operator"]))
+      .min(1)
+      .optional(),
   })
   .strict();
 

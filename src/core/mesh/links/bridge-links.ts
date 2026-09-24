@@ -24,6 +24,22 @@ import {
   type NodeBinaryResolver,
 } from "./node-binaries.js";
 import { installOneLiner, NodeProvisionStore } from "./node-provision.js";
+import {
+  DEFAULT_COMPANION_SCOPES,
+  NODE_SCOPES,
+  type CredentialOrigin,
+  type MeshScope,
+} from "../credentials/index.js";
+
+/**
+ * Mints the per-device credential a pairing link or installer carries,
+ * unbound until the device first names itself with it. Absent (tests,
+ * embedders without a credential store) = links carry the shared token.
+ */
+export type PairingCredentialMinter = (
+  scopes: readonly MeshScope[],
+  origin: CredentialOrigin,
+) => string;
 
 /**
  * What the native bridge tells the mesh about itself once it's listening —
@@ -45,6 +61,10 @@ export type MeshBridgeInfo = {
    * address isn't reachable as-is (containers, NAT, proxies).
    */
   publicUrl?: string;
+  /** `native.legacySharedToken`: whether remote clients may still use `token`. */
+  legacySharedToken?: boolean;
+  /** Scopes a companion's pairing credential carries (`native.companionScopes`). */
+  companionScopes?: readonly MeshScope[];
 };
 
 export class BridgeLinks {
@@ -54,7 +74,24 @@ export class BridgeLinks {
   private readonly companionPairs = new CompanionPairStore();
   private bridgeInfo: MeshBridgeInfo | null = null;
 
-  constructor(private readonly resolveNode: NodeBinaryResolver) {}
+  constructor(
+    private readonly resolveNode: NodeBinaryResolver,
+    private readonly mintCredential?: PairingCredentialMinter,
+  ) {}
+
+  /**
+   * The bearer a link hands a new device: its own credential when the mesh
+   * has a credential store, else the shared bridge token (legacy).
+   */
+  private linkCredential(
+    sharedToken: string,
+    scopes: readonly MeshScope[],
+    origin: CredentialOrigin,
+  ): string {
+    return this.mintCredential
+      ? this.mintCredential(scopes, origin)
+      : sharedToken;
+  }
 
   /** The native bridge reports its reachable identity here (null on stop). */
   setBridgeInfo(info: MeshBridgeInfo | null): void {
@@ -133,7 +170,7 @@ export class BridgeLinks {
       size: bin.size,
       version: bin.version,
       bridgeUrl: base,
-      bearerToken: info.token,
+      bearerToken: this.linkCredential(info.token, NODE_SCOPES, "install"),
       ...(info.fingerprint ? { fingerprint: info.fingerprint } : {}),
     });
     return {
@@ -185,9 +222,14 @@ export class BridgeLinks {
     }
     const base = this.bridgeBaseUrl(info, bridgeUrl);
     if (typeof base !== "string") return { ok: false, text: base.error };
+    const token = this.linkCredential(
+      info.token,
+      info.companionScopes ?? DEFAULT_COMPANION_SCOPES,
+      "pair",
+    );
     const grant = this.companionPairs.create({
       bridgeUrl: base,
-      bearerToken: info.token,
+      bearerToken: token,
       ...(info.fingerprint ? { fingerprint: info.fingerprint } : {}),
       ...(typeof label === "string" && label.trim()
         ? { label: label.trim() }
@@ -197,7 +239,7 @@ export class BridgeLinks {
       ok: true,
       link: pairLink(grant),
       url: base,
-      token: info.token,
+      token,
       ...(info.fingerprint ? { fingerprint: info.fingerprint } : {}),
     };
   }

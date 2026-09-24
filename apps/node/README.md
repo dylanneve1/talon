@@ -47,6 +47,15 @@ Config lives at `~/.talon-node/config.json` (0600 — it holds the bearer
 token). Flags and env vars (`TALON_BRIDGE`, `TALON_TOKEN`,
 `TALON_NODE_NAME`) override the file.
 
+The token is this node's **own credential** (`tdc1.…`, device scope only —
+see [docs/mesh-credentials.md](../../docs/mesh-credentials.md)); installer
+links embed one. A node configured with the daemon's shared bridge token
+trades it for its own credential on its first heartbeat and rewrites
+`token` in the config. `talon-node status` shows which kind it holds. If you
+pass the shared token through `TALON_TOKEN`, replace it with the credential
+from the config once the node has upgraded — the env var wins on every
+start.
+
 ```json
 {
   "bridge": "https://100.64.0.7:19880",
