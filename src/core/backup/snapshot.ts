@@ -191,6 +191,11 @@ async function writePart(
   const flushed = passphrase
     ? pipeline(compressor, await createEncryptor(passphrase), tap, out)
     : pipeline(compressor, tap, out);
+  // A sink failure (ENOSPC) rejects this while `fill` is still writing, and
+  // `fill` then throws the same error — so the await below is never
+  // reached. Observe it here, or it surfaces as an unhandled rejection
+  // that kills the CLI before the cleanup runs.
+  flushed.catch(() => {});
   try {
     const writer = new TarWriter(compressor);
     await fill(writer);
