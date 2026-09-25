@@ -24,11 +24,41 @@
 
 import type { QueryParams, QueryResult } from "./handler-types.js";
 import { classify, type TalonError } from "../../../core/errors.js";
-import { logWarn } from "../../../util/log.js";
+import { faultText } from "../../../core/engine/fault-text.js";
+import { log, logWarn } from "../../../util/log.js";
 import { incrementCounter } from "../../../storage/metrics.js";
 import { resetSession } from "../../../storage/sessions.js";
-import { classifyRetry } from "./model-retry.js";
+import { classifyRetry, type RetryDecision } from "./model-retry.js";
 import type { AgentEvent } from "../../../core/agent-runtime/events.js";
+
+/**
+ * One greppable line per recovery decision — what failed, how it was
+ * classified, and what the ladder does next. A retry is a warning (the
+ * turn is about to be re-run); a propagate is the turn's final error
+ * leaving the backend, and says so.
+ */
+function logRetryDecision(
+  chatId: string,
+  backendLabel: string | undefined,
+  activeModel: string,
+  retried: boolean,
+  classified: TalonError,
+  decision: RetryDecision,
+): void {
+  const action =
+    decision.kind === "reset_and_retry"
+      ? `reset_and_retry(${decision.reason})`
+      : decision.kind === "fallback_model"
+        ? `fallback_model(${decision.fallbackModelId})`
+        : "propagate";
+  const line =
+    `retry.decision chat=${chatId} backend=${(backendLabel || "claude").toLowerCase().replace(/\s+/g, "-")} ` +
+    `model=${activeModel} attempt=${retried ? 2 : 1} reason=${classified.reason} ` +
+    `retryable=${classified.retryable} status=${classified.status ?? "-"} ` +
+    `decision=${action} error="${faultText(classified)}"`;
+  if (decision.kind === "propagate") log("agent", line);
+  else logWarn("agent", line);
+}
 
 /** Inputs for `applyRetryDecision`. */
 export interface ApplyRetryDecisionInputs {
@@ -112,6 +142,14 @@ export async function applyRetryDecision(
   });
 
   const prefix = backendLabel ? `${backendLabel} ` : "";
+  logRetryDecision(
+    chatId,
+    backendLabel,
+    activeModel,
+    retried,
+    classified,
+    decision,
+  );
 
   if (decision.kind === "reset_and_retry") {
     logWarn(
@@ -218,6 +256,14 @@ export async function* applyRetryDecisionStream(
   });
 
   const prefix = backendLabel ? `${backendLabel} ` : "";
+  logRetryDecision(
+    chatId,
+    backendLabel,
+    activeModel,
+    retried,
+    classified,
+    decision,
+  );
 
   if (decision.kind === "reset_and_retry") {
     logWarn(

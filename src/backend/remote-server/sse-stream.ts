@@ -9,7 +9,8 @@
  * so the narrowing lives here once, behind a runtime guard.
  */
 
-import { logWarn } from "../../util/log.js";
+import { faultText } from "../../core/engine/fault-text.js";
+import { logDebug, logWarn } from "../../util/log.js";
 
 /**
  * Minimal client surface — what both `KiloClient` and `OpencodeClient`
@@ -48,6 +49,10 @@ export async function subscribeSseStream(
       lastError = err;
     }
     if (attempt < 3) {
+      logDebug(
+        "agent",
+        `sse.subscribe.retry chat=${chatId} attempt=${attempt} delay_ms=${150 * attempt} error="${faultText(lastError)}"`,
+      );
       await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
     }
   }
