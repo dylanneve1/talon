@@ -1,10 +1,10 @@
 /**
  * Mesh sidecar persistence — a failed write is the caller's error, never a
- * stray process-level rejection.
+ * stray process-level rejection or leftover temp file.
  */
 
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, readFile, rmdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writePrivateJson } from "../core/mesh/persist.js";
@@ -39,5 +39,14 @@ describe("writePrivateJson", () => {
     await rmdir(target);
     await writePrivateJson(target, ["b"]);
     expect(JSON.parse(await readFile(target, "utf8"))).toEqual(["b"]);
+  });
+
+  it("removes its temp file when the write fails", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "talon-mesh-persist-"));
+    const target = join(dir, "sidecar.json");
+    await mkdir(target);
+    await expect(writePrivateJson(target, [1])).rejects.toThrow();
+    await expect(writePrivateJson(target, [2])).rejects.toThrow();
+    expect(await readdir(dir)).toEqual(["sidecar.json"]);
   });
 });

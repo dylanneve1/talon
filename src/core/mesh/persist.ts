@@ -8,7 +8,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 /** Per-path write chain: new writes queue onto the tail promise. */
@@ -47,6 +47,15 @@ export async function writePrivateJson(
 async function atomicWriteJson(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const tmp = `${path}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
-  await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  await rename(tmp, path);
+  try {
+    await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    await rename(tmp, path);
+  } catch (err) {
+    // Each attempt names a fresh temp file, so one left behind is never
+    // reused — on a full disk every heartbeat would strand another.
+    await rm(tmp, { force: true }).catch(() => {});
+    throw err;
+  }
 }
