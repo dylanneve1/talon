@@ -90,8 +90,3 @@ function loadNativeFuseFs(): NativeFuseFs | null {
     return null;
   }
 }
-
-/** Tests swap addons via TALON_FUSEFS_NODE and need the memo dropped. */
-function _resetNativeFuseFsForTesting(): void {
-  addon = undefined;
-}

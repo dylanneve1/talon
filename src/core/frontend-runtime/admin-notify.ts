@@ -10,7 +10,7 @@
  *
  * First consumer: WhatsApp pairing. When WhatsApp unlinks the device,
  * recovery needs a human to type a pairing code into the phone — a code
- * that previously only ever appeared in the daemon log, which nobody
+ * that would otherwise only appear in the daemon log, which nobody
  * watches. Alerts about a dead frontend must travel over a LIVE one.
  */
 

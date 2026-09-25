@@ -349,8 +349,9 @@ or serving a chat) or once you give it a `backendBudgets` entry.
    `backend/builtins.ts` — the one list bootstrap, `talon doctor`, and
    the registry tests all load.
 
-4. Add `"<name>"` to the `backend` enum in
-   `src/util/config.ts` so config validation accepts it.
+4. Add `"<name>"` to `BACKEND_IDS` in
+   `src/core/agent-runtime/model-ref.ts` — the config `backend` enum is
+   built from it, so config validation accepts it.
 
 5. Wire shared infrastructure where it helps. If your backend wraps
    an OpenCode-shaped HTTP server, it is a `RemoteProfileDefinition`:

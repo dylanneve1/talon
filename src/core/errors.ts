@@ -247,8 +247,8 @@ export function classify(err: unknown): TalonError {
   }
 
   // 408 Request Timeout — a transient deadline like any other, but it
-  // is neither 4xx-terminal nor 5xx, so it used to fall through to
-  // `unknown`/non-retryable and strand the request.
+  // is neither 4xx-terminal nor 5xx, so without this branch it falls
+  // through to `unknown`/non-retryable and strands the request.
   if (status === 408) {
     return new TalonError(msg, {
       reason: "network",

@@ -203,7 +203,7 @@ The WhatsApp frontend drives a real WhatsApp account over Baileys multi-device â
     // The bot account's own number, E.164 digits, no "+". Omit for QR pairing.
     "pairingNumber": "353871234567",
     // Who may DM it â€” bare numbers or full JIDs. Empty disables DMs.
-    "allowedJids": ["353834733284"],
+    "allowedJids": ["447700900102"],
     // Which groups it serves: "listed" | "with-allowed-user" | "all"
     "groupPolicy": "with-allowed-user",
     // In groups: reply only when mentioned/quoted, or to everything

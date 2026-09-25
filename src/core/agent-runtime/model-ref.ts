@@ -103,14 +103,6 @@ export interface ModelRef {
 }
 
 /**
- * Equality on identity only — two refs are the same run if they
- * point at the same backend + id.
- */
-export function sameModelRef(a: ModelRef, b: ModelRef): boolean {
-  return a.backend === b.backend && a.id === b.id;
-}
-
-/**
  * Bare-minimum constructor for tests and adapters that don't yet
  * carry rich metadata. Real catalog code should populate the
  * optional fields rather than rely on this default.

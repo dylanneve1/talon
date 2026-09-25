@@ -477,14 +477,14 @@ describe("gateway HTTP server", () => {
       // gateway's falsy guard or by sign-handling.
       const { body } = await post({
         action: "send_message",
-        _chatId: "-1001426819337",
-        chat_id: -1001426819337,
+        _chatId: "-1009876543210",
+        chat_id: -1009876543210,
         text: "hello supergroup",
       });
       expect(body.ok).toBe(true);
       expect(mockFrontendHandler).toHaveBeenCalledWith(
-        expect.objectContaining({ chat_id: -1001426819337 }),
-        -1001426819337,
+        expect.objectContaining({ chat_id: -1009876543210 }),
+        -1009876543210,
       );
     });
 

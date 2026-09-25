@@ -28,7 +28,7 @@ function liveShapedMemory(): string {
     "",
     "## User: Ada",
     "- Creator and primary user",
-    "- Based in Dublin",
+    "- Based in London",
     "",
     "## Inbox / CI Watch (as of 2026-07-03 ~23:15Z, Run #134)",
     bulk(900),
@@ -38,18 +38,18 @@ function liveShapedMemory(): string {
     bulk(1800),
     "## Active Investigations",
     "",
-    "### Qwen3-Embedding int4 Failure — ROOT CAUSE",
-    "- The compile step drops the quantized weights",
+    "### Export pipeline failure — ROOT CAUSE",
+    "- The export step drops the cached weights",
     "",
     "## Branches to clean up",
-    "- dneve-isolate-qwen3embed",
+    "- ada-isolate-export-bug",
   ].join("\n");
 }
 
 describe("renderMemoryView", () => {
   describe("under the budget", () => {
     it("returns the input byte-identically", () => {
-      const content = "# Memory\n\n## User: Ada\n- Lives in Dublin";
+      const content = "# Memory\n\n## User: Ada\n- Lives in London";
       const view = renderMemoryView(content);
       expect(view.text).toBe(content);
       expect(view.truncated).toBe(false);

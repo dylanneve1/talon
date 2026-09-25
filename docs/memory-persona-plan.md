@@ -60,7 +60,7 @@ one markdown file.
 **1.7 Persona is an adjective list.** `prompts/identity.md` opens with "Sharp,
 witty, and warm." That describes ten thousand assistants. It never changes, never
 differs per person, and — decisively — is not connected to memory. The evolving
-file that *could* personalize (`workspace/identity.md`) is six lines of NPUW facts
+file that *could* personalize (`workspace/identity.md`) is six lines of work-project facts
 with no voice at all. Meanwhile voice is duplicated and drifting across
 `telegram.md` / `discord.md` / `teams.md` / `terminal.md` / `native.md`.
 

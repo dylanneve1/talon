@@ -8,9 +8,7 @@
  *   - Renderer NEVER touches readline. Only this file does.
  *
  * `start()` returns once that prompt is drawn — the frontend lifecycle
- * contract (core/frontend-runtime/capabilities.ts). It used to park on a
- * promise that never resolved, which is why the composition root had to
- * special-case the terminal and start it without awaiting.
+ * contract (core/frontend-runtime/capabilities.ts).
  */
 
 import pc from "picocolors";
