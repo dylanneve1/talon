@@ -1,14 +1,8 @@
 [
   {
-    "file": "src/backend/claude-sdk/handler.ts",
-    "name": "runChatTurn",
-    "lines": 159,
-    "cx": 12
-  },
-  {
     "file": "src/backend/codex/handler/message.ts",
     "name": "handleMessage",
-    "lines": 193,
+    "lines": 183,
     "cx": 20
   },
   {
@@ -26,55 +20,61 @@
   {
     "file": "src/backend/openai-agents/handler/message.ts",
     "name": "handleMessage",
-    "lines": 186,
+    "lines": 177,
     "cx": 17
   },
   {
     "file": "src/backend/remote-server/chat-turn.ts",
     "name": "runRemoteChatTurn",
-    "lines": 185,
+    "lines": 179,
     "cx": 9
   },
   {
     "file": "src/backend/runtime/turn/handler-to-events.ts",
     "name": "handlerToEvents",
-    "lines": 157,
+    "lines": 153,
     "cx": 16
   },
   {
     "file": "src/bootstrap.ts",
     "name": "initBackendAndDispatcher",
-    "lines": 286,
+    "lines": 288,
     "cx": 13
   },
   {
     "file": "src/core/background/dream/index.ts",
     "name": "runDreamAgent",
-    "lines": 183,
+    "lines": 173,
     "cx": 20
   },
   {
     "file": "src/core/doctor/index.ts",
     "name": "collectDoctorReport",
-    "lines": 179,
+    "lines": 181,
     "cx": 18
   },
   {
     "file": "src/core/engine/gateway-actions/cross-send.ts",
     "name": ".send_via",
-    "lines": 98,
+    "lines": 97,
     "cx": 30
   },
   {
     "file": "src/core/errors.ts",
     "name": "classify",
-    "lines": 189,
+    "lines": 170,
     "cx": 29
+  },
+  {
+    "file": "src/core/mcp-hub/launcher.ts",
+    "name": "runSupervisor",
+    "lines": 172,
+    "cx": 22
   },
   {
     "file": "src/core/tools/chat/messaging.ts",
     "name": ".execute#2",
-    "lines": 191,
+    "lines": 188,
     "cx": 20
   },
   {
@@ -86,7 +86,7 @@
   {
     "file": "src/frontend/native/bridge/routes/chats.ts",
     "name": "chatRoutes",
-    "lines": 139,
+    "lines": 136,
     "cx": 28
   },
   {
@@ -98,7 +98,7 @@
   {
     "file": "src/frontend/telegram/commands/info.ts",
     "name": "registerInfoCommands",
-    "lines": 180,
+    "lines": 178,
     "cx": 16
   },
   {
@@ -110,37 +110,31 @@
   {
     "file": "src/frontend/telegram/model-callbacks.ts",
     "name": "parseModelCallback",
-    "lines": 57,
+    "lines": 56,
     "cx": 28
   },
   {
     "file": "src/frontend/terminal/index.ts",
     "name": "createTerminalFrontend",
-    "lines": 182,
+    "lines": 178,
     "cx": 15
   },
   {
     "file": "src/native/warden.ts",
     "name": "spawnWarden",
-    "lines": 135,
+    "lines": 129,
     "cx": 28
   },
   {
     "file": "src/plugins/mempalace/index.ts",
     "name": "createMempalacePlugin",
-    "lines": 135,
+    "lines": 134,
     "cx": 28
   },
   {
     "file": "src/plugins/mempalace/provision.ts",
     "name": "reconcile",
     "lines": 156,
-    "cx": 22
-  },
-  {
-    "file": "src/core/mcp-hub/launcher.ts",
-    "name": "runSupervisor",
-    "lines": 176,
     "cx": 22
   }
 ]

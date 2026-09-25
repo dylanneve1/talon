@@ -116,9 +116,12 @@ function measureFile(path) {
   // swc spans are offsets into a process-global source map, not the
   // file — subtract the module's own start to get file offsets.
   const base = module.span.start;
+  // swc offsets count UTF-8 bytes, so index lines by byte too — a char
+  // index drifts by every multibyte character (—, →, emoji) above.
+  const bytes = Buffer.from(source, "utf8");
   const lineStarts = [0];
-  for (let i = 0; i < source.length; i++)
-    if (source.charCodeAt(i) === 10) lineStarts.push(i + 1);
+  for (let i = 0; i < bytes.length; i++)
+    if (bytes[i] === 10) lineStarts.push(i + 1);
   const lineOf = (offset) => {
     let lo = 0;
     let hi = lineStarts.length - 1;
