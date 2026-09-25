@@ -6,7 +6,7 @@
  * core gateway so MCP tool calls route to Telegram API.
  */
 
-import { Bot, InputFile, API_CONSTANTS } from "grammy";
+import { Bot, GrammyError, InputFile, API_CONSTANTS } from "grammy";
 import { autoRetry } from "@grammyjs/auto-retry";
 import { apiThrottler } from "@grammyjs/transformer-throttler";
 import {
@@ -17,6 +17,7 @@ import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { runUntilStopped } from "../../core/frontend-runtime/run-loop.js";
 import { pollDeadline } from "./polling/poll-deadline.js";
+import { pollHealth } from "./polling/poll-health.js";
 import { createTelegramActionHandler, sendText } from "./actions/index.js";
 import { ambientThreadId } from "./topics.js";
 import { initUserClient, disconnectUserClient } from "./userbot.js";
@@ -48,6 +49,12 @@ export type TelegramFrontend = {
   stop: () => Promise<void>;
 };
 
+/** The slice of a grammY BotError's context the error log reads. */
+type UpdateContext = {
+  update?: { update_id?: number };
+  chat?: { id?: number };
+};
+
 // ── Access ──────────────────────────────────────────────────────────────────
 
 /**
@@ -68,6 +75,30 @@ function applyAccessControl(config: TalonConfig): void {
   setAllowedGroups(config.allowedGroups);
 }
 
+/**
+ * The bot's last-resort middleware error handler: log which update in which
+ * chat failed, and exit when Telegram says the token itself is bad.
+ */
+function onBotError(err: unknown): void {
+  const ctx = (err as { ctx?: UpdateContext } | null)?.ctx;
+  logError(
+    "bot",
+    `Unhandled bot error update=${ctx?.update?.update_id ?? "?"} chat=${ctx?.chat?.id ?? "?"}`,
+    err,
+  );
+  // Judge the token by Telegram's error code, never the message text:
+  // a handler's ordinary 400 ("message to edit not found", "chat not
+  // found") must not take the whole daemon down.
+  const cause = (err as { error?: unknown } | null)?.error ?? err;
+  if (
+    cause instanceof GrammyError &&
+    (cause.error_code === 401 || cause.error_code === 404)
+  ) {
+    logError("bot", "Bot token appears invalid — shutting down");
+    process.exit(1);
+  }
+}
+
 // ── Factory ─────────────────────────────────────────────────────────────────
 
 export function createTelegramFrontend(
@@ -80,6 +111,8 @@ export function createTelegramFrontend(
   bot.api.config.use(pollDeadline());
   bot.api.config.use(apiThrottler());
   bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 60 }));
+  // Outermost: judges each poll by the result grammY finally sees.
+  bot.api.config.use(pollHealth());
 
   const context: ContextManager = {
     acquire: (chatId: number, stringId?: string) =>
@@ -149,14 +182,7 @@ export function createTelegramFrontend(
     },
 
     async start() {
-      bot.catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        logError("bot", "Unhandled bot error", err);
-        if (/unauthorized|401|not found|404/i.test(msg)) {
-          logError("bot", "Bot token appears invalid — shutting down");
-          process.exit(1);
-        }
-      });
+      bot.catch(onBotError);
       // Beyond grammY's defaults: `chat_join_request` feeds the moderation
       // tool's pending-join cache (inert unless the bot admins an
       // approval-gated chat).

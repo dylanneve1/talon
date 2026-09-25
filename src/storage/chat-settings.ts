@@ -21,6 +21,7 @@ import { log, logError } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
 import { importLegacyJson } from "./legacy-import.js";
+import { dbErrorFields } from "./db.js";
 import * as repo from "./repositories/chat-settings-repo.js";
 import type { ReasoningEffortLevel } from "../types/effort.js";
 
@@ -174,7 +175,11 @@ function persist(chatId: string): void {
     if (entry) repo.upsert(chatId, entry);
     else repo.remove(chatId);
   } catch (err) {
-    logError("settings", "Failed to persist chat settings", err);
+    logError(
+      "settings",
+      `Failed to persist chat settings chat=${chatId}${dbErrorFields(err)}`,
+      err,
+    );
     recordError(
       `Settings save failed: ${err instanceof Error ? err.message : err}`,
     );

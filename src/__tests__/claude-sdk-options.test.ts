@@ -772,10 +772,10 @@ describe("buildMcpServers (heartbeat-tier paths)", () => {
     mockGetBridgePort.mockReturnValue(31337);
     const { buildMcpServers } =
       await import("../backend/claude-sdk/options.js");
-    const servers = buildMcpServers("352042062");
+    const servers = buildMcpServers("424242420");
     expect(servers["telegram-tools"]).toEqual({
       type: "http",
-      url: "http://127.0.0.1:31337/mcp/talon/telegram/352042062",
+      url: "http://127.0.0.1:31337/mcp/talon/telegram/424242420",
       // A reference the CLI expands from its env — the token itself never
       // rides the CLI's command line.
       headers: { Authorization: "Bearer ${TALON_GATEWAY_TOKEN}" },

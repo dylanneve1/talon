@@ -2,7 +2,7 @@
  * Plan-aware backend routing for background work.
  *
  * Background work — `spawn_agent` sub-agents, cron `query` jobs, the
- * heartbeat — used to inherit whichever backend the chat happened to be on.
+ * heartbeat — would otherwise inherit whichever backend the chat is on.
  * On a multi-subscription install that is a good way to burn one plan to its
  * ceiling while another sits idle. When nothing is pinned, this picks the
  * backend with the most headroom instead.

@@ -191,7 +191,7 @@ export function createNativeFrontend(
       await mesh.load();
       unregisterMeshTransport = registerMeshTransport(runtime, server);
       // Mesh tool actions (list_devices / get_device_location) are shared
-      // gateway actions now — no native-only cases here.
+      // gateway actions — no native-only cases here.
       gateway.registerFrontendHandler(
         "native",
         createNativeActionHandler({

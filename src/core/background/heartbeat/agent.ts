@@ -22,6 +22,7 @@ import {
   resolveRoutedModel,
 } from "../../engine/backend-router/index.js";
 import { resolveBackgroundEffort } from "../effort.js";
+import { raceWithTimeout } from "../isolated-agent.js";
 import { hb } from "./state.js";
 
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000; // 10-minute soft cap
@@ -88,7 +89,7 @@ export function buildHeartbeatSystemPrompt(): string {
 /**
  * Render the open-goal listing for the heartbeat prompt. Cross-chat by design:
  * the heartbeat is a global agent, so it sees every chat's open goals (with
- * chat ids for routing updates back). Exported for tests.
+ * chat ids for routing updates back).
  */
 function renderGoalsBlock(): { text: string; count: number } {
   let text = "(no open goals)";
@@ -484,32 +485,6 @@ export async function runHeartbeatAgent(
   recordBackendRunUsage(target.backendId, usage ?? undefined);
   task.succeed(usage ?? undefined);
   return heartbeatLogFile;
-}
-
-/**
- * Race a promise against a timeout. Returns the promise's resolved value, or
- * the sentinel `"timed_out"` if the timeout fires first.
- *
- * NOTE: if `p` rejects before the timeout fires, that rejection propagates —
- * callers that need a never-throwing race should `.catch()` the input promise
- * themselves.
- */
-async function raceWithTimeout<T>(
-  p: Promise<T>,
-  ms: number,
-): Promise<T | "timed_out"> {
-  let t: ReturnType<typeof setTimeout> | null = null;
-  try {
-    return await Promise.race([
-      p,
-      new Promise<"timed_out">((resolve) => {
-        t = setTimeout(() => resolve("timed_out"), ms);
-        t.unref();
-      }),
-    ]);
-  } finally {
-    if (t) clearTimeout(t);
-  }
 }
 
 // ── Logging helpers ─────────────────────────────────────────────────────────

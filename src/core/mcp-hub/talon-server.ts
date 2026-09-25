@@ -1,17 +1,10 @@
 /**
- * In-process Talon tool server — the hub-side twin of
- * `core/tools/mcp-server.ts`.
+ * In-process Talon tool server: composeTools + createBridge + textResult,
+ * bound to one (frontend, chatId) that arrives per hub session from the
+ * request URL. One `McpServer` instance per session, zero processes.
  *
- * Same composition (composeTools + createBridge + textResult), but
- * instead of reading `TALON_CHAT_ID`/`TALON_FRONTEND` from the env of a
- * dedicated subprocess, the binding arrives per hub session from the
- * request URL. One `McpServer` instance per session, zero processes —
- * this replaces the two processes (supervisor + server) that every
- * chat previously paid per configured frontend.
- *
- * Tool-surface trimming (`disabledTools` / `disabledToolTags`) applies
- * exactly as in the subprocess version, including the `end_turn`
- * exemption — tool-only backends need it to close every turn.
+ * Tool-surface trimming (`disabledTools` / `disabledToolTags`) never
+ * removes `end_turn` — tool-only backends need it to close every turn.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

@@ -27,7 +27,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { files } from "../util/paths.js";
-import { log, logError } from "../util/log.js";
+import { log, logError, logWarn } from "../util/log.js";
 import { SCHEMA, dbSql } from "./sql/statements.generated.js";
 
 /**
@@ -66,18 +66,20 @@ const ReadOnlyDatabase = Database as unknown as new (
 
 let db: SqlDatabase | null = null;
 
+/** How long a write waits on another connection's lock before SQLITE_BUSY. */
+const BUSY_TIMEOUT_MS = 5_000;
+
 /**
  * Apply the complete schema. Every statement is IF NOT EXISTS, so this
  * is a no-op on an up-to-date database and creates exactly what's
  * missing on a fresh or older one.
  *
  * Column reconciliation runs first: `ALTER TABLE … ADD COLUMN` has no
- * IF NOT EXISTS form, so columns added to already-shipped tables
- * (media_index.content_hash, sessions.metrics,
- * history_messages.attachments, sessions.last_turn_ended_at) are ensured by attempting the ALTER and
- * swallowing the two expected failures — "duplicate column name"
- * (column already there) and "no such table" (fresh database; the
- * CREATE TABLE in schema.sql includes the column).
+ * IF NOT EXISTS form, so columns added to already-shipped tables are
+ * ensured by attempting the ALTER and swallowing the two expected
+ * failures — "duplicate column name" (column already there) and "no
+ * such table" (fresh database; the CREATE TABLE in schema.sql includes
+ * the column).
  */
 function ensureSchema(database: SqlDatabase): void {
   const row = database
@@ -85,30 +87,27 @@ function ensureSchema(database: SqlDatabase): void {
       "SELECT COUNT(*) AS tables FROM sqlite_master WHERE type = 'table'",
     )
     .get() as { tables: number };
-  try {
-    database.exec(dbSql.addMediaContentHashColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
-  }
-  try {
-    database.exec(dbSql.addHistorySenderHandleColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
-  }
-  try {
-    database.exec(dbSql.addSessionsMetricsColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
-  }
-  try {
-    database.exec(dbSql.addHistoryAttachmentsColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
-  }
-  try {
-    database.exec(dbSql.addSessionsLastTurnEndedAtColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
+  for (const addColumn of [
+    dbSql.addMediaContentHashColumn,
+    dbSql.addHistorySenderHandleColumn,
+    dbSql.addSessionsMetricsColumn,
+    dbSql.addHistoryAttachmentsColumn,
+    dbSql.addSessionsLastTurnEndedAtColumn,
+  ]) {
+    try {
+      database.exec(addColumn);
+    } catch (err) {
+      // Duplicate column or no such table both mean nothing to do. Any
+      // other failure (read-only file, full disk) is a real fault the
+      // schema step below will likely trip over too — say which ALTER.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/duplicate column name|no such table/i.test(msg)) {
+        logWarn(
+          "db",
+          `schema column reconcile failed: ${msg}${dbErrorFields(err)} sql=${JSON.stringify(addColumn.slice(0, 60))}`,
+        );
+      }
+    }
   }
   database.exec("BEGIN");
   try {
@@ -119,6 +118,24 @@ function ensureSchema(database: SqlDatabase): void {
     throw err;
   }
   if (row.tables === 0) log("db", "Initialized database schema");
+}
+
+/**
+ * The SQLite result code behind a driver error, as ` key=value` log
+ * fields (leading space; empty when there is none). node:sqlite keeps
+ * it out of the message — "database or disk is full" arrives as
+ * `errcode: 13` — so a log line built from `err.message` alone can't
+ * be grepped for SQLITE_FULL (13), SQLITE_BUSY (5) or SQLITE_READONLY (8).
+ */
+export function dbErrorFields(err: unknown): string {
+  if (!err || typeof err !== "object") return "";
+  const e = err as { code?: unknown; errcode?: unknown; errno?: unknown };
+  let out = "";
+  if (typeof e.code === "string") out += ` code=${e.code}`;
+  // node:sqlite names it errcode, bun:sqlite errno.
+  const rc = typeof e.errcode === "number" ? e.errcode : e.errno;
+  if (typeof rc === "number") out += ` errcode=${rc}`;
+  return out;
 }
 
 function defaultPath(): string {
@@ -137,6 +154,12 @@ export function getDatabase(path: string = defaultPath()): SqlDatabase {
   mkdirSync(dirname(path), { recursive: true });
   const database = new Database(path);
   try {
+    // Other processes write this file too (CLI commands, a respawned
+    // successor overlapping its predecessor). Both drivers default to a
+    // zero busy timeout, i.e. "database is locked" the instant a write
+    // meets theirs — wait for the lock instead. First, so the pragmas
+    // and schema setup below get it too.
+    database.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
     // WAL: readers don't block the writer, and crash recovery is
     // journal-based instead of "hope the rename was atomic".
     database.exec("PRAGMA journal_mode = WAL");
@@ -216,8 +239,13 @@ export function flushDatabase(): void {
   if (!db) return;
   try {
     db.exec(dbSql.walCheckpoint);
-  } catch {
-    /* shutting down — best effort */
+  } catch (err) {
+    // Shutting down — best effort, but a checkpoint that fails here
+    // (disk full, I/O error) is the last word on why the WAL grew.
+    logWarn(
+      "db",
+      `WAL checkpoint failed: ${err instanceof Error ? err.message : String(err)}${dbErrorFields(err)}`,
+    );
   }
 }
 

@@ -31,14 +31,18 @@ export function buildProxyServer(
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const child = await getChild();
-    child.touch();
     return { tools: await child.listTools() };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  // `extra.signal` fires when the upstream client cancels or its session
+  // closes; passing it on stops the child's work instead of orphaning it.
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const child = await getChild();
-    child.touch();
-    return child.callTool(request.params.name, request.params.arguments ?? {});
+    return child.callTool(
+      request.params.name,
+      request.params.arguments ?? {},
+      extra.signal,
+    );
   });
 
   return server;

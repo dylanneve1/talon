@@ -83,10 +83,10 @@ import {
 // The SDK's PostToolBatch hook is the canonical loop-terminator — it returns
 // `{ continue: false }` after `end_turn`/`send`, and the SDK is supposed to
 // emit a `result` SDKMessage and close the async iterator immediately after.
-// In practice (observed 2026-05-19 14:52Z, chat 352042062, contextTokens=251464,
-// numApiCalls=50) the SDK can emit `result` and then ghost — the for-await loop
-// stays parked forever, holding the dispatcher context and the typing-indicator
-// pulse for hours until someone manually `/restart`s.
+// In practice (observed 2026-05-19 on a ~250k-token, 50-API-call turn) the
+// SDK can emit `result` and then ghost — the for-await loop stays parked
+// forever, holding the dispatcher context and the typing-indicator pulse for
+// hours until someone manually `/restart`s.
 //
 // Workaround: arm a short timer the moment `result` is processed. If the
 // iterator hasn't closed by the grace deadline, abort the controller and

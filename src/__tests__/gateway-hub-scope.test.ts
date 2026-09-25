@@ -30,7 +30,7 @@ import { initHub, shutdownHub, talonHubUrl } from "../core/mcp-hub/index.js";
 import { enterTurnScope } from "../core/mcp-hub/guest-scope.js";
 import { TEST_GATEWAY_TOKEN } from "./helpers/gateway-fetch.js";
 
-const ADMIN = 352042062;
+const ADMIN = 424242420;
 const GROUP = -1001000000001;
 
 let gateway: Gateway;

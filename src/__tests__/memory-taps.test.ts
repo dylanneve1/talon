@@ -85,9 +85,9 @@ import {
 import type { ContextManager } from "../core/types.js";
 
 /** A positive Telegram id — `chatScope` reads it as a DM. */
-const DM_CHAT = "352042062";
+const DM_CHAT = "424242420";
 /** A Telegram supergroup: negative id. */
-const GROUP_CHAT = "-1001426819337";
+const GROUP_CHAT = "-1009876543210";
 
 let seq = 0;
 /** A marker unique to one case, so its rows are findable by text. */

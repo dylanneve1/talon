@@ -15,8 +15,6 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -29,6 +27,7 @@ import {
   type MeshToolResult,
 } from "../tool-surface.js";
 import {
+  hashFile,
   normalizeGoarch,
   platformToGoos,
   type NodeBinaryResolver,
@@ -70,8 +69,8 @@ const FILE_CHUNK_BYTES = 1024 * 1024;
  * and never throws, and the command result it would have posted afterwards
  * is never posted. The dispatch timeout is the only thing that ends that
  * wait — and since turns serialize per chat, the whole chat's message loop
- * queues behind it. A flat hour therefore takes a chat offline for an hour
- * over one dropped TCP connection.
+ * queues behind it. A flat budget sized for the largest transfer would
+ * take a chat offline that long over one dropped TCP connection.
  *
  * So the budget is sized to the payload instead: a fixed grace for the
  * handshake and device-side setup, plus the body at a deliberately
@@ -83,9 +82,8 @@ const STREAM_TRANSFER_FLOOR_BYTES_PER_SEC = 32 * 1024;
 /**
  * Ceiling, so a payload large enough to out-scale the formula still can't
  * block a chat indefinitely. Deliberately well above what a big transfer
- * over a slow link needs — the common wedge is a SMALL transfer that used
- * to inherit the same budget as a huge one, and that case now resolves in
- * about a minute.
+ * over a slow link needs — the common wedge is a SMALL transfer, and its
+ * budget runs out in about a minute.
  */
 const STREAM_TRANSFER_MAX_MS = 30 * 60 * 1000;
 
@@ -744,20 +742,4 @@ export class DeviceFiles {
 function transferRate(bytes: number, startedAtMs: number): string {
   const seconds = Math.max((Date.now() - startedAtMs) / 1000, 0.001);
   return `${formatBytes(bytes / seconds)}/s over ${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`;
-}
-
-/** Stream a file through SHA-256 without loading it into memory (APKs are big
- *  and Buffer has a hard ceiling). Returns the hex digest and byte size. */
-async function hashFile(
-  path: string,
-): Promise<{ sha256: string; size: number }> {
-  const { size } = await stat(path);
-  const hash = createHash("sha256");
-  await new Promise<void>((resolve, reject) => {
-    createReadStream(path)
-      .on("data", (chunk) => hash.update(chunk))
-      .on("end", () => resolve())
-      .on("error", reject);
-  });
-  return { sha256: hash.digest("hex"), size };
 }

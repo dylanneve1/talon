@@ -236,7 +236,7 @@ describe("agy one-shot — running", () => {
             parameters: {
               ServerName: "extras",
               ToolName: "check_time",
-              Arguments: { timezone: "Europe/Dublin" },
+              Arguments: { timezone: "Europe/London" },
             },
             output: "18:41",
           },
@@ -247,7 +247,7 @@ describe("agy one-shot — running", () => {
     await runOneShotAgent(params());
     expect(logged).toContain("extras.check_time");
     expect(logged).not.toContain("call_mcp_tool");
-    expect(logged).toContain("Europe/Dublin");
+    expect(logged).toContain("Europe/London");
   });
 
   it("records a failed tool step as FAILED with its message", async () => {

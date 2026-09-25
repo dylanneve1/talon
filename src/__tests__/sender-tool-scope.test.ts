@@ -32,9 +32,9 @@ import { isAccessAllowed } from "../frontend/telegram/handlers/access.js";
 import { setAllowedGroups } from "../frontend/telegram/handlers/group-access.js";
 import { batchSenderKeys } from "../frontend/telegram/handlers/queue.js";
 
-const ADMIN = 352042062;
+const ADMIN = 424242420;
 const STRANGER = 777;
-const GROUP = "-1001426819337";
+const GROUP = "-1009876543210";
 
 beforeEach(() => {
   initGuestDmScope({ operatorChats: ["wa_dm_353000000001"] }, ADMIN, [

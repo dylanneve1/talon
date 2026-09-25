@@ -72,6 +72,7 @@ import {
   type SourceContext,
 } from "./sources/sessions.js";
 import {
+  DB_MEMBER,
   STATE_PART,
   indexSnapshot,
   linkOrCopy,
@@ -88,8 +89,6 @@ import type {
   SnapshotPart,
 } from "./types.js";
 
-/** Where the database copy lands inside the archive. */
-const DB_MEMBER = "db/talon.db";
 /** The part that holds WhatsApp auth and the userbot session. */
 const LOGINS_PART = "logins.tar.zst";
 /** How a clone reinstalls fetched plugins (see sources/plugins.ts). */
@@ -120,10 +119,18 @@ export type BuildOptions = {
 
 // ── Archive writing ─────────────────────────────────────────────────────────
 
+/**
+ * Open failures that mean "this file is gone or locked since the walk":
+ * traces and backend transcripts churn while a snapshot runs, and one of
+ * them disappearing must not cost the whole backup (see collectTree).
+ */
+const SKIPPABLE_OPEN_ERRORS = new Set(["ENOENT", "EACCES", "EPERM"]);
+
 async function addEntries(
   writer: TarWriter,
   entries: readonly SourceEntry[],
 ): Promise<void> {
+  const skipped: string[] = [];
   for (const entry of entries) {
     if (entry.type === "dir") {
       await writer.addDirectory(entry.archivePath, entry.mode, entry.mtime);
@@ -135,14 +142,26 @@ async function addEntries(
         entry.mtime,
       );
     } else {
-      await writer.addFile(
-        entry.archivePath,
-        entry.source,
-        entry.mode,
-        entry.mtime,
-        entry.size,
-      );
+      try {
+        await writer.addFile(
+          entry.archivePath,
+          entry.source,
+          entry.mode,
+          entry.mtime,
+          entry.size,
+        );
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code ?? "";
+        if (!SKIPPABLE_OPEN_ERRORS.has(code)) throw err;
+        skipped.push(`${entry.source} (${code})`);
+      }
     }
+  }
+  if (skipped.length > 0) {
+    logWarn(
+      "backup",
+      `Skipped ${skipped.length} file(s) that vanished or became unreadable mid-snapshot; first: ${skipped[0]}`,
+    );
   }
 }
 
@@ -171,6 +190,11 @@ async function writePart(
   const flushed = passphrase
     ? pipeline(compressor, await createEncryptor(passphrase), tap, out)
     : pipeline(compressor, tap, out);
+  // A sink failure (ENOSPC) rejects this while `fill` is still writing, and
+  // `fill` then throws the same error — so the await below is never
+  // reached. Observe it here, or it surfaces as an unhandled rejection
+  // that kills the CLI before the cleanup runs.
+  flushed.catch(() => {});
   try {
     const writer = new TarWriter(compressor);
     await fill(writer);
@@ -312,11 +336,20 @@ async function palaceFingerprint(
   const files: TreeFile[] = [];
   for (const entry of entries) {
     if (entry.type !== "file") continue;
+    let sha256: string;
+    try {
+      sha256 = await sha256File(entry.source);
+    } catch (err) {
+      // Gone since the walk: the part will skip it too (see addEntries).
+      const code = (err as NodeJS.ErrnoException).code ?? "";
+      if (SKIPPABLE_OPEN_ERRORS.has(code)) continue;
+      throw err;
+    }
     files.push({
       path: entry.archivePath,
       size: entry.size,
       mtime: entry.mtime,
-      sha256: await sha256File(entry.source),
+      sha256,
     });
   }
   return treeHash(files);

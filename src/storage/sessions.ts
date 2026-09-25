@@ -22,6 +22,7 @@ import { log, logError } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
 import { importLegacyJson } from "./legacy-import.js";
+import { dbErrorFields } from "./db.js";
 import * as repo from "./repositories/sessions-repo.js";
 
 export type {
@@ -204,7 +205,11 @@ function persist(chatId: string, session: SessionState): void {
   try {
     repo.upsert(chatId, session);
   } catch (err) {
-    logError("sessions", "Failed to persist sessions", err);
+    logError(
+      "sessions",
+      `Failed to persist sessions chat=${chatId}${dbErrorFields(err)}`,
+      err,
+    );
     recordError(
       `Session save failed: ${err instanceof Error ? err.message : err}`,
     );
@@ -518,7 +523,11 @@ function removeSessionRow(chatId: string): void {
   try {
     repo.remove(chatId);
   } catch (err) {
-    logError("sessions", "Failed to delete session row", err);
+    logError(
+      "sessions",
+      `Failed to delete session row chat=${chatId}${dbErrorFields(err)}`,
+      err,
+    );
     recordError(
       `Session delete failed: ${err instanceof Error ? err.message : err}`,
     );

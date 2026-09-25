@@ -22,9 +22,14 @@ import {
 } from "node:http";
 import { createServer as createTlsServer } from "node:https";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, type ReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { log, logError, logDebug } from "../../../util/log.js";
+import { log, logError, logDebug, logWarn } from "../../../util/log.js";
+import {
+  raiseAlert,
+  resolveAlert,
+} from "../../../core/frontend-runtime/alerts.js";
+import { errorText } from "../../health/outage.js";
 import {
   formatFingerprint,
   isLoopbackHost,
@@ -63,6 +68,14 @@ type StreamSession = {
 };
 
 const SSE_PING_MS = 25_000;
+/**
+ * Unsent bytes a stream may hold before it counts as dead. A client that
+ * stops reading without closing (phone asleep, network switch) otherwise
+ * buffers every broadcast in memory until TCP gives up on it, minutes later.
+ * Far past anything a live client falls behind by; evicted, it reconnects
+ * and gets a fresh `hello`.
+ */
+const SSE_MAX_BACKLOG_BYTES = 16 * 1024 * 1024;
 const MAX_BODY_BYTES = 256 * 1024;
 const PORT_FALLBACKS = 5;
 
@@ -93,6 +106,15 @@ export const DEFAULT_BRIDGE_TIMEOUTS: BridgeTimeouts = {
   keepAliveMs: 5_000,
   checkIntervalMs: 30_000,
 };
+
+/**
+ * `pipe` never closes its source when the destination goes away, so a
+ * client that hangs up mid-download (app backgrounded, image scrolled
+ * away) would leave the paused read stream holding its fd forever.
+ */
+function releaseOnClose(res: ServerResponse, stream: ReadStream): void {
+  res.once("close", () => stream.destroy());
+}
 
 export class BridgeServer {
   private server: Server | null = null;
@@ -225,14 +247,14 @@ export class BridgeServer {
    *
    * Device commands are not public: their params carry one-time transfer
    * tokens, exec command lines, remote paths, and — on the chunked fallback —
-   * whole base64 file bodies. Broadcasting them handed every connected client
-   * another device's secrets and relied on each client discarding what wasn't
-   * addressed to it, which is courtesy, not enforcement.
+   * whole base64 file bodies. Broadcasting them would hand every connected
+   * client another device's secrets and rely on each client discarding what
+   * isn't addressed to it, which is courtesy, not enforcement.
    *
    * A claim is an ADDRESS, not a credential: any client holding the bridge
    * token could claim any id, and the bridge token is (still) the only trust
-   * boundary here. What this buys is that a device no longer passively
-   * receives traffic meant for its peers.
+   * boundary here. What this buys is that a device does not passively
+   * receive traffic meant for its peers.
    *
    * Clients that claimed nothing are the fallback audience, and only when the
    * target claimed nothing either: a companion build that predates the claim
@@ -265,12 +287,24 @@ export class BridgeServer {
 
   private write(targets: Iterable<ServerResponse>, event: BridgeEvent): void {
     const payload = `data: ${JSON.stringify(event)}\n\n`;
-    for (const res of targets) {
-      try {
-        res.write(payload);
-      } catch {
-        // Write on a half-closed socket — the 'close' handler will evict it.
-      }
+    for (const res of targets) this.send(res, payload);
+  }
+
+  /** Write one frame to a stream, evicting it if its backlog never drains. */
+  private send(res: ServerResponse, frame: string): void {
+    if (res.writableLength > SSE_MAX_BACKLOG_BYTES) {
+      this.clients.delete(res);
+      logWarn(
+        "native",
+        `Dropped an SSE client that stopped reading (${res.writableLength} bytes unsent)`,
+      );
+      res.destroy();
+      return;
+    }
+    try {
+      res.write(frame);
+    } catch {
+      // Write on a half-closed socket — the 'close' handler will evict it.
     }
   }
 
@@ -281,7 +315,7 @@ export class BridgeServer {
       loopback: isLoopbackHost(this.opts.host),
       allowWeakToken: this.opts.allowWeakToken,
     });
-    this.tlsIdentity = this.opts.tls ? await this.opts.tls() : null;
+    this.tlsIdentity = this.opts.tls ? await this.loadTls(this.opts.tls) : null;
     const onRequest = (req: IncomingMessage, res: ServerResponse): void => {
       this.handle(req, res).catch((err) => {
         logError("native", "Bridge request handler threw", err);
@@ -312,29 +346,70 @@ export class BridgeServer {
       : createServer(serverOpts, onRequest);
 
     this.pingTimer = setInterval(() => {
-      for (const res of this.clients.keys()) {
-        try {
-          res.write(": ping\n\n");
-        } catch {
-          /* evicted on close */
-        }
-      }
+      for (const res of this.clients.keys()) this.send(res, ": ping\n\n");
     }, SSE_PING_MS);
     this.pingTimer.unref?.();
     this.unsubscribeRevocations = this.opts.credentials?.authority.onRevoked(
       (ids) => this.dropCredentialSessions(ids),
     );
 
+    return this.bind(server);
+  }
+
+  /**
+   * The TLS identity, or a thrown boot failure the operator hears about:
+   * without it no companion app can connect.
+   */
+  private async loadTls(
+    load: () => Promise<BridgeTlsIdentity>,
+  ): Promise<BridgeTlsIdentity> {
+    try {
+      const identity = await load();
+      resolveAlert(
+        "bridge.tls",
+        "The client bridge TLS certificate loads again.",
+      );
+      return identity;
+    } catch (err) {
+      logError("native", `bridge.tls.fail err=${errorText(err)}`, err);
+      raiseAlert(
+        "bridge.tls",
+        `The client bridge could not load its TLS certificate: ${errorText(err)}. Companion apps cannot connect.`,
+        { severity: "critical" },
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Listen on the configured port, stepping up to PORT_FALLBACKS ports past
+   * it when one is taken. A bind that fails for good raises `bridge.listen`
+   * — the frontend has no surface at all without it.
+   */
+  private bind(server: Server): Promise<number> {
     return new Promise<number>((resolve, reject) => {
       let attempt = 0;
       const tryPort = (p: number): void => {
         server.once("error", (err: NodeJS.ErrnoException) => {
           if (err.code === "EADDRINUSE" && attempt < PORT_FALLBACKS) {
             attempt++;
+            logWarn(
+              "native",
+              `bridge.listen port=${p} in use — trying port=${p + 1} attempt=${attempt}/${PORT_FALLBACKS}`,
+            );
             server.removeAllListeners("error");
             server.removeAllListeners("listening");
             tryPort(p + 1);
           } else {
+            logError(
+              "native",
+              `bridge.listen.fail host=${this.opts.host} port=${p} attempt=${attempt} err=${errorText(err)}`,
+            );
+            raiseAlert(
+              "bridge.listen",
+              `The client bridge could not listen on ${this.opts.host}:${p}: ${errorText(err)}. Companion apps cannot connect.`,
+              { severity: "critical" },
+            );
             reject(err);
           }
         });
@@ -362,6 +437,10 @@ export class BridgeServer {
               `Bridge certificate fingerprint ${formatFingerprint(this.tlsIdentity.fingerprint)}`,
             );
           }
+          resolveAlert(
+            "bridge.listen",
+            "The client bridge is listening again.",
+          );
           resolve(this.port);
         });
       };
@@ -507,6 +586,7 @@ export class BridgeServer {
     });
     const stream = createReadStream(file.path);
     stream.on("error", () => res.destroy());
+    releaseOnClose(res, stream);
     stream.pipe(res);
   }
 
@@ -532,6 +612,7 @@ export class BridgeServer {
         if (!res.headersSent) res.writeHead(500);
         res.end();
       });
+      releaseOnClose(res, stream);
       stream.pipe(res);
     } catch {
       return this.json(res, 404, { ok: false, error: "No such media" });
@@ -599,6 +680,10 @@ export class BridgeServer {
     const ms = Math.round(max * (0.9 + Math.random() * 0.2));
     const timer = setTimeout(() => {
       logDebug("native", "bridge.sse event=max_lifetime reason=expired");
+      // Out of the fan-out before end(): a stream still flushing a backlog
+      // stays open until it drains, and a broadcast in that window is a
+      // write after end — an unhandled 'error' that takes the daemon down.
+      this.clients.delete(res);
       res.end();
     }, ms);
     timer.unref?.();

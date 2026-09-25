@@ -203,7 +203,7 @@ The WhatsApp frontend drives a real WhatsApp account over Baileys multi-device �
     // The bot account's own number, E.164 digits, no "+". Omit for QR pairing.
     "pairingNumber": "353871234567",
     // Who may DM it — bare numbers or full JIDs. Empty disables DMs.
-    "allowedJids": ["353834733284"],
+    "allowedJids": ["447700900102"],
     // Which groups it serves: "listed" | "with-allowed-user" | "all"
     "groupPolicy": "with-allowed-user",
     // In groups: reply only when mentioned/quoted, or to everything
@@ -487,6 +487,7 @@ Config file: `~/.talon/config.json`
 | `heartbeatIntervalMinutes` | `60`         | Heartbeat interval                                                                                                      |
 | `heartbeatModel`           | ---          | Model for the heartbeat agent (falls back to `model`)                                                                   |
 | `heartbeatEffort`          | ---          | Reasoning effort for the heartbeat agent: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Unset = the model's own default |
+| `alerts`                   | on           | Operator alerts to the admin chat — full disk, crash, error spike, dead frontend — once per fault per cooldown, plus a recovery notice: `{ "enabled": true, "cooldownMinutes": 30 }`. Active alerts also show in `talon status` |
 | `router`                   | ---          | Plan-aware routing for background work: `{ "enabled": true, "ceilingPercent": 85 }`. Unpinned sub-agents, cron `query` jobs and heartbeats run on whichever backend has the most plan headroom, skipping any whose tightest window is at or above the ceiling. `enabled: false` restores inherit-the-caller's-backend ([Backends](docs/backends.md)) |
 | `backendBudgets`           | ---          | Soft token budgets for backends with no usage API, e.g. `{ "openai-agents": { "tokensPer5h": 2000000, "tokensPerDay": 8000000 } }`. Talon's own rolling ledger is measured against these so such a backend still has a headroom signal — and it is what opts an idle backend into routing. `agy` reports its real quota windows (via `agy -p /usage`); a budget there is only a fallback for when that read fails |
 | `dreamModel`               | ---          | Model for dream / memory consolidation (falls back to `model`)                                                          |

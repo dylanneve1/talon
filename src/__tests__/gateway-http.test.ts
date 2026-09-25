@@ -477,14 +477,14 @@ describe("gateway HTTP server", () => {
       // gateway's falsy guard or by sign-handling.
       const { body } = await post({
         action: "send_message",
-        _chatId: "-1001426819337",
-        chat_id: -1001426819337,
+        _chatId: "-1009876543210",
+        chat_id: -1009876543210,
         text: "hello supergroup",
       });
       expect(body.ok).toBe(true);
       expect(mockFrontendHandler).toHaveBeenCalledWith(
-        expect.objectContaining({ chat_id: -1001426819337 }),
-        -1001426819337,
+        expect.objectContaining({ chat_id: -1009876543210 }),
+        -1009876543210,
       );
     });
 
@@ -728,5 +728,26 @@ describe("gateway port retry — EADDRINUSE", () => {
       await gw.stop();
       await new Promise<void>((resolve) => blocker.close(() => resolve()));
     }
+  });
+});
+
+describe("gateway health endpoint — active alerts", () => {
+  it("lists the raised alerts for an authenticated caller", async () => {
+    const { raiseAlert, resetAlertsForTest } =
+      await import("../core/frontend-runtime/alerts.js");
+    resetAlertsForTest(async () => {});
+    raiseAlert("disk.low", "Disk almost full: 800 MiB free", {
+      severity: "critical",
+    });
+    const resp = await gatewayFetch(`http://127.0.0.1:${port}/health`);
+    const data = (await resp.json()) as Record<string, unknown>;
+    expect(data.alerts).toEqual([
+      expect.objectContaining({
+        key: "disk.low",
+        severity: "critical",
+        message: "Disk almost full: 800 MiB free",
+      }),
+    ]);
+    resetAlertsForTest();
   });
 });

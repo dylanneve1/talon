@@ -55,6 +55,8 @@ type Transfer = {
     resolve: (bytes: number) => void;
     reject: (err: Error) => void;
   };
+  /** pull only — tears down the upload once its HTTP leg is streaming. */
+  abort?: AbortController;
 };
 
 export class TransferStore {
@@ -104,12 +106,19 @@ export class TransferStore {
     return { token };
   }
 
-  /** Drop a token (transfer arrangement failed before the HTTP leg). */
+  /**
+   * Drop a token — the arrangement failed, or the daemon gave up waiting.
+   * An upload already streaming is aborted too: otherwise a peer that
+   * stalls mid-body holds the request (and its temp file) open until the
+   * bridge's whole-request deadline, and one that finishes late renames a
+   * file into place after the caller was told the pull failed.
+   */
   cancel(token: string): void {
     const t = this.transfers.get(token);
     if (t?.uploadDone && !t.consumed) {
       t.uploadDone.reject(new Error("transfer cancelled"));
     }
+    t?.abort?.abort(new Error("transfer cancelled"));
     this.transfers.delete(token);
   }
 
@@ -129,11 +138,16 @@ export class TransferStore {
     if (!t)
       return { ok: false, error: "Unknown or already-used transfer token." };
     const tmp = `${t.localPath}.part-${randomBytes(4).toString("hex")}`;
+    const abort = new AbortController();
+    t.abort = abort;
     try {
       await mkdir(dirname(t.localPath), { recursive: true });
       let bytes = 0;
       body.on("data", (d: Buffer) => (bytes += d.length));
-      await pipeline(body, createWriteStream(tmp, { mode: 0o600 }));
+      await pipeline(body, createWriteStream(tmp, { mode: 0o600 }), {
+        signal: abort.signal,
+      });
+      abort.signal.throwIfAborted();
       await rename(tmp, t.localPath);
       this.transfers.delete(token);
       t.uploadDone?.resolve(bytes);
@@ -162,7 +176,6 @@ export class TransferStore {
       if (!s.isFile()) throw new Error("not a file");
       return { path: t.localPath, size: s.size };
     } catch {
-      this.transfers.delete(token);
       return null;
     } finally {
       // Single-use either way; the device retries by re-arranging.

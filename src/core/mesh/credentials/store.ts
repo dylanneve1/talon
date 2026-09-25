@@ -24,6 +24,8 @@ import { dirs } from "../../../util/paths.js";
 import { log, logWarn } from "../../../util/log.js";
 import { TalonError } from "../../errors.js";
 import { readArray, writePrivateJson } from "../persist.js";
+import { faultText } from "../../engine/fault-text.js";
+import { raiseAlert, resolveAlert } from "../../frontend-runtime/alerts.js";
 import {
   credentialIdOf,
   digestsEqual,
@@ -64,6 +66,8 @@ export type MintInput = {
 
 export type BindResult =
   { ok: true; credential: DeviceCredential } | { ok: false; error: string };
+
+const PERSIST_ALERT = "mesh.credentials.persist";
 
 export class DeviceCredentialStore {
   private records = new Map<string, DeviceCredentialRecord>();
@@ -418,7 +422,18 @@ export class DeviceCredentialStore {
 
   private async persist(): Promise<void> {
     this.lastPersist = this.now();
-    await writePrivateJson(this.file, [...this.records.values()]);
+    try {
+      await writePrivateJson(this.file, [...this.records.values()]);
+    } catch (err) {
+      // A credential that never reached disk is gone after a restart —
+      // the device holding it is locked out. Disk faults need a human.
+      raiseAlert(
+        PERSIST_ALERT,
+        `Could not save mesh device credentials: ${faultText(err)}. Newly paired or rotated devices will lose access after a restart until this is fixed.`,
+      );
+      throw err;
+    }
+    resolveAlert(PERSIST_ALERT, "Mesh device credentials are saving again.");
   }
 }
 

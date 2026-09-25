@@ -63,13 +63,19 @@ import {
   rewriteConfigForClone,
   type CloneTarget,
 } from "./sources/relocate.js";
-import { isSnapshotId, partPath, readManifest, snapshotDir } from "./store.js";
+import { pathExists } from "./sources/sessions.js";
+import {
+  DB_MEMBER,
+  isSnapshotId,
+  partPath,
+  readManifest,
+  snapshotDir,
+} from "./store.js";
 import type { BackupTarget } from "./targets.js";
 import type { BackupSettings, Manifest, SnapshotPart } from "./types.js";
 
 /** A staged request older than this is stale and ignored. */
 export const RESTORE_PENDING_MAX_AGE_MS = 10 * 60_000;
-const DB_MEMBER = "db/talon.db";
 
 export type RestorePending = {
   id: string;
@@ -165,15 +171,6 @@ export async function readRestorePending(
 
 // ── Parts ───────────────────────────────────────────────────────────────────
 
-async function isLocal(path: string): Promise<boolean> {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** The parts of this snapshot that are not on local disk. */
 async function missingParts(
   manifest: Manifest,
@@ -181,7 +178,7 @@ async function missingParts(
 ): Promise<SnapshotPart[]> {
   const missing: SnapshotPart[] = [];
   for (const part of manifest.parts) {
-    if (!(await isLocal(partPath(manifest.id, part.name, home)))) {
+    if (!(await pathExists(partPath(manifest.id, part.name, home)))) {
       missing.push(part);
     }
   }
@@ -218,7 +215,18 @@ async function ensureParts(
     const path = partPath(manifest.id, part.name, home);
     log("backup", `Downloading ${part.name} from ${target.id}…`);
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-    await target.download(manifest.id, part.name, path);
+    // Into a side file, renamed only once complete: a download cut short
+    // under the part's own name would count as present next time, and
+    // every later restore would fail its checksum instead of refetching.
+    const partial = `${path}.partial`;
+    await rm(partial, { force: true });
+    try {
+      await target.download(manifest.id, part.name, partial);
+      await rename(partial, path);
+    } catch (err) {
+      await rm(partial, { force: true });
+      throw err;
+    }
   }
   return manifest.parts.filter((part) => !skipped.has(part.name));
 }

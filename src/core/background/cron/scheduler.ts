@@ -34,6 +34,8 @@ import {
 } from "../../../storage/cron.js";
 import { appendDailyLog } from "../../../storage/daily-log.js";
 import { log, logError, logWarn } from "../../../util/log.js";
+import { raiseAlert, resolveAlert } from "../../frontend-runtime/alerts.js";
+import { faultText } from "../../engine/fault-text.js";
 import { numericChatIdFor } from "../../frontend-runtime/chat-id.js";
 import {
   chooseBackend,
@@ -156,8 +158,12 @@ async function runCronTick(): Promise<void> {
   pruneJobHealth(new Set(jobs.map((j) => j.id)));
 
   let loadShed = false;
-  for (const job of jobs) {
-    if (!job.enabled) continue;
+  for (const listed of jobs) {
+    // Re-read: each run is awaited, so a slow job lets the next tick start
+    // and run later jobs before this loop reaches them. The listing's copy
+    // would carry the pre-run lastRunAt and fire such a job a second time.
+    const job = getCronJob(listed.id);
+    if (!job?.enabled) continue;
     // Expiry takes priority over dueness: a job past its end time is disabled
     // and skipped even if this minute would otherwise match.
     if (expireIfPast(job, nowMs)) continue;
@@ -201,6 +207,10 @@ async function runScheduled(job: CronJob): Promise<void> {
       durationMs: Date.now() - startedAt,
     };
     recordJobSuccess(job.id, Date.now(), JOB_HEALTH);
+    resolveAlert(
+      `cron.job.${job.id}`,
+      `Cron job "${job.name}" is running again.`,
+    );
     recordCronRun(job.id, outcome);
     appendDailyLog(
       "Cron",
@@ -223,12 +233,23 @@ async function runScheduled(job: CronJob): Promise<void> {
       lastError: err instanceof Error ? err.message : String(err),
       lastDurationMs: Date.now() - startedAt,
     });
-    logError("cron", `Job "${job.name}" [${job.id}] failed`, err);
+    logError(
+      "cron",
+      `Job "${job.name}" [${job.id}] failed chat=${job.chatId} type=${job.type} ms=${Date.now() - startedAt}`,
+      err,
+    );
     const cooldown = recordJobFailure(job.id, Date.now(), JOB_HEALTH);
     if (cooldown !== null) {
+      const mins = Math.round(cooldown / 60_000);
       logWarn(
         "cron",
-        `Breaker opened for "${job.name}" [${job.id}] — cooling down ~${Math.round(cooldown / 60_000)}min`,
+        `Breaker opened for "${job.name}" [${job.id}] — cooling down ~${mins}min`,
+      );
+      // The breaker opens at JOB_HEALTH.threshold consecutive failures —
+      // the job is now paused, which the operator should hear about.
+      raiseAlert(
+        `cron.job.${job.id}`,
+        `Cron job "${job.name}" failed ${JOB_HEALTH.threshold} runs in a row: ${faultText(err)}. Paused for ~${mins} min.`,
       );
     }
   } finally {
@@ -461,7 +482,6 @@ function isCronDue(job: CronJob, now: Date, windowStartMs: number): boolean {
 export const _cronInternals = {
   isDue,
   isCronDue,
-  MAX_TICK_LOOKBACK_MS,
 };
 
 /**

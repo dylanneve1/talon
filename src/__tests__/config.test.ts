@@ -198,6 +198,21 @@ describe("config", () => {
       expect(config.dreamEffort).toBeUndefined();
     });
 
+    it("fills alerts defaults", async () => {
+      mockFs({ botToken: "test-token", adminUserId: 1, alerts: {} });
+      const { loadConfig } = await import("../core/config/index.js");
+      expect(loadConfig().alerts).toEqual({
+        enabled: true,
+        cooldownMinutes: 30,
+      });
+    });
+
+    it("rejects unknown alerts keys", async () => {
+      mockFs({ botToken: "test-token", adminUserId: 1, alerts: { mute: 1 } });
+      const { loadConfig } = await import("../core/config/index.js");
+      expect(() => loadConfig()).toThrow(/alerts/);
+    });
+
     it("rejects an unknown effort level", async () => {
       mockFs({
         botToken: "test-token",
@@ -230,11 +245,11 @@ describe("config", () => {
     });
 
     it("reads adminUserId from config", async () => {
-      mockFs({ botToken: "test-token", adminUserId: 352042062 });
+      mockFs({ botToken: "test-token", adminUserId: 424242420 });
 
       const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
-      expect(config.adminUserId).toBe(352042062);
+      expect(config.adminUserId).toBe(424242420);
     });
 
     it("reads apiId and apiHash from config", async () => {

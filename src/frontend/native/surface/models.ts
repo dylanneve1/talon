@@ -35,9 +35,9 @@ export async function listModels(
 ): Promise<{ active: string; models: ModelOption[] }> {
   const { config } = runtime;
   // Resolve the chat's *own* backend so the model list tracks whatever
-  // backend the chat is currently bound to (fixes the list staying on the
-  // previous backend's models after a switch). Fall back to the global
-  // default backend when there's no chat / the pool isn't ready yet.
+  // backend the chat is currently bound to, not the one before a switch.
+  // Fall back to the global default backend when there's no chat / the
+  // pool isn't ready yet.
   let backendId: string = config.backend;
   let active = config.model;
   if (chatId) {

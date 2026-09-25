@@ -15,6 +15,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { logWarn } from "../../util/log.js";
 
 export type AuthProvider = "claude" | "codex";
 
@@ -64,6 +65,19 @@ export function clearProviderExpired(provider: AuthProvider): void {
   reportedExpired.delete(provider);
 }
 
+/**
+ * A credentials file that exists but isn't JSON reads as "not signed
+ * in" — indistinguishable from a missing login unless logged. Nothing
+ * from the file goes into the line: JSON.parse's message quotes the
+ * input, and the input is a token.
+ */
+function warnUnparseable(provider: AuthProvider): void {
+  logWarn(
+    "notify",
+    `${provider} credentials file is not valid JSON — reporting not signed in`,
+  );
+}
+
 export function parseClaudeCredentials(raw: string): ProviderAuthStatus {
   const base: ProviderAuthStatus = {
     provider: "claude",
@@ -81,6 +95,7 @@ export function parseClaudeCredentials(raw: string): ProviderAuthStatus {
   try {
     parsed = JSON.parse(raw);
   } catch {
+    warnUnparseable("claude");
     return base;
   }
   const oauth = parsed.claudeAiOauth;
@@ -115,6 +130,7 @@ export function parseCodexAuth(raw: string): ProviderAuthStatus {
   try {
     parsed = JSON.parse(raw);
   } catch {
+    warnUnparseable("codex");
     return base;
   }
   const apiKey =
@@ -136,11 +152,23 @@ export function parseCodexAuth(raw: string): ProviderAuthStatus {
   };
 }
 
-async function readOrEmpty(path: string): Promise<string | undefined> {
+async function readOrEmpty(
+  provider: AuthProvider,
+  path: string,
+): Promise<string | undefined> {
   try {
     await stat(path);
     return await readFile(path, "utf8");
-  } catch {
+  } catch (err) {
+    // Missing is the normal signed-out case; anything else (EACCES,
+    // EISDIR) is a fault that would otherwise read as signed out too.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") {
+      logWarn(
+        "notify",
+        `${provider} credentials unreadable code=${code ?? "?"} — reporting not signed in`,
+      );
+    }
     return undefined;
   }
 }
@@ -151,7 +179,7 @@ export async function readProviderStatus(
 ): Promise<ProviderAuthStatus> {
   const path =
     provider === "claude" ? claudeCredentialsPath(env) : codexAuthPath(env);
-  const raw = await readOrEmpty(path);
+  const raw = await readOrEmpty(provider, path);
   const status =
     raw === undefined
       ? { provider, loggedIn: false, expired: true }

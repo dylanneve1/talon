@@ -371,8 +371,8 @@ describe("agy handler — tools and the terminator", () => {
   it("reports MCP tools under their unwrapped names", async () => {
     turnScript = [
       [
-        mcpTool("check_time", { timezone: "Europe/Dublin" }, "ACTIVE"),
-        mcpTool("check_time", { timezone: "Europe/Dublin" }, "DONE"),
+        mcpTool("check_time", { timezone: "Europe/London" }, "ACTIVE"),
+        mcpTool("check_time", { timezone: "Europe/London" }, "DONE"),
         text("18:41", "DONE", 3),
         result(),
       ],

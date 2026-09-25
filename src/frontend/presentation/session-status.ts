@@ -1,12 +1,8 @@
 /**
  * Shared /reset and /status logic for chat frontends.
  *
- * Telegram and Discord previously each carried a full copy of the session
- * reset sequence and the /status data-gathering pipeline, and the copies had
- * drifted (Discord's /status no longer re-fetched the context window for the
- * model that actually served the session). All the frontend-agnostic work
- * lives here now; frontends only render `SessionStatusData` in their native
- * markup.
+ * All the frontend-agnostic work lives here so per-frontend copies can't
+ * drift; frontends only render `SessionStatusData` in their native markup.
  */
 
 import type { TalonConfig } from "../../core/config/index.js";

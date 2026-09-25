@@ -42,6 +42,12 @@ import {
   handleUncaughtException,
   handleUnhandledRejection,
 } from "./core/daemon/crash.js";
+import { writeCrashMarker } from "./core/daemon/crash-marker.js";
+import {
+  announceLastCrash,
+  startHealthAlerts,
+  stopHealthAlerts,
+} from "./core/daemon/health-alerts.js";
 import { log, logError, logWarn } from "./util/log.js";
 import { bootPhase, bootReport } from "./core/daemon/boot-timer.js";
 import {
@@ -352,6 +358,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   await shutdownStep("sub-agents", shutdownAgents);
   await shutdownStep("watchdog", stopWatchdog);
   await shutdownStep("resource sampler", stopResourceSampler);
+  await shutdownStep("health alerts", stopHealthAlerts);
   await shutdownStep("upload cleanup", stopUploadCleanup);
   await shutdownStep("mcp hub", async () => {
     const { shutdownHub } = await import("./core/mcp-hub/index.js");
@@ -452,6 +459,11 @@ async function main(): Promise<void> {
       await import("./core/frontend-runtime/admin-notify.js");
     await notifyAdmin(restoreReport);
   }
+  // Same reasoning for a crash: the process that died couldn't say so,
+  // so the marker it left is announced now. The probes start here too —
+  // an alert raised before a frontend can carry it is wasted.
+  announceLastCrash();
+  startHealthAlerts();
 
   const bootMs = Math.round(process.uptime() * 1000);
   recordBootMetrics(bootMs);
@@ -465,6 +477,7 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   crashCleanup(crashHooks);
+  crashStep("crash marker", () => writeCrashMarker("startup", err));
   crashStep("startup report", () =>
     logError("bot", "Fatal startup error", err),
   );

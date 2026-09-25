@@ -9,7 +9,7 @@
  * the same vocabulary; see docs/backups.md.
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -262,6 +262,52 @@ describe("pruneRemote", () => {
       ([, body]) => body.action === "backup.target.delete",
     );
     expect(deletes).toHaveLength(0);
+  });
+});
+
+describe("a target that never answers", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("is dropped from discovery after the deadline", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const found = discoverTargets({
+      plugins: () => ["hung"],
+      dispatch: () => new Promise<never>(() => {}),
+    });
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(await found).toEqual([]);
+  });
+
+  it("fails the upload after the deadline instead of holding the run", async () => {
+    const home = mkdtempSync(join(tmpdir(), "talon-upload-hung-"));
+    const manifest = manifestFor(home, "20260101T000004Z-dddddd");
+    let uploading!: () => void;
+    const reached = new Promise<void>((resolve) => (uploading = resolve));
+    const dispatch = vi.fn(
+      async (_plugin: string, body: Record<string, unknown>) => {
+        if (body.action === "backup.target.describe") {
+          return {
+            ok: true,
+            data: { id: "drive", name: "Drive", ready: true },
+          };
+        }
+        uploading();
+        return new Promise<never>(() => {});
+      },
+    );
+    const targets = await discoverTargets({ plugins: () => ["p"], dispatch });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const result = uploadSnapshot(manifest, targets, home);
+    await reached;
+    // Base allowance plus the part's 10 bytes at the floor rate.
+    await vi.advanceTimersByTimeAsync(30 * 60_000 + 1);
+    const done = await result;
+    expect(done.remote.drive.status).toBe("failed");
+    expect(done.remote.drive.error).toMatch(
+      /drive: upload failed — no answer within 30 min/,
+    );
   });
 });
 

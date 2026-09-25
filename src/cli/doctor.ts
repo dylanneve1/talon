@@ -6,6 +6,7 @@
 import pc from "picocolors";
 import { existsSync } from "node:fs";
 import { findRunningInstance } from "../core/daemon/discovery.js";
+import { formatAlertLines } from "./status.js";
 import { printBanner, loadConfig } from "./config.js";
 import { CONFIG_FILE } from "./context.js";
 
@@ -56,6 +57,8 @@ export async function runDoctor(): Promise<void> {
   const instance = await findRunningInstance();
   if (instance) {
     console.log(`  ${pc.green("✓")} Bot is running (PID ${instance.pid})`);
+    for (const line of formatAlertLines(instance.health ?? {}))
+      console.log(line);
   } else {
     console.log(`  ${pc.dim("-")} Bot is not running`);
   }

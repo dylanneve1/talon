@@ -302,7 +302,7 @@ export function isChatGptModelMismatchError(message: string): boolean {
 
 /**
  * Detect the *silent* OAuth-incompat exit shape — the one that hit
- * Pandario on 2026-05-20 at 23:13Z.
+ * a group chat on 2026-05-20 at 23:13Z.
  *
  * On a free ChatGPT-OAuth credential the Codex CLI silently rejects
  * most model strings (only `gpt-5.5` is verified working). Crucially,

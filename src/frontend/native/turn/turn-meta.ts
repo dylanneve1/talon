@@ -2,11 +2,8 @@
  * Turn-meta sidecar — thin native-frontend façade over the shared
  * storage/turn-meta store. It owns the TurnMeta *shape* (tool calls,
  * duration, token usage — the companion app's tool timeline and stats
- * footer); the storage layer treats each record as opaque JSON.
- *
- * The data used to live in a debounced JSON file under the data dir;
- * it now rides the `turn_meta` SQLite table shared by every frontend.
- * SQLite commits on every write, so the old flush timer is gone.
+ * footer); the storage layer treats each record as opaque JSON in the
+ * `turn_meta` SQLite table shared by every frontend.
  */
 
 import {

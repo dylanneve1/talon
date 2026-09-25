@@ -16,6 +16,8 @@ import type {
 import { isMcpPlugin } from "./types.js";
 import { registry, _deps } from "./registry.js";
 import { GATEWAY_TOKEN_ENV } from "../engine/gateway-auth.js";
+import { faultText } from "../engine/fault-text.js";
+import { raiseAlert, resolveAlert } from "../frontend-runtime/alerts.js";
 
 /**
  * Candidate entry point paths, checked in order. Exported for
@@ -48,7 +50,6 @@ export async function loadPlugins(
       );
       continue;
     }
-    // Standalone MCP servers are registered for getPluginMcpServers, not loaded as modules
     if (isMcpPlugin(entry)) {
       if (registry.registerMcpEntry(entry)) {
         log("plugin", `Registered standalone MCP server: ${entry.name}`);
@@ -108,6 +109,7 @@ export async function initPluginWithTimeout(
 
   let timer: ReturnType<typeof setTimeout> | undefined;
 
+  const alertKey = `plugin.${plugin.name}`;
   try {
     await Promise.race([
       Promise.resolve(plugin.init(config)),
@@ -120,10 +122,17 @@ export async function initPluginWithTimeout(
         timer.unref?.();
       }),
     ]);
+    resolveAlert(alertKey, `Plugin "${plugin.name}" initialised normally.`);
   } catch (err) {
     logError(
       "plugin",
       `${errorPrefix}: ${err instanceof Error ? err.message : err}`,
+    );
+    // Init runs once per boot or reload: a plugin that failed it stays
+    // half-loaded until someone fixes it, so this needs no threshold.
+    raiseAlert(
+      alertKey,
+      `Plugin "${plugin.name}" failed to initialise: ${faultText(err)}. Its tools may not work until the next reload or restart.`,
     );
   } finally {
     if (timer) clearTimeout(timer);
@@ -136,7 +145,6 @@ async function loadSinglePlugin(
 ): Promise<void> {
   const pluginDir = resolve(entry.path);
 
-  // Resolve entry point
   const entryPoint = resolveEntryPoint(pluginDir);
   if (!entryPoint) {
     logError(
@@ -146,7 +154,6 @@ async function loadSinglePlugin(
     return;
   }
 
-  // Import and extract plugin module
   const mod = await _deps.importModule(entryPoint);
   const plugin = extractPlugin(mod);
   if (!plugin) {
@@ -157,7 +164,6 @@ async function loadSinglePlugin(
     return;
   }
 
-  // Check frontend whitelist — skip if plugin specifies frontends and none match
   if (plugin.frontends && plugin.frontends.length > 0 && activeFrontends) {
     const match = activeFrontends.some((fe) => plugin.frontends!.includes(fe));
     if (!match) {
@@ -173,7 +179,6 @@ async function loadSinglePlugin(
   const loaded = registerPluginInstance(plugin, config, pluginDir);
   if (!loaded) return;
 
-  // Run init hook
   await initPluginWithTimeout(
     loaded.plugin,
     loaded.config,
@@ -182,11 +187,14 @@ async function loadSinglePlugin(
     `Plugin "${loaded.plugin.name}" init failed`,
   );
 
-  const version = loaded.plugin.version ? ` v${loaded.plugin.version}` : "";
-  const desc = loaded.plugin.description
-    ? ` — ${loaded.plugin.description}`
-    : "";
-  log("plugin", `Loaded: ${loaded.plugin.name}${version}${desc}`);
+  log("plugin", `Loaded: ${describePlugin(loaded.plugin)}`);
+}
+
+/** `name v1.0 — description`, for load/register log lines. */
+function describePlugin(plugin: TalonPlugin): string {
+  const version = plugin.version ? ` v${plugin.version}` : "";
+  const desc = plugin.description ? ` — ${plugin.description}` : "";
+  return `${plugin.name}${version}${desc}`;
 }
 
 function resolveEntryPoint(pluginDir: string): string | null {
@@ -198,13 +206,11 @@ function resolveEntryPoint(pluginDir: string): string | null {
 }
 
 function extractPlugin(mod: Record<string, unknown>): TalonPlugin | null {
-  // Support: export default { ... } or module.exports = { ... }
+  // `export default { … }` or `module.exports = { … }`
   const candidate = mod.default ?? mod;
   if (!candidate || typeof candidate !== "object") return null;
   const plugin = candidate as Record<string, unknown>;
-  // Validate required field types
   if (typeof plugin.name !== "string" || !plugin.name) return null;
-  // Validate optional fields are the right types if present
   if (
     plugin.handleAction !== undefined &&
     typeof plugin.handleAction !== "function"
@@ -241,33 +247,27 @@ function extractPlugin(mod: Record<string, unknown>): TalonPlugin | null {
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
-/** Get all loaded plugins. */
 export function getLoadedPlugins(): readonly LoadedPlugin[] {
   return registry.all;
 }
 
-/** Get a plugin by name. */
 export function getPlugin(name: string): LoadedPlugin | undefined {
   return registry.getByName(name);
 }
 
-/** Number of loaded plugins. */
 export function getPluginCount(): number {
   return registry.count;
 }
 
-/** Destroy all plugins (called during shutdown). */
+/** Shutdown path. */
 export async function destroyPlugins(): Promise<void> {
   await registry.destroyAll();
 }
 
 /**
- * Register a built-in plugin directly (bypasses filesystem loader).
- * Used for tightly-integrated plugins like mempalace that are configured via
- * dedicated config fields rather than the plugins[] array.
- *
- * NOTE: This only registers the plugin — it does NOT call `init()`. The caller
- * is responsible for calling `plugin.init()` separately after registration.
+ * Register a built-in plugin (configured by its own config section, not a
+ * `plugins[]` entry) without the filesystem loader. Does NOT call `init()`;
+ * the caller does.
  */
 export function registerPlugin(
   plugin: TalonPlugin,
@@ -275,19 +275,11 @@ export function registerPlugin(
 ): LoadedPlugin | null {
   const loaded = registerPluginInstance(plugin, config, "(built-in)");
   if (!loaded) return null;
-
-  const version = loaded.plugin.version ? ` v${loaded.plugin.version}` : "";
-  const desc = loaded.plugin.description
-    ? ` — ${loaded.plugin.description}`
-    : "";
-  log("plugin", `Registered built-in: ${loaded.plugin.name}${version}${desc}`);
+  log("plugin", `Registered built-in: ${describePlugin(loaded.plugin)}`);
   return loaded;
 }
 
-/**
- * Collect system prompt additions from all plugins.
- * Called during config/prompt assembly.
- */
+/** Every plugin's trimmed system-prompt addition, load order. */
 export function getPluginPromptAdditions(): string[] {
   const additions: string[] = [];
   for (const { plugin, config } of registry.all) {

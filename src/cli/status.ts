@@ -15,6 +15,29 @@ function formatUptime(seconds: number): string {
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
 
+type HealthAlert = { key: string; severity: string; message: string };
+
+/** The daemon's active alerts from its /health body (older daemons: none). */
+function healthAlerts(health: Record<string, unknown>): HealthAlert[] {
+  const raw = health.alerts;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (a): a is HealthAlert =>
+      typeof a === "object" &&
+      a !== null &&
+      typeof a.key === "string" &&
+      typeof a.message === "string",
+  );
+}
+
+/** One line per active alert, coloured by severity. Shared with doctor. */
+export function formatAlertLines(health: Record<string, unknown>): string[] {
+  return healthAlerts(health).map((a) => {
+    const dot = a.severity === "warn" ? pc.yellow("●") : pc.red("●");
+    return `  ${dot} ${pc.bold(a.key)}  ${a.message}`;
+  });
+}
+
 export async function showStatus(): Promise<void> {
   printBanner();
   const instance = await findRunningInstance();
@@ -38,6 +61,12 @@ export async function showStatus(): Promise<void> {
     console.log(`  ${pc.dim("Queue")}        ${h.queue} pending`);
     console.log(`  ${pc.dim("Errors")}       ${h.errors}`);
     console.log(`  ${pc.dim("Last active")}  ${h.lastActivity}\n`);
+    const alerts = formatAlertLines(h);
+    if (alerts.length > 0) {
+      console.log(`  ${pc.bold("Active alerts")}\n`);
+      for (const line of alerts) console.log(line);
+      console.log();
+    }
     return;
   }
 

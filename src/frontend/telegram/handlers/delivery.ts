@@ -10,7 +10,7 @@ import { toolInputToRecord } from "../../../core/agent-runtime/events.js";
 import { appendDailyLogResponse } from "../../../storage/daily-log.js";
 import { stripMcpPrefix } from "../../../core/tools/index.js";
 import { logWarn } from "../../../util/log.js";
-import { replyParamsFor, sendText } from "../actions/send.js";
+import { replyParamsFor, sendText, telegramDelivery } from "../actions/send.js";
 import { ambientThreadId } from "../topics.js";
 import { isAdminInGroup, trackDmUser } from "./access.js";
 
@@ -90,10 +90,7 @@ function createStreamCallbacks(
   state: StreamState,
   chatTitle?: string,
 ) {
-  const onStreamDelta = async (
-    accumulated: string,
-    _phase?: "thinking" | "text",
-  ) => {
+  const onStreamDelta = async (accumulated: string) => {
     // Skip if drafts not supported or not ready
     if (draftsSupported === false || !state.started || state.editing) return;
     if (accumulated.length - state.lastSentLength < 40) return;
@@ -122,7 +119,13 @@ function createStreamCallbacks(
   };
 
   const onTextBlock = async (text: string) => {
-    await sendText(bot, chatId, text, _replyToId);
+    try {
+      await sendText(bot, chatId, text, _replyToId);
+    } catch (err) {
+      telegramDelivery.failed(chatId, err);
+      throw err;
+    }
+    telegramDelivery.delivered(chatId);
     appendDailyLogResponse("Talon", text, { chatTitle });
     state.lastSentLength = 0;
     state.sentTextBlock = true;
@@ -223,12 +226,12 @@ export async function processAndReply(
             textAccum += event.text;
             // Fire-and-forget: draft edits are throttled + self-mutexed
             // (`state.editing`), so we must NOT block stream consumption
-            // on them — same non-awaited semantics the old bridge had.
-            void onStreamDelta(textAccum, "text");
+            // on them.
+            void onStreamDelta(textAccum);
             break;
           case "reasoning":
             thinkingAccum += event.text;
-            void onStreamDelta(thinkingAccum, "thinking");
+            void onStreamDelta(thinkingAccum);
             break;
           case "assistant_message":
             // Keep the running total monotonic so a following

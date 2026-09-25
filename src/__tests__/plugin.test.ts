@@ -627,6 +627,86 @@ describe("plugin system", () => {
     });
   });
 
+  describe("operator alerts", () => {
+    async function captureAlerts() {
+      const alerts = await import("../core/frontend-runtime/alerts.js");
+      const sent: string[] = [];
+      alerts.resetAlertsForTest(async (text) => {
+        sent.push(text);
+      });
+      return { sent, keys: () => alerts.activeAlerts().map((a) => a.key) };
+    }
+
+    it("alerts when init times out, not before, and clears when a later init succeeds", async () => {
+      vi.useFakeTimers();
+      try {
+        let hang = true;
+        const plugin = createMockPlugin({
+          init: () => (hang ? new Promise(() => {}) : undefined),
+        });
+        const mod = await setup(plugin);
+        const { sent, keys } = await captureAlerts();
+
+        const loading = mod.loadPlugins([{ path: "/fake/plugin" }]);
+        await vi.advanceTimersByTimeAsync(29_000);
+        expect(sent).toHaveLength(0);
+        await vi.advanceTimersByTimeAsync(1_001);
+        await loading;
+        expect(keys()).toEqual(["plugin.test-plugin"]);
+        expect(sent[0]).toMatch(
+          /Plugin "test-plugin" failed to initialise: init timed out after 30s/,
+        );
+
+        hang = false;
+        const { registry } = await import("../core/plugin/registry.js");
+        await registry.destroyAndClear();
+        await mod.loadPlugins([{ path: "/fake/plugin" }]);
+        expect(keys()).toEqual([]);
+        expect(sent.at(-1)).toMatch(
+          /Plugin "test-plugin" initialised normally/,
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("alerts when a native runtime fails to provision and clears when it is usable", async () => {
+      let status: "failed" | "ready" = "failed";
+      vi.doMock("../plugins/github/index.js", () => ({
+        createGitHubPlugin: () => createMockPlugin({ name: "github" }),
+      }));
+      vi.doMock("../plugins/github/provision.js", () => ({
+        provisionGithubMcp: async () => ({
+          status,
+          kind: "docker",
+          actions: [],
+          warnings: [],
+          ...(status === "failed"
+            ? { error: "docker pull: permission denied" }
+            : {}),
+        }),
+        inspectGithub: async () => [],
+        githubMcpImageRef: (tag?: string) =>
+          `ghcr.io/github/github-mcp-server:${tag ?? "test"}`,
+        GITHUB_MCP_PINNED_TAG: "test",
+      }));
+      const mod = await import("../core/plugin/index.js");
+      const { sent, keys } = await captureAlerts();
+      const config = createTestConfig({ github: { enabled: true } });
+
+      await mod.loadBuiltinPlugins(config);
+      expect(keys()).toContain("provision.github");
+      expect(sent[0]).toMatch(
+        /Installing the github runtime failed: docker pull: permission denied/,
+      );
+
+      status = "ready";
+      await mod.loadBuiltinPlugins(config);
+      expect(keys()).not.toContain("provision.github");
+      expect(sent.at(-1)).toMatch(/github runtime is installed and usable/);
+    });
+  });
+
   describe("frontend whitelist", () => {
     it("skips plugin when frontend whitelist doesn't match", async () => {
       const plugin = createMockPlugin({ frontends: ["telegram"] });

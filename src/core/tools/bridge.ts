@@ -1,8 +1,6 @@
 /**
- * Bridge utilities — shared by the unified MCP server.
- *
- * Extracted from the old per-backend tools.ts files so there's
- * exactly one copy of callBridge / textResult.
+ * Bridge utilities — the one copy of callBridge / textResult, shared by
+ * the unified MCP server.
  *
  * At the tools root, not in `ops/`: the group directories hold tool
  * DOMAINS (one file per family of tool definitions), and this is the

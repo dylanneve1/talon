@@ -102,10 +102,8 @@ export function liveTurnEvents(runtime: NativeRuntime): BridgeEvent[] {
 
 /**
  * Safety net: any tool the backend announced but never resolved (a crash can
- * eat a tool_result; callback backends historically never emitted one —
- * handler-to-events now pairs each tool_call with an immediate synthetic
- * result) gets a synthetic result at turn end — a spinner the app opened on
- * phase:"call" must always see a phase:"result".
+ * eat a tool_result) gets a synthetic result at turn end — a spinner the app
+ * opened on phase:"call" must always see a phase:"result".
  */
 function flushOpenTools(
   runtime: NativeRuntime,
@@ -312,14 +310,14 @@ async function runTurn(
     // clients. Any late tool spinner has already been flushed above.
     runtime.liveTurns.delete(entry.id);
     // Flush a queued follow-up as a fresh turn: "once it's done it will
-    // send". Deferred so we don't re-enter runTurn inside its own finally.
+    // send". Started synchronously so the chat never looks idle in between —
+    // a /send landing in a deferred gap would start its own turn and run
+    // ahead of the message that was queued first.
     const queued = takeQueued(runtime, entry);
     if (queued) {
-      setImmediate(() =>
-        startTurn(runtime, entry, queued.text, {
-          attachments: queued.attachments,
-        }),
-      );
+      startTurn(runtime, entry, queued.text, {
+        attachments: queued.attachments,
+      });
     }
   }
 }

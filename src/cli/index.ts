@@ -28,7 +28,7 @@ import { printBanner, ConfigFileError } from "./config.js";
 import { runSetup } from "./setup.js";
 import { showStatus } from "./status.js";
 import { viewConfig } from "./config-view.js";
-import { tailLogs } from "./logs.js";
+import { runLogsCommand } from "./logs.js";
 import { runDoctor } from "./doctor.js";
 import { startChat } from "./chat.js";
 import { daemonStart, daemonStop, daemonRestart } from "./daemon.js";
@@ -116,7 +116,9 @@ function printHelp(): void {
     `    ${pc.cyan("mesh")}       Device credentials (list/revoke/rotate/scopes)`,
   );
   console.log(`    ${pc.cyan("config")}     View/edit configuration`);
-  console.log(`    ${pc.cyan("logs")}       Tail log file`);
+  console.log(
+    `    ${pc.cyan("logs")}       Tail log file (--errors, --since 1h, --component, --grep, --turn)`,
+  );
   console.log(`    ${pc.cyan("doctor")}     Validate environment`);
   console.log(`    ${pc.cyan("--version")}  Print the package version`);
   console.log();
@@ -129,13 +131,9 @@ export async function runCli(): Promise<void> {
   try {
     await dispatch(command);
   } catch (err) {
-    // A present-but-invalid config.json: every command below that reads
-    // config (directly, or via `mainMenu`'s "is this configured?" check)
-    // is async but was previously invoked without `await`, so this throw
-    // would otherwise surface as a bare unhandled-rejection stack trace —
-    // or, worse for the main menu, never happen at all, because the old
-    // loader swallowed the error and returned defaults, sending a broken
-    // install into the first-run wizard, which then saves over the file.
+    // A present-but-invalid config.json: say so and exit non-zero, rather
+    // than a stack trace — or, for the main menu, a first-run wizard that
+    // would save defaults over the operator's real file.
     if (err instanceof ConfigFileError) {
       console.error(`\n  ${pc.red("✖")} ${err.message}\n`);
       process.exitCode = 1;
@@ -152,7 +150,7 @@ const COMMANDS: Record<string, CommandHandler> = {
   setup: () => runSetup(),
   status: () => showStatus(),
   config: () => viewConfig(),
-  logs: () => tailLogs(),
+  logs: (args) => runLogsCommand(args),
   start: async () => {
     printBanner();
     await daemonStart();
