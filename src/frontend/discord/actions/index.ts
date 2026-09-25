@@ -28,6 +28,12 @@ import { messagingHandlers, restoreScheduledMessages } from "./messaging.js";
 import { mediaHandlers } from "./media.js";
 import { chatInfoHandlers } from "./chat-info.js";
 import type { DiscordActionContext, DiscordActionHandlers } from "./types.js";
+import {
+  createDeliveryTracker,
+  trackDeliveries,
+} from "../../health/delivery.js";
+
+const delivery = createDeliveryTracker("discord", "Discord", "discord");
 
 // Null-prototype so a request `action` of "toString" / "constructor" / etc.
 // can't resolve an inherited Object.prototype method via `handlers[action]`.
@@ -44,7 +50,7 @@ export function createDiscordActionHandler(client: Client, gateway: Gateway) {
   // shutdown — the timers died with the process, the store didn't.
   restoreScheduledMessages(client, scheduledMessages);
 
-  return async (
+  const dispatch = async (
     body: Record<string, unknown>,
     chatId: number,
   ): Promise<ActionResult | null> => {
@@ -74,4 +80,5 @@ export function createDiscordActionHandler(client: Client, gateway: Gateway) {
     };
     return handler(body, chatId, ctx);
   };
+  return trackDeliveries(delivery, dispatch);
 }
