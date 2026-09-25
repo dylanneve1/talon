@@ -100,7 +100,10 @@ export const hb: {
   intervalMinutesRef: 60,
   config: null,
   logFileSequence: 0,
-  failureBackoff: new FailureBackoff(),
+  failureBackoff: new FailureBackoff({
+    key: "heartbeat.failing",
+    label: "The heartbeat",
+  }),
 };
 
 // ── State-file I/O ───────────────────────────────────────────────────────────

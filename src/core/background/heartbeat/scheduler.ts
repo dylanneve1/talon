@@ -5,6 +5,7 @@
  */
 
 import { log, logError, logWarn } from "../../../util/log.js";
+import { faultText } from "../../engine/fault-text.js";
 import {
   catchupRunCount,
   missedRunCount,
@@ -152,8 +153,8 @@ function backOff(err: unknown): void {
   const until = hb.failureBackoff.fail(err);
   logWarn(
     "heartbeat",
-    `Backing off until ${new Date(until).toISOString()} ` +
-      `after ${hb.failureBackoff.failures} consecutive failure(s)`,
+    `heartbeat.backoff failures=${hb.failureBackoff.failures} ` +
+      `until=${new Date(until).toISOString()} error="${faultText(err)}"`,
   );
 }
 

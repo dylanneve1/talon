@@ -4,6 +4,8 @@
  */
 
 import { log, logError, logWarn } from "../../util/log.js";
+import { raiseAlert, resolveAlert } from "../frontend-runtime/alerts.js";
+import { faultText } from "../engine/fault-text.js";
 import type { TalonConfig } from "../config/index.js";
 import type { TalonPlugin } from "./types.js";
 import { registry, reloadState } from "./registry.js";
@@ -38,6 +40,7 @@ function reportProvision(
   if (outcome.status === "failed" && outcome.error) {
     logError(pluginName, `provision failed: ${outcome.error}`);
   }
+  alertOnProvision(pluginName, outcome.status, outcome.error);
   const background = outcome.background;
   if (background) {
     // Tracked so the post-update report waits for it to settle (its
@@ -54,6 +57,27 @@ function reportProvision(
           ),
         ),
     );
+  }
+}
+
+/**
+ * A native runtime that could not be provisioned leaves its plugin down
+ * until a human looks (disk, network, a broken toolchain) — alert on the
+ * failed pass, clear once a later pass leaves it usable.
+ */
+function alertOnProvision(
+  pluginName: NativePluginId,
+  status: ProvisionOutcome["status"] | "threw",
+  error: unknown,
+): void {
+  const key = `provision.${pluginName}`;
+  if (status === "failed" || status === "threw") {
+    raiseAlert(
+      key,
+      `Installing the ${pluginName} runtime failed: ${faultText(error ?? "no detail")}. The ${pluginName} plugin will not work until it is fixed (see \`talon doctor\`).`,
+    );
+  } else if (status === "ready" || status === "degraded") {
+    resolveAlert(key, `The ${pluginName} runtime is installed and usable.`);
   }
 }
 
@@ -78,6 +102,7 @@ async function provisionNativeRuntimes(
         runtime.id,
         `provision: ${err instanceof Error ? err.message : err}`,
       );
+      alertOnProvision(runtime.id, "threw", err);
     }
   }
   return outcomes;
@@ -111,6 +136,10 @@ async function loadBuiltin(
     logError(
       "plugin",
       `${label} init: ${err instanceof Error ? err.message : err}`,
+    );
+    raiseAlert(
+      `plugin.${label.toLowerCase()}`,
+      `Built-in plugin ${label} failed to load: ${faultText(err)}. Its tools are unavailable until the next reload or restart.`,
     );
   }
 }

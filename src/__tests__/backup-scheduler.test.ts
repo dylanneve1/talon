@@ -227,6 +227,45 @@ describe("the failure path", () => {
     expect(schedulerStatus().lastError).toBe("disk is full");
   });
 
+  it("raises backup.failing on the default route and resolves on the next good run", async () => {
+    const { activeAlerts, resetAlertsForTest } =
+      await import("../core/frontend-runtime/alerts.js");
+    const sent: string[] = [];
+    resetAlertsForTest(async (text) => {
+      sent.push(text);
+    });
+    const home = mkdtempSync(join(tmpdir(), "talon-sched-alert-"));
+    let fail = true;
+    _backupDeps.build = (async () => {
+      if (fail) throw new Error("disk is full");
+      return manifest("ok-1");
+    }) as unknown as typeof _backupDeps.build;
+    _backupDeps.pruneLocal = (async () => undefined) as never;
+    _backupDeps.discover = (async () => []) as never;
+
+    // No `notify`: the default route is the operator alert.
+    await initBackup({
+      settings: resolveBackupSettings({ enabled: false }),
+      home,
+    });
+    await expect(
+      runBackup({ kind: "backup", trigger: "manual" }),
+    ).rejects.toThrow(/disk is full/);
+    await expect(
+      runBackup({ kind: "backup", trigger: "manual" }),
+    ).rejects.toThrow(/disk is full/);
+    expect(activeAlerts().map((a) => a.key)).toEqual(["backup.failing"]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatch(
+      /^⚠️ Backup failed: disk is full\. Retrying after \d\d:\d\d UTC\.$/,
+    );
+
+    fail = false;
+    await runBackup({ kind: "backup", trigger: "manual" });
+    expect(activeAlerts()).toEqual([]);
+    expect(sent.at(-1)).toMatch(/Backups are succeeding again/);
+  });
+
   it("skips scheduled ticks while the backoff window is armed", async () => {
     const home = mkdtempSync(join(tmpdir(), "talon-sched-backoff-"));
     const build = vi.fn(async () => {

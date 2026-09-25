@@ -899,3 +899,33 @@ describe("cron tick — a slow job overlapping the next tick", () => {
     expect(getCronJob(fast.id)!.runCount).toBe(1);
   });
 });
+
+// ── operator alert ───────────────────────────────────────────────────────────
+
+describe("cron.job alert", () => {
+  it("raises when the breaker opens on the third failure and resolves on the next success", async () => {
+    const { resetAlertsForTest, activeAlerts } =
+      await import("../core/frontend-runtime/alerts.js");
+    const sent: string[] = [];
+    resetAlertsForTest(async (text) => {
+      sent.push(text);
+    });
+    const job = seed({ type: "query", content: "x", name: "Morning digest" });
+    const key = `cron.job.${job.id}`;
+
+    mocks.runJobOneShot.mockRejectedValue(new Error("model unavailable"));
+    await runJobNow(job.id);
+    await runJobNow(job.id);
+    expect(activeAlerts().map((a) => a.key)).not.toContain(key);
+    await runJobNow(job.id);
+    expect(activeAlerts().map((a) => a.key)).toContain(key);
+    expect(sent[0]).toMatch(
+      /Cron job "Morning digest" failed 3 runs in a row: model unavailable/,
+    );
+
+    mocks.runJobOneShot.mockResolvedValue({ status: "ran" });
+    await runJobNow(job.id);
+    expect(activeAlerts().map((a) => a.key)).not.toContain(key);
+    expect(sent.at(-1)).toMatch(/Cron job "Morning digest" is running again/);
+  });
+});
