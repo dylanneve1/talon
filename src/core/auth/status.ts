@@ -67,13 +67,14 @@ export function clearProviderExpired(provider: AuthProvider): void {
 
 /**
  * A credentials file that exists but isn't JSON reads as "not signed
- * in" — indistinguishable from a missing login unless logged. Length
- * only: JSON.parse's message quotes the input, and the input is a token.
+ * in" — indistinguishable from a missing login unless logged. Nothing
+ * from the file goes into the line: JSON.parse's message quotes the
+ * input, and the input is a token.
  */
-function warnUnparseable(provider: AuthProvider, raw: string): void {
+function warnUnparseable(provider: AuthProvider): void {
   logWarn(
     "notify",
-    `${provider} credentials file is not valid JSON (bytes=${raw.length}) — reporting not signed in`,
+    `${provider} credentials file is not valid JSON — reporting not signed in`,
   );
 }
 
@@ -94,7 +95,7 @@ export function parseClaudeCredentials(raw: string): ProviderAuthStatus {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    warnUnparseable("claude", raw);
+    warnUnparseable("claude");
     return base;
   }
   const oauth = parsed.claudeAiOauth;
@@ -129,7 +130,7 @@ export function parseCodexAuth(raw: string): ProviderAuthStatus {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    warnUnparseable("codex", raw);
+    warnUnparseable("codex");
     return base;
   }
   const apiKey =

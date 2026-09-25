@@ -116,7 +116,7 @@ describe("computeAuthFingerprint", () => {
     );
   });
 
-  it("api-key mode includes a short prefix of the key for differentiation", () => {
+  it("api-key mode differentiates keys", () => {
     const a: CodexAuthInfo = {
       mode: "api-key",
       source: "env:CODEX_API_KEY",
@@ -133,6 +133,19 @@ describe("computeAuthFingerprint", () => {
     };
     expect(computeAuthFingerprint(a)).not.toBe(computeAuthFingerprint(b));
     expect(computeAuthFingerprint(a)).toContain("api-key:env:CODEX_API_KEY:");
+  });
+
+  it("api-key mode carries no key material, only a digest", () => {
+    const info: CodexAuthInfo = {
+      mode: "api-key",
+      source: "env:CODEX_API_KEY",
+      apiKey: "sk-key-A-0123456789abcdef-rest-of-secret-here",
+      authFileParsed: false,
+      diagnostics: [],
+    };
+    const fp = computeAuthFingerprint(info);
+    expect(fp).toMatch(/^api-key:env:CODEX_API_KEY:[0-9a-f]{16}$/);
+    expect(fp).not.toContain("sk-key");
   });
 
   it("none mode returns a deterministic missing fingerprint", () => {
