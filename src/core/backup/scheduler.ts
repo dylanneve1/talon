@@ -26,6 +26,8 @@
 import { FailureBackoff } from "../background/failure-backoff.js";
 import { TalonError } from "../errors.js";
 import { notifyAdmin } from "../frontend-runtime/admin-notify.js";
+import { raiseAlert, resolveAlert } from "../frontend-runtime/alerts.js";
+import { faultText } from "../engine/fault-text.js";
 import { bus } from "../bus/index.js";
 import { log, logError } from "../../util/log.js";
 import { dirs } from "../../util/paths.js";
@@ -117,6 +119,7 @@ export function firstRunDelayMs(
 // ── Runs ────────────────────────────────────────────────────────────────────
 
 const backoff = new FailureBackoff();
+const BACKUP_ALERT = "backup.failing";
 
 async function executeRun(request: RunRequest): Promise<Manifest> {
   const settings = state.settings;
@@ -163,6 +166,7 @@ async function executeRun(request: RunRequest): Promise<Manifest> {
       }
     }
     backoff.succeed();
+    resolveAlert(BACKUP_ALERT, "Backups are succeeding again.");
     return manifest;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -177,19 +181,34 @@ async function executeRun(request: RunRequest): Promise<Manifest> {
     logError("backup", `Run failed (${request.trigger})`, err);
     // Once per streak: the second identical failure tells the admin nothing
     // the first one did not.
-    if (backoff.failures === 1) {
-      await state
-        .notify(
-          `⚠️ Backup failed: ${message}\nRetrying after ${new Date(until).toISOString().slice(11, 16)} UTC.`,
-        )
-        .catch(() => {
-          /* the notifier logs its own failures */
-        });
-    }
+    if (backoff.failures === 1) await reportFailure(message, until);
     throw err;
   } finally {
     state.running = false;
   }
+}
+
+/**
+ * Tell the admin a backup streak started. The default route is an operator
+ * alert (`backup.failing`), so the recovery is announced too; a deployment
+ * that routes backup notices to its own chat (`backup.notifyChatId`) keeps
+ * getting the plain notice there.
+ */
+async function reportFailure(message: string, until: number): Promise<void> {
+  const retryAt = new Date(until).toISOString().slice(11, 16);
+  if (state.notify === notifyAdmin) {
+    raiseAlert(
+      BACKUP_ALERT,
+      `Backup failed: ${faultText(message, 300)}. Retrying after ${retryAt} UTC.`,
+      { severity: "warn" },
+    );
+    return;
+  }
+  await state
+    .notify(`⚠️ Backup failed: ${message}\nRetrying after ${retryAt} UTC.`)
+    .catch(() => {
+      /* the notifier logs its own failures */
+    });
 }
 
 /**

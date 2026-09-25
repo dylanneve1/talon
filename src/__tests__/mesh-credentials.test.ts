@@ -551,3 +551,36 @@ describe("gateway /mesh/credentials", () => {
     expect(svc.credentials!.activeFor("phone")).toHaveLength(1);
   });
 });
+
+describe("DeviceCredentialStore — persist alert", () => {
+  it("alerts when credentials cannot be written and clears on the next good write", async () => {
+    const { writeFile, rm } = await import("node:fs/promises");
+    const { activeAlerts, resetAlertsForTest } =
+      await import("../core/frontend-runtime/alerts.js");
+    const sent: string[] = [];
+    resetAlertsForTest(async (text) => {
+      sent.push(text);
+    });
+    // A regular file where the store's directory should be: mkdir fails.
+    const blocker = await tempFile("blocked");
+    await writeFile(blocker, "");
+    const store = new DeviceCredentialStore(join(blocker, "credentials.json"));
+
+    await expect(
+      store.mint({ deviceId: "phone", scopes: ["device"], origin: "upgrade" }),
+    ).rejects.toThrow();
+    expect(activeAlerts().map((a) => a.key)).toEqual([
+      "mesh.credentials.persist",
+    ]);
+    expect(sent[0]).toMatch(/Could not save mesh device credentials: /);
+
+    await rm(blocker);
+    await store.mint({
+      deviceId: "tab",
+      scopes: ["device"],
+      origin: "upgrade",
+    });
+    expect(activeAlerts()).toEqual([]);
+    expect(sent.at(-1)).toMatch(/Mesh device credentials are saving again/);
+  });
+});
