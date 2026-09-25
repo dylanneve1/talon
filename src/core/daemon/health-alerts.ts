@@ -183,10 +183,7 @@ function formatBytes(bytes: number): string {
 }
 
 /** One statfs of `path` → raise, resolve, or (in the hysteresis band) hold. */
-async function probeDisk(
-  path: string,
-  stat: StatFs = statfs,
-): Promise<void> {
+async function probeDisk(path: string, stat: StatFs = statfs): Promise<void> {
   let free: number;
   let percent: number;
   try {

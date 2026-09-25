@@ -1,14 +1,20 @@
 [
   {
+    "file": "src/backend/claude-sdk/handler.ts",
+    "name": "runChatTurn",
+    "lines": 163,
+    "cx": 12
+  },
+  {
     "file": "src/backend/codex/handler/message.ts",
     "name": "handleMessage",
-    "lines": 183,
+    "lines": 192,
     "cx": 20
   },
   {
     "file": "src/backend/codex/one-shot.ts",
     "name": "appendCodexItem",
-    "lines": 91,
+    "lines": 90,
     "cx": 29
   },
   {
@@ -20,62 +26,74 @@
   {
     "file": "src/backend/openai-agents/handler/message.ts",
     "name": "handleMessage",
-    "lines": 177,
+    "lines": 186,
     "cx": 17
   },
   {
     "file": "src/backend/remote-server/chat-turn.ts",
     "name": "runRemoteChatTurn",
-    "lines": 179,
+    "lines": 187,
     "cx": 9
+  },
+  {
+    "file": "src/backend/remote-server/one-shot.ts",
+    "name": "runRemoteOneShotAgent",
+    "lines": 153,
+    "cx": 13
   },
   {
     "file": "src/backend/runtime/turn/handler-to-events.ts",
     "name": "handlerToEvents",
-    "lines": 153,
+    "lines": 167,
     "cx": 16
   },
   {
     "file": "src/bootstrap.ts",
     "name": "initBackendAndDispatcher",
-    "lines": 288,
+    "lines": 283,
     "cx": 13
   },
   {
     "file": "src/core/background/dream/index.ts",
     "name": "runDreamAgent",
-    "lines": 173,
+    "lines": 180,
     "cx": 20
   },
   {
     "file": "src/core/doctor/index.ts",
     "name": "collectDoctorReport",
-    "lines": 181,
+    "lines": 174,
     "cx": 18
   },
   {
     "file": "src/core/engine/gateway-actions/cross-send.ts",
     "name": ".send_via",
-    "lines": 97,
+    "lines": 83,
     "cx": 30
   },
   {
     "file": "src/core/errors.ts",
     "name": "classify",
-    "lines": 170,
+    "lines": 186,
     "cx": 29
   },
   {
     "file": "src/core/mcp-hub/launcher.ts",
     "name": "runSupervisor",
-    "lines": 172,
+    "lines": 167,
     "cx": 22
   },
   {
     "file": "src/core/tools/chat/messaging.ts",
     "name": ".execute#2",
-    "lines": 188,
+    "lines": 189,
     "cx": 20
+  },
+  {
+    "file": "src/core/update/self-update.ts",
+    "name": "runSelfUpdate",
+    "lines": 162,
+    "cx": 19
   },
   {
     "file": "src/frontend/discord/admin.ts",
@@ -92,49 +110,49 @@
   {
     "file": "src/frontend/native/surface/settings.ts",
     "name": "applyConfigUpdate",
-    "lines": 81,
+    "lines": 85,
     "cx": 29
   },
   {
     "file": "src/frontend/telegram/commands/info.ts",
     "name": "registerInfoCommands",
-    "lines": 178,
+    "lines": 182,
     "cx": 16
   },
   {
     "file": "src/frontend/telegram/middleware.ts",
     "name": "mediaHistoryEntry",
-    "lines": 38,
+    "lines": 36,
     "cx": 26
   },
   {
     "file": "src/frontend/telegram/model-callbacks.ts",
     "name": "parseModelCallback",
-    "lines": 56,
+    "lines": 59,
     "cx": 28
   },
   {
     "file": "src/frontend/terminal/index.ts",
     "name": "createTerminalFrontend",
-    "lines": 178,
+    "lines": 184,
     "cx": 15
+  },
+  {
+    "file": "src/frontend/whatsapp/connection/pairing-service.ts",
+    "name": "beginPairingAttempt",
+    "lines": 155,
+    "cx": 22
   },
   {
     "file": "src/native/warden.ts",
     "name": "spawnWarden",
-    "lines": 129,
+    "lines": 140,
     "cx": 28
   },
   {
     "file": "src/plugins/mempalace/index.ts",
     "name": "createMempalacePlugin",
-    "lines": 134,
+    "lines": 144,
     "cx": 28
-  },
-  {
-    "file": "src/plugins/mempalace/provision.ts",
-    "name": "reconcile",
-    "lines": 156,
-    "cx": 22
   }
 ]
