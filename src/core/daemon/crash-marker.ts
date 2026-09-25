@@ -33,7 +33,7 @@ export type CrashMarker = {
 const STACK_LINES = 5;
 const MAX_MESSAGE = 500;
 
-export function crashMarkerPath(): string {
+function crashMarkerPath(): string {
   return resolve(dirs.data, "last-crash.json");
 }
 

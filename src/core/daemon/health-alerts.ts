@@ -183,7 +183,7 @@ function formatBytes(bytes: number): string {
 }
 
 /** One statfs of `path` → raise, resolve, or (in the hysteresis band) hold. */
-export async function probeDisk(
+async function probeDisk(
   path: string,
   stat: StatFs = statfs,
 ): Promise<void> {
