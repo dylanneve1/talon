@@ -16,6 +16,8 @@ import type {
 import { isMcpPlugin } from "./types.js";
 import { registry, _deps } from "./registry.js";
 import { GATEWAY_TOKEN_ENV } from "../engine/gateway-auth.js";
+import { faultText } from "../engine/fault-text.js";
+import { raiseAlert, resolveAlert } from "../frontend-runtime/alerts.js";
 
 /**
  * Candidate entry point paths, checked in order. Exported for
@@ -107,6 +109,7 @@ export async function initPluginWithTimeout(
 
   let timer: ReturnType<typeof setTimeout> | undefined;
 
+  const alertKey = `plugin.${plugin.name}`;
   try {
     await Promise.race([
       Promise.resolve(plugin.init(config)),
@@ -119,10 +122,17 @@ export async function initPluginWithTimeout(
         timer.unref?.();
       }),
     ]);
+    resolveAlert(alertKey, `Plugin "${plugin.name}" initialised normally.`);
   } catch (err) {
     logError(
       "plugin",
       `${errorPrefix}: ${err instanceof Error ? err.message : err}`,
+    );
+    // Init runs once per boot or reload: a plugin that failed it stays
+    // half-loaded until someone fixes it, so this needs no threshold.
+    raiseAlert(
+      alertKey,
+      `Plugin "${plugin.name}" failed to initialise: ${faultText(err)}. Its tools may not work until the next reload or restart.`,
     );
   } finally {
     if (timer) clearTimeout(timer);

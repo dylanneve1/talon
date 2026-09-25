@@ -27,6 +27,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { HubChildTransport, type ChildExit } from "./child-transport.js";
+import { raiseAlert, resolveAlert } from "../frontend-runtime/alerts.js";
+import { faultText } from "../engine/fault-text.js";
 
 export type ChildSpec = {
   command: string;
@@ -150,11 +152,49 @@ type SpawnFailure = { at: number; count: number; error: unknown };
 const spawnFailures = new Map<string, SpawnFailure>();
 const FAILURE_BACKOFF_BASE_MS = 30_000;
 const FAILURE_BACKOFF_MAX_MS = 10 * 60_000;
+/** Consecutive spawn failures of one child before the operator hears. */
+const SPAWN_FAILURE_ALERT_THRESHOLD = 3;
 
 function failureBackoffMs(count: number): number {
   return Math.min(
     FAILURE_BACKOFF_BASE_MS * 2 ** (count - 1),
     FAILURE_BACKOFF_MAX_MS,
+  );
+}
+
+/** The MCP server name of a child key (keys are `server\0chat`). */
+function serverOf(key: string): string {
+  const nul = key.indexOf("\u0000");
+  return nul === -1 ? key : key.slice(0, nul);
+}
+
+/**
+ * Count a failed spawn into the negative cache, log it with the child's
+ * last words, and alert once the same child has failed
+ * SPAWN_FAILURE_ALERT_THRESHOLD times running — its tools are gone for
+ * every turn until whatever backs it comes back.
+ */
+function noteSpawnFailure(key: string, err: unknown): void {
+  const count = (spawnFailures.get(key)?.count ?? 0) + 1;
+  spawnFailures.set(key, { at: Date.now(), count, error: err });
+  const backoffMs = failureBackoffMs(count);
+  // The exit record is this attempt's only when it is fresh — an older
+  // one belongs to a child that ran and was reaped long ago.
+  const exit = lastExits.get(key);
+  const stderr =
+    exit && Date.now() - exit.at < 60_000 ? exit.stderr.at(-1) : undefined;
+  const detail = faultText(err);
+  logWarn(
+    "gateway",
+    `hub child spawn failed ${describeKey(key)} attempt=${count} backoff_ms=${backoffMs} ` +
+      `error="${detail}"${stderr ? ` stderr="${faultText(stderr)}"` : ""}`,
+  );
+  if (count < SPAWN_FAILURE_ALERT_THRESHOLD) return;
+  const server = serverOf(key);
+  raiseAlert(
+    `mcp.child.${server}`,
+    `MCP server "${server}" has failed to start ${count} times in a row: ${detail}` +
+      `${stderr ? ` (stderr: ${faultText(stderr, 120)})` : ""}. Its tools are unavailable until it starts.`,
   );
 }
 
@@ -279,15 +319,16 @@ export function acquireChild(
   const spawn = async (): Promise<ChildHandle> => {
     try {
       const handle = await spawnChild(key, spec());
-      spawnFailures.delete(key);
+      if (spawnFailures.delete(key)) {
+        const server = serverOf(key);
+        resolveAlert(
+          `mcp.child.${server}`,
+          `MCP server "${server}" is starting normally again.`,
+        );
+      }
       return handle;
     } catch (err) {
-      const prior = spawnFailures.get(key);
-      spawnFailures.set(key, {
-        at: Date.now(),
-        count: (prior?.count ?? 0) + 1,
-        error: err,
-      });
+      noteSpawnFailure(key, err);
       throw err;
     }
   };
