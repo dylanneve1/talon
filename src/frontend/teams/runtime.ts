@@ -1,9 +1,7 @@
 /**
  * Teams frontend runtime — the state every module shares.
  *
- * `createTeamsFrontend` used to hold all of this as closure variables, with
- * the poll loop and the slash commands nested inside `.start`. It is now one
- * explicit object, constructed once, that each module (chat-discovery,
+ * One explicit object, constructed once, that each module (chat-discovery,
  * poll, commands, turn, outbound) takes as its first parameter.
  */
 

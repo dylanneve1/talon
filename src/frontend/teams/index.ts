@@ -99,8 +99,7 @@ export function createTeamsFrontend(
 
       // The receive side is a timer on the runtime, not a loop to sit in:
       // once the first poll is done the frontend is listening, and
-      // start() is finished. (It used to park on a promise that never
-      // resolved, which made the boot end at shutdown.)
+      // start() is finished.
       await startPolling(runtime, chatId);
     },
 

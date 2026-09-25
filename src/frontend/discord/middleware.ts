@@ -1,17 +1,11 @@
 /**
- * Discord middleware — wires up message events to handlers.ts.
+ * Discord middleware — wires up message events to handlers/.
  *
- * Equivalent to src/frontend/telegram/middleware.ts. We attach a single
- * messageCreate listener that filters out bots/system messages and delegates
- * to handleMessage. We also push every message into the in-memory history
- * buffer so /admin commands and /status reflect real activity.
- *
- * Discord-specific behavior:
- *  - We don't have a separate "my_chat_member" event; instead, when the bot
- *    is removed from a guild we get `guildDelete`. The handler in index.ts
- *    handles that to revoke access.
- *  - Every guild message gets the chat registered for pulse so periodic
- *    check-ins work (DMs are excluded because we always respond).
+ * A single messageCreate listener filters out bots/system messages and
+ * delegates to handleMessage. Every message is also pushed into the
+ * in-memory history buffer so /admin commands and /status reflect real
+ * activity, and every guild message registers its chat for pulse (DMs are
+ * excluded because we always respond).
  */
 
 import type { Client, Message } from "discord.js";
@@ -24,7 +18,7 @@ import { handleMessage, getSenderName } from "./handlers/index.js";
 
 export function registerMiddleware(client: Client, config: TalonConfig): void {
   client.on("messageCreate", (msg: Message) => {
-    // Ignore self/bots/system here too — handlers.ts will check again, but
+    // Ignore self/bots/system here too — handleMessage checks again, but
     // we don't even want to record those in history.
     if (msg.author.bot || msg.system) return;
     if (msg.author.id === client.user?.id) return;

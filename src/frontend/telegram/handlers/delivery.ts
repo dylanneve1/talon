@@ -223,7 +223,7 @@ export async function processAndReply(
             textAccum += event.text;
             // Fire-and-forget: draft edits are throttled + self-mutexed
             // (`state.editing`), so we must NOT block stream consumption
-            // on them — same non-awaited semantics the old bridge had.
+            // on them.
             void onStreamDelta(textAccum, "text");
             break;
           case "reasoning":

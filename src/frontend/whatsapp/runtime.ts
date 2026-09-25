@@ -1,11 +1,10 @@
 /**
  * WhatsApp frontend runtime — the state every module shares.
  *
- * `createWhatsAppFrontend` used to hold all of this as closure variables
- * with every handler nested inside it. It is now one explicit object,
- * constructed once, that each module (access, inbound, connection) takes
- * as its first parameter. The runtime carries the parsed settings, the
- * allow-lists and the live socket state; the modules own the behaviour.
+ * One explicit object, constructed once, that each module (access,
+ * inbound, connection) takes as its first parameter. The runtime carries
+ * the parsed settings, the allow-lists and the live socket state; the
+ * modules own the behaviour.
  */
 
 import type { WASocket } from "baileys";
