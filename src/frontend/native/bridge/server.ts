@@ -24,7 +24,7 @@ import { createServer as createTlsServer } from "node:https";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { log, logError, logDebug } from "../../../util/log.js";
+import { log, logError, logDebug, logWarn } from "../../../util/log.js";
 import {
   formatFingerprint,
   isLoopbackHost,
@@ -63,6 +63,14 @@ type StreamSession = {
 };
 
 const SSE_PING_MS = 25_000;
+/**
+ * Unsent bytes a stream may hold before it counts as dead. A client that
+ * stops reading without closing (phone asleep, network switch) otherwise
+ * buffers every broadcast in memory until TCP gives up on it, minutes later.
+ * Far past anything a live client falls behind by; evicted, it reconnects
+ * and gets a fresh `hello`.
+ */
+const SSE_MAX_BACKLOG_BYTES = 16 * 1024 * 1024;
 const MAX_BODY_BYTES = 256 * 1024;
 const PORT_FALLBACKS = 5;
 
@@ -265,12 +273,24 @@ export class BridgeServer {
 
   private write(targets: Iterable<ServerResponse>, event: BridgeEvent): void {
     const payload = `data: ${JSON.stringify(event)}\n\n`;
-    for (const res of targets) {
-      try {
-        res.write(payload);
-      } catch {
-        // Write on a half-closed socket — the 'close' handler will evict it.
-      }
+    for (const res of targets) this.send(res, payload);
+  }
+
+  /** Write one frame to a stream, evicting it if its backlog never drains. */
+  private send(res: ServerResponse, frame: string): void {
+    if (res.writableLength > SSE_MAX_BACKLOG_BYTES) {
+      this.clients.delete(res);
+      logWarn(
+        "native",
+        `Dropped an SSE client that stopped reading (${res.writableLength} bytes unsent)`,
+      );
+      res.destroy();
+      return;
+    }
+    try {
+      res.write(frame);
+    } catch {
+      // Write on a half-closed socket — the 'close' handler will evict it.
     }
   }
 
@@ -312,13 +332,7 @@ export class BridgeServer {
       : createServer(serverOpts, onRequest);
 
     this.pingTimer = setInterval(() => {
-      for (const res of this.clients.keys()) {
-        try {
-          res.write(": ping\n\n");
-        } catch {
-          /* evicted on close */
-        }
-      }
+      for (const res of this.clients.keys()) this.send(res, ": ping\n\n");
     }, SSE_PING_MS);
     this.pingTimer.unref?.();
     this.unsubscribeRevocations = this.opts.credentials?.authority.onRevoked(
