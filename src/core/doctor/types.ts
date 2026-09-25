@@ -1,7 +1,7 @@
 /**
  * The doctor's data shapes, on their own so a backend factory can declare
  * its checks (`BackendFactory.doctor`) without importing the collector —
- * `core/doctor.ts` reads the registry, so the types living there would
+ * `core/doctor/index.ts` reads the registry, so the types living there would
  * close a cycle. Checks are pure data (label / status / detail); renderers
  * decide presentation.
  */

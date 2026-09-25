@@ -21,7 +21,7 @@ import { initWeaver, type Weaver, type WeaverDeps } from "../weaver/index.js";
  * `getBackend` takes the string chat id so it can route per-chat —
  * a chat with a backend override returns its override backend, others
  * fall through to the global chat-role backend. Tests can pass a
- * stub that ignores the chat id. See `core/backend-controller.ts`.
+ * stub that ignores the chat id. See `core/engine/backend-controller/`.
  *
  * `resolveActiveModel` walks the 5-step active-model resolution
  * chain for the chat and returns both the resolved `ModelRef` and
