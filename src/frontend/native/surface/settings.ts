@@ -186,19 +186,31 @@ export function applyConfigUpdate(
  * Merge a partial update into talon.json on disk, preserving everything
  * else. Shared by every bridge surface that persists config changes
  * (settings sync here, plugin toggles in extensions.ts).
+ *
+ * An existing file that can't be read or isn't a JSON object throws and
+ * is left untouched: merging into `{}` would replace the operator's whole
+ * config (tokens included) with just this patch.
  */
 export function persistConfigPatch(update: Record<string, unknown>): void {
   const file = pathFiles.config;
   let current: Record<string, unknown> = {};
-  try {
-    if (existsSync(file)) {
-      current = JSON.parse(readFileSync(file, "utf-8")) as Record<
-        string,
-        unknown
-      >;
+  if (existsSync(file)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(file, "utf-8"));
+    } catch (err) {
+      throw new Error(
+        `Refusing to write ${file}: cannot read the existing file ` +
+          `(${err instanceof Error ? err.message : err}). It was left untouched.`,
+      );
     }
-  } catch {
-    /* corrupt/absent — start from empty */
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error(
+        `Refusing to write ${file}: the top level is not a JSON object. ` +
+          `It was left untouched.`,
+      );
+    }
+    current = parsed as Record<string, unknown>;
   }
   for (const [k, v] of Object.entries(update)) {
     if (v === undefined) delete current[k];
