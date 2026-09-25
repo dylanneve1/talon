@@ -17,6 +17,7 @@ import { getHealthStatus } from "../../util/watchdog.js";
 import { activeAlerts } from "../frontend-runtime/alerts.js";
 import { getActiveSessionCount } from "../../storage/sessions.js";
 import { log, logError, logDebug } from "../../util/log.js";
+import { runInChatTurnScope } from "../../util/logging/turn-scope.js";
 import {
   handleSharedAction,
   handleChatFreeAction,
@@ -36,6 +37,38 @@ import { handlePluginAction } from "../plugin/index.js";
 import type { FrontendActionHandler } from "../types.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
 import { resolveOwnerFrontendId } from "../frontend-runtime/routing.js";
+
+/** Serialized size of an action result; -1 when it can't be serialized. */
+function actionResultBytes(result: unknown): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(result) ?? "");
+  } catch {
+    return -1;
+  }
+}
+
+/** `tool.action name=… chat=… ms=… ok=… bytes=… [err=…]` for one bridge action. */
+function logActionOutcome(
+  body: Record<string, unknown>,
+  chat: string,
+  ms: number,
+  result: unknown,
+): void {
+  const action = typeof body.action === "string" ? body.action : "?";
+  const r = result as { ok?: unknown; error?: unknown } | null | undefined;
+  const failed = !!r && typeof r === "object" && r.ok === false;
+  const line =
+    `tool.action name=${action} chat=${chat || "-"} ms=${ms} ` +
+    `ok=${!failed} bytes=${actionResultBytes(result)}`;
+  if (!failed) {
+    logDebug("gateway", line);
+    return;
+  }
+  const err = String(r.error ?? "")
+    .replace(/\s+/g, " ")
+    .slice(0, 200);
+  log("gateway", `${line} err=${err}`);
+}
 
 // ── Retry helper (stateless — standalone export) ─────────────────────────────
 
@@ -291,7 +324,31 @@ export class Gateway {
     return null;
   }
 
-  private async handleAction(body: Record<string, unknown>): Promise<unknown> {
+  /**
+   * Run one bridge action inside the log scope of the turn that issued it
+   * (the MCP subprocess reaches us over HTTP, a fresh async root), so the
+   * action's own lines carry `turn=<id>`, and close it with one
+   * `tool.action` summary line — debug on success, info with the error
+   * text when the action answered `ok:false`.
+   */
+  private handleAction(body: Record<string, unknown>): Promise<unknown> {
+    const rawChatId = body._chatId ? String(body._chatId) : "";
+    const numericId = Number(rawChatId);
+    const chatKeys = [
+      rawChatId,
+      rawChatId !== "" && !isNaN(numericId)
+        ? this.loom.stringIdForNumeric(numericId)
+        : null,
+    ];
+    return runInChatTurnScope(chatKeys, async () => {
+      const t0 = Date.now();
+      const result = await this.routeAction(body);
+      logActionOutcome(body, rawChatId, Date.now() - t0, result);
+      return result;
+    });
+  }
+
+  private async routeAction(body: Record<string, unknown>): Promise<unknown> {
     // Route by _chatId from the MCP subprocess request.
     // _chatId may be a string (Teams: "teams_chat_19:...") or numeric string
     // (Telegram: "123456"). The context map is keyed by numeric chatId, so
