@@ -14,6 +14,7 @@ import {
   noteRichMessageFailure,
   richMessagesAvailable,
 } from "./rich-messages.js";
+import { recordOutgoingText } from "./outgoing-log.js";
 
 export function replyParams(
   body: Record<string, unknown>,
@@ -102,6 +103,7 @@ export async function sendText(
           ...opts,
         },
       );
+      recordOutgoingText(chatId, sent.message_id, text);
       return sent.message_id;
     } catch (err) {
       noteRichMessageFailure(err, `send chat=${chatId}`);
@@ -116,6 +118,7 @@ export async function sendText(
       reply_markup: replyMarkup,
       ...opts,
     });
+    recordOutgoingText(chatId, sent.message_id, text);
     return sent.message_id;
   } catch (err) {
     logWarn(
@@ -127,6 +130,7 @@ export async function sendText(
       reply_markup: replyMarkup,
       ...opts,
     });
+    recordOutgoingText(chatId, sent.message_id, text);
     return sent.message_id;
   }
 }
