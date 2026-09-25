@@ -334,6 +334,66 @@ describe("initWorkspace — upgrade-aware prompt seeding (.seeded.json)", () => 
     expect(report.tracking.length).toBeGreaterThan(0);
   });
 
+  it("a seed write cut short by a full disk is retried next boot, not adopted as a user edit", async () => {
+    // Model each write primitive's real ENOSPC behaviour for base.md: a
+    // plain write leaves the bytes it got out, an atomic write leaves
+    // nothing (its temp file never gets renamed into place).
+    const enospc = () =>
+      Object.assign(new Error("ENOSPC: no space left on device"), {
+        code: "ENOSPC",
+      });
+    const hitsBase = (p: unknown) => String(p).endsWith("base.md");
+    vi.doMock("node:fs", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs")>();
+      return {
+        ...actual,
+        writeFileSync: ((p: string, data: string, ...rest: unknown[]) => {
+          if (!hitsBase(p)) {
+            return (actual.writeFileSync as (...a: unknown[]) => void)(
+              p,
+              data,
+              ...rest,
+            );
+          }
+          actual.writeFileSync(p, String(data).slice(0, 40));
+          throw enospc();
+        }) as typeof actual.writeFileSync,
+      };
+    });
+    vi.doMock("write-file-atomic", async (importOriginal) => {
+      const { default: real } = await importOriginal<{
+        default: typeof import("write-file-atomic");
+      }>();
+      const sync = ((p: string, ...rest: unknown[]) => {
+        if (hitsBase(p)) throw enospc();
+        return (real.sync as (...a: unknown[]) => void)(p, ...rest);
+      }) as typeof real.sync;
+      // A fresh function object: the real module is shared across
+      // resetModules, so it must not be patched in place.
+      const wrapped = Object.assign(
+        (...a: Parameters<typeof real>) => real(...a),
+        real,
+        { sync },
+      );
+      return { default: wrapped };
+    });
+
+    const first = await import("../core/vfs/workspace.js");
+    first.initWorkspace(join(TEST_ROOT, "ws"));
+
+    // Disk freed, daemon restarts.
+    vi.doUnmock("node:fs");
+    vi.doUnmock("write-file-atomic");
+    vi.resetModules();
+    const second = await import("../core/vfs/workspace.js");
+    second.initWorkspace(join(TEST_ROOT, "ws"));
+
+    const content = readFileSync(join(talonPromptsDir(), "base.md"), "utf-8");
+    expect(content).toContain("## Tools"); // the full package copy
+    const manifest = JSON.parse(readFileSync(manifestPath(), "utf-8"));
+    expect(manifest["base.md"]).toBe(await sha256(content));
+  });
+
   it("re-adopts a file that matches the current package despite a stale manifest entry", async () => {
     // A user edit that lands byte-identical to the current package copy
     // (e.g. hand-applying an upstream change) must not strand the file
