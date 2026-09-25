@@ -113,6 +113,12 @@ const ALL_TOOLS_ORDER = [
   "kill_agent",
   "report_result",
   "message_parent",
+  // Peer channel (2026-09-25). Inserted beside the other agent-side tools
+  // rather than appended at the end of the catalogue: grouping is worth one
+  // deliberate cache miss, and the release that ships it restarts the daemon
+  // anyway, so every live prefix is cold at that point regardless.
+  "list_peers",
+  "message_peer",
   "check_inbox",
   // Appended for the backup subsystem — at the END, so the prompt-cache
   // prefix of every live chat survives the addition.
