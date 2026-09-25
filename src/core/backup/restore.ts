@@ -218,7 +218,18 @@ async function ensureParts(
     const path = partPath(manifest.id, part.name, home);
     log("backup", `Downloading ${part.name} from ${target.id}…`);
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-    await target.download(manifest.id, part.name, path);
+    // Into a side file, renamed only once complete: a download cut short
+    // under the part's own name would count as present next time, and
+    // every later restore would fail its checksum instead of refetching.
+    const partial = `${path}.partial`;
+    await rm(partial, { force: true });
+    try {
+      await target.download(manifest.id, part.name, partial);
+      await rename(partial, path);
+    } catch (err) {
+      await rm(partial, { force: true });
+      throw err;
+    }
   }
   return manifest.parts.filter((part) => !skipped.has(part.name));
 }
