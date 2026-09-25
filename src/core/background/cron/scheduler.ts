@@ -465,7 +465,6 @@ function isCronDue(job: CronJob, now: Date, windowStartMs: number): boolean {
 export const _cronInternals = {
   isDue,
   isCronDue,
-  MAX_TICK_LOOKBACK_MS,
 };
 
 /**
