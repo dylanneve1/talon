@@ -160,7 +160,15 @@ export function startLogin(
         new Error(outcome.ok ? "no prompt" : outcome.detail || outcome.reason),
       );
     if (tmpHome)
-      await rm(tmpHome, { recursive: true, force: true }).catch(() => {});
+      await rm(tmpHome, { recursive: true, force: true }).catch(
+        (err: unknown) =>
+          // The scratch HOME can hold a fresh credential copy — a leftover
+          // is worth knowing about.
+          logWarn(
+            "notify",
+            `${provider} login cleanup failed dir=${tmpHome}: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+      );
     resolveDone(outcome);
   };
 

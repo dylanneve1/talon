@@ -27,7 +27,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { files } from "../util/paths.js";
-import { log, logError } from "../util/log.js";
+import { log, logError, logWarn } from "../util/log.js";
 import { SCHEMA, dbSql } from "./sql/statements.generated.js";
 
 /**
@@ -96,8 +96,17 @@ function ensureSchema(database: SqlDatabase): void {
   ]) {
     try {
       database.exec(addColumn);
-    } catch {
-      /* duplicate column or no such table — both mean nothing to do */
+    } catch (err) {
+      // Duplicate column or no such table both mean nothing to do. Any
+      // other failure (read-only file, full disk) is a real fault the
+      // schema step below will likely trip over too — say which ALTER.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/duplicate column name|no such table/i.test(msg)) {
+        logWarn(
+          "db",
+          `schema column reconcile failed: ${msg}${dbErrorFields(err)} sql=${JSON.stringify(addColumn.slice(0, 60))}`,
+        );
+      }
     }
   }
   database.exec("BEGIN");
@@ -109,6 +118,24 @@ function ensureSchema(database: SqlDatabase): void {
     throw err;
   }
   if (row.tables === 0) log("db", "Initialized database schema");
+}
+
+/**
+ * The SQLite result code behind a driver error, as ` key=value` log
+ * fields (leading space; empty when there is none). node:sqlite keeps
+ * it out of the message — "database or disk is full" arrives as
+ * `errcode: 13` — so a log line built from `err.message` alone can't
+ * be grepped for SQLITE_FULL (13), SQLITE_BUSY (5) or SQLITE_READONLY (8).
+ */
+export function dbErrorFields(err: unknown): string {
+  if (!err || typeof err !== "object") return "";
+  const e = err as { code?: unknown; errcode?: unknown; errno?: unknown };
+  let out = "";
+  if (typeof e.code === "string") out += ` code=${e.code}`;
+  // node:sqlite names it errcode, bun:sqlite errno.
+  const rc = typeof e.errcode === "number" ? e.errcode : e.errno;
+  if (typeof rc === "number") out += ` errcode=${rc}`;
+  return out;
 }
 
 function defaultPath(): string {
@@ -212,8 +239,13 @@ export function flushDatabase(): void {
   if (!db) return;
   try {
     db.exec(dbSql.walCheckpoint);
-  } catch {
-    /* shutting down — best effort */
+  } catch (err) {
+    // Shutting down — best effort, but a checkpoint that fails here
+    // (disk full, I/O error) is the last word on why the WAL grew.
+    logWarn(
+      "db",
+      `WAL checkpoint failed: ${err instanceof Error ? err.message : String(err)}${dbErrorFields(err)}`,
+    );
   }
 }
 

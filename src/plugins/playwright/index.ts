@@ -55,10 +55,10 @@ export function createPlaywrightPlugin(config: {
   if (!endpoint && config.endpointFile) {
     try {
       endpoint = readFileSync(config.endpointFile, "utf-8").trim();
-    } catch {
+    } catch (err) {
       log(
         "playwright",
-        `Warning: could not read endpoint file ${config.endpointFile}`,
+        `Warning: could not read endpoint file ${config.endpointFile}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }

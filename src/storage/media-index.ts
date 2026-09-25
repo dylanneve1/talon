@@ -17,11 +17,12 @@
 
 import { existsSync, unlinkSync } from "node:fs";
 import { blake3HexFile } from "../native/blake3.js";
-import { log, logError } from "../util/log.js";
+import { log, logError, logWarn } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
 import { importLegacyJson } from "./legacy-import.js";
 import { setMessageFilePath } from "./history.js";
+import { dbErrorFields } from "./db.js";
 import * as repo from "./repositories/media-index-repo.js";
 
 export type { MediaEntry } from "./repositories/media-index-repo.js";
@@ -75,7 +76,11 @@ export function addMedia(entry: Omit<MediaEntry, "id">): void {
   try {
     repo.upsert(entry);
   } catch (err) {
-    logError("media", "Media index save failed", err);
+    logError(
+      "media",
+      `Media index save failed chat=${entry.chatId} msg=${entry.msgId} path=${entry.filePath}${dbErrorFields(err)}`,
+      err,
+    );
     recordError(
       `Media index write failed: ${err instanceof Error ? err.message : err}`,
     );
@@ -116,8 +121,13 @@ async function hashAndDedupe(entry: Omit<MediaEntry, "id">): Promise<void> {
         "media",
         `Deduped ${entry.filePath} -> ${canonical.filePath} (blake3 ${hash.slice(0, 12)}…)`,
       );
-    } catch {
-      /* dedupe is best-effort; the entry already points at the canonical copy */
+    } catch (err) {
+      // Dedupe is best-effort — the entry already points at the canonical
+      // copy — but the duplicate now sits on disk unreferenced.
+      logWarn(
+        "media",
+        `Dedupe unlink failed path=${entry.filePath}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 }
@@ -161,16 +171,28 @@ function purgeExpired(): void {
     const removed = repo.deleteOlderThan(cutoff);
     // Rows first, files second: content dedupe means several entries can
     // share one file, so only unlink paths no surviving row references.
+    let unlinkFailures = 0;
+    let firstFailure = "";
     for (const path of new Set(expired.map((e) => e.filePath))) {
       if (repo.countByFilePath(path) > 0) continue;
       try {
         if (existsSync(path)) unlinkSync(path);
-      } catch {
-        /* skip */
+      } catch (err) {
+        // Skip it, but count: files left behind are disk that the purge
+        // thinks it reclaimed.
+        if (unlinkFailures++ === 0) {
+          firstFailure = `${path}: ${err instanceof Error ? err.message : String(err)}`;
+        }
       }
     }
     if (removed > 0) {
       log("media", `Purged ${removed} expired media entries`);
+    }
+    if (unlinkFailures > 0) {
+      logWarn(
+        "media",
+        `Media purge left ${unlinkFailures} expired file(s) on disk; first=${firstFailure}`,
+      );
     }
   } catch (err) {
     logError("media", "Media index purge failed", err);

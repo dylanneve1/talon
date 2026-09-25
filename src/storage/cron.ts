@@ -12,11 +12,11 @@
 
 import { randomUUID } from "node:crypto";
 import { Cron } from "croner";
-import { log, logError } from "../util/log.js";
+import { log, logError, logWarn } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
 import { importLegacyJson } from "./legacy-import.js";
-import { inTransaction } from "./db.js";
+import { dbErrorFields, inTransaction } from "./db.js";
 import * as repo from "./repositories/cron-repo.js";
 import { nextDueMs, type CatchupPolicy } from "../native/scheduler-core.js";
 
@@ -182,14 +182,35 @@ export function nextRunAt(job: CronJob, fromMs = Date.now()): number | null {
       });
       const d = cron.nextRun(new Date(floor - 1));
       next = d ? d.getTime() : null;
-    } catch {
+    } catch (err) {
       next = null;
+      warnUnschedulable(job, err);
     }
   }
 
   if (next === null) return null;
   if (job.endAt && next > job.endAt) return null;
   return next;
+}
+
+/**
+ * Schedules already reported as unparseable. Expressions are validated
+ * on create, so one that fails here (edited row, croner upgrade) means a
+ * job that silently never fires again — say so once per job+schedule,
+ * not on every scheduler tick.
+ */
+const reportedUnschedulable = new Set<string>();
+
+function warnUnschedulable(job: CronJob, err: unknown): void {
+  const key = `${job.id}\0${job.schedule}\0${job.timezone ?? ""}`;
+  if (reportedUnschedulable.has(key)) return;
+  reportedUnschedulable.add(key);
+  logWarn(
+    "cron",
+    `Job will not fire: unparseable schedule job=${job.id} chat=${job.chatId} ` +
+      `schedule=${JSON.stringify(job.schedule)} tz=${job.timezone ?? "local"}: ` +
+      `${err instanceof Error ? err.message : String(err)}`,
+  );
 }
 
 /** Compact human description of a job's cadence for list output. */
@@ -278,7 +299,11 @@ export function recordCronRun(
       repo.upsert(job);
     });
   } catch (err) {
-    logError("cron", "Failed to record cron run", err);
+    logError(
+      "cron",
+      `Failed to record cron run job=${id}${dbErrorFields(err)}`,
+      err,
+    );
     recordError(
       `Cron run record failed: ${err instanceof Error ? err.message : err}`,
     );

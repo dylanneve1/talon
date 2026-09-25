@@ -19,7 +19,7 @@ import {
 } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
-import { log, logError } from "../util/log.js";
+import { log, logError, logWarn } from "../util/log.js";
 import { dirs, files } from "../util/paths.js";
 import { importLegacyJson } from "./legacy-import.js";
 import { inTransaction } from "./db.js";
@@ -286,8 +286,13 @@ export function deleteTrigger(id: string): boolean {
   for (const path of [t.scriptPath, t.logPath]) {
     try {
       rmSync(path, { force: true });
-    } catch {
-      /* best effort */
+    } catch (err) {
+      // Best effort; `force` already absorbs a missing file, so this is
+      // a real fault that leaves an orphan on disk.
+      logWarn(
+        "triggers",
+        `Could not remove trigger file id=${id} path=${path}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
   return true;
