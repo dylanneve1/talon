@@ -244,6 +244,21 @@ describe.skipIf(isWindows)("openai-agents / builtins / Bash", () => {
     });
     expect(out).toContain("timed out");
   }, 10_000);
+
+  it("returns on timeout even when a grandchild still holds the output pipes", async () => {
+    // `sleep` is bash's child here, not an exec'd replacement: killing only
+    // bash left it holding stdout, so `close` (and the tool) waited the full
+    // 30s — and the sleep outlived the timeout as an orphan.
+    const started = Date.now();
+    const out = await call("Bash", {
+      command: "sleep 30; echo after",
+      description: null,
+      timeout_ms: 1000,
+    });
+    expect(out).toContain("timed out");
+    expect(out).not.toContain("after");
+    expect(Date.now() - started).toBeLessThan(8_000);
+  }, 15_000);
 });
 
 // ── Glob ────────────────────────────────────────────────────────────────────

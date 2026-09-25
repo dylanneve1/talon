@@ -31,7 +31,7 @@
  * shared prompt vocabulary applies uniformly.
  */
 import { tool } from "@openai/agents";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { readFile, writeFile, mkdir, glob } from "node:fs/promises";
 import { dirname, resolve as resolvePath } from "node:path";
 import { expandFsPath as expandPath } from "../../util/fs-path.js";
@@ -204,6 +204,12 @@ const editTool = tool({
 
 const BASH_DEFAULT_TIMEOUT_MS = 30_000;
 const BASH_MAX_TIMEOUT_MS = 600_000;
+/**
+ * After a timeout kill, how long to wait for `close` before settling with
+ * what was captured. `close` waits for the stdio pipes to drain, which a
+ * descendant that escaped the kill can hold open indefinitely.
+ */
+const BASH_CLOSE_GRACE_MS = 2_000;
 
 interface BashInput {
   command: string;
@@ -235,10 +241,16 @@ function runShell(
             ],
           }
         : { cmd: "bash", args: ["-lc", command] };
+    // detached → own process group on POSIX, so the timeout kill reaches
+    // the shell's children too. Killing only the shell left e.g. the
+    // `sleep` in `sleep 30; echo` running and holding stdout open, so
+    // `close` — and the tool call — waited for it long past the timeout.
+    const detached = process.platform !== "win32";
     const child = spawn(shell.cmd, shell.args, {
       cwd: process.cwd(),
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
+      detached,
     });
     let stdout = "";
     let stderr = "";
@@ -248,17 +260,31 @@ function runShell(
     child.stderr.on("data", (b: Buffer) => {
       stderr += b.toString("utf8");
     });
+    let settled = false;
+    let closeGrace: NodeJS.Timeout | undefined;
+    const finish = (result: Awaited<ReturnType<typeof runShell>>): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(killer);
+      if (closeGrace) clearTimeout(closeGrace);
+      resolveResult(result);
+    };
     const killer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      killGroup(child, detached);
+      // A descendant that left the group can still hold the pipes open;
+      // don't let it pin the tool call past the timeout.
+      closeGrace = setTimeout(
+        () => finish({ stdout, stderr, code: -1, timedOut }),
+        BASH_CLOSE_GRACE_MS,
+      );
     }, timeoutMs);
     let timedOut = false;
     child.on("error", (err) => {
       // spawn failed (e.g. bash not in PATH on Windows). Resolve instead
       // of letting Node emit an uncaught error — the tool returns the
       // diagnostic so callers can surface it rather than crashing.
-      clearTimeout(killer);
-      resolveResult({
+      finish({
         stdout,
         stderr: err.message,
         code: -1,
@@ -266,10 +292,26 @@ function runShell(
       });
     });
     child.on("close", (code) => {
-      clearTimeout(killer);
-      resolveResult({ stdout, stderr, code: code ?? -1, timedOut });
+      finish({ stdout, stderr, code: code ?? -1, timedOut });
     });
   });
+}
+
+/** SIGKILL the child's whole process group, falling back to the child. */
+function killGroup(child: ChildProcess, detached: boolean): void {
+  if (detached && child.pid) {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+      return;
+    } catch {
+      // group already gone — fall through to the direct kill
+    }
+  }
+  try {
+    child.kill("SIGKILL");
+  } catch {
+    // already dead
+  }
 }
 
 const bashTool = tool({
