@@ -242,14 +242,14 @@ export class BridgeServer {
    *
    * Device commands are not public: their params carry one-time transfer
    * tokens, exec command lines, remote paths, and — on the chunked fallback —
-   * whole base64 file bodies. Broadcasting them handed every connected client
-   * another device's secrets and relied on each client discarding what wasn't
-   * addressed to it, which is courtesy, not enforcement.
+   * whole base64 file bodies. Broadcasting them would hand every connected
+   * client another device's secrets and rely on each client discarding what
+   * isn't addressed to it, which is courtesy, not enforcement.
    *
    * A claim is an ADDRESS, not a credential: any client holding the bridge
    * token could claim any id, and the bridge token is (still) the only trust
-   * boundary here. What this buys is that a device no longer passively
-   * receives traffic meant for its peers.
+   * boundary here. What this buys is that a device does not passively
+   * receive traffic meant for its peers.
    *
    * Clients that claimed nothing are the fallback audience, and only when the
    * target claimed nothing either: a companion build that predates the claim

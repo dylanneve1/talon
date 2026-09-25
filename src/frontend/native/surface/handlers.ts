@@ -79,7 +79,7 @@ function resolveAttachments(
     }
   }
   // A dropped reference is how "I attached a file and the agent never saw it"
-  // happens, and it used to be entirely silent. The usual cause is a media id
+  // happens, so it must not be silent. The usual cause is a media id
   // minted by a previous daemon run — `runtime.uploads` is per-run, so a
   // client that staged a file before a restart and sent it after points at
   // nothing.

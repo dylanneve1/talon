@@ -102,10 +102,8 @@ export function liveTurnEvents(runtime: NativeRuntime): BridgeEvent[] {
 
 /**
  * Safety net: any tool the backend announced but never resolved (a crash can
- * eat a tool_result; callback backends historically never emitted one —
- * handler-to-events now pairs each tool_call with an immediate synthetic
- * result) gets a synthetic result at turn end — a spinner the app opened on
- * phase:"call" must always see a phase:"result".
+ * eat a tool_result) gets a synthetic result at turn end — a spinner the app
+ * opened on phase:"call" must always see a phase:"result".
  */
 function flushOpenTools(
   runtime: NativeRuntime,
