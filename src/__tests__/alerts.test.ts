@@ -52,4 +52,38 @@ describe("alerts", () => {
     expect(sent).toEqual([]);
     expect(activeAlerts().map((a) => a.key)).toEqual(["k"]);
   });
+
+  it("delivers an escalation inside the cooldown", () => {
+    raiseAlert("disk", "low", { severity: "error" });
+    raiseAlert("disk", "still low", { severity: "error" });
+    raiseAlert("disk", "almost full", { severity: "critical" });
+    expect(sent).toEqual([
+      "🔴 low",
+      "🚨 almost full\n(+1 more since the last alert)",
+    ]);
+    expect(activeAlerts()[0]?.severity).toBe("critical");
+  });
+
+  it("retries on the next raise when delivery failed", async () => {
+    let ok = false;
+    resetAlertsForTest(async (text) => {
+      sent.push(text);
+      return ok;
+    });
+    raiseAlert("k", "down");
+    await vi.advanceTimersByTimeAsync(0);
+    ok = true;
+    raiseAlert("k", "still down");
+    await vi.advanceTimersByTimeAsync(0);
+    raiseAlert("k", "still down");
+    expect(sent).toEqual(["🔴 down", "🔴 still down"]);
+  });
+
+  it("applies the configured cooldown", () => {
+    configureAlerts({ cooldownMs: 60_000 });
+    raiseAlert("k", "down");
+    vi.advanceTimersByTime(60_000);
+    raiseAlert("k", "down");
+    expect(sent).toHaveLength(2);
+  });
 });

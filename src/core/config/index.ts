@@ -478,6 +478,20 @@ const configSchema = z.object({
   planAlertThreshold: z.number().int().min(1).max(100).default(80),
   /** Chat that receives plan warnings. Defaults to `adminUserId`. */
   planAlertChatId: z.string().optional(),
+  /**
+   * Operator alerts (core/frontend-runtime/alerts.ts): faults that need a
+   * human — a full disk, a crash, an error spike, a dead frontend — sent
+   * to the admin chat, once per fault per `cooldownMinutes`, with a
+   * recovery notice when it clears. `enabled: false` keeps them in the
+   * log and in `talon status` only.
+   */
+  alerts: z
+    .object({
+      enabled: z.boolean().default(true),
+      cooldownMinutes: z.number().int().min(0).max(1440).default(30),
+    })
+    .strict()
+    .optional(),
   /** Background memory-consolidation (dream) runs. Mirrors `pulse`/`heartbeat`. */
   dream: z.boolean().default(true),
   /**

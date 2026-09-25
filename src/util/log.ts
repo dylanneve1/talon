@@ -448,11 +448,48 @@ export function log(component: LogComponent, message: string): void {
   emit(() => logger.info({ component }, message));
 }
 
+type LogErrorListener = (
+  component: LogComponent,
+  message: string,
+  err?: unknown,
+) => void;
+
+let errorListener: LogErrorListener | null = null;
+let inErrorListener = false;
+
+/**
+ * Register (or clear, with null) the one listener every `logError` call
+ * reaches — core's error-rate alarm (core/daemon/health-alerts.ts). util
+ * cannot import core, so core registers itself here. The listener runs
+ * synchronously and must be cheap; it cannot throw into the caller, and
+ * a `logError` it makes itself is not fed back to it.
+ */
+export function onLogError(fn: LogErrorListener | null): void {
+  errorListener = fn;
+}
+
+function notifyErrorListener(
+  component: LogComponent,
+  message: string,
+  err: unknown,
+): void {
+  if (!errorListener || inErrorListener) return;
+  inErrorListener = true;
+  try {
+    errorListener(component, message, err);
+  } catch {
+    /* an alarm must never break the error path it watches */
+  } finally {
+    inErrorListener = false;
+  }
+}
+
 export function logError(
   component: LogComponent,
   message: string,
   err?: unknown,
 ): void {
+  notifyErrorListener(component, message, err);
   if (err instanceof Error) {
     // Capture both the concise message (for log consumers that look at `err`)
     // and the full stack (for diagnostics). pino-pretty renders the `stack`

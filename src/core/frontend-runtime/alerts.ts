@@ -8,6 +8,10 @@
  * were folded in. `resolveAlert` sends one recovery notice for a key that
  * was delivered, and nothing for one that never was. Delivery rides
  * `notifyAdmin`, so alerts degrade to a log line when no frontend is up.
+ *
+ * Two exceptions to the cooldown: an escalation (warn → error → critical)
+ * always delivers, and a delivery that failed (no notifier wired, the
+ * admin's frontend down) doesn't count, so the next raise tries again.
  */
 
 import { log, logWarn } from "../../util/log.js";
@@ -30,6 +34,7 @@ const ICON: Record<AlertSeverity, string> = {
   error: "🔴",
   critical: "🚨",
 };
+const RANK: Record<AlertSeverity, number> = { warn: 0, error: 1, critical: 2 };
 
 const active = new Map<string, ActiveAlert>();
 let cooldownMs = DEFAULT_COOLDOWN_MS;
@@ -59,22 +64,31 @@ export function raiseAlert(
   const now = Date.now();
   logWarn("alert", `[${severity}] ${key}: ${message}`);
   const prior = active.get(key);
-  if (prior && now - prior.lastSentAt < cooldownMs) {
+  const escalated =
+    prior !== undefined && RANK[severity] > RANK[prior.severity];
+  if (prior && !escalated && now - prior.lastSentAt < cooldownMs) {
     prior.suppressed++;
     prior.message = message;
     return;
   }
   const folded = prior?.suppressed ?? 0;
-  active.set(key, {
+  const entry: ActiveAlert = {
     severity,
     message,
     firstAt: prior?.firstAt ?? now,
     lastSentAt: now,
     suppressed: 0,
-  });
+  };
+  active.set(key, entry);
   if (!enabled) return;
   const repeat = folded > 0 ? `\n(+${folded} more since the last alert)` : "";
-  void send(`${ICON[severity]} ${message}${repeat}`).catch(() => {});
+  const undelivered = (): void => {
+    // Nobody heard it: don't let the cooldown swallow the next raise.
+    if (active.get(key) === entry) entry.lastSentAt = 0;
+  };
+  void send(`${ICON[severity]} ${message}${repeat}`).then((ok) => {
+    if (ok === false) undelivered();
+  }, undelivered);
 }
 
 /** Clear a fault; announces recovery only if its alert was delivered. */
