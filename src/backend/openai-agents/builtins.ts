@@ -34,6 +34,7 @@ import { tool } from "@openai/agents";
 import { spawn, type ChildProcess } from "node:child_process";
 import { readFile, writeFile, mkdir, glob } from "node:fs/promises";
 import { dirname, resolve as resolvePath } from "node:path";
+import { createOutputCapture } from "../../util/exec-output.js";
 import { expandFsPath as expandPath } from "../../util/fs-path.js";
 
 // ── Read ────────────────────────────────────────────────────────────────────
@@ -242,9 +243,8 @@ function runShell(
           }
         : { cmd: "bash", args: ["-lc", command] };
     // detached → own process group on POSIX, so the timeout kill reaches
-    // the shell's children too. Killing only the shell left e.g. the
-    // `sleep` in `sleep 30; echo` running and holding stdout open, so
-    // `close` — and the tool call — waited for it long past the timeout.
+    // the shell's children too. A surviving child (the `sleep` in
+    // `sleep 30; echo`) holds stdout open, and `close` waits for it.
     const detached = process.platform !== "win32";
     const child = spawn(shell.cmd, shell.args, {
       cwd: process.cwd(),
@@ -252,48 +252,34 @@ function runShell(
       stdio: ["ignore", "pipe", "pipe"],
       detached,
     });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (b: Buffer) => {
-      stdout += b.toString("utf8");
-    });
-    child.stderr.on("data", (b: Buffer) => {
-      stderr += b.toString("utf8");
-    });
+    // Bounded: an unbounded stream (`yes`, a verbose build) otherwise grows
+    // until V8's string limit throws inside the data listener.
+    const out = createOutputCapture();
+    const err = createOutputCapture();
+    child.stdout.on("data", out.push);
+    child.stderr.on("data", err.push);
     let settled = false;
+    let timedOut = false;
     let closeGrace: NodeJS.Timeout | undefined;
-    const finish = (result: Awaited<ReturnType<typeof runShell>>): void => {
+    const finish = (code: number, stderr = err.value()): void => {
       if (settled) return;
       settled = true;
       clearTimeout(killer);
       if (closeGrace) clearTimeout(closeGrace);
-      resolveResult(result);
+      resolveResult({ stdout: out.value(), stderr, code, timedOut });
     };
     const killer = setTimeout(() => {
       timedOut = true;
       killGroup(child, detached);
       // A descendant that left the group can still hold the pipes open;
       // don't let it pin the tool call past the timeout.
-      closeGrace = setTimeout(
-        () => finish({ stdout, stderr, code: -1, timedOut }),
-        BASH_CLOSE_GRACE_MS,
-      );
+      closeGrace = setTimeout(() => finish(-1), BASH_CLOSE_GRACE_MS);
     }, timeoutMs);
-    let timedOut = false;
-    child.on("error", (err) => {
-      // spawn failed (e.g. bash not in PATH on Windows). Resolve instead
-      // of letting Node emit an uncaught error — the tool returns the
-      // diagnostic so callers can surface it rather than crashing.
-      finish({
-        stdout,
-        stderr: err.message,
-        code: -1,
-        timedOut: false,
-      });
-    });
-    child.on("close", (code) => {
-      finish({ stdout, stderr, code: code ?? -1, timedOut });
-    });
+    // spawn failed (e.g. bash not in PATH on Windows). Resolve instead
+    // of letting Node emit an uncaught error — the tool returns the
+    // diagnostic so callers can surface it rather than crashing.
+    child.on("error", (spawnErr) => finish(-1, spawnErr.message));
+    child.on("close", (code) => finish(code ?? -1));
   });
 }
 

@@ -259,6 +259,20 @@ describe.skipIf(isWindows)("openai-agents / builtins / Bash", () => {
     expect(out).not.toContain("after");
     expect(Date.now() - started).toBeLessThan(8_000);
   }, 15_000);
+
+  it("caps captured output instead of buffering an unbounded stream", async () => {
+    // Unbounded, a chatty command (`yes`, a verbose build) grew the string
+    // until V8's max string length threw inside the data listener — an
+    // uncaught exception that took the daemon down.
+    const out = await call("Bash", {
+      command: "head -c 6000000 /dev/zero | tr '\\0' a",
+      description: null,
+      timeout_ms: null,
+    });
+    expect(out.length).toBeLessThan(5 * 1024 * 1024);
+    expect(out).toContain("capture cap");
+    expect(out).toContain("exit 0");
+  }, 15_000);
 });
 
 // ── Glob ────────────────────────────────────────────────────────────────────
