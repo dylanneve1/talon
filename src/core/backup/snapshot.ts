@@ -72,6 +72,7 @@ import {
   type SourceContext,
 } from "./sources/sessions.js";
 import {
+  DB_MEMBER,
   STATE_PART,
   indexSnapshot,
   linkOrCopy,
@@ -88,8 +89,6 @@ import type {
   SnapshotPart,
 } from "./types.js";
 
-/** Where the database copy lands inside the archive. */
-const DB_MEMBER = "db/talon.db";
 /** The part that holds WhatsApp auth and the userbot session. */
 const LOGINS_PART = "logins.tar.zst";
 /** How a clone reinstalls fetched plugins (see sources/plugins.ts). */
