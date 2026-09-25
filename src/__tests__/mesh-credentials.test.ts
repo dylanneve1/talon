@@ -427,6 +427,34 @@ describe("mesh service with credentials", () => {
     expect(result.text).toMatch(/Revoked its 1 per-device credential/);
     expect(svc.credentials!.authenticate(token)).toBeNull();
   });
+
+  it("remove_device fails a command still waiting on the revoked device", async () => {
+    const svc = await service();
+    await svc.load();
+    await svc.register({
+      id: "phone",
+      name: "Pixel",
+      platform: "android",
+      appVersion: "1",
+    });
+    await svc.credentials!.mint({
+      deviceId: "phone",
+      scopes: ["device"],
+      origin: "pair",
+    });
+    let sent!: () => void;
+    const dispatched = new Promise<void>((r) => (sent = r));
+    svc.registerTransport({ locate: () => {}, command: () => sent() });
+    // A 5-minute exec the device will now never answer.
+    const exec = svc.execOnDevice("phone", "sleep 600", undefined, 300);
+    await dispatched;
+
+    await svc.removeDevice("phone");
+
+    const result = await exec;
+    expect(result.ok).toBe(false);
+    expect(result.text).toContain("removed from the mesh before it answered");
+  }, 2_000);
 });
 
 describe("gateway /mesh/credentials", () => {

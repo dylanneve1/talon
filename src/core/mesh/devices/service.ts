@@ -317,6 +317,15 @@ export class MeshService {
     return true;
   }
 
+  /** Resolve every command still waiting on `deviceId` as failed. */
+  private failPendingCommands(deviceId: string, message: string): void {
+    for (const [commandId, pending] of this.pendingCommands) {
+      if (pending.deviceId !== deviceId) continue;
+      this.pendingCommands.delete(commandId);
+      pending.resolve({ commandId, deviceId, ok: false, message });
+    }
+  }
+
   /**
    * Fail a pending command early when its device stops heartbeating.
    *
@@ -511,6 +520,15 @@ export class MeshService {
     const revoked =
       (await this.credentials?.revokeDevice(removed.id, "device removed")) ??
       [];
+    // With its credential gone it can no longer post a result, and presence
+    // can't fail these for it (the registry entry is gone too) — without
+    // this, a command in flight waits out its whole budget.
+    if (revoked.length > 0) {
+      this.failPendingCommands(
+        removed.id,
+        `${removed.name} was removed from the mesh before it answered.`,
+      );
+    }
     return {
       ok: true,
       text:
