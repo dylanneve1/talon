@@ -1,9 +1,7 @@
 /**
  * Teams frontend runtime — the state every module shares.
  *
- * `createTeamsFrontend` used to hold all of this as closure variables, with
- * the poll loop and the slash commands nested inside `.start`. It is now one
- * explicit object, constructed once, that each module (chat-discovery,
+ * One explicit object, constructed once, that each module (chat-discovery,
  * poll, commands, turn, outbound) takes as its first parameter.
  */
 
@@ -25,7 +23,6 @@ export type TeamsRuntime = {
   pollTimer: ReturnType<typeof setInterval> | null;
   /** Newest message id already handled — the poll loop cuts at it. */
   lastSeenMessageId: string | null;
-  myUserId: string | null;
   /** Re-entrancy guard: a slow poll never overlaps the next tick. */
   polling: boolean;
 };
@@ -45,7 +42,6 @@ export function createTeamsRuntime(
     graphClient: null,
     pollTimer: null,
     lastSeenMessageId: null,
-    myUserId: null,
     polling: false,
   };
 }

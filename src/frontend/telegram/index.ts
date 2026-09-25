@@ -6,7 +6,7 @@
  * core gateway so MCP tool calls route to Telegram API.
  */
 
-import { Bot, InputFile, API_CONSTANTS } from "grammy";
+import { Bot, GrammyError, InputFile, API_CONSTANTS } from "grammy";
 import { autoRetry } from "@grammyjs/auto-retry";
 import { apiThrottler } from "@grammyjs/transformer-throttler";
 import {
@@ -150,9 +150,15 @@ export function createTelegramFrontend(
 
     async start() {
       bot.catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
         logError("bot", "Unhandled bot error", err);
-        if (/unauthorized|401|not found|404/i.test(msg)) {
+        // Judge the token by Telegram's error code, never the message text:
+        // a handler's ordinary 400 ("message to edit not found", "chat not
+        // found") must not take the whole daemon down.
+        const cause = (err as { error?: unknown } | null)?.error ?? err;
+        if (
+          cause instanceof GrammyError &&
+          (cause.error_code === 401 || cause.error_code === 404)
+        ) {
           logError("bot", "Bot token appears invalid — shutting down");
           process.exit(1);
         }
