@@ -205,17 +205,6 @@ async function maybeFallbackForChatGptMismatch(
   return await handleMessage({ ...params, model: fallbackModel }, true);
 }
 
-// ── Model resolution ────────────────────────────────────────────────────────
-
-/**
- * Codex accepts arbitrary model strings; we pass through whatever the
- * caller resolved (chat-settings → config) and fall back to the auth-aware
- * default: `gpt-5-codex` when an API key is present, `gpt-5.5` when only
- * ChatGPT OAuth is configured (because `gpt-5-codex` is rejected with a
- * 400 on ChatGPT-mode accounts). A model known to be OAuth-incompat on a
- * ChatGPT-OAuth account is swapped pre-emptively rather than letting the
- * first turn fail.
- */
 /**
  * The turn's user prompt: the shared framing every backend emits, plus
  * whatever this turn's memory retrieval produced. `formatUserPrompt` is
@@ -233,6 +222,17 @@ function buildTurnPrompt(params: QueryParams): string {
   });
 }
 
+// ── Model resolution ────────────────────────────────────────────────────────
+
+/**
+ * Codex accepts arbitrary model strings; we pass through whatever the
+ * caller resolved (chat-settings → config) and fall back to the auth-aware
+ * default: `gpt-5-codex` when an API key is present, `gpt-5.5` when only
+ * ChatGPT OAuth is configured (because `gpt-5-codex` is rejected with a
+ * 400 on ChatGPT-mode accounts). A model known to be OAuth-incompat on a
+ * ChatGPT-OAuth account is swapped pre-emptively rather than letting the
+ * first turn fail.
+ */
 function resolveCodexModel(chatId: string, requested: string | undefined) {
   const authInfo = getCodexAuthInfo();
   const authAwareDefault =

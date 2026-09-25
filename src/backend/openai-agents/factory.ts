@@ -93,9 +93,9 @@ const openAIAgentsFactory: BackendFactory = {
 
     return {
       backend,
-      // Cleanup: close every per-chat MCP bundle in the pool so the
-      // ~15 plugin subprocesses per active chat don't outlive the
-      // backend itself, then drop the cached state.
+      // Cleanup: close every per-chat MCP bundle in the pool so its hub
+      // sessions don't outlive the backend itself, then drop the cached
+      // state.
       cleanup: async () => {
         await releaseAllBundles();
         resetState();

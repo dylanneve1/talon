@@ -12,8 +12,7 @@
  * hub (`core/mcp-hub`) — Codex connects with `mcp_servers.<name>.url`
  * (the same transport `codex mcp add --url` configures). The hub hosts
  * Talon's tools in-process and shares plugin/brave children across
- * chats, so Codex no longer spawns a subprocess pair per server per
- * turn:
+ * chats, so Codex spawns no MCP subprocesses of its own:
  *
  *   {
  *     mcp_servers: {

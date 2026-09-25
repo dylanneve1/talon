@@ -4,17 +4,11 @@
  * Every server is a lightweight `MCPServerStreamableHttp` client
  * pointing at the daemon's MCP hub (`core/mcp-hub`): Talon's own tools
  * run in-process there, and plugin/brave servers are hub-managed
- * children shared across chats and reaped when idle.
+ * children shared across chats and reaped when idle. A bundle is just
+ * HTTP client objects; the process count is owned and bounded by the hub.
  *
- * Historical note: this pool used to hold one **subprocess set** per
- * chat (every plugin × every chat, held until release) — the daemon's
- * memory grew linearly with the number of chats. With the hub, a
- * bundle is just HTTP client objects; the process count is owned and
- * bounded by the hub.
- *
- * The bundle is still cached per chat (and released on reset/rebind)
- * so `cacheToolsList` survives across turns and each turn skips the
- * connect handshake.
+ * The bundle is cached per chat so `cacheToolsList` survives across
+ * turns and each turn skips the connect handshake.
  *
  * Concurrency: `getOrCreateBundle` serialises the build-or-return
  * decision on a per-chat in-flight Promise so two concurrent turns from
@@ -36,18 +30,13 @@ import { frontendsForChat } from "../runtime/frontends.js";
 import { log, logWarn } from "../../util/log.js";
 
 /**
- * One per-chat bundle. Subprocesses stay alive until `close()` is
+ * One per-chat bundle. Its hub sessions stay open until `close()` is
  * called via `releaseBundle()` / `releaseAllBundles()`.
  */
 export interface OpenAIAgentsMcpBundle {
-  /**
-   * Connected MCP servers ready to pass to `new Agent({ mcpServers })`.
-   * `connectMcpServers` returns the structural `MCPServer` type — the
-   * underlying instances are `MCPServerStdio` but the Agent constructor
-   * only needs the interface.
-   */
+  /** Connected MCP servers ready to pass to `new Agent({ mcpServers })`. */
   servers: MCPServer[];
-  /** Close every spawned subprocess. Safe to call multiple times. */
+  /** Close every server's hub session. Safe to call multiple times. */
   close: () => Promise<void>;
   /** Servers that failed to connect — exposed for diagnostics. */
   failed: ReadonlyArray<{ name: string; error: string }>;
@@ -115,14 +104,8 @@ export async function getOrCreateBundle(
  * Close the bundle for `chatId` and drop it from the pool. No-op when
  * the chat has no live bundle.
  *
- * Call when:
- *   - The chat rebinds to a non-openai-agents backend.
- *   - The user runs `/reset`.
- *   - The chat is destroyed.
- *
  * If `getOrCreateBundle` is in flight when called, releases the bundle
- * once the in-flight build resolves to avoid leaving an unreleased
- * subprocess set.
+ * once the in-flight build resolves so it is not left open.
  */
 export async function releaseBundle(chatId: string): Promise<void> {
   // If a build is in flight, wait for it then close the result.
@@ -152,8 +135,8 @@ export async function releaseBundle(chatId: string): Promise<void> {
 
 /**
  * Close every live bundle. Used by the backend factory's `cleanup`
- * hook so unbinding the openai-agents backend leaves no orphan MCP
- * subprocesses.
+ * hook so unbinding the openai-agents backend leaves no hub sessions
+ * behind.
  */
 export async function releaseAllBundles(): Promise<void> {
   const ids = [...bundles.keys()];
