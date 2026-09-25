@@ -163,6 +163,9 @@ async function connectOnce(
   // Atomic replacement for Baileys' useMultiFileAuthState — same disk
   // format, torn-write-proof (see auth-state.ts for why that matters).
   const { state, saveCreds } = await useAtomicAuthState(dirs.whatsappAuth);
+  // stop() ends runtime.sock, which is still null while auth loads; a
+  // socket built after it would never close and stop() would wait forever.
+  if (runtime.stopping) return "stop";
   const socket = makeWASocket({
     auth: state,
     logger: makeWaLogger(),
