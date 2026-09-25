@@ -56,6 +56,12 @@ export type NativeRuntime = {
    */
   readonly media: Map<string, string>;
   /**
+   * `media` reversed (path → id). Every history page re-registers its
+   * attachments, so without this each fetch — and every client reconnect
+   * re-fetches — grew `media` by one entry per attachment, forever.
+   */
+  readonly mediaIds: Map<string, string>;
+  /**
    * Uploads this daemon run has accepted, keyed by their media id. `/send`
    * resolves a client's attachment references through here rather than
    * trusting the paths in the request body, so a message can only ever point
@@ -110,6 +116,7 @@ export function createNativeRuntime(
     chats: new NativeChats(),
     mesh: getMeshService(),
     media: new Map(),
+    mediaIds: new Map(),
     uploads: new Map(),
     contextByChat: new Map(),
     liveTurns: new Map(),
