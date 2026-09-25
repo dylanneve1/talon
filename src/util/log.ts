@@ -21,6 +21,7 @@ import {
   closeSync,
 } from "node:fs";
 import { dirs, files } from "./paths.js";
+import { currentTurnId } from "./logging/turn-scope.js";
 
 export type LogComponent =
   | "bot"
@@ -444,8 +445,21 @@ function emit(write: () => void): void {
   }
 }
 
+/**
+ * Append `turn=<id>` when the line is written from inside a running
+ * turn (see logging/turn-scope.ts), unless the caller already named it. The
+ * id goes in the message text, not a field, so a plain `grep` over
+ * talon.log and the pretty console both show it.
+ */
+function tagTurn(message: string): string {
+  const turnId = currentTurnId();
+  if (!turnId) return message;
+  const tag = `turn=${turnId}`;
+  return message.includes(tag) ? message : `${message} ${tag}`;
+}
+
 export function log(component: LogComponent, message: string): void {
-  emit(() => logger.info({ component }, message));
+  emit(() => logger.info({ component }, tagTurn(message)));
 }
 
 export function logError(
@@ -458,21 +472,24 @@ export function logError(
     // and the full stack (for diagnostics). pino-pretty renders the `stack`
     // field on its own line; JSON consumers can read either field.
     emit(() =>
-      logger.error({ component, err: err.message, stack: err.stack }, message),
+      logger.error(
+        { component, err: err.message, stack: err.stack },
+        tagTurn(message),
+      ),
     );
   } else if (err !== undefined) {
-    emit(() => logger.error({ component, err: String(err) }, message));
+    emit(() => logger.error({ component, err: String(err) }, tagTurn(message)));
   } else {
-    emit(() => logger.error({ component }, message));
+    emit(() => logger.error({ component }, tagTurn(message)));
   }
 }
 
 export function logWarn(component: LogComponent, message: string): void {
-  emit(() => logger.warn({ component }, message));
+  emit(() => logger.warn({ component }, tagTurn(message)));
 }
 
 export function logDebug(component: LogComponent, message: string): void {
-  emit(() => logger.debug({ component }, message));
+  emit(() => logger.debug({ component }, tagTurn(message)));
 }
 
 // Expose logger to plugins running in the same process
