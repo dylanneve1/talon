@@ -24,7 +24,6 @@
  *   - `pool`     — init/teardown, role accessors, availability, snapshot,
  *                  listeners.
  *   - `rebind`   — rebind/release holders + per-chat accessors.
- *   - `legacy`   — single-active aliases routed to the chat role.
  */
 
 export * from "./types.js";
@@ -57,14 +56,3 @@ export {
   hasChatBackendOverride,
   resolveChatBackend,
 } from "./rebind.js";
-export {
-  initBackendController,
-  getActiveBackend,
-  hasActiveBackend,
-  getActiveBackendOrNull,
-  getActiveBackendId,
-  getActiveBackendLabel,
-  switchBackend,
-  cleanupBackendController,
-  resetBackendControllerForTest,
-} from "./legacy.js";
