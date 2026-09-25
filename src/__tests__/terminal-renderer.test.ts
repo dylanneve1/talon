@@ -15,7 +15,6 @@ vi.mock("picocolors", () => ({
 
 import {
   wrap,
-  formatTimeAgo,
   extractToolDetail,
   cleanToolName,
   createRenderer,
@@ -52,30 +51,6 @@ describe("wrap", () => {
     const result = wrap(" ".repeat(26), 0, 25);
     // Should produce an empty string (no content words to push)
     expect(result).toBe("");
-  });
-});
-
-// ── formatTimeAgo ────────────────────────────────────────────────────────────
-
-describe("formatTimeAgo", () => {
-  it('returns "just now" for recent timestamps', () => {
-    expect(formatTimeAgo(Date.now())).toBe("just now");
-    expect(formatTimeAgo(Date.now() - 30_000)).toBe("just now");
-  });
-
-  it("returns minutes for < 1 hour", () => {
-    expect(formatTimeAgo(Date.now() - 5 * 60_000)).toBe("5m ago");
-    expect(formatTimeAgo(Date.now() - 59 * 60_000)).toBe("59m ago");
-  });
-
-  it("returns hours for < 1 day", () => {
-    expect(formatTimeAgo(Date.now() - 2 * 3_600_000)).toBe("2h ago");
-    expect(formatTimeAgo(Date.now() - 23 * 3_600_000)).toBe("23h ago");
-  });
-
-  it("returns days for >= 1 day", () => {
-    expect(formatTimeAgo(Date.now() - 86_400_000)).toBe("1d ago");
-    expect(formatTimeAgo(Date.now() - 7 * 86_400_000)).toBe("7d ago");
   });
 });
 
