@@ -253,6 +253,8 @@ function guestPluginDenied(target: { serverName: string; chatId: string }) {
 type SessionEntry = {
   transport: StreamableHTTPServerTransport;
   lastSeen: number;
+  /** Requests still open on this session, SSE streams included. */
+  open: number;
 };
 
 const sessions = new Map<string, SessionEntry>();
@@ -260,7 +262,11 @@ const sessions = new Map<string, SessionEntry>();
 /**
  * Sessions whose client vanished without a DELETE (crashed subprocess,
  * kill -9) are closed after this idle window. Every well-behaved client
- * terminates explicitly, so this only catches stragglers.
+ * terminates explicitly, so this only catches stragglers. A session with
+ * a request still open is never idle: a client that holds its event
+ * stream between turns (openai-agents keeps one per chat for good) is
+ * alive however quiet the chat, and it does not re-initialize on a 404.
+ * The idle clock restarts when its last open request ends.
  */
 const SESSION_IDLE_MS = 30 * 60_000;
 const SESSION_REAP_INTERVAL_MS = 5 * 60_000;
@@ -271,7 +277,7 @@ function startSessionReaper(): void {
   sessionReaper = setInterval(() => {
     const cutoff = Date.now() - SESSION_IDLE_MS;
     for (const [id, entry] of sessions) {
-      if (entry.lastSeen >= cutoff) continue;
+      if (entry.open > 0 || entry.lastSeen >= cutoff) continue;
       sessions.delete(id);
       entry.transport.close().catch(() => {});
       log("gateway", `hub session reaped (idle): ${id.slice(0, 8)}…`);
@@ -330,6 +336,11 @@ export async function handleHubRequest(
         return;
       }
       entry.lastSeen = Date.now();
+      entry.open++;
+      res.once("close", () => {
+        entry.open--;
+        entry.lastSeen = Date.now();
+      });
       await entry.transport.handleRequest(req, res);
       return;
     }
@@ -369,7 +380,7 @@ export async function handleHubRequest(
       enableDnsRebindingProtection: true,
       allowedHosts: loopbackHosts(bridgeUrl),
       onsessioninitialized: (id) => {
-        sessions.set(id, { transport, lastSeen: Date.now() });
+        sessions.set(id, { transport, lastSeen: Date.now(), open: 0 });
       },
     });
     transport.onclose = () => {
