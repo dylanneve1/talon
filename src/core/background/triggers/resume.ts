@@ -49,7 +49,7 @@ export async function resumeAfterRestart(): Promise<void> {
       continue;
     }
     // Late death notice. Two cases earn one:
-    //   - never fired at all (the old rule) — the chat heard nothing
+    //   - never fired at all — the chat heard nothing
     //     from this trigger, so its termination is news; and
     //   - killed by THIS restart — either the crash path
     //     (recoverInterrupted stamped RESTART_KILL_ERROR) or the clean
@@ -58,9 +58,7 @@ export async function resumeAfterRestart(): Promise<void> {
     //     backend pool was already going away). Even a multi-fire
     //     watcher that signalled mid-run was still an active promise
     //     when the process died, and without this wake the chat never
-    //     learns its watcher is gone. (Previously gated on
-    //     lastFireAt === undefined alone, which silently dropped
-    //     exactly those watchers.)
+    //     learns its watcher is gone.
     // Triggers that exited on their own already fired their terminal
     // wake (lastFireAt set, no marker) — they stay silent here.
     if (

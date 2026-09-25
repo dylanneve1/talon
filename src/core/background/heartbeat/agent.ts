@@ -89,7 +89,7 @@ export function buildHeartbeatSystemPrompt(): string {
 /**
  * Render the open-goal listing for the heartbeat prompt. Cross-chat by design:
  * the heartbeat is a global agent, so it sees every chat's open goals (with
- * chat ids for routing updates back). Exported for tests.
+ * chat ids for routing updates back).
  */
 function renderGoalsBlock(): { text: string; count: number } {
   let text = "(no open goals)";
