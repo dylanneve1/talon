@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.19.0](https://github.com/thefalconry/talon/compare/v5.18.2...v5.19.0) (2026-09-25)
+
+
+### Features
+
+* **agents:** let sibling sub-agents message each other directly ([#1103](https://github.com/thefalconry/talon/issues/1103)) ([290cf66](https://github.com/thefalconry/talon/commit/290cf6676b5387c572cb6aca7155363f8fa3b43e))
+
+
+### Bug Fixes
+
+* stability sweep + observability — 40 fixes, operator alerts, turn-tagged logs, personal-data scrub ([#1105](https://github.com/thefalconry/talon/issues/1105)) ([6a56bfd](https://github.com/thefalconry/talon/commit/6a56bfd19746b1eed3e44a62441a543cdbdda045))
+
 ## [5.18.2](https://github.com/thefalconry/talon/compare/v5.18.1...v5.18.2) (2026-09-25)
 
 
