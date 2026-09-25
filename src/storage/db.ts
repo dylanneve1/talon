@@ -75,12 +75,11 @@ const BUSY_TIMEOUT_MS = 5_000;
  * missing on a fresh or older one.
  *
  * Column reconciliation runs first: `ALTER TABLE … ADD COLUMN` has no
- * IF NOT EXISTS form, so columns added to already-shipped tables
- * (media_index.content_hash, sessions.metrics,
- * history_messages.attachments, sessions.last_turn_ended_at) are ensured by attempting the ALTER and
- * swallowing the two expected failures — "duplicate column name"
- * (column already there) and "no such table" (fresh database; the
- * CREATE TABLE in schema.sql includes the column).
+ * IF NOT EXISTS form, so columns added to already-shipped tables are
+ * ensured by attempting the ALTER and swallowing the two expected
+ * failures — "duplicate column name" (column already there) and "no
+ * such table" (fresh database; the CREATE TABLE in schema.sql includes
+ * the column).
  */
 function ensureSchema(database: SqlDatabase): void {
   const row = database
@@ -88,30 +87,18 @@ function ensureSchema(database: SqlDatabase): void {
       "SELECT COUNT(*) AS tables FROM sqlite_master WHERE type = 'table'",
     )
     .get() as { tables: number };
-  try {
-    database.exec(dbSql.addMediaContentHashColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
-  }
-  try {
-    database.exec(dbSql.addHistorySenderHandleColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
-  }
-  try {
-    database.exec(dbSql.addSessionsMetricsColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
-  }
-  try {
-    database.exec(dbSql.addHistoryAttachmentsColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
-  }
-  try {
-    database.exec(dbSql.addSessionsLastTurnEndedAtColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
+  for (const addColumn of [
+    dbSql.addMediaContentHashColumn,
+    dbSql.addHistorySenderHandleColumn,
+    dbSql.addSessionsMetricsColumn,
+    dbSql.addHistoryAttachmentsColumn,
+    dbSql.addSessionsLastTurnEndedAtColumn,
+  ]) {
+    try {
+      database.exec(addColumn);
+    } catch {
+      /* duplicate column or no such table — both mean nothing to do */
+    }
   }
   database.exec("BEGIN");
   try {
