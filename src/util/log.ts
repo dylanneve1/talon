@@ -31,6 +31,7 @@ export type LogComponent =
   | "kv"
   | "media"
   | "notify"
+  | "alert"
   | "agent"
   | "agents"
   | "pulse"
