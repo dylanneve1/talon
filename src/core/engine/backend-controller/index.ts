@@ -10,7 +10,7 @@
  * Different roles, and different chats, have different cost/latency/
  * quality needs. Typical post-Anthropic-metering setup: chat default
  * on free-tier OpenAI Agents, heartbeats on Claude Sonnet, dream
- * shared with chat — plus Pandario stays on Claude while DMs use the
+ * shared with chat — plus one group chat stays on Claude while DMs use the
  * cheap default. A single-active model can't express that. The pool
  * lets each holder bind independently while deduplicating instances
  * when ids overlap.
