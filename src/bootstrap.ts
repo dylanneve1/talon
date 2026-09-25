@@ -28,6 +28,7 @@ import { initPulse, resetPulseTimer } from "./core/background/pulse/pulse.js";
 import { initCron } from "./core/background/cron/scheduler.js";
 import { initPlanAlerts } from "./core/background/pulse/plan-alerts.js";
 import { setAdminNotifier } from "./core/frontend-runtime/admin-notify.js";
+import { configureAlerts } from "./core/frontend-runtime/alerts.js";
 import { startAuthExpiryMonitor } from "./core/auth/expiry-monitor.js";
 import {
   initTriggers,
@@ -629,12 +630,19 @@ function initWakeSubsystems(config: TalonConfig): void {
  * Wire the admin notification seam to the admin's frontend, and start the
  * login-expiry monitor that rides it: the CLIs' "N days to log in again"
  * banner, delivered to the admin instead of a terminal nobody is watching
- * (/auth then completes the sign-in from the chat).
+ * (/auth then completes the sign-in from the chat). Operator alerts ride
+ * the same seam, so their settings are applied here too.
  */
 function wireAdminNotifier(
   config: TalonConfig,
   frontends: Parameters<typeof resolveFrontendByNumericId>[2],
 ): void {
+  if (config.alerts) {
+    configureAlerts({
+      enabled: config.alerts.enabled,
+      cooldownMs: config.alerts.cooldownMinutes * 60_000,
+    });
+  }
   if (!config.adminUserId) return;
   const adminChatId = config.adminUserId;
   setAdminNotifier(async (text: string) =>
