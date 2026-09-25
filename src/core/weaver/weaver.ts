@@ -41,6 +41,19 @@ import type { Thread, ThreadSnapshot } from "./thread.js";
 import { startTurnCpu } from "./turn-cpu.js";
 import { startTypingLoop } from "./typing-loop.js";
 import { resolveWarp } from "./warp-resolver.js";
+import {
+  createTurnTrace,
+  logTurnEnd,
+  logTurnFailure,
+  logTurnSettled,
+  logTurnStart,
+  type TurnTrace,
+} from "./turn-log.js";
+import {
+  closeTurnScope,
+  createTurnScope,
+  runInTurnScope,
+} from "../../util/logging/turn-scope.js";
 
 export type WeaverDeps = {
   /**
@@ -84,6 +97,10 @@ export class Weaver {
     const chat = this.deps.getBackend(params.chatId).chat;
     const interrupt = chat?.interruptChatTurn?.bind(chat);
     const lifecycle = { started: false, killed: false, enqueuedAt: Date.now() };
+    // The turn id is minted at enqueue so a queued turn's wait is already
+    // attributable; the log scope goes live when the turn starts running.
+    const scope = createTurnScope(params.chatId);
+    const trace = createTurnTrace(scope.turnId, params, thread.inFlightCount);
     // Registered before enqueueing so a turn waiting in its chat's FIFO is
     // visible as `queued` in the task table, not invisible until it runs.
     const task = taskTable.enqueue({
@@ -99,7 +116,11 @@ export class Weaver {
           }
         : {}),
     });
-    return thread.enqueue(() => this.run(thread, params, task, lifecycle));
+    return thread.enqueue(() =>
+      runInTurnScope(scope, () =>
+        this.run(thread, params, task, lifecycle, trace),
+      ).finally(() => closeTurnScope(scope)),
+    );
   }
 
   /** Number of turns currently running (not queued) across all chats. */
@@ -121,21 +142,28 @@ export class Weaver {
     params: ExecuteParams,
     task: TaskHandle,
     lifecycle: { started: boolean; killed: boolean; enqueuedAt: number },
+    trace: TurnTrace,
   ): Promise<ExecuteResult> {
     if (lifecycle.killed) {
       // Killed while queued — the turn never reaches the backend. The
       // caller still gets a resolved (empty) result; nothing is delivered
       // to the chat, which is the point of the kill.
       task.fail(new Error("killed while queued"));
+      logTurnEnd(trace, "aborted", { reason: "killed-while-queued" });
       return this.emptyResult("Turn killed before it started.", params);
     }
     lifecycle.started = true;
+    trace.startedAt = Date.now();
     this.activeCount++;
     task.start();
     try {
-      const result = await this.executeInner(thread, params, task, {
-        queueWait: Date.now() - lifecycle.enqueuedAt,
-      });
+      const result = await this.executeInner(
+        thread,
+        params,
+        task,
+        { queueWait: Date.now() - lifecycle.enqueuedAt },
+        trace,
+      );
       const usage = {
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
@@ -152,9 +180,11 @@ export class Weaver {
       } else {
         task.succeed(usage);
       }
+      logTurnSettled(trace, lifecycle.killed, usage);
       return result;
     } catch (err) {
       task.fail(err);
+      logTurnFailure(trace, err, lifecycle.killed);
       if (lifecycle.killed) {
         // The backend didn't manage a clean interrupt-completion (some
         // SDK versions surface an interrupted turn as an error result).
@@ -168,6 +198,7 @@ export class Weaver {
       throw err;
     } finally {
       this.activeCount--;
+      trace.tools.close();
     }
   }
 
@@ -176,6 +207,7 @@ export class Weaver {
     params: ExecuteParams,
     task: TaskHandle,
     phases: Partial<Record<TurnPhase, number>>,
+    trace: TurnTrace,
   ): Promise<ExecuteResult> {
     const { context } = this.deps;
     const backend = this.deps.getBackend(params.chatId);
@@ -189,7 +221,12 @@ export class Weaver {
       reqId,
     });
     phases.warpResolve = Date.now() - warpStartedAt;
+    logTurnStart(trace, {
+      backendId: warp.backendId,
+      model: warp.ok ? warp.ref.id : undefined,
+    });
     if (!warp.ok) {
+      trace.refused = "no-model";
       await deliverRefusal(params, warp.message, "no-model");
       return this.emptyResult(warp.message, params);
     }
@@ -202,6 +239,7 @@ export class Weaver {
         "dispatcher",
         `[${reqId}] guest-scoped turn refused chat=${params.chatId}: backend "${backend.id}" cannot enforce the guest tool scope`,
       );
+      trace.refused = "guest-scope";
       await deliverRefusal(params, GUEST_BACKEND_REFUSAL, "guest-scope");
       return this.emptyResult(GUEST_BACKEND_REFUSAL, params);
     }
@@ -270,7 +308,12 @@ export class Weaver {
       // same path `phases.stream` is, so both cover one population.
       const stopCpu = startTurnCpu();
       const streamStartedAt = Date.now();
-      const agentResult = await carryTurnEvents(stream, params.onEvent, timing);
+      const agentResult = await carryTurnEvents(
+        stream,
+        params.onEvent,
+        timing,
+        trace.tools,
+      );
       phases.stream = Date.now() - streamStartedAt;
       stopCpu();
       phases.delivery = timing.deliveryMs;
