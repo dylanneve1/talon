@@ -1,7 +1,7 @@
 /**
- * MCP server config — build the Claude Agent SDK MCP server map for plugins
- * that expose an MCP server (via `mcpServer` command/args or `mcpServerPath`),
- * plus the standalone MCP entries from config.
+ * MCP server specs — the stdio command for every plugin that exposes an MCP
+ * server (via `mcpServer` command/args or `mcpServerPath`), plus the
+ * standalone MCP entries from config. The hub spawns its children from these.
  */
 
 import { resolve } from "node:path";
@@ -54,7 +54,6 @@ export function getPluginMcpServers(
   );
 
   for (const { plugin, envVars } of registry.all) {
-    // Skip plugins not in the allow-list when filtering
     if (only !== undefined && !only.includes(plugin.name)) continue;
 
     // Let the plugin re-materialize on-disk state the child will read. Runs
@@ -95,7 +94,6 @@ export function getPluginMcpServers(
     }
   }
 
-  // Include standalone MCP server entries from config
   for (const entry of registry.mcpEntries) {
     if (only !== undefined && !only.includes(entry.name)) continue;
     servers[`${entry.name}-tools`] = wrapMcpServer({

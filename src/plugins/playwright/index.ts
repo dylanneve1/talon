@@ -51,7 +51,6 @@ export function createPlaywrightPlugin(config: {
   const browser = config.browser ?? "chromium";
   const headless = config.headless !== false; // default true
 
-  // Resolve endpoint: direct string or read from file
   let endpoint = config.endpoint;
   if (!endpoint && config.endpointFile) {
     try {
@@ -64,7 +63,6 @@ export function createPlaywrightPlugin(config: {
     }
   }
 
-  // Resolve path from Talon's node_modules
   const mcpBin = resolve(
     import.meta.dirname ?? ".",
     "../../../node_modules/@playwright/mcp/cli.js",

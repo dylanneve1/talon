@@ -2,11 +2,8 @@
  * Hub child manager — the single owner of external MCP server
  * subprocesses (plugins, brave-search).
  *
- * Before the hub, every chat turn (claude-sdk, codex) or every chat
- * lifetime (openai-agents, kilo/opencode) spawned its own copy of every
- * plugin MCP server — memory grew linearly with chats. The hub instead
- * keeps one child per key and reaps it after an idle TTL, so resident
- * cost tracks *recently active* keys, not every chat ever seen.
+ * One child per key, reaped after an idle TTL, so resident cost tracks
+ * *recently active* keys, not every chat ever seen.
  *
  * Keys: chat-scoped plugins get `name + chatId` (they read
  * `TALON_CHAT_ID` at boot, so instances cannot be shared across chats
@@ -14,8 +11,8 @@
  * use a shared key. Either way the spec factory decides — this module
  * only manages lifecycles.
  *
- * Each child is spawned through the same supervisor wrap as before
- * (stdout JSON filtering + orphan cleanup if the daemon is SIGKILLed),
+ * Each child is spawned through the supervisor wrap (stdout JSON
+ * filtering + orphan cleanup if the daemon is SIGKILLed),
  * connected once over stdio, and shared by every hub session that
  * proxies to it. The tools list is cached per child lifetime — plugin
  * reload restarts children, which naturally invalidates the cache.
@@ -40,13 +37,15 @@ export type ChildSpec = {
 export type ChildHandle = {
   /** Cached tools/list result — fetched once per child lifetime. */
   listTools(): Promise<Tool[]>;
-  /** Forward one tool call; tracked so retirement can drain in-flight work. */
+  /**
+   * Forward one tool call; tracked so retirement can drain in-flight work.
+   * Aborting `signal` cancels the call on the child too.
+   */
   callTool(
     name: string,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<CallToolResult>;
-  /** Mark activity so the idle reaper skips this child. */
-  touch(): void;
 };
 
 type ChildEntry = {
@@ -166,6 +165,14 @@ function idleTtlMs(): number {
 }
 
 const REAP_INTERVAL_MS = 60_000;
+
+/**
+ * Backstop for one forwarded tool call. The SDK's default (60s) would cut
+ * any longer plugin call, though the upstream client allows far more —
+ * its own timeout or cancel reaches the child through the forwarded
+ * signal. This only bounds a call nobody is waiting on any more.
+ */
+const CHILD_CALL_TIMEOUT_MS = 65 * 60_000;
 let reaper: ReturnType<typeof setInterval> | null = null;
 
 async function spawnChild(key: string, spec: ChildSpec): Promise<ChildHandle> {
@@ -217,9 +224,6 @@ async function spawnChild(key: string, spec: ChildSpec): Promise<ChildHandle> {
         })());
     })(),
     handle: {
-      touch: () => {
-        entry.lastActivity = Date.now();
-      },
       listTools: () =>
         track(async () => {
           if (toolsCache) return toolsCache;
@@ -227,12 +231,12 @@ async function spawnChild(key: string, spec: ChildSpec): Promise<ChildHandle> {
           toolsCache = result.tools;
           return toolsCache;
         }),
-      callTool: (name, args) =>
+      callTool: (name, args, signal) =>
         track(
           () =>
-            client.callTool({
-              name,
-              arguments: args,
+            client.callTool({ name, arguments: args }, undefined, {
+              signal,
+              timeout: CHILD_CALL_TIMEOUT_MS,
             }) as Promise<CallToolResult>,
         ),
     },
@@ -272,7 +276,7 @@ export function acquireChild(
     );
   }
 
-  const promise = (async () => {
+  const spawn = async (): Promise<ChildHandle> => {
     try {
       const handle = await spawnChild(key, spec());
       spawnFailures.delete(key);
@@ -285,10 +289,12 @@ export function acquireChild(
         error: err,
       });
       throw err;
-    } finally {
-      inflight.delete(key);
     }
-  })();
+  };
+  // `.finally` always runs after the `set` below. A `finally` block inside
+  // `spawn` would not: when `spec()` throws synchronously it runs before
+  // the set, leaving the rejected promise in `inflight` for good.
+  const promise = spawn().finally(() => inflight.delete(key));
   inflight.set(key, promise);
   return promise;
 }
@@ -340,7 +346,9 @@ export function retireAllChildren(): void {
 function reapIdle(): void {
   const cutoff = Date.now() - idleTtlMs();
   for (const [key, entry] of children) {
-    if (entry.lastActivity >= cutoff) continue;
+    // A call outliving the TTL is work, not idleness — closing the child
+    // would fail it mid-flight. The first sweep after it drains reaps.
+    if (entry.lastActivity >= cutoff || entry.pending > 0) continue;
     children.delete(key);
     entry.close().catch((err) => {
       logError("gateway", `hub reap of ${describeKey(key)} failed`, err);

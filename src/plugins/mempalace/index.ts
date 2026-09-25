@@ -123,7 +123,6 @@ export function createMempalacePlugin(config: {
     },
 
     async init() {
-      // Ensure palace directory exists
       if (!existsSync(palacePath)) {
         mkdirSync(palacePath, { recursive: true });
         log("mempalace", `Created palace directory: ${palacePath}`);

@@ -1,12 +1,6 @@
 /**
  * MCP hub — daemon-hosted MCP over streamable HTTP, one endpoint for
- * every backend.
- *
- * Motivation: every backend used to spawn its own stdio copy of every
- * MCP server per chat (claude-sdk/codex per turn; openai-agents and
- * kilo/opencode per chat, held indefinitely) — two processes per server
- * per chat once the supervisor wrap is counted. Memory grew linearly
- * with chats. The hub inverts the ownership: the daemon hosts
+ * every backend. The daemon hosts
  *
  *   /mcp/talon/<frontend>/<chatId>   Talon's own tools, IN-PROCESS
  *                                    (zero subprocesses; chat binding
@@ -20,13 +14,13 @@
  * (claude-sdk `type:"http"`, openai-agents `MCPServerStreamableHttp`,
  * codex `mcp_servers.<name>.url`, kilo/opencode `type:"remote"`).
  *
- * What stays exactly as before:
+ * Invariants:
  *   - per-chat tool isolation (binding is per-session from the URL)
- *   - plugin semantics (chat-scoped children keep TALON_CHAT_ID env)
+ *   - chat-scoped plugin children keep TALON_CHAT_ID in their env
  *   - tool-surface trimming (disabledTools / disabledToolTags)
- *   - plugin reloading (reload closes children; next request respawns
- *     from the current registry — see reloadHubChildren)
- *   - orphan cleanup (children still run under the supervisor wrap)
+ *   - plugin reload retires children; the next request respawns from
+ *     the current registry (see reloadHubChildren)
+ *   - children run under the supervisor wrap (orphan cleanup)
  *
  * Endpoints live on the gateway HTTP server (127.0.0.1-bound, behind the
  * same token and Host/Origin guard as /action — see engine/gateway-auth.ts;
@@ -112,8 +106,7 @@ export function pluginHubUrl(
  * Names of every hub-served plugin server — what backends enumerate to
  * build their per-chat URL maps. Registry-backed, so it reflects plugin
  * reloads immediately. (brave-search is served by the hub too, but each
- * backend adds it explicitly alongside its frontend tools, matching the
- * pre-hub structure.)
+ * backend adds it explicitly alongside its frontend tools.)
  */
 export function hubPluginServerNames(only?: string[]): string[] {
   // Specs are built with placeholder identity — only the names matter.
@@ -134,7 +127,6 @@ export async function listHubPluginToolNames(
   const child = await acquireChild(childKey(serverName, chatId), () =>
     pluginSpec(serverName, chatId, bridgeUrl),
   );
-  child.touch();
   return (await child.listTools()).map((tool) => tool.name);
 }
 
@@ -253,6 +245,8 @@ function guestPluginDenied(target: { serverName: string; chatId: string }) {
 type SessionEntry = {
   transport: StreamableHTTPServerTransport;
   lastSeen: number;
+  /** Requests still open on this session, SSE streams included. */
+  open: number;
 };
 
 const sessions = new Map<string, SessionEntry>();
@@ -260,7 +254,11 @@ const sessions = new Map<string, SessionEntry>();
 /**
  * Sessions whose client vanished without a DELETE (crashed subprocess,
  * kill -9) are closed after this idle window. Every well-behaved client
- * terminates explicitly, so this only catches stragglers.
+ * terminates explicitly, so this only catches stragglers. A session with
+ * a request still open is never idle: a client that holds its event
+ * stream between turns (openai-agents keeps one per chat for good) is
+ * alive however quiet the chat, and it does not re-initialize on a 404.
+ * The idle clock restarts when its last open request ends.
  */
 const SESSION_IDLE_MS = 30 * 60_000;
 const SESSION_REAP_INTERVAL_MS = 5 * 60_000;
@@ -271,7 +269,7 @@ function startSessionReaper(): void {
   sessionReaper = setInterval(() => {
     const cutoff = Date.now() - SESSION_IDLE_MS;
     for (const [id, entry] of sessions) {
-      if (entry.lastSeen >= cutoff) continue;
+      if (entry.open > 0 || entry.lastSeen >= cutoff) continue;
       sessions.delete(id);
       entry.transport.close().catch(() => {});
       log("gateway", `hub session reaped (idle): ${id.slice(0, 8)}…`);
@@ -330,6 +328,11 @@ export async function handleHubRequest(
         return;
       }
       entry.lastSeen = Date.now();
+      entry.open++;
+      res.once("close", () => {
+        entry.open--;
+        entry.lastSeen = Date.now();
+      });
       await entry.transport.handleRequest(req, res);
       return;
     }
@@ -369,7 +372,7 @@ export async function handleHubRequest(
       enableDnsRebindingProtection: true,
       allowedHosts: loopbackHosts(bridgeUrl),
       onsessioninitialized: (id) => {
-        sessions.set(id, { transport, lastSeen: Date.now() });
+        sessions.set(id, { transport, lastSeen: Date.now(), open: 0 });
       },
     });
     transport.onclose = () => {
