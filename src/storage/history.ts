@@ -24,6 +24,7 @@ import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
 import { formatSmartTimestamp, formatRelativeAge } from "../util/time.js";
 import { importLegacyJson } from "./legacy-import.js";
+import { dbErrorFields } from "./db.js";
 import * as repo from "./repositories/history-repo.js";
 
 export type {
@@ -77,7 +78,11 @@ export function pushMessage(chatId: string, msg: HistoryMessage): void {
   try {
     repo.insert(chatId, msg);
   } catch (err) {
-    logError("history", "Failed to persist message", err);
+    logError(
+      "history",
+      `Failed to persist message chat=${chatId} msg=${msg.msgId}${dbErrorFields(err)}`,
+      err,
+    );
     recordError(
       `History write failed: ${err instanceof Error ? err.message : err}`,
     );
