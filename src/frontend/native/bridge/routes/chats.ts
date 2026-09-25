@@ -132,11 +132,9 @@ export function chatRoutes(
       const startedAt = Date.now();
       try {
         const attachment = await h.upload(filename, contentType, req);
-        // Uploads are the one client action whose failure used to be visible
-        // only in the app: the route answered in JSON and logged nothing, so
-        // "attaching a file doesn't work — check the logs" had nothing to
-        // read. Both outcomes are logged now, with the size and duration
-        // that distinguish a rejected upload from a dropped connection.
+        // Log both outcomes, with the size and duration that tell a rejected
+        // upload from a dropped connection — the JSON answer is otherwise
+        // only visible in the app.
         log(
           "native",
           `upload ok: ${attachment.name} (${attachment.size} bytes, ${attachment.mimeType}) in ${Date.now() - startedAt}ms`,

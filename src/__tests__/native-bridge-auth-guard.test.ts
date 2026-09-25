@@ -463,4 +463,36 @@ describe("bridge server auth hardening", () => {
     );
     expect(ms).toBeLessThan(2_000);
   });
+
+  it("survives a broadcast after a backed-up stream hits its max lifetime", async () => {
+    const port = await start({ sseMaxLifetimeMs: 200 });
+    // A client that stopped reading (phone asleep): its unsent backlog keeps
+    // the stream open past the end() the lifetime timer issues.
+    const sock = connect(port, "127.0.0.1");
+    sock.on("error", () => {});
+    await new Promise<void>((resolve) => sock.once("connect", resolve));
+    sock.write(
+      `GET /events?token=${encodeURIComponent(token)} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n`,
+    );
+    sock.pause();
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    await wait(100);
+    const bulk = "x".repeat(64 * 1024);
+    for (let i = 0; i < 100; i++) {
+      server!.broadcast({ kind: "delta", chatId: "c1", text: bulk });
+    }
+    await wait(500); // past the (jittered) 200ms lifetime
+
+    const uncaught: unknown[] = [];
+    const onUncaught = (err: unknown) => uncaught.push(err);
+    process.prependListener("uncaughtException", onUncaught);
+    try {
+      server!.broadcast({ kind: "typing", chatId: "c1", on: true });
+      await wait(100);
+    } finally {
+      process.off("uncaughtException", onUncaught);
+      sock.destroy();
+    }
+    expect(uncaught).toEqual([]);
+  });
 });
