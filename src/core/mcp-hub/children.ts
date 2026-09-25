@@ -2,11 +2,8 @@
  * Hub child manager — the single owner of external MCP server
  * subprocesses (plugins, brave-search).
  *
- * Before the hub, every chat turn (claude-sdk, codex) or every chat
- * lifetime (openai-agents, kilo/opencode) spawned its own copy of every
- * plugin MCP server — memory grew linearly with chats. The hub instead
- * keeps one child per key and reaps it after an idle TTL, so resident
- * cost tracks *recently active* keys, not every chat ever seen.
+ * One child per key, reaped after an idle TTL, so resident cost tracks
+ * *recently active* keys, not every chat ever seen.
  *
  * Keys: chat-scoped plugins get `name + chatId` (they read
  * `TALON_CHAT_ID` at boot, so instances cannot be shared across chats
@@ -14,8 +11,8 @@
  * use a shared key. Either way the spec factory decides — this module
  * only manages lifecycles.
  *
- * Each child is spawned through the same supervisor wrap as before
- * (stdout JSON filtering + orphan cleanup if the daemon is SIGKILLed),
+ * Each child is spawned through the supervisor wrap (stdout JSON
+ * filtering + orphan cleanup if the daemon is SIGKILLed),
  * connected once over stdio, and shared by every hub session that
  * proxies to it. The tools list is cached per child lifetime — plugin
  * reload restarts children, which naturally invalidates the cache.
@@ -49,8 +46,6 @@ export type ChildHandle = {
     args: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<CallToolResult>;
-  /** Mark activity so the idle reaper skips this child. */
-  touch(): void;
 };
 
 type ChildEntry = {
@@ -229,9 +224,6 @@ async function spawnChild(key: string, spec: ChildSpec): Promise<ChildHandle> {
         })());
     })(),
     handle: {
-      touch: () => {
-        entry.lastActivity = Date.now();
-      },
       listTools: () =>
         track(async () => {
           if (toolsCache) return toolsCache;

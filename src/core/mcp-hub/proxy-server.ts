@@ -31,7 +31,6 @@ export function buildProxyServer(
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const child = await getChild();
-    child.touch();
     return { tools: await child.listTools() };
   });
 
@@ -39,7 +38,6 @@ export function buildProxyServer(
   // closes; passing it on stops the child's work instead of orphaning it.
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const child = await getChild();
-    child.touch();
     return child.callTool(
       request.params.name,
       request.params.arguments ?? {},
