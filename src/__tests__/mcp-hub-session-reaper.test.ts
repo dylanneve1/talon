@@ -50,11 +50,7 @@ vi.mock("write-file-atomic", () => ({
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Gateway } from "../core/engine/gateway.js";
-import {
-  initHub,
-  shutdownHub,
-  talonHubUrl,
-} from "../core/mcp-hub/index.js";
+import { initHub, shutdownHub, talonHubUrl } from "../core/mcp-hub/index.js";
 import { gatewayFetch, TEST_GATEWAY_TOKEN } from "./helpers/gateway-fetch.js";
 
 const MINUTE = 60_000;
