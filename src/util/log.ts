@@ -34,6 +34,7 @@ export type LogComponent =
   | "alert"
   | "agent"
   | "agents"
+  | "tasks"
   | "pulse"
   | "userbot"
   | "users"
