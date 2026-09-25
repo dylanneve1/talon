@@ -147,27 +147,6 @@ export type AgentEvent =
   | { type: "completed"; result?: AgentResult };
 
 /**
- * Type-narrowing helper. Saves callers from writing
- * `event.type === "completed"` in two places when they need both the
- * narrowing and a boolean expression.
- */
-export function isAgentEventOf<K extends AgentEvent["type"]>(
-  event: AgentEvent,
-  kind: K,
-): event is Extract<AgentEvent, { type: K }> {
-  return event.type === kind;
-}
-
-/**
- * Whether this event is a stream terminator — `completed` (success)
- * or `error` (failure). Useful for stream consumers that want to
- * release a typing indicator or close a log section on either.
- */
-export function isAgentRunTerminator(event: AgentEvent): boolean {
-  return event.type === "completed" || event.type === "error";
-}
-
-/**
  * Error thrown when an `AgentEvent` stream terminates with an `error`
  * event. The dispatcher consumes the canonical event stream directly
  * (no callback bridge) and rethrows the `error` terminator as this so
@@ -231,21 +210,6 @@ export function emptyUsage(): UsageSnapshot {
     outputTokens: 0,
     cacheRead: 0,
     cacheWrite: 0,
-  };
-}
-
-/**
- * Accumulate two usage snapshots. Pure — caller passes both, gets a
- * new object back. Used by stream consumers that aggregate per-event
- * usage into a final figure for `/status`.
- */
-export function addUsage(a: UsageSnapshot, b: UsageSnapshot): UsageSnapshot {
-  return {
-    inputTokens: a.inputTokens + b.inputTokens,
-    outputTokens: a.outputTokens + b.outputTokens,
-    cacheRead: a.cacheRead + b.cacheRead,
-    cacheWrite: a.cacheWrite + b.cacheWrite,
-    modelId: b.modelId ?? a.modelId,
   };
 }
 
