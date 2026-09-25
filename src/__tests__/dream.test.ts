@@ -462,6 +462,24 @@ describe("dream failure backoff", () => {
     expect(runOneShotAgentMock).not.toHaveBeenCalled();
   });
 
+  it("arms when a successful run's state write is lost", async () => {
+    // kvSet logs and swallows a failed write (full disk): the run completes
+    // but last_run never reaches the store, so the dream still looks overdue.
+    const persist = kvSetMock.getMockImplementation();
+    kvSetMock.mockImplementation(() => {});
+    try {
+      await expect(forceDream()).resolves.toBeUndefined();
+      expect(dreamFailureBackoff.active()).toBe(true);
+
+      runOneShotAgentMock.mockClear();
+      maybeStartDream(); // the next message must not run it all again
+      await new Promise((r) => setTimeout(r, 10));
+      expect(runOneShotAgentMock).not.toHaveBeenCalled();
+    } finally {
+      kvSetMock.mockImplementation(persist!);
+    }
+  });
+
   it("lets forceDream bypass the window and clears it on success", async () => {
     runOneShotAgentMock.mockRejectedValueOnce(new Error("blip"));
     await expect(forceDream()).rejects.toThrow("blip");

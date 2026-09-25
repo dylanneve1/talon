@@ -156,8 +156,12 @@ async function runCronTick(): Promise<void> {
   pruneJobHealth(new Set(jobs.map((j) => j.id)));
 
   let loadShed = false;
-  for (const job of jobs) {
-    if (!job.enabled) continue;
+  for (const listed of jobs) {
+    // Re-read: each run is awaited, so a slow job lets the next tick start
+    // and run later jobs before this loop reaches them. The listing's copy
+    // would carry the pre-run lastRunAt and fire such a job a second time.
+    const job = getCronJob(listed.id);
+    if (!job?.enabled) continue;
     // Expiry takes priority over dueness: a job past its end time is disabled
     // and skipped even if this minute would otherwise match.
     if (expireIfPast(job, nowMs)) continue;
@@ -461,7 +465,6 @@ function isCronDue(job: CronJob, now: Date, windowStartMs: number): boolean {
 export const _cronInternals = {
   isDue,
   isCronDue,
-  MAX_TICK_LOOKBACK_MS,
 };
 
 /**

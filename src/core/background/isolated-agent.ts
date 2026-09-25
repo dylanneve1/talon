@@ -50,8 +50,12 @@ export interface IsolatedRunOptions {
   readonly logCategory?: LogComponent;
 }
 
-/** Resolves to the value, or the string "timed_out" if `ms` elapses first. */
-async function raceWithTimeout<T>(
+/**
+ * Resolves to the value, or the string "timed_out" if `ms` elapses first.
+ * A rejection of `promise` inside the window propagates — `.catch()` it
+ * first for a never-throwing race.
+ */
+export async function raceWithTimeout<T>(
   promise: Promise<T>,
   ms: number,
 ): Promise<T | "timed_out"> {
