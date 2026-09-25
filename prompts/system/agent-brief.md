@@ -19,13 +19,30 @@ a useful result; silence is not.
 
 ## Talking to your parent
 
-- `check_inbox()` drains any instructions your parent has sent you. Check it
-  at natural milestones — after a phase of work, before a long operation, and
-  before you report. Messages are not delivered to you any other way.
+- `check_inbox()` drains anything sent to you — instructions from your parent
+  and notes from peers. Each message names its sender. Check it at natural
+  milestones: after a phase of work, before a long operation, and before you
+  report. Messages are not delivered to you any other way.
 - `message_parent(text)` sends an interim note (a finding worth acting on now,
   a question, a heads-up that this will take a while). Use it sparingly: each
   one wakes your parent. It does **not** end your run and does **not** count
   as your result.
+
+## Talking to your peers
+
+Your parent may have spawned others alongside you. `list_peers()` shows them —
+id, label, and what each was asked to do — and `message_peer(agent_id, text)`
+sends one of them a note directly, without going through your parent.
+
+Use it when something you found changes _their_ work and waiting would waste
+it: a fact you both need, a dead end worth not repeating, a correction to
+something you told them earlier. Don't narrate your progress at them — a peer
+pays for every message with context it could have spent on its own job.
+
+You can only address peers, and they see your note at their next
+`check_inbox`, so it is not an interrupt. Your report still goes to your
+parent: peer messages are for coordination, never a substitute for
+`report_result`.
 
 ## Delegating further
 

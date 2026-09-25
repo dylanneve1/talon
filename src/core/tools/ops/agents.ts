@@ -185,9 +185,30 @@ export const agentTools: ToolDefinition[] = [
   },
 
   {
+    name: "list_peers",
+    description:
+      "Sub-agents only. List the other agents your parent spawned alongside you — id, label and what each is working on. These are the only agents you may message directly with message_peer. Call it before assuming you are working alone.",
+    schema: {},
+    execute: (params, bridge) => bridge("list_peers", params),
+    tag: "agents",
+  },
+
+  {
+    name: "message_peer",
+    description:
+      "Sub-agents only. Send a note straight to a peer — an agent spawned by the same parent as you — without routing it through your parent. Use it when you find something that changes another agent's work: a shared fact, a dead end worth not repeating, a correction to something you sent earlier. The peer sees it at its next check_inbox, so it is not an interrupt. You can only address peers (see list_peers); any other id is refused. This does not end your run and does not replace report_result.",
+    schema: {
+      agent_id: z.string().describe("Peer agent id, from list_peers"),
+      text: z.string().min(1).describe("What the peer needs to know"),
+    },
+    execute: (params, bridge) => bridge("message_peer", params),
+    tag: "agents",
+  },
+
+  {
     name: "check_inbox",
     description:
-      "Sub-agents only. Drain any instructions your parent has sent you. Messages are delivered no other way, so check at milestones: after a phase of work, before a long operation, and before you report.",
+      "Sub-agents only. Drain anything sent to you — instructions from your parent, and notes from peer agents working alongside you. Each message names its sender. Messages are delivered no other way, so check at milestones: after a phase of work, before a long operation, and before you report.",
     schema: {},
     execute: (_params, bridge) => bridge("check_inbox", {}),
     tag: "agents",
