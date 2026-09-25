@@ -79,7 +79,7 @@ import { logWarn } from "../../util/log.js";
  * (default)" vs "Model: X (override)" vs "No model selected" without
  * second-guessing the chain.
  */
-export type ActiveModelSource =
+type ActiveModelSource =
   | "override-valid"
   | "override-invalid-fallback"
   | "backend-canonical"
