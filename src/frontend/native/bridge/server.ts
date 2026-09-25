@@ -599,6 +599,10 @@ export class BridgeServer {
     const ms = Math.round(max * (0.9 + Math.random() * 0.2));
     const timer = setTimeout(() => {
       logDebug("native", "bridge.sse event=max_lifetime reason=expired");
+      // Out of the fan-out before end(): a stream still flushing a backlog
+      // stays open until it drains, and a broadcast in that window is a
+      // write after end — an unhandled 'error' that takes the daemon down.
+      this.clients.delete(res);
       res.end();
     }, ms);
     timer.unref?.();
