@@ -3,7 +3,7 @@
   "version": "5.18.1",
   "description": "Multi-frontend AI agent with full tool access, streaming, cron jobs, and plugin system",
   "author": "The Falconry",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/thefalconry/talon.git"
@@ -52,6 +52,8 @@
     "src/login.ts",
     "prompts/",
     "README.md",
+    "NOTICE",
+    "LICENSE-MIT",
     "tsconfig.json"
   ],
   "scripts": {
