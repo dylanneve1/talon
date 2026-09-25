@@ -31,13 +31,16 @@ export async function writePrivateJson(
   value: unknown,
 ): Promise<void> {
   const prior = writeQueues.get(path) ?? Promise.resolve();
-  const next = prior.catch(() => {}).then(() => atomicWriteJson(path, value));
-  writeQueues.set(
-    path,
-    next.finally(() => {
-      if (writeQueues.get(path) === next) writeQueues.delete(path);
-    }),
-  );
+  const next = prior.then(() => atomicWriteJson(path, value));
+  // The queued tail must never reject: a failed write is reported to its
+  // caller through `next`; a rejecting tail that no later writer happens to
+  // chain onto surfaces as a process-level unhandled rejection.
+  const tail: Promise<void> = next
+    .catch(() => {})
+    .then(() => {
+      if (writeQueues.get(path) === tail) writeQueues.delete(path);
+    });
+  writeQueues.set(path, tail);
   return next;
 }
 
