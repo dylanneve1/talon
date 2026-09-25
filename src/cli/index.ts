@@ -28,7 +28,7 @@ import { printBanner, ConfigFileError } from "./config.js";
 import { runSetup } from "./setup.js";
 import { showStatus } from "./status.js";
 import { viewConfig } from "./config-view.js";
-import { tailLogs } from "./logs.js";
+import { runLogsCommand } from "./logs.js";
 import { runDoctor } from "./doctor.js";
 import { startChat } from "./chat.js";
 import { daemonStart, daemonStop, daemonRestart } from "./daemon.js";
@@ -116,7 +116,9 @@ function printHelp(): void {
     `    ${pc.cyan("mesh")}       Device credentials (list/revoke/rotate/scopes)`,
   );
   console.log(`    ${pc.cyan("config")}     View/edit configuration`);
-  console.log(`    ${pc.cyan("logs")}       Tail log file`);
+  console.log(
+    `    ${pc.cyan("logs")}       Tail log file (--errors, --since 1h, --component, --grep, --turn)`,
+  );
   console.log(`    ${pc.cyan("doctor")}     Validate environment`);
   console.log(`    ${pc.cyan("--version")}  Print the package version`);
   console.log();
@@ -148,7 +150,7 @@ const COMMANDS: Record<string, CommandHandler> = {
   setup: () => runSetup(),
   status: () => showStatus(),
   config: () => viewConfig(),
-  logs: () => tailLogs(),
+  logs: (args) => runLogsCommand(args),
   start: async () => {
     printBanner();
     await daemonStart();
