@@ -15,6 +15,8 @@ import {
   statSync,
   existsSync,
   createReadStream,
+  chmodSync,
+  rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -227,6 +229,48 @@ describe("buildSnapshot", () => {
     expect(members).toContain("extra/0/CLAUDE.md");
     expect(members.some((m) => m.startsWith("extra/1"))).toBe(false);
   });
+
+  it("skips a file that vanishes between the walk and the archive", async () => {
+    const home = fakeHome();
+    const manifest = await buildSnapshot({
+      kind: "backup",
+      settings: SETTINGS,
+      home,
+      // Runs after the walk, before the state part is written.
+      copyDatabase: (dest) => {
+        rmSync(join(home, "workspace", "memory", "memory.md"));
+        copyDatabase(dest);
+      },
+    });
+    const members = await membersOf(
+      join(snapshotDir(manifest.id, home), "state.tar.zst"),
+    );
+    expect(members).not.toContain("workspace/memory/memory.md");
+    expect(members).toContain("workspace/identity.md");
+    expect(members).toContain("db/talon.db");
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "skips an unreadable palace file instead of failing the snapshot",
+    async () => {
+      const home = fakeHome();
+      writeFileSync(join(home, "workspace", "palace", "locked.bin"), "x");
+      chmodSync(join(home, "workspace", "palace", "locked.bin"), 0o000);
+      const manifest = await buildSnapshot({
+        kind: "backup",
+        settings: SETTINGS,
+        home,
+        copyDatabase,
+      });
+      const palace = manifest.parts.find((p) => p.name.startsWith("palace-"));
+      expect(palace).toBeDefined();
+      const members = await membersOf(
+        join(snapshotDir(manifest.id, home), palace!.name),
+      );
+      expect(members).toContain("workspace/palace/node-1.json");
+      expect(members).not.toContain("workspace/palace/locked.bin");
+    },
+  );
 
   it("leaves no directory behind when a build fails", async () => {
     const home = fakeHome();

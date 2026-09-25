@@ -17,15 +17,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import {
-  link,
-  copyFile,
-  mkdir,
-  readdir,
-  readFile,
-  rm,
-  stat,
-} from "node:fs/promises";
+import { link, copyFile, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { dirs } from "../../util/paths.js";
@@ -40,6 +32,7 @@ import {
   recordBackup,
   updateBackupManifest,
 } from "../../storage/backup/index.js";
+import { pathExists } from "./sources/sessions.js";
 import type {
   Manifest,
   RemoteState,
@@ -51,6 +44,8 @@ import type {
 const SNAPSHOT_ID_RE = /^\d{8}T\d{6}Z-[0-9a-f]{6}$/;
 const MANIFEST_NAME = "manifest.json";
 export const STATE_PART = "state.tar.zst";
+/** Where the database copy lands inside the state part. */
+export const DB_MEMBER = "db/talon.db";
 
 function backupsRoot(home: string = dirs.root): string {
   return join(home, "backups");
@@ -212,20 +207,13 @@ export async function listSnapshots(
       pinned: record.pinned,
       createdAt: record.createdAt,
       sizeBytes: record.sizeBytes,
-      local: await exists(join(snapshotDir(record.id, home), MANIFEST_NAME)),
+      local: await pathExists(
+        join(snapshotDir(record.id, home), MANIFEST_NAME),
+      ),
       remote,
     });
   }
   return summaries;
-}
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** Pin or unpin a snapshot, on disk and in the index. Returns false if unknown. */

@@ -26,11 +26,9 @@ const trimmedOrUndefined = (raw: string) => raw.trim() || undefined;
 /**
  * Await a clack prompt; on Esc/Ctrl-C say so and leave the wizard.
  *
- * Every prompt used to be followed by the same four-line `isCancel` guard,
- * and because `@clack/core` narrows `isCancel` to its own unique symbol
- * the unguarded remainder still needed an `as string` cast. clack only
- * ever resolves a symbol to mean "cancelled", so narrowing on `typeof`
- * here removes both.
+ * clack only ever resolves a symbol to mean "cancelled", so narrowing on
+ * `typeof` replaces a per-prompt `isCancel` guard and the `as` cast that
+ * `@clack/core`'s own unique-symbol narrowing would still need.
  *
  * The answer type is subtracted with `Exclude` rather than inferred from a
  * `Promise<T | symbol>` parameter: clack 1.8.1 retyped `CANCEL_SYMBOL` as a
@@ -667,12 +665,12 @@ function telegramAccess(
  *
  * Extracted from `runSetup` so the merge is testable without driving the
  * prompts — the behaviour that matters here is what it *doesn't* touch.
- * The wizard models roughly half of ~/.talon/config.json; it used to
- * rebuild the file from its own named fields alone, which silently
- * deleted every other key (whatsapp, native, soul, memory, github,
- * heartbeat/dream, allowlists, plugin blocks…). Spreading `existing`
- * first keeps them. Fields below still override, and an explicit
- * `undefined` still deletes, because `saveConfig` strips undefined.
+ * The wizard models roughly half of ~/.talon/config.json. Spreading
+ * `existing` first keeps every key it does not model (whatsapp, native,
+ * memory, github, heartbeat/dream, allowlists, plugin blocks…) — building
+ * from the named fields alone silently deletes them. Fields below still
+ * override, and an explicit `undefined` still deletes, because
+ * `saveConfig` strips undefined.
  */
 export function buildSetupConfig(
   existing: Config,

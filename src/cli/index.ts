@@ -129,13 +129,9 @@ export async function runCli(): Promise<void> {
   try {
     await dispatch(command);
   } catch (err) {
-    // A present-but-invalid config.json: every command below that reads
-    // config (directly, or via `mainMenu`'s "is this configured?" check)
-    // is async but was previously invoked without `await`, so this throw
-    // would otherwise surface as a bare unhandled-rejection stack trace —
-    // or, worse for the main menu, never happen at all, because the old
-    // loader swallowed the error and returned defaults, sending a broken
-    // install into the first-run wizard, which then saves over the file.
+    // A present-but-invalid config.json: say so and exit non-zero, rather
+    // than a stack trace — or, for the main menu, a first-run wizard that
+    // would save defaults over the operator's real file.
     if (err instanceof ConfigFileError) {
       console.error(`\n  ${pc.red("✖")} ${err.message}\n`);
       process.exitCode = 1;
