@@ -170,6 +170,14 @@ function idleTtlMs(): number {
 }
 
 const REAP_INTERVAL_MS = 60_000;
+
+/**
+ * Backstop for one forwarded tool call. The SDK's default (60s) would cut
+ * any longer plugin call, though the upstream client allows far more —
+ * its own timeout or cancel reaches the child through the forwarded
+ * signal. This only bounds a call nobody is waiting on any more.
+ */
+const CHILD_CALL_TIMEOUT_MS = 65 * 60_000;
 let reaper: ReturnType<typeof setInterval> | null = null;
 
 async function spawnChild(key: string, spec: ChildSpec): Promise<ChildHandle> {
@@ -236,6 +244,7 @@ async function spawnChild(key: string, spec: ChildSpec): Promise<ChildHandle> {
           () =>
             client.callTool({ name, arguments: args }, undefined, {
               signal,
+              timeout: CHILD_CALL_TIMEOUT_MS,
             }) as Promise<CallToolResult>,
         ),
     },

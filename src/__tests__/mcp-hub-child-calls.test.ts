@@ -3,8 +3,9 @@
  *
  * A plugin tool call can legitimately run for minutes (a crawl, a mine,
  * a slow page). These tests pin that the hub itself never kills such a
- * call from under the model (the idle reaper skips busy children), and
- * that when the model's side gives up, the child hears about it.
+ * call from under the model (no idle reap of a busy child, no 60s SDK
+ * default), and that when the model's side gives up, the child hears
+ * about it.
  */
 
 import { describe, it, expect, afterEach, vi } from "vitest";
@@ -104,6 +105,25 @@ describe("hub child idle reaper", () => {
     await new Promise((r) => setTimeout(r, 20));
     vi.advanceTimersByTime(60_000);
     expect(getActiveChildKeys()).not.toContain(key);
+  }, 20_000);
+});
+
+describe("hub child call timeout", () => {
+  it("does not cut a long call at the SDK's 60s default, but still bounds it", async () => {
+    const child = await acquireChild("long-call chat", () => FAKE_SERVER);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+    let outcome: unknown = "pending";
+    const call = child.callTool("hang", {}).then(
+      () => (outcome = "resolved"),
+      (err: unknown) => (outcome = err),
+    );
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(outcome).toBe("pending");
+
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+    await call;
+    expect(String(outcome)).toMatch(/timed out/i);
   }, 20_000);
 });
 
