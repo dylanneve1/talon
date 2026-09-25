@@ -284,7 +284,7 @@ export function acquireChild(
     );
   }
 
-  const promise = (async () => {
+  const spawn = async (): Promise<ChildHandle> => {
     try {
       const handle = await spawnChild(key, spec());
       spawnFailures.delete(key);
@@ -297,10 +297,12 @@ export function acquireChild(
         error: err,
       });
       throw err;
-    } finally {
-      inflight.delete(key);
     }
-  })();
+  };
+  // `.finally` always runs after the `set` below. A `finally` block inside
+  // `spawn` would not: when `spec()` throws synchronously it runs before
+  // the set, leaving the rejected promise in `inflight` for good.
+  const promise = spawn().finally(() => inflight.delete(key));
   inflight.set(key, promise);
   return promise;
 }

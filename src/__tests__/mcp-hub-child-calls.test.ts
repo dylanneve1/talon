@@ -158,3 +158,20 @@ describe("hub proxy cancellation", () => {
     await client.close();
   }, 20_000);
 });
+
+describe("hub child spawn failures", () => {
+  it("a spec factory that throws does not poison the key once backoff passes", async () => {
+    // pluginSpec throws synchronously for a server missing from the
+    // registry — e.g. mid-reload, while the registry is being rebuilt.
+    const key = "spec-throws chat";
+    await expect(
+      acquireChild(key, () => {
+        throw new Error("Unknown hub plugin server: fake-tools");
+      }),
+    ).rejects.toThrow(/Unknown hub plugin server/);
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 31_000);
+    await expect(acquireChild(key, () => FAKE_SERVER)).resolves.toBeDefined();
+  }, 20_000);
+});
