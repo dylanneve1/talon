@@ -163,8 +163,19 @@ function startConnectionMonitor(): void {
   const gen = monitorGeneration;
   reconnectTimer = setInterval(async () => {
     if (gen !== monitorGeneration) return;
-    if (!client) return;
     if (reconnecting) return; // prevent overlapping reconnect attempts
+    if (!client) {
+      // A failed re-init leaves no client. Retry it every tick; bailing
+      // here left the userbot dead until the daemon restarted.
+      if (!storedApiId || !storedApiHash) return;
+      reconnecting = true;
+      try {
+        await reinitClient();
+      } finally {
+        reconnecting = false;
+      }
+      return;
+    }
 
     // GramJS keeps `client.connected === true` even after the underlying
     // socket has silently died, so a real round-trip is the only reliable
@@ -208,45 +219,55 @@ function startConnectionMonitor(): void {
     } catch (err) {
       if (gen !== monitorGeneration) return; // stopped while reconnecting
       logError("userbot", "Reconnect failed", err);
-      // Try a full re-init on next check
-      if (storedApiId && storedApiHash) {
-        try {
-          // Drop the wedged client without awaiting it — its socket may be
-          // the thing that's hung.
-          const stale = client;
-          client = null;
-          void stale?.disconnect().catch(() => {});
-          let sessionString = "";
-          if (existsSync(SESSION_FILE)) {
-            sessionString = readFileSync(SESSION_FILE, "utf-8").trim();
-          }
-          const session = new StringSession(sessionString);
-          client = new TelegramClient(session, storedApiId, storedApiHash, {
-            connectionRetries: 5,
-          });
-          await withTimeout(
-            client.connect(),
-            RECONNECT_STEP_TIMEOUT_MS,
-            "re-init connect",
-          );
-          if (
-            await withTimeout(
-              client.isUserAuthorized(),
-              RECONNECT_STEP_TIMEOUT_MS,
-              "re-init auth check",
-            )
-          ) {
-            log("userbot", "Full re-init reconnect succeeded.");
-          }
-        } catch (retryErr) {
-          logError("userbot", "Full re-init reconnect failed", retryErr);
-          client = null;
-        }
-      }
+      if (storedApiId && storedApiHash) await reinitClient();
     } finally {
       reconnecting = false;
     }
   }, CHECK_INTERVAL_MS);
+}
+
+/**
+ * Replace the client with a fresh one from the saved session. On failure
+ * the slot is left empty (and the failed client closed); the monitor's
+ * next tick tries again.
+ */
+async function reinitClient(): Promise<void> {
+  // Drop the wedged client without awaiting it — its socket may be the
+  // thing that's hung.
+  const stale = client;
+  client = null;
+  void stale?.disconnect().catch(() => {});
+  let fresh: TelegramClient | null = null;
+  try {
+    let sessionString = "";
+    if (existsSync(SESSION_FILE)) {
+      sessionString = readFileSync(SESSION_FILE, "utf-8").trim();
+    }
+    const session = new StringSession(sessionString);
+    fresh = new TelegramClient(session, storedApiId, storedApiHash, {
+      connectionRetries: 5,
+    });
+    client = fresh;
+    await withTimeout(
+      fresh.connect(),
+      RECONNECT_STEP_TIMEOUT_MS,
+      "re-init connect",
+    );
+    if (
+      await withTimeout(
+        fresh.isUserAuthorized(),
+        RECONNECT_STEP_TIMEOUT_MS,
+        "re-init auth check",
+      )
+    ) {
+      log("userbot", "Full re-init reconnect succeeded.");
+    }
+  } catch (retryErr) {
+    logError("userbot", "Full re-init reconnect failed", retryErr);
+    if (client === fresh) client = null;
+    // Its connect may still be retrying in the background.
+    void fresh?.disconnect().catch(() => {});
+  }
 }
 
 function stopConnectionMonitor(): void {
