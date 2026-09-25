@@ -69,8 +69,6 @@ export type MeshTransport = {
   command(command: DeviceCommand): void;
 };
 
-export type { MeshToolResult } from "../tool-surface.js";
-
 /** Outcome of pinging one device (see {@link MeshService.pingAll}). */
 export type MeshPingResult = {
   device: DeviceInfo;
@@ -100,8 +98,6 @@ export type MeshServiceOptions = {
    */
   credentials?: DeviceCredentialStore;
 };
-
-export type { MeshBridgeInfo } from "../links/bridge-links.js";
 
 const DEFAULT_FRESH_FIX_TIMEOUT_MS = 8_000;
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
@@ -281,17 +277,14 @@ export class MeshService {
    * whose deviceId names a DIFFERENT device is dropped (a confused or
    * misbehaving companion must not be able to answer for its peers).
    *
-   * An ABSENT deviceId is dropped too. It used to be tolerated "for older app
-   * builds", but omitting the field skipped the ownership check entirely —
-   * which is exactly what a spoofer would do to feed the model fabricated
-   * exec stdout or a fake install success. The alternative (accept it when
-   * only one command is pending) was rejected: it still cannot attribute the
-   * reply, it merely narrows the window to whenever the mesh is idle, which
-   * is most of the time. Nothing real is lost — `deviceId` has always been
-   * part of the command-result wire contract (protocol/fixtures/mesh_v1.json,
-   * asserted by daemon, node and companion alike) and both shipped clients
-   * send it. An unattributable reply now leaves the command to time out with
-   * the honest "did not answer" rather than resolving with someone's data.
+   * An ABSENT deviceId is dropped too: omitting the field would skip the
+   * ownership check, which is exactly what a spoofer would do to feed the
+   * model fabricated exec stdout or a fake install success. Accepting it
+   * when only one command is pending still cannot attribute the reply — it
+   * only narrows the window to whenever the mesh is idle. `deviceId` is part
+   * of the command-result wire contract (protocol/fixtures/mesh_v1.json) and
+   * every shipped client sends it, so an unattributable reply is left to
+   * time out with "did not answer" rather than resolving with someone's data.
    */
   completeCommand(body: Record<string, unknown>): boolean {
     const commandId = typeof body.commandId === "string" ? body.commandId : "";

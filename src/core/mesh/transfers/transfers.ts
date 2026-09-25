@@ -176,7 +176,6 @@ export class TransferStore {
       if (!s.isFile()) throw new Error("not a file");
       return { path: t.localPath, size: s.size };
     } catch {
-      this.transfers.delete(token);
       return null;
     } finally {
       // Single-use either way; the device retries by re-arranging.
