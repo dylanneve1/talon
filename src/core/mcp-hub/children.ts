@@ -40,10 +40,14 @@ export type ChildSpec = {
 export type ChildHandle = {
   /** Cached tools/list result — fetched once per child lifetime. */
   listTools(): Promise<Tool[]>;
-  /** Forward one tool call; tracked so retirement can drain in-flight work. */
+  /**
+   * Forward one tool call; tracked so retirement can drain in-flight work.
+   * Aborting `signal` cancels the call on the child too.
+   */
   callTool(
     name: string,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<CallToolResult>;
   /** Mark activity so the idle reaper skips this child. */
   touch(): void;
@@ -227,12 +231,11 @@ async function spawnChild(key: string, spec: ChildSpec): Promise<ChildHandle> {
           toolsCache = result.tools;
           return toolsCache;
         }),
-      callTool: (name, args) =>
+      callTool: (name, args, signal) =>
         track(
           () =>
-            client.callTool({
-              name,
-              arguments: args,
+            client.callTool({ name, arguments: args }, undefined, {
+              signal,
             }) as Promise<CallToolResult>,
         ),
     },

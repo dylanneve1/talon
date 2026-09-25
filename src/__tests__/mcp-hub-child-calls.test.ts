@@ -3,7 +3,8 @@
  *
  * A plugin tool call can legitimately run for minutes (a crawl, a mine,
  * a slow page). These tests pin that the hub itself never kills such a
- * call from under the model: the idle reaper skips busy children.
+ * call from under the model (the idle reaper skips busy children), and
+ * that when the model's side gives up, the child hears about it.
  */
 
 import { describe, it, expect, afterEach, vi } from "vitest";
@@ -15,6 +16,9 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { buildProxyServer } from "../core/mcp-hub/proxy-server.js";
 import {
   acquireChild,
   closeAllChildren,
@@ -27,6 +31,7 @@ import {
  * Minimal stdio MCP server. Tools:
  *   - `hang`: never answers
  *   - `slow`: answers after `ms` milliseconds
+ *   - `cancelled`: the request ids this server was told to cancel
  * Exits when stdin closes so hub-side closes are instant.
  */
 const FAKE_SERVER = {
@@ -39,6 +44,7 @@ const FAKE_SERVER = {
     process.stdin.on("end", () => process.exit(0));
     const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
     const text = (id, t) => send({ id, result: { content: [{ type: "text", text: t }] } });
+    const cancelled = [];
     let buf = "";
     process.stdin.on("data", (chunk) => {
       buf += chunk;
@@ -58,6 +64,9 @@ const FAKE_SERVER = {
         } else if (msg.method === "tools/call") {
           const { name, arguments: args } = msg.params;
           if (name === "slow") setTimeout(() => text(msg.id, "done"), args.ms);
+          if (name === "cancelled") text(msg.id, JSON.stringify(cancelled));
+        } else if (msg.method === "notifications/cancelled") {
+          cancelled.push(msg.params.requestId);
         }
       }
     });
@@ -95,5 +104,37 @@ describe("hub child idle reaper", () => {
     await new Promise((r) => setTimeout(r, 20));
     vi.advanceTimersByTime(60_000);
     expect(getActiveChildKeys()).not.toContain(key);
+  }, 20_000);
+});
+
+describe("hub proxy cancellation", () => {
+  it("forwards an upstream cancel to the child's in-flight call", async () => {
+    const key = "cancel-forward chat";
+    // Spawned up front, so the abort lands after the call reached the child.
+    const child = await acquireChild(key, () => FAKE_SERVER);
+    const server = buildProxyServer("fake", () =>
+      acquireChild(key, () => FAKE_SERVER),
+    );
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverSide);
+    const client = new Client({ name: "upstream", version: "0" });
+    await client.connect(clientSide);
+
+    const abort = new AbortController();
+    const call = client.callTool({ name: "hang", arguments: {} }, undefined, {
+      signal: abort.signal,
+    });
+    await new Promise((r) => setTimeout(r, 200));
+    abort.abort("turn aborted");
+    await expect(call).rejects.toThrow();
+
+    let seen: unknown[] = [];
+    for (let i = 0; i < 50 && seen.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      const res = await child.callTool("cancelled", {});
+      seen = JSON.parse((res.content[0] as { text: string }).text);
+    }
+    expect(seen).toHaveLength(1);
+    await client.close();
   }, 20_000);
 });
