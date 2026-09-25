@@ -66,18 +66,20 @@ const ReadOnlyDatabase = Database as unknown as new (
 
 let db: SqlDatabase | null = null;
 
+/** How long a write waits on another connection's lock before SQLITE_BUSY. */
+const BUSY_TIMEOUT_MS = 5_000;
+
 /**
  * Apply the complete schema. Every statement is IF NOT EXISTS, so this
  * is a no-op on an up-to-date database and creates exactly what's
  * missing on a fresh or older one.
  *
  * Column reconciliation runs first: `ALTER TABLE … ADD COLUMN` has no
- * IF NOT EXISTS form, so columns added to already-shipped tables
- * (media_index.content_hash, sessions.metrics,
- * history_messages.attachments, sessions.last_turn_ended_at) are ensured by attempting the ALTER and
- * swallowing the two expected failures — "duplicate column name"
- * (column already there) and "no such table" (fresh database; the
- * CREATE TABLE in schema.sql includes the column).
+ * IF NOT EXISTS form, so columns added to already-shipped tables are
+ * ensured by attempting the ALTER and swallowing the two expected
+ * failures — "duplicate column name" (column already there) and "no
+ * such table" (fresh database; the CREATE TABLE in schema.sql includes
+ * the column).
  */
 function ensureSchema(database: SqlDatabase): void {
   const row = database
@@ -85,30 +87,18 @@ function ensureSchema(database: SqlDatabase): void {
       "SELECT COUNT(*) AS tables FROM sqlite_master WHERE type = 'table'",
     )
     .get() as { tables: number };
-  try {
-    database.exec(dbSql.addMediaContentHashColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
-  }
-  try {
-    database.exec(dbSql.addHistorySenderHandleColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
-  }
-  try {
-    database.exec(dbSql.addSessionsMetricsColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
-  }
-  try {
-    database.exec(dbSql.addHistoryAttachmentsColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
-  }
-  try {
-    database.exec(dbSql.addSessionsLastTurnEndedAtColumn);
-  } catch {
-    /* duplicate column or no such table — both mean nothing to do */
+  for (const addColumn of [
+    dbSql.addMediaContentHashColumn,
+    dbSql.addHistorySenderHandleColumn,
+    dbSql.addSessionsMetricsColumn,
+    dbSql.addHistoryAttachmentsColumn,
+    dbSql.addSessionsLastTurnEndedAtColumn,
+  ]) {
+    try {
+      database.exec(addColumn);
+    } catch {
+      /* duplicate column or no such table — both mean nothing to do */
+    }
   }
   database.exec("BEGIN");
   try {
@@ -137,6 +127,12 @@ export function getDatabase(path: string = defaultPath()): SqlDatabase {
   mkdirSync(dirname(path), { recursive: true });
   const database = new Database(path);
   try {
+    // Other processes write this file too (CLI commands, a respawned
+    // successor overlapping its predecessor). Both drivers default to a
+    // zero busy timeout, i.e. "database is locked" the instant a write
+    // meets theirs — wait for the lock instead. First, so the pragmas
+    // and schema setup below get it too.
+    database.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
     // WAL: readers don't block the writer, and crash recovery is
     // journal-based instead of "hope the rename was atomic".
     database.exec("PRAGMA journal_mode = WAL");
