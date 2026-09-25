@@ -60,10 +60,7 @@
  * have their stored override returned verbatim — no way to validate.
  */
 
-import {
-  getChatModelForBackend,
-  getChatSettings,
-} from "../../storage/chat-settings.js";
+import { getChatModelForBackend } from "../../storage/chat-settings.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
 import {
   isBackendId,
@@ -311,25 +308,6 @@ async function safeBackendDefault(backend: Backend): Promise<string | null> {
   }
 }
 
-/**
- * Convenience: same as `resolveActiveModelForChat` but returns just
- * the model id (or `null`). Use when the source tag isn't needed.
- */
-export async function getActiveModelForChat(
-  chatId: string,
-  backend: Backend | null,
-  backendId: string | null,
-  config: TalonConfig,
-): Promise<string | null> {
-  const { model } = await resolveActiveModelForChat(
-    chatId,
-    backend,
-    backendId,
-    config,
-  );
-  return model;
-}
-
 // ── ref enrichment ──────────────────────────────────────────────────────────
 
 /**
@@ -411,35 +389,4 @@ function mapCacheSupport(backend: Backend | null): CacheSupport {
     case undefined:
       return "none";
   }
-}
-
-/**
- * Human-readable label for the source — used in toast wording so the
- * user sees *why* the resolved model is what it is. Keeps the wording
- * centralised so the UI stays consistent across frontends.
- */
-export function describeActiveModelSource(source: ActiveModelSource): string {
-  switch (source) {
-    case "override-valid":
-      return "your pick";
-    case "override-invalid-fallback":
-      return "previous pick invalid — falling back to default";
-    case "backend-canonical":
-      return "backend default";
-    case "config-backend-defaults":
-      return "configured default";
-    case "config-legacy-global":
-      return "global default";
-    case "none":
-      return "no model selected";
-  }
-}
-
-/** Read-only helper to surface the `modelByBackend` map for a chat
- *  (e.g. for /status rendering). Returns a shallow copy. */
-export function getModelByBackendSnapshot(
-  chatId: string,
-): Record<string, string> {
-  const settings = getChatSettings(chatId);
-  return { ...settings.modelByBackend };
 }

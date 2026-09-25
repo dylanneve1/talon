@@ -164,11 +164,6 @@ returns `{ model: string | null, ref: ModelRef | null, source }`:
 - `source` carries the chain step that produced the model, useful
   for toast wording and stale-slot cleanup.
 
-Convenience wrappers:
-
-- `getActiveModelForChat(...)` → `model`
-- `getActiveModelRefForChat(...)` → `ref`
-
 ### Adding a new store
 
 New structured state goes in the SQLite layer — see the layering doc
