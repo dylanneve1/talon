@@ -66,6 +66,9 @@ const ReadOnlyDatabase = Database as unknown as new (
 
 let db: SqlDatabase | null = null;
 
+/** How long a write waits on another connection's lock before SQLITE_BUSY. */
+const BUSY_TIMEOUT_MS = 5_000;
+
 /**
  * Apply the complete schema. Every statement is IF NOT EXISTS, so this
  * is a no-op on an up-to-date database and creates exactly what's
@@ -137,6 +140,12 @@ export function getDatabase(path: string = defaultPath()): SqlDatabase {
   mkdirSync(dirname(path), { recursive: true });
   const database = new Database(path);
   try {
+    // Other processes write this file too (CLI commands, a respawned
+    // successor overlapping its predecessor). Both drivers default to a
+    // zero busy timeout, i.e. "database is locked" the instant a write
+    // meets theirs — wait for the lock instead. First, so the pragmas
+    // and schema setup below get it too.
+    database.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
     // WAL: readers don't block the writer, and crash recovery is
     // journal-based instead of "hope the rename was atomic".
     database.exec("PRAGMA journal_mode = WAL");
