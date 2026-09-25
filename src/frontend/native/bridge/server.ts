@@ -22,7 +22,7 @@ import {
 } from "node:http";
 import { createServer as createTlsServer } from "node:https";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, type ReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { log, logError, logDebug, logWarn } from "../../../util/log.js";
 import {
@@ -101,6 +101,15 @@ export const DEFAULT_BRIDGE_TIMEOUTS: BridgeTimeouts = {
   keepAliveMs: 5_000,
   checkIntervalMs: 30_000,
 };
+
+/**
+ * `pipe` never closes its source when the destination goes away, so a
+ * client that hangs up mid-download (app backgrounded, image scrolled
+ * away) would leave the paused read stream holding its fd forever.
+ */
+function releaseOnClose(res: ServerResponse, stream: ReadStream): void {
+  res.once("close", () => stream.destroy());
+}
 
 export class BridgeServer {
   private server: Server | null = null;
@@ -521,6 +530,7 @@ export class BridgeServer {
     });
     const stream = createReadStream(file.path);
     stream.on("error", () => res.destroy());
+    releaseOnClose(res, stream);
     stream.pipe(res);
   }
 
@@ -546,6 +556,7 @@ export class BridgeServer {
         if (!res.headersSent) res.writeHead(500);
         res.end();
       });
+      releaseOnClose(res, stream);
       stream.pipe(res);
     } catch {
       return this.json(res, 404, { ok: false, error: "No such media" });
