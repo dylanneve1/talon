@@ -26,6 +26,11 @@ import { createReadStream, type ReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { log, logError, logDebug, logWarn } from "../../../util/log.js";
 import {
+  raiseAlert,
+  resolveAlert,
+} from "../../../core/frontend-runtime/alerts.js";
+import { errorText } from "../../health/outage.js";
+import {
   formatFingerprint,
   isLoopbackHost,
   type BridgeTlsIdentity,
@@ -310,7 +315,7 @@ export class BridgeServer {
       loopback: isLoopbackHost(this.opts.host),
       allowWeakToken: this.opts.allowWeakToken,
     });
-    this.tlsIdentity = this.opts.tls ? await this.opts.tls() : null;
+    this.tlsIdentity = this.opts.tls ? await this.loadTls(this.opts.tls) : null;
     const onRequest = (req: IncomingMessage, res: ServerResponse): void => {
       this.handle(req, res).catch((err) => {
         logError("native", "Bridge request handler threw", err);
@@ -348,16 +353,63 @@ export class BridgeServer {
       (ids) => this.dropCredentialSessions(ids),
     );
 
+    return this.bind(server);
+  }
+
+  /**
+   * The TLS identity, or a thrown boot failure the operator hears about:
+   * without it no companion app can connect.
+   */
+  private async loadTls(
+    load: () => Promise<BridgeTlsIdentity>,
+  ): Promise<BridgeTlsIdentity> {
+    try {
+      const identity = await load();
+      resolveAlert(
+        "bridge.tls",
+        "The client bridge TLS certificate loads again.",
+      );
+      return identity;
+    } catch (err) {
+      logError("native", `bridge.tls.fail err=${errorText(err)}`, err);
+      raiseAlert(
+        "bridge.tls",
+        `The client bridge could not load its TLS certificate: ${errorText(err)}. Companion apps cannot connect.`,
+        { severity: "critical" },
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Listen on the configured port, stepping up to PORT_FALLBACKS ports past
+   * it when one is taken. A bind that fails for good raises `bridge.listen`
+   * — the frontend has no surface at all without it.
+   */
+  private bind(server: Server): Promise<number> {
     return new Promise<number>((resolve, reject) => {
       let attempt = 0;
       const tryPort = (p: number): void => {
         server.once("error", (err: NodeJS.ErrnoException) => {
           if (err.code === "EADDRINUSE" && attempt < PORT_FALLBACKS) {
             attempt++;
+            logWarn(
+              "native",
+              `bridge.listen port=${p} in use — trying port=${p + 1} attempt=${attempt}/${PORT_FALLBACKS}`,
+            );
             server.removeAllListeners("error");
             server.removeAllListeners("listening");
             tryPort(p + 1);
           } else {
+            logError(
+              "native",
+              `bridge.listen.fail host=${this.opts.host} port=${p} attempt=${attempt} err=${errorText(err)}`,
+            );
+            raiseAlert(
+              "bridge.listen",
+              `The client bridge could not listen on ${this.opts.host}:${p}: ${errorText(err)}. Companion apps cannot connect.`,
+              { severity: "critical" },
+            );
             reject(err);
           }
         });
@@ -385,6 +437,10 @@ export class BridgeServer {
               `Bridge certificate fingerprint ${formatFingerprint(this.tlsIdentity.fingerprint)}`,
             );
           }
+          resolveAlert(
+            "bridge.listen",
+            "The client bridge is listening again.",
+          );
           resolve(this.port);
         });
       };

@@ -11,6 +11,10 @@ import type { WASocket } from "baileys";
 import type { TalonConfig } from "../../core/config/index.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { bareId } from "./connection/identity.js";
+import {
+  createConnectionHealth,
+  type ConnectionHealth,
+} from "./connection/health.js";
 
 type WhatsAppSettings = {
   allowedJids: string[];
@@ -46,6 +50,8 @@ export type WhatsAppRuntime = {
   reconnectDelay: number;
   /** One "not linked" admin note per outage, not one per QR window. */
   unpairedNotified: boolean;
+  /** Reconnect logging and the `whatsapp.connection` alert. */
+  readonly health: ConnectionHealth;
   /** Our own ids (phone and LID), once connected — for mention detection. */
   selfIds: string[];
 };
@@ -75,6 +81,7 @@ export function createWhatsAppRuntime(
     stopRequest: new AbortController(),
     reconnectDelay: RECONNECT_BASE_MS,
     unpairedNotified: false,
+    health: createConnectionHealth(),
     selfIds: [],
   };
 }
