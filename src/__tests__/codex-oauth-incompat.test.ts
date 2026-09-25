@@ -5,7 +5,7 @@
  * matching, malformed-payload tolerance, one-shot legacy-file import),
  * `models.isCodexOAuthIncompat` (combined curated + dynamic check),
  * `models.chatGptFallbackFor` (broadened fallback selection), and
- * `auth.isSilentOAuthExitError` (the 2026-05-20 Pandario regression
+ * `auth.isSilentOAuthExitError` (the 2026-05-20 silent-exit regression
  * pattern).
  *
  * The store now rides the shared kv table (test-isolated per worker via
@@ -346,7 +346,7 @@ describe("chatGptFallbackFor — broadened fallback selection", () => {
   });
 });
 
-// ── isSilentOAuthExitError — the Pandario 23:13Z regression ──────────────
+// ── isSilentOAuthExitError — the 2026-05-20 23:13Z regression ──────────────
 
 describe("isSilentOAuthExitError", () => {
   it("detects the canonical silent exit-1 wrapper from codex-sdk", () => {

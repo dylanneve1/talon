@@ -359,7 +359,7 @@ describe("codex / runOneShotAgent — extended item-type coverage", () => {
 // receive the same pre-emptive model swap the interactive handler
 // applies. Without this, a heartbeat configured with `heartbeatModel:
 // gpt-5-codex` (or any cache-discovered learned-incompat id) would
-// fail silently with the 2026-05-20 Pandario 23:13Z bug shape, but in
+// fail silently with the 2026-05-20 23:13Z bug shape, but in
 // a context where there's no chat to deliver an error to.
 
 import { afterEach, beforeEach } from "vitest";

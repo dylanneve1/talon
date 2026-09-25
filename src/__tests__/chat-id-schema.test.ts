@@ -109,10 +109,10 @@ describe("chatIdSchema (standalone)", () => {
 describe("chat_id tool params (wired into send/react)", () => {
   // The exact two tool fields PR #150 wired to idSchema by mistake.
   // After the fix they must accept both Ada's DM (positive) AND
-  // the Pandario group (negative).
+  // a group chat (negative).
   const cases: Array<[string, number]> = [
     ["send", 424242420], // Ada DM
-    ["send", -1009876543210], // Pandario group
+    ["send", -1009876543210], // group chat
     ["react", 424242420],
     ["react", -1009876543210],
   ];

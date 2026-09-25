@@ -40,7 +40,7 @@ import { toCodexReasoningEffort } from "./effort.js";
  * `config.heartbeatModel ?? config.model`. If that's an OAuth-incompat
  * id (curated `apiKeyOnly: true` or runtime-learned) AND the active
  * Codex credential is ChatGPT OAuth, swap to `gpt-5.5` to avoid the
- * silent exit-1 failure mode that hit Pandario on 2026-05-20 23:13Z.
+ * silent exit-1 failure mode that hit a group chat on 2026-05-20 23:13Z.
  *
  * Returns the resolved model id, whether a swap occurred, and an
  * optional reason string for the run log.

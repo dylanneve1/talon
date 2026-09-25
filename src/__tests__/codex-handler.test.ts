@@ -2306,7 +2306,7 @@ describe("codex / handleMessage — ChatGPT-auth model fallback", () => {
   });
 });
 
-// ── Silent OAuth exit-1 recovery (the 2026-05-20 Pandario regression) ────
+// ── Silent OAuth exit-1 recovery (the 2026-05-20 silent-exit regression) ────
 
 describe("codex / handleMessage — silent OAuth exit-1 recovery", () => {
   // Set up a temp HOME with an OAuth auth.json so this whole describe
@@ -2370,7 +2370,7 @@ describe("codex / handleMessage — silent OAuth exit-1 recovery", () => {
   });
 
   it("retries silent exit-1 on a cache-discovered model under ChatGPT OAuth", async () => {
-    // Pandario 23:13Z replay: `gpt-5.4-mini` was selected (cache says
+    // 2026-05-20 23:13Z replay: `gpt-5.4-mini` was selected (cache says
     // `supported_in_api: true`), pre-emptive swap didn't fire (not
     // curated as apiKeyOnly, not in learned set yet), Codex CLI
     // silently exited 1, SDK surfaced opaque error. The new code path
