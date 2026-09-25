@@ -17,8 +17,9 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import writeFileAtomic from "write-file-atomic";
 import { dirs } from "../util/paths.js";
 import * as repo from "./repositories/scripts-repo.js";
 
@@ -93,8 +94,9 @@ function writeScriptFile(
 ): string {
   const path = scriptFilePath(name, lang);
   mkdirSync(dirname(path), { recursive: true });
-  // 0o700: only the user running Talon should be able to read/exec scripts
-  writeFileSync(path, body, { encoding: "utf-8", mode: 0o700 });
+  // 0o700: only the user running Talon should be able to read/exec scripts.
+  // Atomic: a failed replace (ENOSPC) must keep the previous body.
+  writeFileAtomic.sync(path, body, { encoding: "utf-8", mode: 0o700 });
   return path;
 }
 

@@ -26,6 +26,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, resolve } from "node:path";
+import writeFileAtomic from "write-file-atomic";
 import { parseDocument, stringify } from "yaml";
 import { dirs } from "../util/paths.js";
 
@@ -216,7 +217,9 @@ export function saveSkill(input: {
   mkdirSync(dir, { recursive: true });
   const path = skillFilePath(input.name);
   const content = serializeSkill(input);
-  writeFileSync(path, content, { encoding: "utf-8", mode: 0o600 });
+  // Atomic: a failed replace (ENOSPC) must keep the previous SKILL.md,
+  // not leave a truncated one.
+  writeFileAtomic.sync(path, content, { encoding: "utf-8", mode: 0o600 });
   return readSkill(input.name)!;
 }
 
