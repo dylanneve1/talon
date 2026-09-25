@@ -112,10 +112,18 @@ function functionName(node, parent) {
 
 function measureFile(path) {
   const source = readFileSync(path, "utf8");
-  const module = parseSync(source, { syntax: "typescript", target: "es2022" });
-  // swc spans are offsets into a process-global source map, not the
-  // file — subtract the module's own start to get file offsets.
-  const base = module.span.start;
+  // swc spans are offsets into a process-global source map, and the
+  // module's own span starts at its first token — after any header
+  // comment — so it can't anchor file offsets. A leading `;` puts a token
+  // at byte 0: its start is the file's base, and every offset is shifted
+  // by exactly that one byte. (A hashbang must stay first, so it becomes
+  // a same-length line comment.)
+  const text = source.startsWith("#!") ? "//" + source.slice(2) : source;
+  const module = parseSync(";" + text, {
+    syntax: "typescript",
+    target: "es2022",
+  });
+  const base = module.span.start + 1;
   // swc offsets count UTF-8 bytes, so index lines by byte too — a char
   // index drifts by every multibyte character (—, →, emoji) above.
   const bytes = Buffer.from(source, "utf8");
