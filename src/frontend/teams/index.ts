@@ -76,9 +76,7 @@ export function createTeamsFrontend(
       const graphClient = await initGraphClient();
       runtime.graphClient = graphClient;
 
-      // Get our own user ID (to filter out our own messages)
       const me = await graphClient.getMe();
-      runtime.myUserId = me.id;
       log("teams", `Authenticated as: ${me.displayName} (${me.id})`);
 
       const chatId = await resolveChatId(runtime, graphClient, me.id);

@@ -23,7 +23,6 @@ export type TeamsRuntime = {
   pollTimer: ReturnType<typeof setInterval> | null;
   /** Newest message id already handled — the poll loop cuts at it. */
   lastSeenMessageId: string | null;
-  myUserId: string | null;
   /** Re-entrancy guard: a slow poll never overlaps the next tick. */
   polling: boolean;
 };
@@ -43,7 +42,6 @@ export function createTeamsRuntime(
     graphClient: null,
     pollTimer: null,
     lastSeenMessageId: null,
-    myUserId: null,
     polling: false,
   };
 }
