@@ -1,0 +1,16 @@
+Talon
+Copyright 2026 The Falconry
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Prior licensing
+---------------
+Every release up to and including v5.18.1 was published under the MIT
+License, preserved verbatim in LICENSE-MIT. That grant is irrevocable: anyone
+who received those versions keeps their MIT rights to them, and the
+contributions made under it remain available on those terms.
+
+The relicensing relies on the MIT License's own permission to sublicense, so
+the earlier contributions are redistributed here under Apache-2.0 with the
+original MIT notice retained. Contributions made from this release onward are
+licensed under Apache-2.0 per section 5 of that licence.

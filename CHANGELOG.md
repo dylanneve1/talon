@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.18.2](https://github.com/thefalconry/talon/compare/v5.18.1...v5.18.2) (2026-09-25)
+
+
+### Bug Fixes
+
+* **telegram:** let the agent read back its own Rich Messages ([#1100](https://github.com/thefalconry/talon/issues/1100)) ([6fd5f55](https://github.com/thefalconry/talon/commit/6fd5f55e8b4bd5a23ad1f84d326e1cbc726e22d8))
+
+
+### Miscellaneous Chores
+
+* relicense under Apache-2.0 ([#1101](https://github.com/thefalconry/talon/issues/1101)) ([29279cf](https://github.com/thefalconry/talon/commit/29279cf236514a4904f03d7b99dbb70f5b2a3fda))
+
 ## [5.18.1](https://github.com/thefalconry/talon/compare/v5.18.0...v5.18.1) (2026-09-24)
 
 

@@ -10,6 +10,7 @@
 
 import { TelegramClient, Api } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
+import { outgoingText } from "./actions/outgoing-log.js";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import writeFileAtomic from "write-file-atomic";
@@ -345,12 +346,53 @@ export async function searchMessages(params: {
           m.sender && "firstName" in m.sender
             ? [m.sender.firstName, m.sender.lastName].filter(Boolean).join(" ")
             : "Unknown";
-        return `[msg:${m.id} ${date}] ${sender}: ${m.text || "(media)"}`;
+        return `[msg:${m.id} ${date}] ${sender}: ${messageBody(m)}`;
       })
       .join("\n");
   } catch (err) {
     return `Search failed: ${err instanceof Error ? err.message : err}`;
   }
+}
+
+/**
+ * Render one message's body for the history readers.
+ *
+ * Rich Messages (Bot API 10.2) reach this client as `messageMediaUnsupported`
+ * with no text, because gramjs negotiates an older MTProto layer — so every
+ * message the bot itself sent reads back as "(media)" and the agent cannot see
+ * its own half of the conversation. When the text is one of ours, splice it
+ * back in from the outgoing log; when it is not, say what happened rather than
+ * calling it media.
+ */
+export function messageBody(m: {
+  id: number;
+  text?: string;
+  media?: { className: string };
+}): string {
+  if (m.text) return m.text;
+  if (m.media?.className === "MessageMediaUnsupported") {
+    const own = outgoingText(m.id);
+    if (own) return own;
+    return "(rich message — not renderable by this client)";
+  }
+  return "(media)";
+}
+
+/** Media tag for the history line, suppressed for rich messages we resolved. */
+export function mediaTagFor(m: {
+  id: number;
+  text?: string;
+  media?: { className: string };
+}): string {
+  if (!m.media) return "";
+  if (
+    m.media.className === "MessageMediaUnsupported" &&
+    !m.text &&
+    outgoingText(m.id)
+  ) {
+    return "";
+  }
+  return ` [${m.media.className}]`;
 }
 
 /** Get message history from a chat. Supports going back in time via offsetDate or offsetId. */
@@ -393,8 +435,8 @@ export async function getHistory(params: {
         const replyTag = m.replyTo?.replyToMsgId
           ? ` (reply to msg:${m.replyTo.replyToMsgId})`
           : "";
-        const mediaTag = m.media ? ` [${m.media.className}]` : "";
-        return `[msg:${m.id} ${date}] ${sender}${replyTag}${mediaTag}: ${m.text || "(media)"}`;
+        const mediaTag = mediaTagFor(m);
+        return `[msg:${m.id} ${date}] ${sender}${replyTag}${mediaTag}: ${messageBody(m)}`;
       })
       .join("\n");
   } catch (err) {
@@ -530,8 +572,8 @@ export async function getMessage(params: {
     const replyTag = m.replyTo?.replyToMsgId
       ? `\nReply to: msg:${m.replyTo.replyToMsgId}`
       : "";
-    const mediaTag = m.media ? `\nMedia: ${m.media.className}` : "";
-    return `[msg:${m.id} ${date}] ${sender}${replyTag}${mediaTag}\n${m.text || "(no text)"}`;
+    const mediaTag = mediaTagFor(m) ? `\nMedia: ${m.media?.className}` : "";
+    return `[msg:${m.id} ${date}] ${sender}${replyTag}${mediaTag}\n${messageBody(m)}`;
   } catch (err) {
     return `Failed: ${err instanceof Error ? err.message : err}`;
   }

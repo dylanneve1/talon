@@ -9,7 +9,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Frontends](https://img.shields.io/badge/frontends-Telegram_%7C_WhatsApp_%7C_Discord_%7C_Teams_%7C_Terminal_%7C_App-25D366)](#frontends)
 [![Backends](https://img.shields.io/badge/backends-Claude_%7C_Kilo_%7C_OpenCode_%7C_Codex_%7C_Antigravity_%7C_OpenAI_Agents-D97706)](#backends)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://github.com/thefalconry/talon/actions/workflows/ci.yml/badge.svg)](https://github.com/thefalconry/talon/actions/workflows/ci.yml)
 
 Multi-platform agentic AI harness. Runs on **Telegram**, **WhatsApp**, **Discord**, **Microsoft Teams**, the **Terminal**, and a **cross-platform Desktop/Mobile companion app** (Flutter), with a pluggable backend (**Claude Agent SDK**, **Kilo**, **OpenCode**, **Codex**, **Antigravity**, or **OpenAI Agents**) and full tool access through MCP.
@@ -611,4 +611,8 @@ smoke-tests the CLI and the MCP supervisor from it.
 
 ## License
 
-MIT
+Apache License 2.0 — see [LICENSE](LICENSE).
+
+Releases up to and including v5.18.1 were published under the MIT License,
+kept at [LICENSE-MIT](LICENSE-MIT). That grant is irrevocable for those
+versions and still covers the contributions made under it — see [NOTICE](NOTICE).

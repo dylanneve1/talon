@@ -88,6 +88,23 @@ interface LiveAgent {
   killRequested: boolean;
 }
 
+/**
+ * Whether two agents were spawned by the same parent.
+ *
+ * Compared structurally rather than by reference: records come from separate
+ * snapshots, so the parent objects are equal in value and never identical.
+ * The `kind` check is what stops a chat-parented agent matching an
+ * agent-parented one whose id happens to equal a chat key.
+ */
+function sameParent(a: AgentParent, b: AgentParent): boolean {
+  if (a.kind !== b.kind) return false;
+  return a.kind === "chat" && b.kind === "chat"
+    ? a.chatId === b.chatId
+    : a.kind === "agent" && b.kind === "agent"
+      ? a.agentId === b.agentId
+      : false;
+}
+
 function snapshot(entry: LiveAgent): AgentRecord {
   return {
     ...entry.record,
@@ -355,6 +372,30 @@ export class AgentRegistry {
   liveChildren(id: string): string[] {
     const children = this.get(id)?.children ?? [];
     return children.filter((child) => this.live.has(child));
+  }
+
+  /**
+   * An agent's live **peers** — the other agents sharing its parent.
+   *
+   * This is the addressing scope for agent-to-agent messaging, and it is
+   * deliberately narrower than "everything under the same chat". A swarm is
+   * a set of siblings spawned for one job, so siblings are the useful unit;
+   * widening to the whole chat tree would let an agent reach a cousin from an
+   * unrelated piece of work it knows nothing about.
+   *
+   * Live only: a settled agent has no mailbox to deliver into, and offering
+   * it as a peer would only produce a delivery failure one call later.
+   */
+  peersOf(id: string): AgentRecord[] {
+    const self = this.get(id);
+    if (!self) return [];
+    const peers: AgentRecord[] = [];
+    for (const entry of this.live.values()) {
+      const record = snapshot(entry);
+      if (record.id === id) continue;
+      if (sameParent(record.parent, self.parent)) peers.push(record);
+    }
+    return peers.sort((a, b) => a.createdAt - b.createdAt);
   }
 
   /** Live agents plus the bounded settled ring, oldest first. */
