@@ -90,10 +90,7 @@ function createStreamCallbacks(
   state: StreamState,
   chatTitle?: string,
 ) {
-  const onStreamDelta = async (
-    accumulated: string,
-    _phase?: "thinking" | "text",
-  ) => {
+  const onStreamDelta = async (accumulated: string) => {
     // Skip if drafts not supported or not ready
     if (draftsSupported === false || !state.started || state.editing) return;
     if (accumulated.length - state.lastSentLength < 40) return;
@@ -224,11 +221,11 @@ export async function processAndReply(
             // Fire-and-forget: draft edits are throttled + self-mutexed
             // (`state.editing`), so we must NOT block stream consumption
             // on them.
-            void onStreamDelta(textAccum, "text");
+            void onStreamDelta(textAccum);
             break;
           case "reasoning":
             thinkingAccum += event.text;
-            void onStreamDelta(thinkingAccum, "thinking");
+            void onStreamDelta(thinkingAccum);
             break;
           case "assistant_message":
             // Keep the running total monotonic so a following
