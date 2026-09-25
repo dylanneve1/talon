@@ -59,7 +59,7 @@ describe("createBridge", () => {
     const bridge = createBridge("http://test/", ""); // empty default chat
     await bridge("send_message", {
       text: "hi from heartbeat",
-      chat_id: 352042062,
+      chat_id: 424242420,
     });
 
     const body = JSON.parse(
@@ -68,8 +68,8 @@ describe("createBridge", () => {
     expect(body).toMatchObject({
       action: "send_message",
       text: "hi from heartbeat",
-      chat_id: 352042062, // stays in body — explicit-routing signal
-      _chatId: "352042062", // promoted as the routing key
+      chat_id: 424242420, // stays in body — explicit-routing signal
+      _chatId: "424242420", // promoted as the routing key
     });
   });
 
@@ -148,19 +148,19 @@ describe("createBridge", () => {
   // ── Edge cases for chat_id values ────────────────────────────────────────
 
   it("negative numeric chat_id (Telegram group ID) is preserved as negative", async () => {
-    // Telegram supergroup IDs are negative (e.g., -1001426819337). The bridge
-    // must not coerce sign — String(-1001426819337) keeps the minus prefix.
+    // Telegram supergroup IDs are negative (e.g., -1009876543210). The bridge
+    // must not coerce sign — String(-1009876543210) keeps the minus prefix.
     const bridge = createBridge("http://test/", "");
     await bridge("send_message", {
       text: "to group",
-      chat_id: -1001426819337,
+      chat_id: -1009876543210,
     });
 
     const body = JSON.parse(
       (fetchMock.mock.calls[0][1] as { body: string }).body,
     );
-    expect(body._chatId).toBe("-1001426819337");
-    expect(body.chat_id).toBe(-1001426819337);
+    expect(body._chatId).toBe("-1009876543210");
+    expect(body.chat_id).toBe(-1009876543210);
   });
 
   it("chat_id=0 is promoted (gateway decides what to do)", async () => {
@@ -203,13 +203,13 @@ describe("createBridge", () => {
     const bridge = createBridge("http://test/", "heartbeat");
     await bridge("send_message", {
       text: "outbound from heartbeat",
-      chat_id: 352042062,
+      chat_id: 424242420,
     });
 
     const body = JSON.parse(
       (fetchMock.mock.calls[0][1] as { body: string }).body,
     );
-    expect(body._chatId).toBe("352042062");
+    expect(body._chatId).toBe("424242420");
     // Critically NOT "heartbeat" — would be a routing-bypass bug.
     expect(body._chatId).not.toBe("heartbeat");
   });

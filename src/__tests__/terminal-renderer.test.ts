@@ -202,7 +202,7 @@ describe("extractToolDetail", () => {
 
 describe("cleanToolName", () => {
   it("strips MCP server prefix", () => {
-    expect(cleanToolName("mcp__npuw-tools__jenkins_list_builds")).toBe(
+    expect(cleanToolName("mcp__ci-tools__jenkins_list_builds")).toBe(
       "jenkins_list_builds",
     );
   });

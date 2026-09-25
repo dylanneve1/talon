@@ -33,7 +33,7 @@ describe("talon setup — Telegram admin", () => {
     expect(validateTelegramAdminId("@me")).toMatch(/numeric/);
     expect(validateTelegramAdminId("-5")).toMatch(/numeric/);
     expect(validateTelegramAdminId("0")).toMatch(/numeric/);
-    expect(validateTelegramAdminId("352042062")).toBeUndefined();
+    expect(validateTelegramAdminId("424242420")).toBeUndefined();
   });
 
   it("defaults the DM allowlist to the admin on a fresh config", () => {

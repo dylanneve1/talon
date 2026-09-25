@@ -123,10 +123,10 @@ describe("applyConfigUpdate", () => {
 
   it("applies the timezone live, and clears it on an empty string", () => {
     const config = fakeConfig();
-    applyConfigUpdate(config, { timezone: " Europe/Dublin " });
-    expect(config.timezone).toBe("Europe/Dublin");
-    expect(setTimezone).toHaveBeenLastCalledWith("Europe/Dublin");
-    expect(onDisk().timezone).toBe("Europe/Dublin");
+    applyConfigUpdate(config, { timezone: " Europe/London " });
+    expect(config.timezone).toBe("Europe/London");
+    expect(setTimezone).toHaveBeenLastCalledWith("Europe/London");
+    expect(onDisk().timezone).toBe("Europe/London");
 
     applyConfigUpdate(config, { timezone: "" });
     expect(config.timezone).toBeUndefined();

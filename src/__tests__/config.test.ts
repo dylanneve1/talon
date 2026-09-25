@@ -230,11 +230,11 @@ describe("config", () => {
     });
 
     it("reads adminUserId from config", async () => {
-      mockFs({ botToken: "test-token", adminUserId: 352042062 });
+      mockFs({ botToken: "test-token", adminUserId: 424242420 });
 
       const { loadConfig } = await import("../core/config/index.js");
       const config = loadConfig();
-      expect(config.adminUserId).toBe(352042062);
+      expect(config.adminUserId).toBe(424242420);
     });
 
     it("reads apiId and apiHash from config", async () => {

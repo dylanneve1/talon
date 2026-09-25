@@ -64,13 +64,13 @@ describe("every backend declares its guest tool scope", () => {
 
 // ── The weaver honours the declaration ──────────────────────────────────────
 
-const ADMIN = 352042062;
-const GROUP = "-1001426819337";
+const ADMIN = 424242420;
+const GROUP = "-1009876543210";
 
 function groupTurn(senderId: number, onEvent = vi.fn()): ExecuteParams {
   return {
     chatId: GROUP,
-    numericChatId: -1001426819337,
+    numericChatId: -1009876543210,
     prompt: "hi",
     senderName: "S",
     senderKeys: [String(senderId)],

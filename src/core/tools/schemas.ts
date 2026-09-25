@@ -41,8 +41,8 @@ export const idSchema = z.union([
  * sentinel the gateway already treats as falsy/unrouted.
  *
  * Accepts:
- *   - actual non-zero integer numbers (`352042062`, `-1001426819337`)
- *   - integer strings with optional leading minus (`"-1001426819337"`)
+ *   - actual non-zero integer numbers (`424242420`, `-1009876543210`)
+ *   - integer strings with optional leading minus (`"-1009876543210"`)
  *
  * Rejects:
  *   - zero (`0`, `"0"`, `"-0"`)

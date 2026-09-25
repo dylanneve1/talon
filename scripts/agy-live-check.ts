@@ -26,7 +26,7 @@ import { join } from "node:path";
 const REAL = join(homedir(), ".gemini", "config", "mcp_config.json");
 const TMP = "/tmp/agy-live/mcp_config.copy.json";
 const SNAPDIR = join(homedir(), ".gemini", "antigravity-cli", "mcp");
-const CHAT = "-1001426819337";
+const CHAT = "-1009876543210";
 const BRIDGE = `http://127.0.0.1:${
   (
     JSON.parse(
@@ -109,7 +109,7 @@ async function main() {
   const state = { allResponseText: "", currentBlockText: "" };
   const result = await child.runTurn(
     "Call the check_time tool on the MCP server named " +
-      "__talon__live__extras-tools with timezone Europe/Dublin, then reply " +
+      "__talon__live__extras-tools with timezone Europe/London, then reply " +
       "with ONLY the time it returns (HH:MM:SS). Do not use run_command.",
     {
       onStep: (step) => {

@@ -42,9 +42,9 @@ import { ALL_TOOLS } from "../core/tools/index.js";
 import type { ActionResult } from "../core/types.js";
 
 /** A DM chat key — `chatScope` reads a positive Telegram id as a DM. */
-const DM_CHAT = "352042062";
+const DM_CHAT = "424242420";
 /** A Telegram supergroup: negative id. */
-const GROUP_CHAT = "-1001426819337";
+const GROUP_CHAT = "-1009876543210";
 
 let seq = 0;
 /** Unique subject per test — the worker-shared DB persists across tests. */

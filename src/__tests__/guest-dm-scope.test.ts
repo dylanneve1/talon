@@ -86,7 +86,7 @@ describe("guest parameter guard", () => {
   });
 
   it("refuses another chat", () => {
-    expect(guestParamViolation("999", { chat_id: -1001426819337 })).toMatch(
+    expect(guestParamViolation("999", { chat_id: -1009876543210 })).toMatch(
       /chat_id/,
     );
     expect(guestParamViolation("999", { to_chat_id: "111" })).toMatch(
@@ -162,7 +162,7 @@ describe("hub tool server", () => {
     const { client } = await listToolsFor(true);
     const res = await client.callTool({
       name: "send",
-      arguments: { type: "text", text: "hi", chat_id: "-1001426819337" },
+      arguments: { type: "text", text: "hi", chat_id: "-1009876543210" },
     });
     const text = (res.content as { type: string; text: string }[])[0].text;
     expect(text).toMatch(/Not available in this chat: chat_id/);

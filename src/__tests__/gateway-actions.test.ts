@@ -2426,12 +2426,12 @@ describe("per-job model override + discovery actions", () => {
       await handleChatFreeAction({
         action: "send_via",
         frontend: "telegram",
-        target: "-1001426819337",
+        target: "-1009876543210",
         text: "build is green",
       });
       expect(handler).toHaveBeenCalledWith(
         expect.objectContaining({ action: "send_message" }),
-        -1001426819337,
+        -1009876543210,
       );
     });
 

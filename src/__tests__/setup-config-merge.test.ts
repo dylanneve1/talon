@@ -32,7 +32,7 @@ const lived = (): Config =>
     frontend: ["telegram", "native", "whatsapp"],
     botToken: "123:abc",
     whatsapp: {
-      allowedJids: ["353834733284"],
+      allowedJids: ["447700900102"],
       groupPolicy: "with-allowed-user",
     },
     native: { host: "127.0.0.1", port: 19880 },
@@ -46,7 +46,7 @@ const lived = (): Config =>
     adminUserId: 1,
     allowedUsers: [1, 2],
     nativeTools: true,
-    timezone: "Europe/Dublin",
+    timezone: "Europe/London",
   }) as Config;
 
 describe("buildSetupConfig — keys the wizard never prompts for", () => {
@@ -84,7 +84,7 @@ describe("buildSetupConfig — keys the wizard never prompts for", () => {
       answers({ selectedFrontends: ["telegram"] }),
     );
     expect(after.whatsapp).toEqual({
-      allowedJids: ["353834733284"],
+      allowedJids: ["447700900102"],
       groupPolicy: "with-allowed-user",
     });
   });
@@ -164,7 +164,7 @@ describe("isConfigured — the gate into the wizard", () => {
           frontend: ["telegram", "native", "whatsapp"],
           botToken: "123:abc",
           adminUserId: 1,
-          whatsapp: { allowedJids: ["353834733284"] },
+          whatsapp: { allowedJids: ["447700900102"] },
         }),
       ),
     ).toBe(true);
@@ -216,7 +216,7 @@ describe("the whatsapp block the wizard writes", () => {
         whatsapp: {
           allowedJids: ["353871234567"],
           groupPolicy: "listed",
-          pairingNumber: "353851722396",
+          pairingNumber: "447700900101",
         },
       }),
     );
