@@ -3,8 +3,9 @@
  *
  *   - `control` — what a parent calls: spawn / list / status / wait / send /
  *     kill. Works from a chat and from inside another agent.
- *   - `report`  — what a sub-agent calls about itself: report_result /
- *     message_parent / check_inbox.
+ *   - `report`  — what a sub-agent calls about itself and its siblings:
+ *     report_result / message_parent / check_inbox / list_peers /
+ *     message_peer.
  *
  * Both sets are reachable from an `agent:<id>` context: the gateway routes
  * those chat keys straight here (see `Gateway.handleAction`), because a

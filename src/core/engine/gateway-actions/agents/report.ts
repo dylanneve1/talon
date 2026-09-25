@@ -16,6 +16,7 @@ import {
   agentIdFromContextLabel,
   agentRegistry,
   deliverMessage,
+  deliverToAgent,
   describeParent,
 } from "../../../agents/index.js";
 import { logError } from "../../../../util/log.js";
@@ -83,6 +84,67 @@ export const agentReportHandlers: SharedActionHandlers = {
     return {
       ok: true,
       text: `Note sent to ${describeParent(record.parent)}. Carry on — this did not end your run.`,
+    };
+  },
+
+  list_peers: (_body, _chatId, _backend, chatKey) => {
+    const record = callingAgent(chatKey);
+    if (!record) return notAnAgent("list_peers");
+    const peers = agentRegistry.peersOf(record.id);
+    if (peers.length === 0) {
+      return {
+        ok: true,
+        text:
+          "No peers — you are the only agent your parent has running. " +
+          "Report to your parent as usual.",
+      };
+    }
+    const rendered = peers
+      .map(
+        (peer) =>
+          `- ${peer.label} [${peer.state}]\n  ID: ${peer.id}\n  Working on: ${peer.brief.slice(0, 160).replace(/\s+/g, " ")}…`,
+      )
+      .join("\n");
+    return {
+      ok: true,
+      text: `${peers.length} peer(s) running alongside you:\n\n${rendered}`,
+    };
+  },
+
+  message_peer: (body, _chatId, _backend, chatKey) => {
+    const record = callingAgent(chatKey);
+    if (!record) return notAnAgent("message_peer");
+    const id = String(body.agent_id ?? "").trim();
+    if (!id) return { ok: false, error: "Missing agent_id" };
+    const text = String(body.text ?? "").trim();
+    if (!text) return { ok: false, error: "Missing text" };
+    // Peers only. An agent may address a sibling, never an arbitrary id:
+    // resolving through peersOf is what stops one swarm reaching into
+    // another, and it means a wrong id fails closed rather than delivering.
+    const peer = agentRegistry
+      .peersOf(record.id)
+      .find((candidate) => candidate.id === id);
+    if (!peer) {
+      return {
+        ok: false,
+        error:
+          `No peer "${id}". You can only message agents spawned by the same ` +
+          `parent as you — call list_peers to see them.`,
+      };
+    }
+    if (!deliverToAgent(record.id, id, text)) {
+      return {
+        ok: false,
+        error:
+          `Could not deliver to "${peer.label}" (${id}): it has already ` +
+          `settled, or its inbox is full.`,
+      };
+    }
+    return {
+      ok: true,
+      text:
+        `Queued for peer "${peer.label}" (${id}). It reads its inbox at its ` +
+        `own milestones, so this is not an interrupt.`,
     };
   },
 

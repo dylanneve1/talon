@@ -259,3 +259,95 @@ describe("chat-side actions", () => {
     expect(badEffort.error).toContain("Unknown effort");
   });
 });
+
+describe("peer channel", () => {
+  it("lists siblings, and says so plainly when there are none", async () => {
+    const alone = live(CHAT, "alone");
+    const solo = await asAgent(alone.id, "list_peers");
+    expect(solo.ok).toBe(true);
+    expect(solo.text).toContain("No peers");
+
+    const other = live(CHAT, "other");
+    const pair = await asAgent(alone.id, "list_peers");
+    expect(pair.text).toContain(other.id);
+    expect(pair.text).toContain("other");
+    // never itself
+    expect(pair.text).not.toContain(`ID: ${alone.id}`);
+  });
+
+  it("delivers a peer note into the sibling's inbox, naming the sender", async () => {
+    const a = live(CHAT, "a");
+    const b = live(CHAT, "b");
+    const sent = await asAgent(a.id, "message_peer", {
+      agent_id: b.id,
+      text: "the categories are already set, don't re-derive them",
+    });
+    expect(sent.ok).toBe(true);
+
+    const inbox = await asAgent(b.id, "check_inbox");
+    expect(inbox.text).toContain("don't re-derive them");
+    expect(inbox.text).toContain(a.id);
+    // drained exactly once
+    const again = await asAgent(b.id, "check_inbox");
+    expect(again.text).toContain("Inbox empty");
+  });
+
+  // The boundary. Widening addressing to siblings must not widen it further:
+  // a cousin belongs to another parent's job and is none of this agent's
+  // business.
+  it("refuses an agent under a different parent, and one in another chat", async () => {
+    const mine = live(CHAT, "mine");
+    const sibling = live(CHAT, "sibling");
+    const cousin = live({ kind: "agent", agentId: sibling.id }, "cousin");
+    const stranger = live(
+      { kind: "chat", chatId: "d_99", numericChatId: 99 },
+      "stranger",
+    );
+
+    for (const target of [cousin.id, stranger.id]) {
+      const refused = await asAgent(mine.id, "message_peer", {
+        agent_id: target,
+        text: "hello",
+      });
+      expect(refused.ok).toBe(false);
+      expect(refused.error).toContain("same parent");
+    }
+    // and nothing was delivered
+    expect((await asAgent(cousin.id, "check_inbox")).text).toContain(
+      "Inbox empty",
+    );
+    expect((await asAgent(stranger.id, "check_inbox")).text).toContain(
+      "Inbox empty",
+    );
+  });
+
+  it("does not treat its own child as a peer (children go via send_to_agent)", async () => {
+    const parent = live(CHAT, "parent");
+    const child = live({ kind: "agent", agentId: parent.id }, "child");
+    const peers = await asAgent(parent.id, "list_peers");
+    expect(peers.text).toContain("No peers");
+    const refused = await asAgent(parent.id, "message_peer", {
+      agent_id: child.id,
+      text: "hi",
+    });
+    expect(refused.ok).toBe(false);
+  });
+
+  it("refuses a chat caller", async () => {
+    const a = live(CHAT, "a");
+    for (const action of ["list_peers", "message_peer"]) {
+      const result = await asChat(action, { agent_id: a.id, text: "x" });
+      expect(result.ok).toBe(false);
+    }
+  });
+
+  // Regression guard on the security line: messaging widened to siblings,
+  // control did not. An agent must still not be able to kill its sibling.
+  it("does not let a peer be killed or waited on", async () => {
+    const a = live(CHAT, "a");
+    const b = live(CHAT, "b");
+    const killed = await asAgent(a.id, "kill_agent", { agent_id: b.id });
+    expect(killed.ok).toBe(false);
+    expect(agentRegistry.isLive(b.id)).toBe(true);
+  });
+});
