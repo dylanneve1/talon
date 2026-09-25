@@ -1,7 +1,7 @@
 /**
  * The daemon log reader and the surfaces built on it: parsing and
  * filters, walking rotated generations, the proc/log, proc/errors and
- * proc/alerts views.
+ * proc/alerts views, and doctor's recent-errors / open-alerts probes.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
@@ -27,6 +27,7 @@ import {
 } from "../core/vfs/mounts/diagnostics.js";
 import { createProcMount } from "../core/vfs/mounts/proc.js";
 import { Vfs } from "../core/vfs/vfs.js";
+import { checkOpenAlerts, checkRecentErrors } from "../core/doctor/logs.js";
 
 const NOW = Date.UTC(2026, 8, 25, 12, 0, 0);
 const MIN = 60_000;
@@ -311,5 +312,98 @@ describe("proc diagnostic views", () => {
         "    Heartbeat failed 3 times: ECONNRESET.\n",
     );
     expect(renderAlertsView([], NOW)).toBe("# no active alerts\n");
+  });
+});
+
+describe("doctor log probes", () => {
+  it("summarises the last hour's errors by component and names the latest", () => {
+    writeLog([
+      { level: 50, component: "telegram", msg: "old", ago: 2 * 60 * MIN },
+      { level: 50, component: "agent", msg: "a", ago: 30 * MIN },
+      { level: 40, component: "bot", msg: "w", ago: 20 * MIN },
+      { level: 50, component: "agent", msg: "b", ago: 10 * MIN },
+      {
+        level: 50,
+        component: "discord",
+        msg: "gateway closed",
+        err: "4004",
+        ago: 5 * MIN,
+      },
+    ]);
+    const check = checkRecentErrors({ logPath, now: NOW });
+    expect(check.label).toBe(
+      "Log: 3 error(s) in the last hour — agent 2, discord 1",
+    );
+    expect(check.status).toBe("warn");
+    expect(check.issue).toBeUndefined();
+    expect(check.detail).toContain("discord: gateway closed (4004)");
+    expect(check.detail).toContain("talon logs --errors --since 1h");
+  });
+
+  it("is ok on a quiet log and informational on warnings only", () => {
+    writeLog([{ msg: "fine" }]);
+    expect(checkRecentErrors({ logPath, now: NOW }).status).toBe("ok");
+    writeLog([{ level: 40, component: "cron", msg: "w" }]);
+    expect(checkRecentErrors({ logPath, now: NOW })).toMatchObject({
+      status: "info",
+      detail: "cron 1",
+    });
+  });
+
+  it("reports live alerts as issues", () => {
+    const checks = checkOpenAlerts({
+      logPath,
+      now: NOW,
+      liveAlerts: [
+        {
+          key: "backend.auth.claude",
+          severity: "critical",
+          message: "Claude login expired.",
+          since: NOW - 20 * MIN,
+        },
+      ],
+    });
+    expect(checks).toEqual([
+      {
+        label: "Alert backend.auth.claude (critical, 20 min)",
+        status: "fail",
+        detail: "Claude login expired.",
+        issue: true,
+      },
+    ]);
+  });
+
+  it("falls back to the log's unresolved alerts, without counting them", () => {
+    writeLog([
+      {
+        level: 40,
+        component: "alert",
+        msg: "[error] telegram.polling: Telegram polling has failed for 5 min.",
+        ago: 15 * MIN,
+      },
+      {
+        level: 40,
+        component: "alert",
+        msg: "[warn] disk.low: 4%",
+        ago: 9 * MIN,
+      },
+      {
+        component: "alert",
+        msg: "resolved disk.low after 2 min",
+        ago: 7 * MIN,
+      },
+    ]);
+    const checks = checkOpenAlerts({ logPath, now: NOW, liveAlerts: [] });
+    expect(checks).toEqual([
+      {
+        label: "Alert telegram.polling (error, 15 min)",
+        status: "warn",
+        detail: "last logged: Telegram polling has failed for 5 min.",
+      },
+    ]);
+    writeLog([{ msg: "quiet" }]);
+    expect(checkOpenAlerts({ logPath, now: NOW, liveAlerts: [] })).toEqual([
+      { label: "Alerts: none open", status: "ok" },
+    ]);
   });
 });
