@@ -46,7 +46,11 @@ export async function tailLogs(): Promise<void> {
   const lines = content.trim().split("\n");
   for (const line of lines.slice(-30)) console.log(formatLogLine(line));
   let lastSize = lines.length;
-  watchFile(LOG_FILE, { interval: 500 }, () => {
+  watchFile(LOG_FILE, { interval: 500 }, (curr, prev) => {
+    // A daemon start rotates talon.log to talon.log.old: the file under the
+    // name is new, and counting its lines against the old one's would stay
+    // silent until it outgrew the file it replaced.
+    if (curr.ino !== prev.ino || curr.size < prev.size) lastSize = 0;
     try {
       const nl = readFileSync(LOG_FILE, "utf-8").trim().split("\n");
       for (let i = lastSize; i < nl.length; i++)
