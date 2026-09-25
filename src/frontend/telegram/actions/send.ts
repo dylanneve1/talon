@@ -14,6 +14,14 @@ import {
   noteRichMessageFailure,
   richMessagesAvailable,
 } from "./rich-messages.js";
+import { createDeliveryTracker } from "../../health/delivery.js";
+
+/** Reply delivery streaks — shared by the reply actions and text blocks. */
+export const telegramDelivery = createDeliveryTracker(
+  "telegram",
+  "Telegram",
+  "bot",
+);
 
 export function replyParams(
   body: Record<string, unknown>,

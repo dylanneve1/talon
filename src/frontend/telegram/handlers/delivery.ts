@@ -10,7 +10,7 @@ import { toolInputToRecord } from "../../../core/agent-runtime/events.js";
 import { appendDailyLogResponse } from "../../../storage/daily-log.js";
 import { stripMcpPrefix } from "../../../core/tools/index.js";
 import { logWarn } from "../../../util/log.js";
-import { replyParamsFor, sendText } from "../actions/send.js";
+import { replyParamsFor, sendText, telegramDelivery } from "../actions/send.js";
 import { ambientThreadId } from "../topics.js";
 import { isAdminInGroup, trackDmUser } from "./access.js";
 
@@ -119,7 +119,13 @@ function createStreamCallbacks(
   };
 
   const onTextBlock = async (text: string) => {
-    await sendText(bot, chatId, text, _replyToId);
+    try {
+      await sendText(bot, chatId, text, _replyToId);
+    } catch (err) {
+      telegramDelivery.failed(chatId, err);
+      throw err;
+    }
+    telegramDelivery.delivered(chatId);
     appendDailyLogResponse("Talon", text, { chatTitle });
     state.lastSentLength = 0;
     state.sentTextBlock = true;

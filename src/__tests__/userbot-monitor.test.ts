@@ -14,6 +14,10 @@ vi.mock("../util/paths.js", () => ({
   },
 }));
 vi.mock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+vi.mock("../core/frontend-runtime/alerts.js", () => ({
+  raiseAlert: vi.fn(),
+  resolveAlert: vi.fn(),
+}));
 
 /** Every GramJS client the module builds, in order. */
 const built: FakeClient[] = [];
@@ -37,6 +41,10 @@ vi.mock("telegram/sessions/index.js", () => ({ StringSession: class {} }));
 
 const { initUserClient, disconnectUserClient, isUserClientReady } =
   await import("../frontend/telegram/userbot.js");
+
+const { raiseAlert, resolveAlert } =
+  await import("../core/frontend-runtime/alerts.js");
+const { logWarn } = await import("../util/log.js");
 
 const TICK_MS = 5 * 60 * 1000;
 
@@ -79,5 +87,45 @@ describe("userbot connection monitor", () => {
     await disconnectUserClient();
     await vi.advanceTimersByTimeAsync(TICK_MS * 2);
     expect(built).toHaveLength(1);
+  });
+
+  it("alerts once reconnects have failed for 15 min, and resolves on reconnect", async () => {
+    vi.useFakeTimers();
+    vi.mocked(raiseAlert).mockClear();
+    vi.mocked(resolveAlert).mockClear();
+    expect(await initUserClient({ apiId: 1, apiHash: "h" })).toBe(true);
+
+    built[0].connected = false;
+    nextConnect = async () => {
+      throw new Error("network down");
+    };
+    built[0].connect.mockImplementation(() => nextConnect());
+
+    // First failing tick opens the outage; two more keep it open.
+    await vi.advanceTimersByTimeAsync(TICK_MS);
+    expect(logWarn).toHaveBeenCalledWith(
+      "userbot",
+      expect.stringMatching(
+        /^userbot\.reconnect\.fail step=re-init attempt=1 down_ms=0 next_check_ms=300000 err=network down$/,
+      ),
+    );
+    await vi.advanceTimersByTimeAsync(TICK_MS * 2);
+    expect(raiseAlert).not.toHaveBeenCalled();
+
+    // 15 min after the first failure.
+    await vi.advanceTimersByTimeAsync(TICK_MS);
+    expect(raiseAlert).toHaveBeenCalledWith(
+      "telegram.userbot",
+      expect.stringContaining("failed to reconnect for 15 min: network down"),
+      { severity: "warn" },
+    );
+
+    nextConnect = async () => {};
+    await vi.advanceTimersByTimeAsync(TICK_MS);
+    expect(isUserClientReady()).toBe(true);
+    expect(resolveAlert).toHaveBeenCalledWith(
+      "telegram.userbot",
+      "The Telegram user client is reconnected.",
+    );
   });
 });
