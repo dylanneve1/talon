@@ -51,13 +51,8 @@ export const idSchema = z.union([
  *
  * Use this for `chat_id` fields on tool input schemas. The bare
  * `idSchema` is for message/user/reply IDs (always positive) and
- * would reject the negative IDs Telegram uses for groups/channels —
- * which was the bug PR #150 shipped with: heartbeat outbound `send`
- * to a supergroup got `expected number, received string` (the model
- * sees a `number` JSON schema, but zod rejects negatives before the
- * gateway sees the request). Gateway-side handling for negative
- * chat_ids was already tested and correct — only the tool-input
- * schema layer needed the fix.
+ * would reject the negative IDs Telegram uses for groups/channels
+ * before the gateway ever sees the request.
  */
 const nonZeroInt = z
   .number()

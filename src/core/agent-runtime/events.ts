@@ -5,12 +5,12 @@
  * Every backend (Claude SDK, Codex, Kilo, OpenCode, OpenAI Agents)
  * translates its SDK's native event stream into `AgentEvent`s. Core
  * renderers (Telegram dispatch, terminal output, heartbeat log,
- * dream log, `/status`, tests) consume `AgentEvent`s. Backends no
- * longer render markdown logs themselves and core no longer parses
+ * dream log, `/status`, tests) consume `AgentEvent`s. Backends don't
+ * render markdown logs themselves and core never parses
  * backend-specific output.
  *
  * The shared wrapper `backend/runtime/turn/handler-to-events.ts` converts
- * each backend's existing callback-driven `handleMessage` into the
+ * each backend's callback-driven `handleMessage` into the
  * canonical sequence: `run_started → text_delta* →
  * assistant_message* → tool_call* → usage → completed`. Backends
  * with richer SDKs can emit events directly without the wrapper.
