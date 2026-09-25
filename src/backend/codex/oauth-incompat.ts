@@ -75,7 +75,7 @@
  *     stay synchronous (they only touch the in-memory set).
  */
 
-import { createHash } from "node:crypto";
+import { scryptSync } from "node:crypto";
 import { logDebug } from "../../util/log.js";
 import { files } from "../../util/paths.js";
 import { kvGet, kvSet } from "../../storage/kv.js";
@@ -119,7 +119,7 @@ let memoryStore: InMemoryStore | null = null;
  *
  * Fingerprint shape:
  *   - `mode:source` for ChatGPT OAuth (no token to hash)
- *   - `mode:source:<sha256(key), 16 hex>` for api-key billing
+ *   - `mode:source:<scrypt(key), 16 hex>` for api-key billing
  *   - `mode:source` for missing/empty
  *
  * Constant-folded by `mode === "none"` — no learning happens without
@@ -130,8 +130,10 @@ export function computeAuthFingerprint(info: CodexAuthInfo): string {
   if (info.mode === "api-key" && info.apiKey) {
     // A digest, never key material: the fingerprint is persisted in kv
     // and appears in debug logs.
-    const digest = createHash("sha256").update(info.apiKey).digest("hex");
-    return `${base}:${digest.slice(0, 16)}`;
+    // scrypt, not a bare hash: the input is a credential. Computed once
+    // per codex init.
+    const digest = scryptSync(info.apiKey, "talon.codex.fingerprint", 8);
+    return `${base}:${digest.toString("hex")}`;
   }
   return base;
 }
