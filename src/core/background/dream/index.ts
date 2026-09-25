@@ -24,6 +24,7 @@ import type { Backend } from "../../agent-runtime/capabilities.js";
 import { taskTable } from "../../tasks/index.js";
 import { resolveBackgroundEffort } from "../effort.js";
 import { FailureBackoff } from "../failure-backoff.js";
+import { faultText } from "../../engine/fault-text.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,7 +62,10 @@ let dreaming = false; // in-process guard (one dream at a time)
  * every message (observed live: a model outage produced 403 identical
  * consolidation failures). Exported for tests.
  */
-export const dreamFailureBackoff = new FailureBackoff();
+export const dreamFailureBackoff = new FailureBackoff({
+  key: "dream.failing",
+  label: "Dream (memory consolidation)",
+});
 let configRef: {
   model?: string;
   dreamModel?: string;
@@ -146,8 +150,8 @@ function backOff(err: unknown): void {
   const until = dreamFailureBackoff.fail(err);
   logWarn(
     "dream",
-    `Backing off until ${new Date(until).toISOString()} ` +
-      `after ${dreamFailureBackoff.failures} consecutive failure(s)`,
+    `dream.backoff failures=${dreamFailureBackoff.failures} ` +
+      `until=${new Date(until).toISOString()} error="${faultText(err)}"`,
   );
 }
 
