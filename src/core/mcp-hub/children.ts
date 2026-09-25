@@ -340,7 +340,9 @@ export function retireAllChildren(): void {
 function reapIdle(): void {
   const cutoff = Date.now() - idleTtlMs();
   for (const [key, entry] of children) {
-    if (entry.lastActivity >= cutoff) continue;
+    // A call outliving the TTL is work, not idleness — closing the child
+    // would fail it mid-flight. The first sweep after it drains reaps.
+    if (entry.lastActivity >= cutoff || entry.pending > 0) continue;
     children.delete(key);
     entry.close().catch((err) => {
       logError("gateway", `hub reap of ${describeKey(key)} failed`, err);
