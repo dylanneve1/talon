@@ -15,8 +15,6 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -29,6 +27,7 @@ import {
   type MeshToolResult,
 } from "../tool-surface.js";
 import {
+  hashFile,
   normalizeGoarch,
   platformToGoos,
   type NodeBinaryResolver,
@@ -744,20 +743,4 @@ export class DeviceFiles {
 function transferRate(bytes: number, startedAtMs: number): string {
   const seconds = Math.max((Date.now() - startedAtMs) / 1000, 0.001);
   return `${formatBytes(bytes / seconds)}/s over ${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`;
-}
-
-/** Stream a file through SHA-256 without loading it into memory (APKs are big
- *  and Buffer has a hard ceiling). Returns the hex digest and byte size. */
-async function hashFile(
-  path: string,
-): Promise<{ sha256: string; size: number }> {
-  const { size } = await stat(path);
-  const hash = createHash("sha256");
-  await new Promise<void>((resolve, reject) => {
-    createReadStream(path)
-      .on("data", (chunk) => hash.update(chunk))
-      .on("end", () => resolve())
-      .on("error", reject);
-  });
-  return { sha256: hash.digest("hex"), size };
 }
