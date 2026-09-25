@@ -14,6 +14,7 @@ import { classify } from "../errors.js";
 import { getActiveCount } from "./dispatcher.js";
 import { Loom, getActiveLoom, type ContextRegistry } from "../weaver/index.js";
 import { getHealthStatus } from "../../util/watchdog.js";
+import { activeAlerts } from "../frontend-runtime/alerts.js";
 import { getActiveSessionCount } from "../../storage/sessions.js";
 import { log, logError, logDebug } from "../../util/log.js";
 import {
@@ -492,6 +493,7 @@ export class Gateway {
         w.msSinceLastMessage < 60000
           ? "just now"
           : `${Math.round(w.msSinceLastMessage / 60000)}m ago`,
+      alerts: activeAlerts(),
     };
   }
 

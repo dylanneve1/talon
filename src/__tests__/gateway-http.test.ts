@@ -730,3 +730,24 @@ describe("gateway port retry — EADDRINUSE", () => {
     }
   });
 });
+
+describe("gateway health endpoint — active alerts", () => {
+  it("lists the raised alerts for an authenticated caller", async () => {
+    const { raiseAlert, resetAlertsForTest } =
+      await import("../core/frontend-runtime/alerts.js");
+    resetAlertsForTest(async () => {});
+    raiseAlert("disk.low", "Disk almost full: 800 MiB free", {
+      severity: "critical",
+    });
+    const resp = await gatewayFetch(`http://127.0.0.1:${port}/health`);
+    const data = (await resp.json()) as Record<string, unknown>;
+    expect(data.alerts).toEqual([
+      expect.objectContaining({
+        key: "disk.low",
+        severity: "critical",
+        message: "Disk almost full: 800 MiB free",
+      }),
+    ]);
+    resetAlertsForTest();
+  });
+});
